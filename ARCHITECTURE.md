@@ -2,14 +2,14 @@
 
 この文書は、Dahlia の現在のシステム構成、守るべき architecture contract、実装との適合状況、修正完了条件を示す正本である。
 設計レビューと修正作業では、ここに記載した target state と現状との差分を基準にする。実装時の必須ルールは各スコープの
-`AGENTS.md`、機能を作るかどうかの判断基準は [`PRODUCT.md`](PRODUCT.md)、過去の判断理由は
-[ADR index](docs/adr/README.md) を参照する。
+`AGENTS.md`、機能を作るかどうかの判断基準は [`PRODUCT.md`](PRODUCT.md)、テーマ別の契約は
+[Spec index](docs/spec/README.md) を参照する。判断の経緯は commit と pull request に残す。
 
 - `AGENTS.md`: Codex が最初に読む、短いルーティングと必須ガードレール
 - `PRODUCT.md`: 何を作り何を作らないかを決める product tenet と、競合時の優先順位
 - `ARCHITECTURE.md`: 現在の構成、横断的な設計原則、未適合箇所、修正の到達条件
 - `docs/architecture/`: 特定領域の現在の data flow、runtime scenario、永続化境界
-- `docs/adr/`: 決定時点の背景、選択肢、トレードオフを残す履歴
+- `docs/spec/`: テーマごとの現在の契約、未適合・未検証の事項、却下した案。判断の経緯は commit と pull request に残す
 
 `Reliability Scope` から `Failure and Overload Policy` までは normative な target state である。
 `Runtime Data Flow` と `Conformance Status` は現在の実装を記述する。未適合箇所は既成事実として追認せず、保証範囲、
@@ -27,8 +27,8 @@ source of truth、再生成可能性、実測値に基づいて target state を
 | Runtime Data Flow のローカル処理 | Desktop / local MCP / 内蔵 Pi |
 | Runtime Data Flow の Server・同期・認証境界 | Desktop と Server。API・運用の詳細は [Server README](apps/server/README.md) |
 | Electron alpha（`apps/desktop`） | Server オンライン専用の開発用クライアント。録音・ローカル保存を持たず、Reliability Scope の保証対象外。構成は [Electron README](apps/desktop/README.md) |
-| Desktop v2（`apps/desktop-v2`） | Server・共通 UI と共有しない独立の Electron 開発版。録音・Mac での文字起こし・要約だけを持ち、録音保全は Reliability Scope より弱い（[Desktop v2 ADR](docs/adr/desktop/electron-v2.md)） |
-| 設計判断の履歴 | [対象別 ADR](docs/adr/README.md)。Accepted と実装・検証完了は別 |
+| Desktop v2（`apps/desktop-v2`） | Server・共通 UI と共有しない独立の Electron 開発版。録音・Mac での文字起こし・要約だけを持ち、録音保全は Reliability Scope より弱い（[Desktop v2 の仕様](docs/spec/desktop/electron-v2.md)） |
+| テーマ別の契約 | [Spec index](docs/spec/README.md)。採択と実装・検証の完了は別 |
 
 以下の確認日・適合状況は元の観測時点を示し、文書整理によって再検証済みにはしない。
 
@@ -112,7 +112,7 @@ Server Account の画像本体は未送信分も含めて Application Support �
 MCP の本文・画像の cache miss は同梱 helper 用 broker でアプリの共通 provider に取得を依頼する。未送信原本は解放しない。Local Account への移動は metadata 同期と全本文取得を完了し、必要な原本をファイルで揃えてから、所属変更とファイル参照を同じ transaction で確定する。バックアップの新規作成は Local Account のワークスペースに限定する。
 `files` は Workspace 所有の原本と metadata、`meeting_attachments` は会議への独立した紐付けを保持する。原本 URI は Volume の絶対パスで、Local Account と未確定の原本は NULL とする。端末の保存先は FileStore/index.sqlite と local/files/{fileId}/original または server/{accountConnectionId}/files/{fileId}/original。
 Desktop の送受信、初期構築、文書交換、録音アーカイブ、画像転送は独立して進む。依存キーと同一 entity の順序を SQLite に保存し、実行可能な通常操作4件に背景1件の機会を与える。未構築の本文と未送信原本は保護する。文書同期は DB ごとの共有サービスと専用 SSE、ローカル commit 後200msの固定送信窓を使う。Server は認可・Workspace lifecycle を共有取得し、会議・file・Project の関係ごとに更新を保護する。canonical 更新後の短い publication 区間だけ Workspace 内で直列化し、sequence・delta・receipt の公開順を守る。Documents は会議 lifecycle を共有し、別会議の更新と文書交換は並行して進む。初期構築は最大8操作・256KiBのバッチ、軽い送信は2枠・背景最大1枠で進める。
-詳細は [同期 ADR](docs/adr/shared/sync.md) と [優先同期 ADR](docs/adr/shared/sync-priority.md) を参照する。
+詳細は [同期の仕様](docs/spec/shared/sync.md) を参照する。
 
 利用テレメトリは録音・永続化の正本から独立した lossy projection である。`CaptionViewModel` などの owner は低頻度の
 workflow 境界で型付き `UsageTelemetryEvent` を生成し、`UsageTelemetryService` が公式 SDK の非ブロッキングキューへ渡す。内蔵 MCP helper も型付きの粗い tool-call event だけを専用 adapter へ渡し、外部 MCP client は計測しない。
@@ -134,14 +134,14 @@ meetings.calendar_event.attendees
 
 Desktopはemailと表示名だけを保存し、Serverは旧Desktopがattendeesを省略した更新では既存値を維持する。
 空配列は参加者だけを消去し、`calendarEvent: null`はCalendar Eventスナップショット全体を消去する。
-廃止した顧客インテリジェンスの判断は[履歴ADR](docs/adr/desktop/customer-intelligence.md)に残す。
+廃止した顧客インテリジェンスについて残る制約は[参加者スナップショットの仕様](docs/spec/shared/calendar-attendee-snapshots.md)に書く。
 
 任意の Dahlia Server runtime は内蔵 Pi の provider transport を所有し、macOS の録音・文字起こし critical path には入らない。
 macOS の Dahlia アカウントは Workspace の所有者ではなく、アプリ共有の接続として SQLite に登録する。OAuth credential と remote identity は
 接続 UUID ごとに Keychain が所有し、token 利用側は connection ID を明示する。sign-out は選択した接続の credential を削除し、Server record を残したまま local working copy の削除または Local Account への移動を選ぶ。Workspace は AI provider
 利用のために任意の接続を参照し、接続ごとの private Pi agent directory を使う。サインインだけでは Local Workspace を移さず、Workspace 単位の明示移行を要求する。Server-managed Workspace は常時同期し、独立した同期 toggle は持たない。ローカルアカウントは
 OpenAI (ChatGPT subscription) と Anthropic (Claude Pro/Max)、接続した Databricks workspace ごとの Databricks アカウント（自分の Workspace を持ち同期なし）はその AI Gateway を使い、Dahlia アカウントは接続先の Gateway を使う。この境界は
-[内蔵 Pi runtime](docs/adr/desktop/pi-runtime.md#provider)を正本とする。
+[内蔵 Pi runtime](docs/spec/desktop/pi-runtime.md#provider)を正本とする。
 Better Auth、Gateway 管理 metadata、meeting sync は単一の Drizzle application database を共有する。PostgreSQL は生成済み認証 table を
 `auth`、Dahlia 所有の全テーブルを `app` schema に置き、参照は `app → auth` の方向とする。
 `DAHLIA_DATABASE_TYPE` は `sqlite`、`postgres`、`lakebase`、`hyperdrive` から選び、SQLite／PostgreSQL の接続先は
@@ -152,7 +152,7 @@ Databricks Apps の header identity は sessionless だが、認証・administra
 AI Gateway は `AIGatewayBackend.listModels` と `responses(body, context)` を共通境界とする。Databricks は `/ai-gateway/codex/v1` のモデル一覧・metadata・モデル認可を正本とし、モデル ID をそのまま上流へ渡す。OpenAI と Cloudflare は `DAHLIA_FOUNDATION_MODELS` で公開モデルを列挙し、通常の Responses は列挙された ID だけを受け付ける。それぞれの JSON catalog が一致する slug の metadata を供給する。上流ヘッダーの構築は各 backend が所有する。
 Server 共通層は `DAHLIA_CODEX_AUTO_REVIEW_MODEL` による予約モデル上書きを所有し、設定された上流 ID はスキーマを補完せず転送する。
 Responses request は上限内で検証し、upstream response body は streaming relay する。request と response の content は DB、cache、analytics、application log へ保存しない。
-Databricks request tags には認証済み user ID を付与する。Model Alias テーブル・store 型・CRUD と管理画面・API は廃止する ([Backend モデル契約](docs/adr/server/gateway.md#backend-モデル契約))。
+Databricks request tags には認証済み user ID を付与する。Model Alias テーブル・store 型・CRUD と管理画面・API は廃止する ([Backend モデル契約](docs/spec/server/gateway.md#backend-モデル契約))。
 
 ```text
 Dahlia macOS / installed Pi
@@ -167,17 +167,12 @@ Dahlia macOS / installed Pi
 
 Drizzle application store (SQLite, PostgreSQL, Lakebase, or Hyperdrive)
     ├─ auth: 共通 user directory + session/OAuth/organization/Team membership
-    └─ app: artifact + Workspace + Project + principal permission + meetings + transcript_segments + screenshots
+    └─ app: Workspace + Project + principal permission + meetings + transcript_segments + screenshots
             + search projections + sync receipts / changes + jobs
 
-/api/v1/artifacts
-    └─ POST → Server-generated UUIDv7; private by default
-/api/v1/artifacts/{artifact_id}
-    ├─ owner-scoped metadata authorization; PUT replaces existing bytes only
-    └─ local / S3 / R2 / Databricks Volume bytes → authenticated streaming relay
 /mcp
-    ├─ owner-scoped artifact create / replace / visibility / delete tools
-    └─ Workspace permission-scoped synchronized meeting read tools
+    ├─ Workspace permission-scoped synchronized meeting read tools
+    └─ Dahlia Memory tools (mcp:memory:read / mcp:memory:write)
 
 /api/v1/transactions
     └─ immutable Workspace-scoped domain operations → atomic canonical commit
@@ -192,14 +187,14 @@ app.workspace_permissions
     └─ admin / editor / viewer（Organization所属だけではアクセスを付与しない）
 ```
 
-`/mcp` は MCP 2026-07-28 の stateless endpoint とし、accounts mode では DPoP-bound access token と exact resource audience を必須とする。`mcp` と `mcp:read` は既存の会議参照 tool を許可する。Dahlia Memory は独立した `mcp:memory:read` / `mcp:memory:write` を使い、認証済み本人の個人領域と現在認可された Workspace 領域を分離する。Router は候補の提案に限定し、共有保存は明示的な指示と書き込み権限を必要とする ([ADR](docs/adr/server/dahlia-memory.md))。Desktop が main API を呼ぶ capability scope は `all-apis` に統一する。Node の authorization server は CIMD を提供し、RFC 7591 DCR は開かない。Databricks Apps の header mode では Apps proxy が OAuth 認証を完了済みのため、転送 identity を owner として使い、artifact 操作で user access token を再利用しない。
+`/mcp` は MCP 2026-07-28 の stateless endpoint とし、accounts mode では DPoP-bound access token と exact resource audience を必須とする。`mcp` と `mcp:read` は既存の会議参照 tool を許可する。Dahlia Memory は独立した `mcp:memory:read` / `mcp:memory:write` を使い、認証済み本人の個人領域と現在認可された Workspace 領域を分離する。Router は候補の提案に限定し、共有保存は明示的な指示と書き込み権限を必要とする ([仕様](docs/spec/server/dahlia-memory.md))。Desktop が main API を呼ぶ capability scope は `all-apis` に統一する。Node の authorization server は CIMD を提供し、RFC 7591 DCR は開かない。Databricks Apps の header mode では Apps proxy が OAuth 認証を完了済みのため、転送 identity を owner として使う。
 
 Cloudflare では Hono Worker は `/api/**`、`/.well-known/**`、`/mcp`、`/healthz` だけを処理する。React SPA と静的 asset は
 Workers Static Assets が直接配信し、Worker 内から asset binding を呼ばない。`/dashboard/**` の navigation は
 `index.html` へ fallback する一方、API と discovery の未定義 path は Hono の 404 を維持する。
 
-Gateway、認証 store、upstream、artifact storage の停止は Server 操作だけを失敗させる。macOS の起動、録音、音声保存、文字起こし、
-閲覧、検索はこの runtime を待たない。Artifact API は明示的に渡された任意 asset だけを扱う。これとは別に、ServerアカウントのWorkspace、Project、meeting、summary、transcript 原文、screenshot、OCR、AI captionはDesktopとWebが共有するServer canonical dataである。Desktop は既存の domain table を offline working-copy record cache とし、ローカル変更と immutable domain transaction の記録を同じ SQLite transaction で確定する。これはローカルからServer copyを作る一方向転送ではない。サインインはローカルWorkspaceを暗黙に関連付けず、明示的にServerへ移したWorkspaceは常時同期する。ログイン済み接続で権限のある既存ServerワークスペースもDesktopが自動発見し、取り込み操作なしで一覧と同期に参加する。サインアウトではServer canonical dataを変更せず、working copyを削除するかLocal Accountへ移す。Server Workspaceの所有主体は変更不能なOrganizationとする。Workspace Adminがuser／Organization／Teamへadmin・editor・viewerを付与し、Admin／Editorは内容を編集、AdminだけがWorkspaceの設定・共有・削除・reset・全内容移管を行う。本人用Workspaceはpersonal_user_idで識別し、本人かつ現在のOrganizationメンバーに限定する。Personal OrganizationとOrganization.kindは廃止した。Header認証では設定されたメールヘッダーを識別に使い、初回登録時だけドメイン組織を作成・参加する。
+Gateway、認証 store、upstream、storage の停止は Server 操作だけを失敗させる。macOS の起動、録音、音声保存、文字起こし、
+閲覧、検索はこの runtime を待たない。ServerアカウントのWorkspace、Project、meeting、summary、transcript 原文、screenshot、OCR、AI captionはDesktopとWebが共有するServer canonical dataである。Desktop は既存の domain table を offline working-copy record cache とし、ローカル変更と immutable domain transaction の記録を同じ SQLite transaction で確定する。これはローカルからServer copyを作る一方向転送ではない。サインインはローカルWorkspaceを暗黙に関連付けず、明示的にServerへ移したWorkspaceは常時同期する。ログイン済み接続で権限のある既存ServerワークスペースもDesktopが自動発見し、取り込み操作なしで一覧と同期に参加する。サインアウトではServer canonical dataを変更せず、working copyを削除するかLocal Accountへ移す。Server Workspaceの所有主体は変更不能なOrganizationとする。Workspace Adminがuser／Organization／Teamへadmin・editor・viewerを付与し、Admin／Editorは内容を編集、AdminだけがWorkspaceの設定・共有・削除・reset・全内容移管を行う。本人用Workspaceはpersonal_user_idで識別し、本人かつ現在のOrganizationメンバーに限定する。Personal OrganizationとOrganization.kindは廃止した。Header認証では設定されたメールヘッダーを識別に使い、初回登録時だけドメイン組織を作成・参加する。
 PostgreSQL／LakebaseではBetter Authの機械生成migrationとDahlia application migrationを別ledgerに置き、認証方式によらず
 `auth`、`app`の順で適用する。Header identityは検証直後に`auth.user`へ射影し、Webはaccountsと共通のBetter Authセッション・Organization APIを使う。保護操作では検証済みHeaderを引き続き必須とし、Cookie本人不一致を拒否する。Serverは各identity transactionで
 `app.user_id`だけをtransaction-localに設定する。Workspace/content RLSは`app.workspace_permissions`を評価し、organizationとTeam membershipを
@@ -212,20 +207,20 @@ Server は meeting の名前・説明・summary 表示本文と screenshot の O
 RRF で統合し、embedding の未設定・未完成・障害時は FTS に縮退する。transcript と内部識別子は Server 検索対象に含めず、
 すべての検索 query は `workspace_id` 経由の permission／RLS を通す。D1 adapterは削除し、WorkerはPostgreSQL／Hyperdriveを使用する。
 Desktopで作成した画像はアカウントを問わずMacの内蔵 Pi でOCR・captionを生成し、結果を同期する。Serverは同期や不足データの巡回から画像解析を開始しない。旧版で受付済みのジョブだけ既存の認可・lease・revision検証で処理する。
-AI設定とミーティング設定（文字起こし・ライブ字幕・スクリーンショット）はこのMac内でアカウント別に保存し、Workspaceの既定出力言語だけを共有する。文字起こし・要約の実行場所は[操作元の契約](docs/adr/shared/account-scoped-desktop-inference.md)に従う。Desktopの選択中アカウントだけ Pi を動かし、別アカウントへ切り替えると旧プロセスを停止する。
+AI設定とミーティング設定（文字起こし・ライブ字幕・スクリーンショット）はこのMac内でアカウント別に保存し、Workspaceの既定出力言語だけを共有する。文字起こし・要約の実行場所は[操作元の契約](docs/spec/shared/account-scoped-desktop-inference.md)に従う。Desktopの選択中アカウントだけ Pi を動かし、別アカウントへ切り替えると旧プロセスを停止する。
 翻訳文、音声、SQLite file、note、tag、calendar、
 Project は階層参照と meeting 絞り込みのためだけに同期し、Server の全文・vector projection へは含めない。transcript の `audio_source` は `mic`／`system` の収録経路、nullable な `speaker_label` は将来の話者分離ラベルとし、音声特徴量は同期しない。runtime と data boundary の判断は次を正本とする。
 
-- [Server database と認可 identity](docs/adr/server/database-and-identity.md): schema、Workspace permission、content RLS、header user 射影。
-- [Artifact](docs/adr/server/artifacts.md): ownership、storage、ID、Remote MCP。
-- [Databricks upstream identity](docs/adr/server/databricks.md#upstream-identity): Responses と background AI の認証境界。
-- [Canonical sync](docs/adr/shared/sync.md): Workspace／Project、transcript 話者モデル、Desktop／Web の双方向変更、revision、transaction、delta、SSE。
-- [Workspace 共有と管理者](docs/adr/server/sharing-and-administration.md): shared read、Organization／Team 共有、Server 管理者権限。
-- [Server Hybrid 検索](docs/adr/server/search.md#hybrid-検索): 同期済み content の検索 projection。
+- [Server database と認可 identity](docs/spec/server/database-and-identity.md): schema、Workspace permission、content RLS、header user 射影。
+- [Server の Remote MCP](docs/spec/server/remote-mcp.md): DPoP、CIMD、request 上限、ログの扱い。
+- [Databricks upstream identity](docs/spec/server/databricks.md#upstream-identity): Responses と background AI の認証境界。
+- [Canonical sync](docs/spec/shared/sync.md): Workspace／Project、transcript 話者モデル、Desktop／Web の双方向変更、revision、transaction、delta、SSE。
+- [Workspace 共有と管理者](docs/spec/server/sharing-and-administration.md): shared read、Organization／Team 共有、Server 管理者権限。
+- [Server Hybrid 検索](docs/spec/server/search.md#hybrid-検索): 同期済み content の検索 projection。
 
-Desktop SQLite は offline working copy であり、単方向の転送元ではない。Server Account の本文は `sync_content_state` で完全性・保持 revision・検証済み hash・byte 数・利用日時を管理する。metadata-only snapshot / delta は本文取得を待たず進み、`MeetingContentProvider` が SQLite を先に読み、必要時だけ指定 revision の全ページを一時領域へ取得して manifest と照合する。全 Server Account の本文予算は128 MiB、検証済みで再取得できる未使用本文だけを LRU で80%まで解放する。Local Account・queue・復旧・録音・利用中本文は保全し、翻訳・音声特徴量・summary export の参照は残す。詳細は [本文の部分保持](docs/adr/shared/sync.md#テキスト本文の部分保持2026-09-07)。SSE はデータ本体を運ばない。Server 側採用では未送信変更を破棄して cursor をリセットし、Server の revision 一覧を取得するまで revision 未確定の Workspace 同期行を保持して送信を停止する。この間のローカル変更と確定文字起こしはキューへ保存し、取得した revision で未送信操作を順序どおり補正してから送信を再開する。revision 取得と canonical 本体の適用は区別し、cursor が未設定なら同じ revision でも本体を再取得・適用する。これを初期送信の中断と混同して create を再生成してはならない。local mutation は record cache と operation snapshot を同じ SQLite transaction へ明示的に書き、remote applier は recorder を呼ばない。
+Desktop SQLite は offline working copy であり、単方向の転送元ではない。Server Account の本文は `sync_content_state` で完全性・保持 revision・検証済み hash・byte 数・利用日時を管理する。metadata-only snapshot / delta は本文取得を待たず進み、`MeetingContentProvider` が SQLite を先に読み、必要時だけ指定 revision の全ページを一時領域へ取得して manifest と照合する。全 Server Account の本文予算は128 MiB、検証済みで再取得できる未使用本文だけを LRU で80%まで解放する。Local Account・queue・復旧・録音・利用中本文は保全し、翻訳・音声特徴量・summary export の参照は残す。詳細は [本文の部分保持](docs/spec/shared/sync.md#テキスト本文)。SSE はデータ本体を運ばない。Server 側採用では未送信変更を破棄して cursor をリセットし、Server の revision 一覧を取得するまで revision 未確定の Workspace 同期行を保持して送信を停止する。この間のローカル変更と確定文字起こしはキューへ保存し、取得した revision で未送信操作を順序どおり補正してから送信を再開する。revision 取得と canonical 本体の適用は区別し、cursor が未設定なら同じ revision でも本体を再取得・適用する。これを初期送信の中断と混同して create を再生成してはならない。local mutation は record cache と operation snapshot を同じ SQLite transaction へ明示的に書き、remote applier は recorder を呼ばない。
 
-通常差分と本文反映の競合判定は同期層の `RemoteChangePolicy` が共有する。録音中も安全な差分は適用し、保留を含むページ以降の永続 cursor は進めず次回に再取得する。本文 provider は同期済み revision の本文だけを取得する。復旧・reset と本文の破棄は通常差分より厳しい保護単位を維持する。詳細は [録音中の通常差分適用](docs/adr/shared/sync.md#録音中の通常差分適用2026-09-07)。
+通常差分と本文反映の競合判定は同期層の `RemoteChangePolicy` が共有する。録音中も安全な差分は適用し、保留を含むページ以降の永続 cursor は進めず次回に再取得する。本文 provider は同期済み revision の本文だけを取得する。復旧・reset と本文の破棄は通常差分より厳しい保護単位を維持する。詳細は [録音中の通常差分適用](docs/spec/shared/sync.md#受信)。
 
 ### 起動準備と録音開始
 
@@ -242,7 +237,7 @@ Hermes のふり返りと Curator の統合パスは utility の独立した1本
 予定の実行は thread 起点と合わせて3本までの既存 queue を通す。
 無人実行の履歴は `agent_system_runs` に置き、chat_threads・検索索引・バックアップに入れず、30日で消す。
 予定ごとの結果 Thread は閲覧専用で、発火ごとに新規 Pi process を使う。
-[自己学習](docs/adr/desktop/pi-self-learning.md)・[定期実行](docs/adr/desktop/scheduled-agent-scope.md)を参照。
+[自己学習](docs/spec/desktop/pi-self-learning.md)・[定期実行](docs/spec/desktop/scheduled-agent-scope.md)を参照。
 
 ## Workload Classes
 
@@ -321,7 +316,7 @@ Databricks DAB の既存受付済み画像解析とWeb要約内の画像選別�
 Desktop の AI チャットは GRDB の `chat_threads`／追記専用 `chat_items` を正本にし、Pi ファイルは実行再開状態だけを持つ。
 手動送信でターンを開始するときは、Pi の起動を待たずに送信内容を表示して入力欄をクリアする。受付前の失敗・キャンセルでは、次の入力がなければ送信内容を入力欄へ戻す。
 `PiChatService` は `chat_runs` の実行・待機・承認を画面から独立して所有し、表示側は有界の購読と保存履歴から再接続する。
-スレッド管理と自動結果通知の判断・境界・検証状態は[専用 ADR](docs/adr/desktop/chat-thread-orchestration.md)を参照。
+スレッド管理と自動結果通知の判断・境界・検証状態は[スレッド管理の仕様](docs/spec/desktop/chat-thread-orchestration.md)を参照。
 履歴表示は直近40メッセージを初期取得し、過去分を操作時に追加取得する。タイトルと各メッセージを別々の全文検索文書にし、
 追記では新しいメッセージだけを索引化して結果を Thread ごとにまとめる。推論文・ツール引数／結果・画像は索引化せず、
 実行アカウントで検索結果を絞り、任意の Project で関連付け・絞り込みを行う。Thread は Workspace を直接参照せず、同じアカウント内の Workspace 切替で会話を維持する。辞書の再構築時はチャットも再構築する。チャットとその索引はバックアップ・Server 同期の対象外。
@@ -388,7 +383,7 @@ persistence の順で完了を待つ。
 - 入力を queue の想定容量まで増やしたとき、preview は規則どおり集約され、durable data は欠落しない。
 - 正常停止時に、各 owner が新規受付を止めてから in-flight work を drain し、最初の失敗を返す。
 
-process-wide hang、crash、OOM の注入は現在の受け入れ条件には含めず、保証範囲を拡張する ADR で追加する。
+process-wide hang、crash、OOM の注入は現在の受け入れ条件には含めず、保証範囲の拡張をユーザーが承認したときに追加する。
 
 ## Conformance Status
 
@@ -409,7 +404,7 @@ process-wide hang、crash、OOM の注入は現在の受け入れ条件には含
 | Async surface | Conforms | `preparedCaptureFormat` は同期化し、未使用の非同期 no-op `endActiveRanges` は削除した |
 | Screenshot interactive scheduling | Conforms | overlay shell と既存 thumbnail を先に表示し、cacheable decode と非 cache の interactive decode を別 worker lane に分離する。同一 thumbnail miss は集約し、内容変更／削除は stale cache と in-flight completion を無効化し、cancel 済み waiter は直ちに外す |
 | UI-lane isolation proof | Conforms | 停止した UI sink の解放前に audio acceptance と finalized persistence が進み、解放後に UI が追いつくことを回帰テストで検証する |
-| Process-wide isolation | Out of scope | helper process は導入せず、process-wide hang の証拠が得られた場合に別 ADR で判断する |
+| Process-wide isolation | Out of scope | helper process は導入せず、process-wide hang の証拠が得られた場合に、保証範囲の変更として判断する |
 
 ## Remediation Plan
 
@@ -482,7 +477,7 @@ SQLite stall の実測結果を得るまでは `.unbounded` と retry 保持の�
 
 durable event を drop する `AsyncStream.bufferingNewest/Oldest` への単純置換は行わない。まず event count、text bytes、
 SQLite stall duration、retry backlog を計測する。その結果から、audio writer と独立した bounded backpressure または
-disk-backed recovery のどちらを使うかを決める。選択した容量、受付不能時の UX、停止時の drain を [実行コンテキスト](docs/adr/desktop/concurrency-and-projection.md#実行コンテキスト) の queue contract
+disk-backed recovery のどちらを使うかを決める。選択した容量、受付不能時の UX、停止時の drain を [実行コンテキスト](docs/spec/desktop/concurrency-and-projection.md#実行コンテキスト) の queue contract
 として実装前に確定する。
 
 完了条件:
@@ -540,20 +535,20 @@ R1〜R4 と R6 は完了した。R7 は報告されたスクリーンショッ�
 lane を分離した。R5 は instrumentation のみ完了しており、backpressure／disk-backed recovery／明示的 failure の選択は
 実測後に別変更として行う。
 
-## Decision Records
+## Related Specs
 
-意思決定の一覧と読み方は [ADR index](docs/adr/README.md) を参照する。録音と UI 応答性に直接関係する記録:
+テーマ別の契約の一覧は [Spec index](docs/spec/README.md) を参照する。録音と UI 応答性に直接関係する契約:
 
-- [録音クリティカルパスを MainActor から分離する](docs/adr/desktop/concurrency-and-projection.md#録音と保存の分離)
-- [録音データを分割された不変セグメントとして保全する](docs/adr/desktop/recording-storage.md#確定手順)
-- [大量文字起こしを bounded projection と keyset pagination で表示する](docs/adr/desktop/concurrency-and-projection.md#transcript-projection)
-- [実行コンテキストと負荷縮退順序を定める](docs/adr/desktop/concurrency-and-projection.md#実行コンテキスト)
+- [録音クリティカルパスを MainActor から分離する](docs/spec/desktop/concurrency-and-projection.md#録音と保存の分離)
+- [録音データを分割された不変セグメントとして保全する](docs/spec/desktop/recording-storage.md#確定手順)
+- [大量文字起こしを bounded projection と keyset pagination で表示する](docs/spec/desktop/concurrency-and-projection.md#transcript-projection)
+- [実行コンテキストと負荷縮退順序を定める](docs/spec/desktop/concurrency-and-projection.md#実行コンテキスト)
 
 ## Recording audio archives
 
 New Local Workspace batch sessions keep verified source-specific CAF segments for the configured retention period and do not create `recording_archives` jobs or joined M4A files. Local retranscription reads those CAF segments, detects each segment's language, and uses Apple Speech. Existing Local M4A archives remain compatible inputs and expire through the same purge state machine.
 
-New Server Workspace batch sessions enqueue a durable `recording_archives` job at session creation. The idle sync lane converts every recording to source-specific M4A, uploads it, verifies the receipt and re-download, then releases CAF through the existing purge state machine. Desktop retranscription downloads and verifies archived M4A when local audio is absent, then uses Apple Speech. Web-initiated audio operations continue to use the Server API. Capture, initial transcript persistence, and existing transcript or summary results never wait for archiving or retranscription. See [the archive ADR](docs/adr/shared/recording-audio-archive.md) for retention and protocol details.
+New Server Workspace batch sessions enqueue a durable `recording_archives` job at session creation. The idle sync lane converts every recording to source-specific M4A, uploads it, verifies the receipt and re-download, then releases CAF through the existing purge state machine. Desktop retranscription downloads and verifies archived M4A when local audio is absent, then uses Apple Speech. Web-initiated audio operations continue to use the Server API. Capture, initial transcript persistence, and existing transcript or summary results never wait for archiving or retranscription. See [the archive spec](docs/spec/shared/recording-audio-archive.md) for retention and protocol details.
 
 ### ライブ MCP 配信
 
@@ -561,14 +556,14 @@ New Server Workspace batch sessions enqueue a durable `recording_archives` job a
 
 ## Organization-owned Server Workspaces
 
-[Organization ownership ADR](docs/adr/shared/organization-vaults.md) supersedes personal Server Workspace ownership and read-only sharing. Organization membership and Workspace access are separate; admin manages the Workspace and permissions, admin/editor writes content, and viewer reads. Header/accounts share Better Auth browser sessions while retaining their identity-entry and machine-client boundaries. The sync ledger, search projection work, and encryption keys are Workspace-scoped. Local migration reuses relocation and the durable sync queue, preserving recordings and newer edits.
+Server Workspaces are owned by Organizations ([Organization ownership spec](docs/spec/shared/organization-personal-workspaces.md)); there is no personal Server Workspace ownership or read-only sharing model. Organization membership and Workspace access are separate; admin manages the Workspace and permissions, admin/editor writes content, and viewer reads. Header/accounts share Better Auth browser sessions while retaining their identity-entry and machine-client boundaries. The sync ledger, search projection work, and encryption keys are Workspace-scoped. Local migration reuses relocation and the durable sync queue, preserving recordings and newer edits.
 
 ## Collaborative meeting Documents
 
-[Documents ADR](docs/adr/shared/documents.md) defines meeting Notes as Yjs checkpoint plus update logs. `packages/ui/src/documents` owns portable operations, batching, and recovery detection; Server reuses that core for canonical merges. Web owns incremental canonical/staging replicas in a Worker and retains pending changes in memory. Desktop shares persistent replicas per database on a dedicated JavaScriptCore thread, commits deltas and recovery copies atomically before local acknowledgement, and builds projections on explicit reads. Normal editor notifications carry deltas and state vectors. Recovery synchronization uses monotonic high-water cursors; history display retains a single bounded page. Document synchronization runs independently of domain transactions and recording stop. Server Node and Workers use the same authorized store and encryption layer.
+The [Documents spec](docs/spec/shared/documents.md) defines meeting Notes as Yjs checkpoint plus update logs. `packages/ui/src/documents` owns portable operations, batching, and recovery detection; Server reuses that core for canonical merges. Web owns incremental canonical/staging replicas in a Worker and retains pending changes in memory. Desktop shares persistent replicas per database on a dedicated JavaScriptCore thread, commits deltas and recovery copies atomically before local acknowledgement, and builds projections on explicit reads. Normal editor notifications carry deltas and state vectors. Recovery synchronization uses monotonic high-water cursors; history display retains a single bounded page. Document synchronization runs independently of domain transactions and recording stop. Server Node and Workers use the same authorized store and encryption layer.
 
 Desktop domain synchronization and Documents still share the SQLite queue. Conflict checks use durable dependency keys that include stored and proposed attachment endpoints; unknown legacy requests remain barriers until indexed. This preserves protection during attachment moves without decoding the full outbox or loading unrelated meeting and project ancestry for every received record.
 
 Legacy Server Notes stay private until explicit Workspace publication. Local Account conversion preserves literal text and dates. Protected pending, private, and recovery data cannot be evicted; refetchable shared state participates in the 128 MiB cache, with device-wide indefinite retention by default (configurable in days). This prevents automatic capacity eviction immediately after linking a Server account. Minimum retention takes priority over cache budgets; background verification does not renew it. Remote deletion archives protected local state before removing the parent. Local-to-Server moves preserve documents privately by default. Server summaries capture an internal encrypted `notesSnapshot` at acceptance. Presence is a DB-backed expiring session list; there are no block locks.
 
-Documents have independent IDs, a Workspace owner, an optional meeting, kind, and title ([identity ADR](docs/adr/shared/document-identity.md)). Only meeting Notes are unique per meeting; summary input resolves kind=notes. Desktop consolidates unshipped Documents, sync, and background jobs in v54; released v47 and earlier migrations remain unchanged. Development databases retain their rows through GRDB merging. The prerelease Server baseline includes the new schema. Generated assets and license notices are verified by `pnpm --filter @dahlia-ai/ui documents:check`; ordinary Swift builds use committed resources.
+Documents have independent IDs, a Workspace owner, an optional meeting, kind, and title ([identity spec](docs/spec/shared/document-identity.md)). Only meeting Notes are unique per meeting; summary input resolves kind=notes. Desktop consolidates unshipped Documents, sync, and background jobs in v54; released v47 and earlier migrations remain unchanged. Development databases retain their rows through GRDB merging. The prerelease Server baseline includes the new schema. Generated assets and license notices are verified by `pnpm --filter @dahlia-ai/ui documents:check`; ordinary Swift builds use committed resources.

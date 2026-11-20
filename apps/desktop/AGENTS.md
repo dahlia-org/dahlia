@@ -2,7 +2,7 @@
 
 ## Scope
 
-This file applies to `apps/desktop` (`@dahlia-ai/desktop`), the online-only Electron alpha. The repository-root `AGENTS.md` still applies. Read [`README.md`](README.md) for commands and runtime behavior and [Electron アルファ版](../../docs/adr/desktop/electron-alpha.md) for the decisions. Dahlia for macOS lives in `apps/macos` and is unaffected by this package.
+This file applies to `apps/desktop` (`@dahlia-ai/desktop`), the online-only Electron alpha. The repository-root `AGENTS.md` still applies. Read [`README.md`](README.md) for commands and runtime behavior and [Electron アルファ版](../../docs/spec/desktop/electron-alpha.md) for the decisions. Dahlia for macOS lives in `apps/macos` and is unaffected by this package.
 
 ## Rules
 

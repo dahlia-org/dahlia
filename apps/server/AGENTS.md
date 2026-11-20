@@ -15,19 +15,19 @@ Use progressive disclosure. Read the closest implementation first, then only the
 | Local setup, API behavior, configuration, or deployment overview | [`README.md`](README.md) |
 | Product scope or whether a cloud feature belongs in Dahlia | [`PRODUCT.md`](../../PRODUCT.md), especially T4 and T5 |
 | Account authentication and API access | [`README.md` API contract](README.md#api-contract), then the affected `src/auth` implementation |
-| Gateway upstream relay | [Gateway 境界](../../docs/adr/server/gateway.md#gateway-境界) |
-| Canonical data, remote mutations, conflicts, or catch-up | [Transaction と競合](../../docs/adr/shared/sync.md#transaction-と競合), then `src/sync` and the affected Desktop sync path |
+| Gateway upstream relay | [Gateway 境界](../../docs/spec/server/gateway.md#gateway-境界) |
+| Canonical data, remote mutations, conflicts, or catch-up | [Transaction と競合](../../docs/spec/shared/sync.md#transaction-と競合), then `src/sync` and the affected Desktop sync path |
 | Workspace ownership and sharing | [`README.md` Workspace sharing](README.md#meeting-sync-and-workspace-sharing) |
-| Public package exports or extension hooks | [配布と拡張](../../docs/adr/server/gateway.md#配布と拡張) |
-| Application database, identity, or migrations | [Schema と migration](../../docs/adr/server/database-and-identity.md#schema-と-migration) |
+| Public package exports or extension hooks | [配布と拡張](../../docs/spec/server/gateway.md#配布と拡張) |
+| Application database, identity, or migrations | [Schema と migration](../../docs/spec/server/database-and-identity.md#schema-と-migration) |
 | Databricks deployment or Lakebase setup | [`deploy/databricks/README.md`](../../deploy/databricks/README.md) |
-| Databricks forwarded user token | [Upstream identity](../../docs/adr/server/databricks.md#upstream-identity) |
-| Databricks model configuration | [Upstream identity](../../docs/adr/server/databricks.md#upstream-identity) |
-| Files and recording storage or HTTP reads | [Shared sync](../../docs/adr/shared/sync.md), then the affected `src/storage` adapter |
-| Dependencies, lockfiles, packaging, or deployment source layout | [pnpm workspace と共通 UI の依存管理](../../docs/adr/monorepo/dependencies.md) |
+| Databricks forwarded user token | [Upstream identity](../../docs/spec/server/databricks.md#upstream-identity) |
+| Databricks model configuration | [Upstream identity](../../docs/spec/server/databricks.md#upstream-identity) |
+| Files and recording storage or HTTP reads | [Shared sync](../../docs/spec/shared/sync.md), then the affected `src/storage` adapter |
+| Dependencies, lockfiles, packaging, or deployment source layout | [pnpm workspace と共通 UI の依存管理](../../docs/spec/monorepo/dependencies.md) |
 | Web UI screens, client data layer, generated TypeScript client, or Documents core | [`packages/ui/AGENTS.md`](../../packages/ui/AGENTS.md) |
 
-Use the [ADR index](../../docs/adr/README.md) only when historical rationale or a contract change requires it. Do not read unrelated ADRs by default.
+Use the [Spec index](../../docs/spec/README.md) when a theme's contract or a contract change requires it. Do not read unrelated specs by default.
 
 ## Runtime and Package Boundaries
 
@@ -41,13 +41,13 @@ Use the [ADR index](../../docs/adr/README.md) only when historical rationale or 
 ## Canonical Data and Client Synchronization
 
 - Server-account Workspaces, Projects, meeting metadata, summaries, original transcripts, screenshots, OCR, and captions are canonical Server data. Store them durably through the supported application database and object-storage paths. Recording audio, translated transcripts, SQLite files, and device-local export paths are not part of meeting sync.
-- Meeting Documents use the dedicated Yjs difference API defined in [Documents ADR](../../docs/adr/shared/documents.md); merge incoming updates while pending and keep this lane independent of domain transactions.
+- Meeting Documents use the dedicated Yjs difference API defined in the [Documents spec](../../docs/spec/shared/documents.md); merge incoming updates while pending and keep this lane independent of domain transactions.
 - Other Desktop and Private Web mutations use `POST /api/v1/transactions`: one Workspace per atomic transaction, UUIDv7 idempotency keys, stored receipts, and rejection of a reused ID with different content. Preserve revision checks and `409` conflicts with the canonical record; never silently replace them with last-write-wins.
 - Authorize every read, staged upload, and committed mutation against current Workspace permissions. Desktop is a remote client, not a trusted database writer. Validate IDs, relationships, payload limits, and content hashes at the Server boundary; staging alone must not publish data.
 - Preserve the durable cursor delta feed and its high-water pagination boundary. SSE sends invalidations and cursors only; clients recover from missed events through canonical reads. A commit receipt cursor must not advance a client's separate delta pull checkpoint.
 - Desktop records local edits and retryable operations atomically, applies receipts without losing newer local edits, and applies remote records without enqueueing echoes. Keep authorization, validation, revision conflicts, and retryable transport failures distinct. Validate both client and Server paths when changing this wire contract.
 - Signing in does not implicitly migrate a Local Account Workspace. Removing a local working copy or signing out does not delete Server records. Keep deletion of canonical data explicit and authorized.
-- Organizations own Workspaces. Workspace admin manages sharing and the Workspace; admin/editor can mutate content and viewer can read. Organization membership alone grants no Workspace access. Server meeting MCP remains read-only. Dahlia Memory mutations require their dedicated scope and current owner/Workspace authorization; follow docs/adr/server/dahlia-memory.md. Follow docs/adr/shared/organization-vaults.md.
+- Organizations own Workspaces. Workspace admin manages sharing and the Workspace; admin/editor can mutate content and viewer can read. Organization membership alone grants no Workspace access. Server meeting MCP remains read-only. Dahlia Memory mutations require their dedicated scope and current owner/Workspace authorization; follow docs/spec/server/dahlia-memory.md. Follow docs/spec/shared/organization-vaults.md.
 
 ## Model Catalog Maintenance
 

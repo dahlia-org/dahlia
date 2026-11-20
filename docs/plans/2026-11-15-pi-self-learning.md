@@ -1,7 +1,7 @@
 # デスクトップの Pi に自己学習（メモリー・スキル改善・定期実行）を足す計画
 
 対象: Desktop（macOS アプリの内蔵チャット。Pi を子プロセスとして使う部分）。
-状態: 第 3 版。[1 回目のレビュー](2026-11-15-pi-self-learning-review.md)と [2 回目のレビュー](2026-11-15-pi-self-learning-review-v2.md)を反映した。実装・自動検証済み。モデル品質30会話の実測、実モデルの費用計測、実アプリの手動操作確認は未実施。現在の契約は [自己学習 ADR](../adr/desktop/pi-self-learning.md) と [定期実行 ADR](../adr/desktop/scheduled-agent-scope.md) を参照。
+状態: 第 3 版。[1 回目のレビュー](https://github.com/dahlia-org/dahlia/blob/8617515e0afdc5c264a77e97d490e020881b020f/docs/plans/2026-11-15-pi-self-learning-review.md)と [2 回目のレビュー](https://github.com/dahlia-org/dahlia/blob/8617515e0afdc5c264a77e97d490e020881b020f/docs/plans/2026-11-15-pi-self-learning-review-v2.md)を反映した。実装・自動検証済み。モデル品質30会話の実測、実モデルの費用計測、実アプリの手動操作確認は未実施。現在の契約は [自己学習 ADR](../spec/desktop/pi-self-learning.md) と [定期実行 ADR](../spec/desktop/scheduled-agent-scope.md) を参照。
 作成日: 2026-11-15。
 
 Nous Research の Hermes Agent が持つ自己学習の仕組みを、Dahlia の内蔵チャットへ移す計画である。
@@ -423,7 +423,7 @@ macOS の通知は、既にある会議の通知の仕組みに 1 種類足す�
 | 3 | 予定の書き方ごとの次の時刻（夏時間、タイムゾーンの変更）。録音中は見送る。`scheduled` は変更操作と `bash` を断る | |
 
 各段階で `swift build`、該当のテスト、`CI=true ./scripts/lint.sh` を通す。
-文書は、`docs/adr/desktop/pi-runtime.md`（ツール、Seatbelt、`pi/skills/` を読むだけにする決定）、`ARCHITECTURE.md`（新しい表、ジョブの種別、実行の上限）、`docs/adr/desktop/chat-thread-orchestration.md`（上限の数え方、復旧）、`docs/adr/desktop/ai-skills-and-context.md` を直す。
+文書は、`docs/spec/desktop/pi-runtime.md`（ツール、Seatbelt、`pi/skills/` を読むだけにする決定）、`ARCHITECTURE.md`（新しい表、ジョブの種別、実行の上限）、`docs/spec/desktop/chat-thread-orchestration.md`（上限の数え方、復旧）、`docs/spec/desktop/ai-skills-and-context.md` を直す。
 
 ### 対象の面
 

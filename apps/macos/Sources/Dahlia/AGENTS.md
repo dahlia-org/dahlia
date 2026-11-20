@@ -14,7 +14,7 @@ This file applies under `apps/macos/Sources/Dahlia/`. Changes under `Database/` 
   [`UI and Interaction Responsiveness`](../../../../ARCHITECTURE.md#ui-and-interaction-responsiveness) when the change can affect workload behavior.
 - When fixing a documented architecture deviation, follow its target and completion criteria in the
   [`Remediation Plan`](../../../../ARCHITECTURE.md#remediation-plan).
-- For a new or reversed architecture decision, start at the [`ADR index`](../../../../docs/adr/README.md) and read only the related records.
+- For the current contract of a theme or a change to an existing decision, start at the [`Spec index`](../../../../docs/spec/README.md) and read only the related specs.
 - For telemetry, analytics, Sentry, or external diagnostics, read the [`Anonymous Telemetry Collection Policy`](../../../../docs/telemetry.md) before editing code.
 
 ## Safety Invariants

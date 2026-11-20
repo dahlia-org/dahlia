@@ -3,15 +3,15 @@
 この文書は、Dahlia が何を提供し、何を提供しないかを判断するためのプロダクト原則の正本である。
 機能の採否、scope の境界、外部サービスとの関係、AI と人の役割分担はここを基準に決める。
 どう作るかの技術契約は [`ARCHITECTURE.md`](ARCHITECTURE.md)、実装時の必須ルールは各スコープの `AGENTS.md`、
-過去の判断理由は [ADR index](docs/adr/README.md) を参照する。
+テーマごとの現在の契約は [Spec index](docs/spec/README.md) を参照する。判断の経緯は commit と pull request に残す。
 
 - `PRODUCT.md`: 何を作り、何を作らないか。tenet と競合時の優先順位
 - `ARCHITECTURE.md`: 現在の構成、横断的な設計原則、未適合箇所
 - `AGENTS.md`: 実装時のルーティングと必須ガードレール
-- `docs/adr/`: 決定時点の背景、選択肢、トレードオフ
+- `docs/spec/`: テーマごとの現在の契約、未適合・未検証の事項、却下した案
 
 tenet は個別の機能仕様ではなく、仕様を決めるときの判断基準である。実装や仕様が tenet と矛盾する場合は、
-仕様側を変更するか、tenet を変更する ADR を先に追加する。既成事実として tenet を書き換えない。
+仕様側を変更するか、tenet の変更についてユーザーの明示的な承認を先に得る。承認した日付を該当する tenet に書く。既成事実として tenet を書き換えない。
 
 最終確認日: 2026-11-15
 
@@ -29,6 +29,17 @@ Dahlia でないもの:
 - 顧客マスタ (CRM)、SFA
 - 業務システム間を接続する統合ハブや iPaaS
 - クラウド常時接続を前提としたサービス
+
+### リリース段階
+
+GA は Swift 製の macOS アプリ（`apps/macos`）だけである。ほかはすべてアルファ版とする。
+
+| 対象 | 段階 |
+| --- | --- |
+| macOS アプリ（`apps/macos`） | GA |
+| Dahlia Server と Private Web（`apps/server`、`packages/ui`） | アルファ |
+| Electron alpha（`apps/desktop`） | アルファ |
+| Desktop v2（`apps/desktop-v2`） | アルファ |
 
 ## Tenets
 
@@ -75,7 +86,7 @@ Dahlia でないもの:
 許容しない。
 
 **誤読しやすい点**: Calendar参加者の保持は人物名寄せではない。同じemailの過去・将来の参加者を一つのidentityへ
-統合せず、イベントごとの観測として扱う。この変更は[参加者スナップショットADR](docs/adr/shared/calendar-attendee-snapshots.md)に従う。
+統合せず、イベントごとの観測として扱う。この変更は[参加者スナップショットの仕様](docs/spec/shared/calendar-attendee-snapshots.md)に従う。
 
 ### T3. 録音と文字起こしはすべての源泉であり、何としても死守する
 
@@ -93,12 +104,12 @@ Dahlia でないもの:
   確定翻訳、録音 range は、UI の都合で破棄しない
   ([Failure and Overload Policy](ARCHITECTURE.md#failure-and-overload-policy))。
 - 録音音声は検証済みの immutable segment として保存する。Local Workspace は CAF を設定期間だけ保持し、Server Workspace は
-  アップロード用 M4A を確定するまで CAF を保全する ([確定手順](docs/adr/desktop/recording-storage.md#確定手順))。
-  データベースは schema generation 付きで backup と restore ができる ([Import と復元](docs/adr/desktop/database-backup.md#import-と復元))。
+  アップロード用 M4A を確定するまで CAF を保全する ([確定手順](docs/spec/desktop/recording-storage.md#確定手順))。
+  データベースは schema generation 付きで backup と restore ができる ([Import と復元](docs/spec/desktop/database-backup.md#import-と復元))。
 - 新機能は録音クリティカルパスに同期依存を追加しない。
 
 **保証範囲**: 防ぐ対象は、アプリのハング、UI 停止、負荷による欠落である。プロセス全体の crash、強制終了、OOM、
-OS やストレージ自体の障害は現時点の保証対象外であり、範囲の拡張は ADR で決める。
+OS やストレージ自体の障害は現時点の保証対象外であり、範囲の拡張はユーザーの承認を得て決める。
 
 **誤読しやすい点**: 「死守する」は「あらゆる障害に耐える」ではない。保証する障害と対象外の障害を明示し、
 対象外を暗黙に保証したことにしない。また「一次データから派生している」ことは「破棄してよい」ことを意味しない。
@@ -117,19 +128,19 @@ OS やストレージ自体の障害は現時点の保証対象外であり、�
 
 - 新しい外部サービス連携の要求は、まず MCP tool として外部エージェントが実現できないかを検討する。
 - MCP は Workspace UUID を認可境界とし、既定は read-only、書き込みは明示的な `--write` に限定する
-  ([Workspace 境界](docs/adr/desktop/local-mcp-and-projects.md#workspace-境界), [Project の正本](docs/adr/desktop/local-mcp-and-projects.md#project-の正本))。
-- Dahlia Memory は個人 user UUID の領域を追加し、独立した権限で保存メモリーの変更を許可する。共有保存には明示的な指示と現在の Workspace 書き込み権限を必要とする ([Dahlia Memory](docs/adr/server/dahlia-memory.md))。
+  ([Workspace 境界](docs/spec/desktop/local-mcp-and-projects.md#workspace-境界), [Project の正本](docs/spec/desktop/local-mcp-and-projects.md#project-の正本))。
+- Dahlia Memory は個人 user UUID の領域を追加し、独立した権限で保存メモリーの変更を許可する。共有保存には明示的な指示と現在の Workspace 書き込み権限を必要とする ([Dahlia Memory](docs/spec/server/dahlia-memory.md))。
 - MCP が返す内容は untrusted data として扱い、指示として実行しない。
 - 内蔵チャットは MCP server の tool で外部サービスを読み書きしてよい。統合は MCP server が持ち、読み取り以外は
-  チャットの承認方式に従う（[エージェントによる MCP 経由の外部サービス操作](docs/adr/desktop/agent-mcp-operations.md)）。
+  チャットの承認方式に従う（[エージェントによる MCP 経由の外部サービス操作](docs/spec/desktop/agent-mcp-operations.md)）。
 - 連携先が増えるほど価値が上がる、という前提を採らない。連携数ではなく、一次データの質と辿りやすさで価値を測る。
 
 **許容する例外**: 操作が限定的で疎結合な入出力は許容する。ファイル書き出し、要約のエクスポート、カレンダーからの
 読み取りのように、失敗しても録音と文字起こしに影響しない一方向の境界を保つこと。内蔵 Pi の任意の model-provider
 transport は業務システム統合ではなく、既存の AI 付加機能の接続境界として扱う
-([Gateway 境界](docs/adr/server/gateway.md#gateway-境界))。
+([Gateway 境界](docs/spec/server/gateway.md#gateway-境界))。
 利用者が内容と接続先を確認した、アプリ起動中・選択中アカウントの読み取り専用の定期実行も認める。
-実行の範囲は [定期エージェントの ADR](docs/adr/desktop/scheduled-agent-scope.md) に従い、録音を待たせず、外部への書き込みや常駐処理は含めない。
+実行の範囲は [定期エージェントの仕様](docs/spec/desktop/scheduled-agent-scope.md) に従い、録音を待たせず、外部への書き込みや常駐処理は含めない。
 
 **誤読しやすい点**: 「連携しない」は「閉じる」ではない。Dahlia 側の統合実装を増やさない代わりに、外部から
 使える読み取り口は意図的に整備する。外部エージェントが Dahlia の MCP と他サービスの MCP を併用することは
@@ -145,16 +156,16 @@ Dahlia の scope 外であり、妨げない。
 
 **設計上の判断**:
 
-- 既定の文字起こしはリアルタイムもバッチも Apple Speech の `SpeechTranscriber` が on-device で行う。Desktopで開始した再文字起こしもMacで行う。Webから明示的に開始した保存済み録音の処理だけは、[承認済みADR](docs/adr/shared/account-scoped-desktop-inference.md)に従いServerで処理する。WhisperKit はMacのバッチ自動言語判定で言語を選ぶためだけに使い、文字起こし自体は行わない。
+- 既定の文字起こしはリアルタイムもバッチも Apple Speech の `SpeechTranscriber` が on-device で行う。Desktopで開始した再文字起こしもMacで行う。Webから明示的に開始した保存済み録音の処理だけは、[承認済みの仕様](docs/spec/shared/account-scoped-desktop-inference.md)に従いServerで処理する。WhisperKit はMacのバッチ自動言語判定で言語を選ぶためだけに使い、文字起こし自体は行わない。
 - ローカルアカウントの会議データと端末固有ファイルはローカルの SQLite と file system だけで完結する。一方、ServerアカウントのWorkspace／ProjectはNotionやAsanaと同様にDesktopとWebが共有するServer canonical recordであり、Desktopからクラウドへ転送するコピーではない。SQLite は即時反映できるoffline working copyとし、
-  Workspace 名、Project の名前・説明・階層、meeting metadata、summary、transcript 原文、screenshot、OCR、AI caption を双方向同期する。翻訳文は同期しない。新規バッチ録音はLocalではCAFを設定期間だけ保持し、ServerではM4Aへ変換・保管する [音声保管契約](docs/adr/shared/recording-audio-archive.md) に従う
-  ([正本とアカウント境界](docs/adr/shared/sync.md#正本とアカウント境界), [同期対象とモデル](docs/adr/shared/sync.md#同期対象とモデル), [Transaction と競合](docs/adr/shared/sync.md#transaction-と競合))。Server WorkspaceはOrganizationが所有し、明示したuser / organization / teamのadmin・editor・viewer権限で共同利用する。Organization所属だけでは内容へのアクセスを与えない。信頼済みHeaderと確認済みGoogleメールはドメインごとの参加方式（招待のみ・承認制・自動参加）に従う。初回登録では一致するすべての自動参加組織へmemberとして参加し、既存ユーザーは本人操作で参加・申請する。共有メールドメインは対象外。Organizationの作成・削除はServer管理者に限定し、クラウド向けの明示設定時のみサインアップで通常Organizationを自動作成する。各Organizationへの参加時には本人用Workspaceを作成する
-  ([共有境界](docs/adr/server/sharing-and-administration.md#共有境界))。サインインだけではローカルWorkspaceをServerアカウントへ移さず、ユーザーがWorkspace単位で明示的に移行する。ServerアカウントのWorkspaceは常時同期し、サインアウト時はServer recordを残したままローカルworking copyを削除するかローカルアカウントへ移す。
+  Workspace 名、Project の名前・説明・階層、meeting metadata、summary、transcript 原文、screenshot、OCR、AI caption を双方向同期する。翻訳文は同期しない。新規バッチ録音はLocalではCAFを設定期間だけ保持し、ServerではM4Aへ変換・保管する [音声保管契約](docs/spec/shared/recording-audio-archive.md) に従う
+  ([正本とアカウント境界](docs/spec/shared/sync.md#正本とアカウント境界), [同期対象とモデル](docs/spec/shared/sync.md#同期対象とモデル), [Transaction と競合](docs/spec/shared/sync.md#transaction-と競合))。Server WorkspaceはOrganizationが所有し、明示したuser / organization / teamのadmin・editor・viewer権限で共同利用する。Organization所属だけでは内容へのアクセスを与えない。信頼済みHeaderと確認済みGoogleメールはドメインごとの参加方式（招待のみ・承認制・自動参加）に従う。初回登録では一致するすべての自動参加組織へmemberとして参加し、既存ユーザーは本人操作で参加・申請する。共有メールドメインは対象外。Organizationの作成・削除はServer管理者に限定し、クラウド向けの明示設定時のみサインアップで通常Organizationを自動作成する。各Organizationへの参加時には本人用Workspaceを作成する
+  ([共有境界](docs/spec/server/sharing-and-administration.md#共有境界))。サインインだけではローカルWorkspaceをServerアカウントへ移さず、ユーザーがWorkspace単位で明示的に移行する。ServerアカウントのWorkspaceは常時同期し、サインアウト時はServer recordを残したままローカルworking copyを削除するかローカルアカウントへ移す。
 - Server の任意 Hybrid 検索は同期済み summary、OCR、AI caption と検索時の query 原文を設定済み embedding
   provider へ送信できる。Dahlia Memory の保存メモリー本文と保存チャットの本文も、その検索のために同じ provider へ送信できる
-  ([検索のための送信範囲](docs/adr/server/dahlia-memory.md#検索のための送信範囲2026-11-03ユーザー承認済み))。Dahlia は query 原文を保存・ログ出力しない。
+  ([検索のための送信範囲](docs/spec/server/dahlia-memory.md#検索のための送信範囲2026-11-03ユーザー承認済み))。Dahlia は query 原文を保存・ログ出力しない。
   vector は再生成可能な projection とし、未設定、再構築中、障害時も全文検索へ縮退してローカルの中核機能を妨げない
-  ([Hybrid 検索](docs/adr/server/search.md#hybrid-検索))。
+  ([Hybrid 検索](docs/spec/server/search.md#hybrid-検索))。
 - 外部依存は付加機能に閉じ込め、未設定または失敗時も中核が動作する degradation を設計に含める。
 - 認証やアカウント設定を中核機能の前提にしない。
 
@@ -201,17 +212,17 @@ Dahlia の scope 外であり、妨げない。
 
 - revision競合を黙って上書きする共同編集
 - CRM や SFA との双方向同期
-- Desktopで開始した文字起こしのクラウド処理（Webから明示的に開始した保存済み録音の処理だけは[承認済みの例外](docs/adr/shared/account-scoped-desktop-inference.md)）
-- 汎用の統合ハブ、業務データを変更するワークフロー自動化（[確認した予定に従う読み取り専用の実行](docs/adr/desktop/scheduled-agent-scope.md)は認める）
+- Desktopで開始した文字起こしのクラウド処理（Webから明示的に開始した保存済み録音の処理だけは[承認済みの例外](docs/spec/shared/account-scoped-desktop-inference.md)）
+- 汎用の統合ハブ、業務データを変更するワークフロー自動化（[確認した予定に従う読み取り専用の実行](docs/spec/desktop/scheduled-agent-scope.md)は認める）
 - Workspace 横断または全社の人物 identity 解決
 
-これらは永久禁止ではない。採用が必要になった場合は、tenet を更新する ADR を先に追加し、この文書と
+これらは永久禁止ではない。採用が必要になった場合は、tenet の更新についてユーザーの承認を先に得て、この文書と
 `ARCHITECTURE.md` の保証範囲を同時に見直す。
 
 ## 参照
 
 - [`ARCHITECTURE.md`](ARCHITECTURE.md): 信頼性の保証範囲、workload class、負荷時の縮退順序
-- [ADR index](docs/adr/README.md): 各 tenet を具体化した決定と、その置換関係
+- [Spec index](docs/spec/README.md): 各 tenet を具体化したテーマごとの契約
 - [Project workspaces](docs/project-workspaces.md): T4 の read/write 境界を含む Project 運用
 
-Organization所有と共同編集は[承認済みADR](docs/adr/shared/organization-vaults.md)に従う。
+Organization所有と共同編集は[承認済みの仕様](docs/spec/shared/organization-personal-workspaces.md)に従う。

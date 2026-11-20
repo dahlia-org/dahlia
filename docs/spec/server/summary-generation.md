@@ -1,0 +1,138 @@
+# Server アカウントの要約生成
+
+対象: Desktop / Private Web / Node Server。採択: 2026-09-08。
+
+## 実行場所と設定
+
+Desktop の実行場所・設定スコープ・生成 runtime は [アカウント別 Desktop 推論](../shared/account-scoped-desktop-inference.md) に従う。Web から開始する Server 処理の workflow・設定構造・入力ソースは [文字起こし・要約の処理場所](../shared/transcription-summary-processing.md) に従う。以下は Server ジョブの契約を定める。
+
+## 実行と方法の境界
+
+Web から明示的に開始する要約は Server が非同期で生成・保存する。
+初回の `transcript` は canonical の文字起こし・画像・会議・Project を入力とし、ローカルのメモやカレンダーは送らない。
+fetch ベースの既存 Responses adapter と Zod を使用し、Agents SDK は追加しない。
+
+方法は設定の取り出し、入力収集、入力 fingerprint、モデル呼び出し、strict schema の応答検証と `SummaryDocument` への変換を担当する。
+共通層は会議 ID・固定した設定・実行者・中止 signal を渡し、認可、ジョブ、lease、要約 revision、canonical 保存と同期を担当する。
+組み込み方法を静的な配列から選ぶ。動的 plugin loader は持たず、未対応の方法を UI に置かない。
+
+将来 Gemini を追加する場合は方法とアカウント設定の型を追加する。音声の取得・provider 固有応答は方法内に閉じ、ジョブ・保存・状態表示の経路は共用する。
+この変更では音声転送、形式、保持期間、Gemini SDK を変更しない。音声保管は別途採択済みの [録音音声の保管](../shared/recording-audio-archive.md) に従う。
+
+## 認証と永続化
+
+Node の Databricks backend で有効にする。SP token は実行時に取得し、認証済み実行者の `user_id` を
+`Databricks-Ai-Gateway-Request-Tags` に設定する。Gateway の対話的 Responses は従来の OBO を維持する。
+設定をジョブ開始時に固定し、token・音声・文字起こし本文・provider 応答を queue やログに残さない。
+
+開始・状態取得はrequester本人かつ現在のWorkspace Admin／Editorに限定する。provider呼出前とcommit直前に書込権限を確認し、失効後の結果は公開しない。UUIDv7 の開始 ID は冪等化に使い、異なる要求による再使用は409とする。
+同じ会議には実行中ジョブを一つだけ置く。5分の lease に対し生成は4分で中止し、再起動で切れた lease も含め試行は最大3回。
+成功の状態更新と canonical transaction は一つの DB transaction に含め、古い lease の worker は保存できない。
+入力変更・要約 revision の競合・削除・所有権喪失では既存要約を保持する。競合を自動再実行して上書きしない。
+
+保存時は Workspace lock 下で方法の fingerprint と要約 revision を再検証し、既存の canonical transaction で会議のタイトル・説明と要約を更新する。
+検索 projection と durable delta は既存経路を通す。Desktop は通常の remote applier で結果を受け取る。生成結果を local mutation として再送しない。
+Web の進捗は Server の状態を再取得する。Server アカウントのエクスポートは生成と分離して既存の手動操作を使う。
+
+## 有界な入力と検証
+
+文字起こし・画像 metadata は200件ずつ読み、文字情報は2,000,000 UTF-16 code units、文字起こし20,000件、画像metadata5,000件までとする。
+上限超過は切り捨てた要約を保存せず失敗とする。画像本体は[スクリーンショットの選別](#スクリーンショットの選別2026-09-26)で最大24枚に絞り、画像の OCR / caption / 選別理由と未送信画像の metadata はモデル入力に含めない。
+両方式で会議・Project を `<context>`、文字起こし方式の本文を `<transcript>` として XML 化し、文字列値をエスケープする。
+送信画像の直前に `<image>` で image_id と撮影日時を渡す。音声の直前には `<audio>` で録音番号・音源・開始終了日時・manifest の範囲を渡す。
+これらは信頼しない入力資料として扱い、指示と分離する。保存・検索・入力 fingerprint の処理は変更しない。
+画像は1枚4 MiB、応答は2 MiBで受信を制限する。画像 block の参照先は実際に送った画像に限定する。
+
+Node / SQLite の開始、認可、設定固定、再起動・lease、競合・削除、検索・同期と SP header をテストする。
+Workers の方法一覧は空にし生成 capability は無効にする。実際の Databricks モデル権限・課金タグの集計は配置先で別途検証する。
+
+Server transcript には Desktop の session ID / 累積 offset がないため、現時点の方式は `transcript_ref: null` のみ生成する。録音の中断時間から参照時刻を推測しない。生成タグは Desktop の canonical summary 本文取得時に既存ローカルタグへ追加し、同期イベントや summary の再送は発生させない。
+
+Web のモデル候補は `/api/v1/models` の一覧を使う。Databricks の要約SP呼び出しは `system.ai.*` の完全修飾モデル名を設定と Gateway から受け取り、そのまま上流へ渡す。失敗はworkerで内容・認証情報を含めず記録し、`summary_input_changed` は画面で入力更新による失敗として示す。
+
+機能検出は `GET /api/v1/capabilities` の `meetingSummaryGeneration: { version, sources }` に統合する。生成capabilityはversion 2とし、登録済み方式から sources を導出する。未対応はキーを省略し、capabilities 自体が空の場合も未対応とする。Server文字起こしモデルは保存せずGeminiを自動選択し、二段階処理の要約モデルは文字起こし要約への対応を独立に検証して自動選択する。開始済みジョブの設定スナップショットは変更しない。設定の構造と更新は [処理場所と設定](../shared/transcription-summary-processing.md#設定と移行) に従う。
+
+canonical 要約の新しい版を受け取ったら古いエクスポート参照を無効化するが、同じ版の再取得・キャッシュ解放では保持する。出力先のファイル自体は削除しない。
+
+## 要約履歴と生成情報（2026-09-08）
+
+Server は summary の全保存を `summaries` に保持する。UUID 主キー `id`、meeting 外部キー `meeting_id`、会議内の `version` と本文・タイトル・作成日時・保存日時・metadata を持ち、`UNIQUE(meeting_id, version)` を設定する。Workspace 所属と認可は meeting 経由で解決する。meetings の重複本文と最新ポインタは持たず、最大 version が latest となる。旧構造は新規 migration で置き換え、backfill は行わない。
+
+Workspace lock 下で `MAX(version) + 1` を発番し、初回と全履歴削除後は1から開始する。`meetings.summary_revision`、同期 `baseRevision`、`summary_jobs.summary_revision` は更新・競合検出用として維持し、世代番号と分離する。canonical 更新・版追加・生成ジョブ成功を同じ transaction で確定し、再送・失敗・競合で余分な版を作らない。履歴は sync ledger と異なり自動期限削除しない。
+`SummaryDocument.metadata` は Server API と Desktop の共通 optional metadata とする。生成したシステム `generatedBy`（`server` / `local_codex`）・入力種別 `inputTypes`・詳細度 `detailLevel`・言語 `outputLanguage` と送信した `request.model` / `request.reasoning` を保持し、provider が返した `response.id` / `model` / `created_at` / `reasoning` / `usage` は OpenAI Responses API の構造で保存する。生成ジョブの方式 `method` は metadata には重複保存しない。取得できない値は欠測にし、独自計測、prompt version、入力本文・provider 応答全体の複製は追加しない。Desktop は既存の生成経路で取得できる設定のみを埋める。編集では生成情報を外し、通常の同期・再取得では維持する。Desktop MCP の `get_meeting` と `update_meeting_summary` は同じ optional metadata schema を公開し、無変更の往復では metadata も維持する。
+
+`GET .../summary/latest` は現在の canonical 本文を既存の text envelope と hash、任意の manifest で返す。Desktop の Server 要約本文読取りは latest に統一し、同期 metadata と revision が異なるときは再同期して再取得する。未送信編集の保護と通常の remote applier を維持し、過去版を最新として採用しない。差分適用後に要約自身の読取り可否を再検証し、無関係な保留差分があっても安全な最新本文を取得する。Desktop の過去版の閲覧と正本の扱いは [サマリーの仕様](../desktop/summary.md) に従う。
+
+`GET .../summary` と `GET .../summary/{version}` を追加し、Web の要約タブで過去版を閲覧できる。現在の Workspace 読取り権限を継承するため共有メンバーも閲覧できる。PostgreSQL は FORCE RLS、全 runtime は共通認可を適用する。要約削除は全履歴の削除も意味し、会議・Workspace 削除でも履歴を削除する。Web の確認文に全版削除を明示する。横並び比較・復元・Gemini 生成の実装は今回の対象外とする。
+
+HTTP の会議詳細（Workspace 配下と ID 解決用の両経路）は会議情報と同期状態だけを返し、summaryTitle / summaryDocument / summaryCreatedAt を除く。summaryRevision、contentOmitted、hasSummary、録音状態は保持する。snapshot / delta は常に本文なしとし、content query は使わない。file 補完は OCR / caption と revision を含む個別 metadata を使う。DB 正本と Server MCP の要約込み読取り契約は変更しない。
+
+要約一覧は GET summary、本文は GET summary/latest または数値 version の GET summary/{version} とする。`versions` 経路と `text/summary` の互換 alias は持たない。生成の POST と固定の job 経路は変えない。公開 Desktop v0.21.0 に利用箇所はない。開発版 consumer は更新が必要であり、migration、Server と Web asset の同時更新、Desktop の順で適用する。既に開いている旧 Web は再読み込みが必要になる。
+
+## 音声と画像による要約（2026-09-08）
+
+Node / Databricks で `audio` 方法を使う。入力ソース、モデル・推論強度、詳細度の設定と受付時の解決は [処理場所と設定](../shared/transcription-summary-processing.md) に従う。音声モデルは既存の一覧に存在し、カタログで audio 入力を持つ Gemini に限定し、worker でも同条件を再検証する。
+
+確定済み録音の全セッションから、存在する mic / system の両音声を取得する。保存済みの audio/mp4 を再エンコードせず、
+録音開始時刻と manifest の範囲を添え、Databricks Chat Completions の `audio_url` に Base64 inline で送る。
+音声本体はストリームで読み取り・変換・送信し、長さと checksum を検証する。公開 URL、追加 SDK、中間文字起こしは作らない。
+会議・Project と既存方式で選別・サンプルする最大24枚の画像を併用する。文字起こし本文は収集・送信しない。
+
+音声時間は全ファイル（mic と system は合算）の manifest frameCount / sampleRate で計算し、合計9.5時間までとする。
+独自の短い時間制限や分割要約は追加しない。音声なし、時間上限、上流の413、取得失敗は明示し、音声の切り捨てや
+文字起こし方式への自動切替をしない。Google直結や別のServing endpointのバイト上限をUnity Gatewayの上限として流用しない。
+既存の4分生成timeout・5分lease・最大3回試行を維持するため、時間上限内でも上流の処理時間や制限で失敗する場合がある。
+
+入力 fingerprint は使用する会議・Project・画像情報と録音の checksum / manifest を含める。文字起こし revision と
+それだけで更新され得る会議 revision は音声方式の fingerprint に含めない。既存の owner 認可・要約 revision の競合検出・
+canonical 保存と履歴を共用する。応答は strict schema で検証し、Chat Completions の token usage と created を既存の
+metadata.response の入力・出力tokens / created_atへ対応付ける。取得できない情報は推測しない。
+GeminiのHTTP 400を避けるため、共通summaryResponseSchemaから配列のmaxItemsを除去する。
+sections / blocks / items / tags / action_itemsの件数上限は送信・受信検証ともに持たず、モデル別のschema分岐は追加しない。
+文字列長、数値範囲、sectionsの最小1件、型・必須項目、画像参照検証、応答2 MiB制限は維持する。`store`はChat Completionsでは送らない。
+本文がcontent parts配列の場合はtextだけを使い、reasoning partsやthoughtSignatureを保存しない。
+
+Workersの生成capabilityは従来どおり無効とする。
+
+## スクリーンショットの選別（2026-09-26）
+
+自動撮影は30秒ごとに画面変化20%以上で撮るため、同じ画面や顔・カメラ映像が24枚の枠を占め、共有資料が漏れていた。
+画像1枚で決まる有用性は OCR / caption と同じ応答で判定する。画像解析の実行場所と設定は [アカウント別 Desktop 推論](../shared/account-scoped-desktop-inference.md) に従う。画像解析は単一ファイルの判定に限り、
+他の画像との比較はしない。共有資料がない場合だけ、その理由を file metadata の nullable な `informative_reason`
+（wire では `informativeReason`）に保存し、専用テーブルは作らない。値がなければ有用または未判定として要約候補に残す。
+Desktop も同期で受け取った値を files の metadata に保存し、Desktop で生成する要約の入力から同じ画像を除外する。
+既存のスクリーンショットを有用性のためだけに再解析しない。LLM 費用、file revision と同期差分、要約入力の変化を避けるためで、
+未判定の画像は前処理のモデルが同じ基準で除外する。
+
+重複と要約に使う画像は会議全体を見ないと決まらないため、要約 job の前処理で選ぶ。有用でない画像と同一 hash の画像を除いた候補を
+`thumb_480` の低解像度画像だけで画像解析モデルに渡し、同じ内容の画面は1枚（段階表示は最も完成した版）に絞って最大24枚を選ばせる。
+OCR / caption は実験的な派生データのため、前処理にも要約にも渡さない。文字起こしも渡さない。候補が240枚を超える場合は先に等間隔で240枚に間引き、縮小画像は同時8本まで並列に読む。モデルが0枚を返した場合は有用な画像がないと扱う。
+要約 metadata の `imageSelection`（`model` / `even`）に選び方を残し、前処理の失敗は本文を含まない理由コードとともにログへ出す。
+前処理は縮小画像の読み込みとモデル呼び出しを合わせて90秒で打ち切り、要約の試行期限を消費し尽くさない。
+前処理の失敗・時間切れ、画像解析モデルの未設定、画像の上限（1枚1 MiB、合計24 MiB）超過では候補を従来どおり等間隔に選び、要約自体は失敗させない。未判定の画像は候補に残す。
+
+画像の OCR・caption 生成と要約前の選別は、`imageAnalysis` のモデル・推論強度を共通で使用する。
+`imageAnalysis.enabled` は検索用 OCR・caption の生成を制御し、無効でもモデル選択と要約前の選別は行える。
+旧 `screenshotSelection` だけに保存されたモデル・推論強度は互換読み込みし、新規保存では `imageAnalysis` に一本化する。
+両方に設定がある場合は `imageAnalysis` の組を優先する。Desktop もアカウントごとの共通設定を使い、候補を長辺480pxに縮小して渡す。
+縮小画像の読み込みと判定を合わせて90秒で打ち切り、失敗・時間切れでは従来どおり全候補を要約に渡す。
+
+## 要約設定の機能別集約（2026-09-08）
+
+要約設定の所有・保存形式は [処理場所と設定](../shared/transcription-summary-processing.md#設定と移行) に従い、追加・更新の境界は一つにまとめる。
+
+既存ジョブ・履歴は変更せず、新規ジョブの開始時だけ共通詳細度を取り込む。要求ごとの明示的な詳細度 override は優先する。
+
+旧API形式の互換アダプターは設けない。Desktop / Server / Web は同時に更新する。
+列の削除後はアプリだけを旧版へ戻せないため、復旧は修正の前進適用、または移行前バックアップと対応バージョンの組み合わせで行う。
+
+latest の応答は `formatVersion`（通信形式）、`version`（要約世代）、`revision`（同期番号）を区別する。Desktop の最新本文・header の物理保存と本文解放用途は維持する。履歴の保存は [サマリーの仕様](../desktop/summary.md) に従う。
+
+## 共有 Documents の固定入力（2026-09-29）
+
+[Documents ADR](../shared/documents.md) により、受理時点の共有 Notes の ID・revision・本文または不在を内部 `notesSnapshot` に固定する。snapshot は暗号化対象で状態 API には含めない。ローカルの未公開 Notes は送信しない。Notes は現在状態との fingerprint 比較から除外し、既存文字起こし等の比較は維持する。同じジョブの retry は同じ snapshot、明示 `/retry` は最新 snapshot の新しいジョブ。2段階処理も最初の snapshot を維持する。合計2,000,000 UTF-16 code units、XML escape、untrusted 資料という入力契約を適用する。
+
+## 未適合・未検証
+
+- 未実装（対象外）: 過去版の横並び比較・復元・Gemini 生成は今回の対象外である。
+- 未検証: 実際の Databricks モデル権限・課金タグの集計は、配置先で別途検証する。

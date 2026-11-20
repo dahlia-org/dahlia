@@ -1,7 +1,7 @@
 # Dahlia コードレビューガイド
 
 この文書は、Codex managed review、Pullfrog の PR review、ローカルの `codex review`、Claude の `/code-review`、実装後のセルフレビューで共有する。
-重大なレビュー規則は最も近い `AGENTS.md` の `## Code Review Rules`、技術的な正本は `ARCHITECTURE.md` と関連 ADR に置き、
+重大なレビュー規則は最も近い `AGENTS.md` の `## Code Review Rules`、技術的な正本は `ARCHITECTURE.md` と `docs/spec/` の関連する仕様に置き、
 ここでは finding の採用基準とレビュー時の確認方法を定める。
 
 ## モノレポでの適用範囲

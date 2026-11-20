@@ -13,8 +13,8 @@ enum SummaryWriteLimits {
 public extension MeetingAccessStore {
     /// 保存済みサマリーをドキュメント全体の置換で更新する。
     ///
-    /// docs/adr/desktop/summary.md の「訂正と export」と
-    /// docs/adr/desktop/local-mcp-and-projects.md の「Export directory」に従い、
+    /// docs/spec/desktop/summary.md の「訂正と export」と
+    /// docs/spec/desktop/local-mcp-and-projects.md の「Export directory」に従い、
     /// Workspace ロックを取り、完全に事前検証してから
     /// ファイルを書き、単一トランザクションでデータベースを更新し、失敗時はファイルを書き戻す。
     func updateMeetingSummary(

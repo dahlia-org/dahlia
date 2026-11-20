@@ -6,6 +6,8 @@ Dahlia is a macOS app that captures microphone and system audio simultaneously, 
 
 Complete the requested outcome while preserving recording and transcription quality, user data, and behavior that the request does not explicitly change.
 
+Only the Swift macOS app (`apps/macos`) is generally available. Everything else, including the Server, Private Web, the Electron alpha, and Desktop v2, is alpha ([Release stages](PRODUCT.md#リリース段階)).
+
 ## Instruction Scope
 
 This file applies to the entire repository. Before editing a path covered by a more specific `AGENTS.md`, read that file and follow its additional instructions.
@@ -36,22 +38,24 @@ Use progressive disclosure: read the scoped `AGENTS.md` first, then open only th
 | Audio capture, recording, live subtitles, or realtime/batch transcript data flow | [`Audio and Transcription Data Flow`](docs/architecture/audio-transcription-data-flow.md) |
 | Recording, transcription, concurrency, persistence, or failure handling | [`ARCHITECTURE.md`](ARCHITECTURE.md#reliability-scope), then the relevant section |
 | UI interaction, rendering workload, or responsiveness | [`apps/macos/Sources/Dahlia/AGENTS.md`](apps/macos/Sources/Dahlia/AGENTS.md), then [`UI and Interaction Responsiveness`](ARCHITECTURE.md#ui-and-interaction-responsiveness) when workload behavior is affected |
-| Telemetry, metrics, analytics, Sentry, or external diagnostics | [`Anonymous Telemetry Collection Policy`](docs/telemetry.md), then [許可した集計](docs/adr/desktop/telemetry.md#許可した集計) and [収集と実行境界](docs/adr/desktop/telemetry.md#収集と実行境界) |
+| Telemetry, metrics, analytics, Sentry, or external diagnostics | [`Anonymous Telemetry Collection Policy`](docs/telemetry.md), then [許可した集計](docs/spec/desktop/telemetry.md#許可した集計) and [収集と実行境界](docs/spec/desktop/telemetry.md#収集と実行境界) |
 | Code review | [`Code Review Guide`](docs/code-review.md), then the architecture references routed by the closest applicable `AGENTS.md` |
 | Fixing an identified architecture deviation | [`Conformance Status`](ARCHITECTURE.md#conformance-status), then the matching item in [`Remediation Plan`](ARCHITECTURE.md#remediation-plan) |
-| Historical rationale or a change to an architectural decision | [`docs/adr/README.md`](docs/adr/README.md), then only the relevant ADR |
+| The current contract of a theme, or a change to an existing decision | [`Spec index`](docs/spec/README.md), then only the relevant spec |
+| Why a rule exists | The commit and pull request that introduced it (`git log -S`, `gh pr view`) |
 
-Do not read every ADR by default. `PRODUCT.md` decides what to build and what to refuse; `ARCHITECTURE.md` describes
-the current system, target state, and conformance gaps; ADRs preserve decision history; and `AGENTS.md` contains
+Do not read every spec by default. `PRODUCT.md` decides what to build and what to refuse; `ARCHITECTURE.md` describes
+the current system, target state, and conformance gaps; `docs/spec/` states the current contract of each theme with its
+unverified items and rejected alternatives; commits and pull requests keep the history and reasons; and `AGENTS.md` contains
 actionable instructions. Keep detailed architecture out of `AGENTS.md` except for short safety invariants whose
 omission could cause data loss.
 
 A change that conflicts with a product tenet is not resolved by editing `PRODUCT.md` to match the change. Report the
-conflict, and update the tenet only through a new ADR that the user approves.
+conflict, and update the tenet only after the user explicitly approves the change; record the approval date with the tenet.
 
 ## Glossary
 
-Use these terms in code, docs, and reports. Older ADRs may use superseded names.
+Use these terms in code, docs, and reports.
 
 - **Local Account / Server Account**: a Local Account keeps its data only on the Mac. A Server Account belongs to a Dahlia Server, which holds the canonical records; Desktop SQLite is its offline working copy.
 - **Workspace** (formerly *Vault*): the container of Projects, Meetings, and files that belongs to one account. Every Server Workspace belongs to an Organization; a personal Workspace is the private Workspace of one Organization member.
@@ -70,7 +74,7 @@ Use these terms in code, docs, and reports. Older ADRs may use superseded names.
 - Use Swift 6.2, SwiftUI, macOS 26+, and Swift 6 strict concurrency.
 - Use Swift Package Manager only. Do not generate an Xcode project.
 - The app has eight direct SwiftPM runtime dependencies: GRDB.swift, sentry-cocoa, TelemetryDeck SwiftSDK, Sparkle, WhisperKit, libwebp, swift-openapi-runtime, and swift-openapi-urlsession. swift-openapi-generator is a build plugin for the DahliaServerAPI target. Vendored native targets are DahliaAEC3 and the arm64 DahliaLindera static XCFramework (Rust 1.97.0, Lindera / lindera-analysis 6.2.0, embedded IPADIC, and a committed Cargo.lock). The separate `apps/macos/BuildTools` package pins SwiftFormat. The app runs the Pi coding agent that the user installs (`pi` discovered on PATH, or the Pi release downloaded from GitHub on request when the account enables Dahlia-managed Pi in Settings); it does not bundle Pi. Get confirmation before adding or updating dependencies unless the user has already authorized the specific dependency change.
-- Documents also bundle pinned Yjs / Tiptap / ProseMirror JavaScript generated by `packages/ui`; sources and dependency ownership remain there. Regenerate with `pnpm --filter @dahlia-ai/ui documents:build` and include `Resources/Documents/DOCUMENT-LICENSES.txt`. The approved dependency list is in [Documents ADR](docs/adr/shared/documents.md).
+- Documents also bundle pinned Yjs / Tiptap / ProseMirror JavaScript generated by `packages/ui`; sources and dependency ownership remain there. Regenerate with `pnpm --filter @dahlia-ai/ui documents:build` and include `Resources/Documents/DOCUMENT-LICENSES.txt`. The approved dependency list is in the [Documents spec](docs/spec/shared/documents.md).
 - Telemetry is allowlist-only and best-effort. Follow [`docs/telemetry.md`](docs/telemetry.md): never send content, identifiers, paths, or free text; never wait for delivery; and never call a telemetry SDK outside its designated adapter.
 - Never destroy a released user's database. Do not modify migrations that have shipped in a release; unshipped migrations may be revised. Follow `apps/macos/Sources/Dahlia/Database/AGENTS.md`.
 
@@ -116,7 +120,7 @@ Stop an app only by the PID you captured when launching it; `run-dev.sh` `exec`s
 - The requested outcome and all applicable repository instructions are satisfied.
 - Swift changes pass `swift build`, behavior changes pass targeted tests, and broader changes run `swift test --experimental-maximum-parallelization-width 4` when warranted. Swift source changes also pass `CI=true ./scripts/lint.sh`.
 - Confirm from the test summary—not only exit code 0—that the intended tests actually ran.
-- Changes to public behavior, settings, or schemas include the corresponding tests, localization, and documentation. When a documented contract or decision changes, rewrite or remove the affected text instead of appending a new account. Keep contracts such as allowlists, schemas, and required ordering current, but do not restate implementation details the code already records or add per-PR summaries.
+- Changes to public behavior, settings, or schemas include the corresponding tests, localization, and documentation. When a documented contract or decision changes, rewrite or remove the affected text instead of appending a new account. Put the reason for the change in the commit message or pull request, not in the docs. Keep contracts such as allowlists, schemas, and required ordering current, but do not restate implementation details the code already records or add per-PR summaries.
 - A user-reachable behavior change covers every surface it applies to. Decide each item below, and in the final report name the surfaces you changed and those you deliberately left out:
   - Clients: the macOS app, Private Web, and the Electron alpha, which share `packages/ui`.
   - Accounts: Local Accounts and Server Accounts.

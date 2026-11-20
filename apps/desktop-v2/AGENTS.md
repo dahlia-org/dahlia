@@ -2,7 +2,7 @@
 
 ## Scope
 
-This file applies to `apps/desktop-v2` (`@dahlia-ai/desktop-v2`), a standalone Electron app that records, transcribes on the Mac and summarizes with a Databricks workspace. The repository-root `AGENTS.md` still applies. Read [`README.md`](README.md) for commands and behavior and the [Desktop v2 ADR](../../docs/adr/desktop/electron-v2.md) for the decisions. It shares no code, data or identity with Dahlia for macOS (`apps/macos`), the Server, `packages/ui` or the Electron alpha (`apps/desktop`); do not import from them.
+This file applies to `apps/desktop-v2` (`@dahlia-ai/desktop-v2`), a standalone Electron app that records, transcribes on the Mac and summarizes with a Databricks workspace. The repository-root `AGENTS.md` still applies. Read [`README.md`](README.md) for commands and behavior and the [Desktop v2 spec](../../docs/spec/desktop/electron-v2.md) for the decisions. It shares no code, data or identity with Dahlia for macOS (`apps/macos`), the Server, `packages/ui` or the Electron alpha (`apps/desktop`); do not import from them.
 
 ## Rules
 

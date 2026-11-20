@@ -1,6 +1,6 @@
 # Dahlia Desktop v2
 
-`@dahlia-ai/desktop-v2` is a standalone Electron app for macOS 26 that records a meeting, transcribes it on the Mac with Apple Speech, and summarizes it with a Databricks workspace's AI Gateway. It shares nothing with Dahlia for macOS (`apps/macos`), the Server, `packages/ui` or the Electron alpha (`apps/desktop`). Decisions: [Desktop v2 ADR](../../docs/adr/desktop/electron-v2.md). Plan and open items: [Desktop v2 plan](../../docs/plans/2026-11-20-desktop-v2.md).
+`@dahlia-ai/desktop-v2` is a standalone Electron app for macOS 26 that records a meeting, transcribes it on the Mac with Apple Speech, and summarizes it with a Databricks workspace's AI Gateway. It shares nothing with Dahlia for macOS (`apps/macos`), the Server, `packages/ui` or the Electron alpha (`apps/desktop`). Decisions: [Desktop v2 spec](../../docs/spec/desktop/electron-v2.md). Plan and open items: [Desktop v2 plan](../../docs/plans/2026-11-20-desktop-v2.md).
 
 ## Run
 
