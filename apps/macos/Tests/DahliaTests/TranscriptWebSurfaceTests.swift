@@ -102,6 +102,91 @@
             #expect(await harness.waitForRows(1, firstText: "recovered"))
         }
 
+        @Test(arguments: [false, true])
+        func recoveryPreservesCurrentReadingOrLiveFollowing(following: Bool) async throws {
+            let harness = Harness()
+            let store = TranscriptStore()
+            store.loadSegments((0 ..< 200).map { index in
+                TranscriptSegment(startTime: Date(timeIntervalSince1970: Double(index)), text: "row \(index)", isConfirmed: true)
+            })
+            let state = FollowState()
+            let follow: @MainActor (Bool) -> Void = {
+                state.following = $0
+                store.setFollowingLatest($0)
+            }
+            harness.show(store.segments, scrollRequest: (1, .top), onFollowChange: follow)
+            #expect(await harness.waitForRows(200, firstText: "row 0"))
+            // Offscreen WebKit does not schedule frames. Let this test drive the same scroll callback.
+            let y = try #require(try await harness.webView.callAsyncJavaScript("""
+            window.requestAnimationFrame = callback => { setTimeout(callback, 0); return 0; };
+            const row = document.querySelectorAll('.row')[100];
+            document.scrollingElement.scrollTop = following ? document.scrollingElement.scrollHeight : row.offsetTop + 5;
+            window.dispatchEvent(new Event('scroll'));
+            await new Promise(requestAnimationFrame);
+            return row.getBoundingClientRect().top;
+            """, arguments: ["following": following], in: nil, contentWorld: .page) as? Double)
+            #expect(await pollUntil { state.following == following })
+            // A JS round trip also ensures the scroll report has crossed the script-message boundary.
+            _ = try await harness.webView.evaluateJavaScript("window.beforeRecovery = true")
+            if following {
+                _ = try await harness.webView.evaluateJavaScript("window.dahliaTranscript.apply = () => {}; true")
+                var updated = store.segments
+                updated[199].translatedText = "recovered"
+                harness.show(updated, showsTranslatedText: true, scrollRequest: (1, .top), onFollowChange: follow)
+                #expect(await harness.waitForText("recovered"))
+            } else {
+                harness.coordinator.webViewWebContentProcessDidTerminate(harness.webView)
+                #expect(await pollUntil {
+                    await (try? harness.webView
+                        .evaluateJavaScript(
+                            "typeof window.beforeRecovery === 'undefined' && document.querySelectorAll('.row').length === 200"
+                        ) as? Bool) ==
+                        true
+                })
+            }
+            if following {
+                #expect(await pollUntil { state.following })
+                store.addSegment(TranscriptSegment(startTime: .now, text: "live after recovery", isConfirmed: true))
+                #expect(store.segments.last?.text == "live after recovery")
+                harness.show(store.segments, scrollRequest: (1, .top), onFollowChange: follow)
+                #expect(await harness.waitForText("live after recovery"))
+                #expect(await harness.isAtBottom())
+            } else {
+                #expect(await harness.waitForRow("row 100", at: y))
+                // A command sent but not presented must override the saved reading position on recovery.
+                _ = try await harness.webView.evaluateJavaScript("window.dahliaTranscript.apply = () => {}; true")
+                harness.show(store.segments, scrollRequest: (2, .bottom), onFollowChange: follow)
+                harness.coordinator.webViewWebContentProcessDidTerminate(harness.webView)
+                #expect(await pollUntil { state.following })
+                #expect(await harness.isAtBottom())
+                // Command tokens belong to one content identity, even when a new Meeting reuses its token.
+                harness.show(store.segments, contentID: "other", scrollRequest: (2, .top), onFollowChange: follow)
+                #expect(await pollUntil {
+                    await (try? harness.webView.evaluateJavaScript("document.scrollingElement.scrollTop") as? Double) == 0
+                })
+                #expect(await pollUntil { !state.following })
+            }
+        }
+
+        @Test
+        func existingPageAppliesChangedTextSizeWithoutReloading() async {
+            let harness = Harness()
+            let segments = [TranscriptSegment(startTime: .now, text: "font", isConfirmed: true)]
+            harness.show(segments)
+            #expect(await harness.waitForRows(1, firstText: "font"))
+            _ = try? await harness.webView.evaluateJavaScript("window.sameDocument = true")
+            harness.show(segments, baseSize: 18)
+            #expect(await pollUntil {
+                await (try? harness.webView.evaluateJavaScript("getComputedStyle(document.querySelector('.text')).fontSize") as? String) == "18px"
+            })
+            #expect(await (try? harness.webView.evaluateJavaScript("window.sameDocument") as? Bool) == true)
+        }
+
+        @MainActor
+        private final class FollowState {
+            var following = false
+        }
+
         @MainActor
         private final class Visibility {
             var visible = false
@@ -132,8 +217,18 @@
                 coordinator.load()
             }
 
-            func show(_ segments: [TranscriptSegment], showsTranslatedText: Bool = false) {
-                coordinator.parent = Self.surface(segments, showsTranslatedText: showsTranslatedText)
+            func show(
+                _ segments: [TranscriptSegment],
+                showsTranslatedText: Bool = false,
+                contentID: String = "meeting",
+                baseSize: CGFloat = 14,
+                scrollRequest: (token: Int, edge: TranscriptWebSurface.Edge)? = nil,
+                onFollowChange: @escaping @MainActor (Bool) -> Void = { _ in }
+            ) {
+                coordinator.parent = Self.surface(
+                    segments, showsTranslatedText: showsTranslatedText, contentID: contentID, baseSize: baseSize,
+                    scrollRequest: scrollRequest, onFollowChange: onFollowChange
+                )
                 coordinator.contentDidChange()
             }
 
@@ -146,9 +241,19 @@
                 }
             }
 
+            func isAtBottom() async -> Bool {
+                await pollUntil { [webView] in
+                    await (try? webView
+                        .evaluateJavaScript(
+                            "document.scrollingElement.scrollHeight - document.scrollingElement.scrollTop - document.scrollingElement.clientHeight < 24"
+                        ) as? Bool) ==
+                        true
+                }
+            }
+
             func waitForText(_ text: String) async -> Bool {
                 await pollUntil { [webView] in
-                    await (try? webView.evaluateJavaScript("document.body.innerText.includes('\(text)')") as? Bool) == true
+                    await (try? webView.evaluateJavaScript("document.body.textContent.includes('\(text)')") as? Bool) == true
                 }
             }
 
@@ -165,11 +270,14 @@
             static func surface(
                 _ segments: [TranscriptSegment],
                 showsTranslatedText: Bool,
+                contentID: String = "meeting",
+                baseSize: CGFloat = 14,
+                scrollRequest: (token: Int, edge: TranscriptWebSurface.Edge)? = nil,
                 onFollowChange: @escaping @MainActor (Bool) -> Void = { _ in }
             ) -> TranscriptWebSurface {
                 TranscriptWebSurface(
-                    contentID: "meeting", segments: segments, recordingSessions: [], timeBase: Date(timeIntervalSince1970: 0),
-                    showsTranslatedText: showsTranslatedText, hasEarlier: false, hasLater: false, scrollRequest: nil,
+                    contentID: contentID, segments: segments, recordingSessions: [], timeBase: Date(timeIntervalSince1970: 0),
+                    showsTranslatedText: showsTranslatedText, hasEarlier: false, hasLater: false, baseSize: baseSize, scrollRequest: scrollRequest,
                     onRequestPage: { _ in }, onFollowChange: onFollowChange
                 )
             }

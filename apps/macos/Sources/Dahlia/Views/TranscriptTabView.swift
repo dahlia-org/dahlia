@@ -7,6 +7,7 @@ struct TranscriptTabView<Header: View, Footer: View>: View {
     @ViewBuilder let header: Header
     @ViewBuilder let footer: Footer
 
+    @AppStorage(DahliaTypography.baseSizeUserDefaultsKey) private var interfaceTextSize = Int(DahliaTypography.defaultBaseSize)
     @State private var pageLoadTask: Task<Void, Never>?
     @State private var scrollRequest: (token: Int, edge: TranscriptWebSurface.Edge)?
 
@@ -42,6 +43,8 @@ struct TranscriptTabView<Header: View, Footer: View>: View {
                     showsTranslatedText: showsTranslatedText,
                     hasEarlier: store.hasEarlierSegments,
                     hasLater: store.hasLaterSegments,
+                    baseSize: DahliaTypography.baseSizeOptions.contains(interfaceTextSize)
+                        ? CGFloat(interfaceTextSize) : DahliaTypography.defaultBaseSize,
                     scrollRequest: scrollRequest,
                     onRequestPage: loadPage,
                     onFollowChange: { store.setFollowingLatest($0) }

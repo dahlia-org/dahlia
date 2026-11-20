@@ -20,6 +20,7 @@ struct TranscriptWebSurface: NSViewRepresentable {
     let showsTranslatedText: Bool
     let hasEarlier: Bool
     let hasLater: Bool
+    var baseSize: CGFloat = DahliaTypography.defaultBaseSize
     /// `token` が変わるたびに一度だけ `edge` へスクロールする。
     let scrollRequest: (token: Int, edge: Edge)?
     let onRequestPage: @MainActor (Edge) -> Void
@@ -32,7 +33,6 @@ struct TranscriptWebSurface: NSViewRepresentable {
         configuration.websiteDataStore = .nonPersistent()
         configuration.userContentController.add(context.coordinator, name: "transcript")
         configuration.userContentController.addUserScript(WKUserScript(source: """
-        document.documentElement.style.setProperty('--base', '\(DahliaTypography.baseSize)px');
         document.documentElement.style.setProperty('--inset', '\(DahliaDesign.tabContentInset)px');
         document.documentElement.style.setProperty('--max-width', '\(DahliaDesign.mainContentMaxWidth)px');
         """, injectionTime: .atDocumentEnd, forMainFrameOnly: true))
@@ -114,7 +114,10 @@ struct TranscriptWebSurface: NSViewRepresentable {
         weak var view: WKWebView?
         private var isReady = false
         private var sequence = 0
-        private var inFlight: (sequence: Int, changedAt: SuspendingClock.Instant)?
+        private var inFlight: (sequence: Int, changedAt: SuspendingClock.Instant, scrollToken: Int?)?
+        private var needsReset = true
+        private var viewport: Viewport?
+        private var sentBaseSize: CGFloat?
         private var sentRows: [String: Row] = [:]
         private var sentOrder: [String] = []
         private var sentContentID: AnyHashable?
@@ -128,6 +131,18 @@ struct TranscriptWebSurface: NSViewRepresentable {
             self?.view?.window?.occlusionState.contains(.visible) == true
         }
 
+        private struct Viewport {
+            let following: Bool
+            let anchorID: String?
+            let offset: Double
+
+            var message: [String: Any] {
+                var result: [String: Any] = ["following": following, "offset": offset]
+                result["anchorID"] = anchorID
+                return result
+            }
+        }
+
         init(parent: TranscriptWebSurface) {
             self.parent = parent
         }
@@ -135,6 +150,7 @@ struct TranscriptWebSurface: NSViewRepresentable {
         func load() {
             guard let view, let url = Bundle.appModule.url(forResource: "transcript-surface", withExtension: "html") else { return }
             isReady = false
+            needsReset = true
             inFlight = nil
             view.loadFileURL(url, allowingReadAccessTo: url.deletingLastPathComponent())
         }
@@ -152,7 +168,12 @@ struct TranscriptWebSurface: NSViewRepresentable {
         private func send() {
             guard isReady, inFlight == nil, let view else { return }
             let parent = parent
-            let reset = sentContentID != parent.contentID
+            let contentChanged = sentContentID != parent.contentID
+            let reset = needsReset || contentChanged
+            if contentChanged {
+                viewport = nil
+                sentScrollToken = nil
+            }
             if reset {
                 sentRows.removeAll()
                 sentOrder.removeAll()
@@ -169,7 +190,8 @@ struct TranscriptWebSurface: NSViewRepresentable {
             let order = rows.map(\.id)
             let edges = (hasEarlier: parent.hasEarlier, hasLater: parent.hasLater)
             let scroll = parent.scrollRequest.flatMap { $0.token == sentScrollToken ? nil : $0 }
-            guard reset || !changed.isEmpty || order != sentOrder || sentEdges.map({ $0 != edges }) ?? true || scroll != nil else {
+            guard reset || !changed.isEmpty || order != sentOrder || sentEdges.map({ $0 != edges }) ?? true || scroll != nil || sentBaseSize != parent
+                .baseSize else {
                 changedAt = nil
                 return
             }
@@ -182,8 +204,10 @@ struct TranscriptWebSurface: NSViewRepresentable {
                 "rows": changed.map(\.message),
                 "hasEarlier": edges.hasEarlier,
                 "hasLater": edges.hasLater,
+                "baseSize": parent.baseSize,
             ]
             update["scrollTo"] = scroll?.edge.rawValue
+            if reset, scroll == nil { update["restoreViewport"] = viewport?.message }
             for row in changed {
                 sentRows[row.id] = row
             }
@@ -194,15 +218,17 @@ struct TranscriptWebSurface: NSViewRepresentable {
             sentOrder = order
             sentContentID = parent.contentID
             sentEdges = edges
-            sentScrollToken = parent.scrollRequest?.token ?? sentScrollToken
-            inFlight = (sequence, changedAt ?? .now)
+            sentBaseSize = parent.baseSize
+            needsReset = false
+            inFlight = (sequence, changedAt ?? .now, scroll?.token)
             changedAt = nil
 
             MainActorHangMonitor.shared.measure(.transcript) {
                 view.callAsyncJavaScript(
                     "window.dahliaTranscript.apply(update)", arguments: ["update": update], in: nil, in: .page
-                ) { [weak self] result in
-                    if case .failure = result { self?.recover() }
+                ) { [weak self, sequence] result in
+                    guard let self, self.inFlight?.sequence == sequence else { return }
+                    if case .failure = result { self.recover() }
                 }
             }
             armTimeout(for: sequence)
@@ -227,8 +253,6 @@ struct TranscriptWebSurface: NSViewRepresentable {
         /// 表示は SQLite から作り直せる projection なので、読み込み直して全行を送り直す。
         private func recover() {
             timeout?.cancel()
-            sentContentID = nil
-            sentScrollToken = nil
             load()
         }
 
@@ -237,11 +261,12 @@ struct TranscriptWebSurface: NSViewRepresentable {
             switch type {
             case "ready":
                 isReady = true
-                sentContentID = nil
+                needsReset = true
                 send()
             case "presented":
                 guard let sequence = body["seq"] as? Int, let inFlight, inFlight.sequence == sequence else { return }
                 MainActorHangMonitor.shared.recordLatency(.transcript, since: inFlight.changedAt)
+                sentScrollToken = inFlight.scrollToken ?? sentScrollToken
                 self.inFlight = nil
                 timeout?.cancel()
                 send()
@@ -250,8 +275,12 @@ struct TranscriptWebSurface: NSViewRepresentable {
                 if let direction = body["direction"] as? String {
                     parent.onRequestPage(direction == "earlier" ? .top : .bottom)
                 }
-            case "follow":
-                parent.onFollowChange(body["following"] as? Bool ?? false)
+            case "viewport":
+                guard isReady, body["seq"] as? Int == sequence, sentContentID == parent.contentID,
+                      let following = body["following"] as? Bool else { return }
+                let previous = viewport?.following
+                viewport = Viewport(following: following, anchorID: body["anchorID"] as? String, offset: body["offset"] as? Double ?? 0)
+                if previous != following { parent.onFollowChange(following) }
             default:
                 break
             }

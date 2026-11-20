@@ -11,6 +11,8 @@ export type TranscriptRow = {
   confirmed: boolean;
 };
 
+type Viewport = { following: boolean; anchorID?: string; offset: number };
+
 export type TranscriptUpdate = {
   seq: number;
   reset?: boolean;
@@ -21,13 +23,15 @@ export type TranscriptUpdate = {
   hasEarlier: boolean;
   hasLater: boolean;
   scrollTo?: "top" | "bottom";
+  restoreViewport?: Viewport;
+  baseSize: number;
 };
 
 type Message =
   | { type: "ready" }
   | { type: "presented"; seq: number }
   | { type: "requestPage"; direction: "earlier" | "later" }
-  | { type: "follow"; following: boolean };
+  | ({ type: "viewport"; seq: number } & Viewport);
 
 /** The DOM operations `reconcile` needs, so the ordering logic is testable without a browser. */
 export type RowContainer<Node> = {
@@ -111,19 +115,27 @@ export function install(root: HTMLElement): void {
   let hasLater = false;
   let requested: "earlier" | "later" | null = null;
   let following = true;
-  let hasReportedFollow = false;
+  let sequence = 0;
   let scrollScheduled = false;
 
   const distanceFromBottom = () => scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight;
 
+  const visibleAnchor = (keep?: Set<string>) => {
+    for (const child of root.children) {
+      const element = child as HTMLElement;
+      const bounds = element.getBoundingClientRect();
+      if (bounds.bottom > 0 && bounds.top < window.innerHeight && (!keep || keep.has(element.dataset.rowId ?? ""))) {
+        return { element, top: bounds.top };
+      }
+    }
+    return undefined;
+  };
+
   const checkScroll = () => {
     scrollScheduled = false;
-    const nowFollowing = !hasLater && distanceFromBottom() < 24;
-    if (!hasReportedFollow || nowFollowing !== following) {
-      hasReportedFollow = true;
-      following = nowFollowing;
-      post({ type: "follow", following });
-    }
+    following = !hasLater && distanceFromBottom() < 24;
+    const anchor = visibleAnchor();
+    post({ type: "viewport", seq: sequence, following, anchorID: anchor?.element.dataset.rowId, offset: anchor?.top ?? 0 });
     const page = pageToRequest(scroller.scrollTop, distanceFromBottom(), hasEarlier, hasLater);
     if (page && page !== requested) {
       requested = page;
@@ -134,29 +146,21 @@ export function install(root: HTMLElement): void {
   window.addEventListener("scroll", () => {
     if (scrollScheduled) return;
     scrollScheduled = true;
-    requestAnimationFrame(checkScroll);
+    if (document.visibilityState === "visible") requestAnimationFrame(checkScroll);
+    else checkScroll();
   }, { passive: true });
 
   const apply = (update: TranscriptUpdate) => {
     const wasAtBottom = following && distanceFromBottom() < 24;
     // Retain a visible row through prepend and leading-window eviction, including variable row heights.
-    let anchor: { element: HTMLElement; top: number } | undefined;
-    if (!update.reset && update.scrollTo === undefined && !wasAtBottom) {
-      const keep = new Set(update.order);
-      for (const child of root.children) {
-        const element = child as HTMLElement;
-        const bounds = element.getBoundingClientRect();
-        if (bounds.bottom > 0 && bounds.top < window.innerHeight && keep.has(element.dataset.rowId ?? "")) {
-          anchor = { element, top: bounds.top };
-          break;
-        }
-      }
-    }
+    const anchor = !update.reset && update.scrollTo === undefined && !wasAtBottom
+      ? visibleAnchor(new Set(update.order)) : undefined;
     if (update.reset) {
-      hasReportedFollow = false;
       root.replaceChildren();
       nodes.clear();
     }
+    document.documentElement.style.setProperty("--base", `${update.baseSize}px`);
+    sequence = update.seq;
     for (const row of update.rows) {
       let element = nodes.get(row.id);
       if (!element) {
@@ -171,12 +175,17 @@ export function install(root: HTMLElement): void {
     hasLater = update.hasLater;
     requested = null;
     if (update.scrollTo === "top") scroller.scrollTop = 0;
-    else if (update.scrollTo === "bottom" || (wasAtBottom && !hasLater)) scroller.scrollTop = scroller.scrollHeight;
+    else if (update.scrollTo === "bottom" || update.restoreViewport?.following) scroller.scrollTop = scroller.scrollHeight;
+    else if (update.restoreViewport) {
+      const row = nodes.get(update.restoreViewport.anchorID ?? "");
+      if (row) scroller.scrollTop += row.getBoundingClientRect().top - update.restoreViewport.offset;
+    }
+    else if (wasAtBottom && !hasLater) scroller.scrollTop = scroller.scrollHeight;
     else if (anchor) scroller.scrollTop += anchor.element.getBoundingClientRect().top - anchor.top;
+    checkScroll();
     // Report after the frame that shows this update. A hidden page draws no frames, so report right away.
     if (document.visibilityState === "visible") requestAnimationFrame(() => post({ type: "presented", seq: update.seq }));
     else post({ type: "presented", seq: update.seq });
-    if (update.reset || update.scrollTo !== undefined) checkScroll();
   };
 
   (window as unknown as { dahliaTranscript: { apply: typeof apply } }).dahliaTranscript = { apply };
