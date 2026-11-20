@@ -182,6 +182,60 @@
             #expect(await (try? harness.webView.evaluateJavaScript("window.sameDocument") as? Bool) == true)
         }
 
+        @Test(arguments: [TranscriptWebSurface.Edge.top, .bottom])
+        func stationaryUpdatesReportViewportWithoutRequestingPages(edge: TranscriptWebSurface.Edge) async throws {
+            let harness = Harness()
+            let requests = PageRequests()
+            let request: @MainActor (TranscriptWebSurface.Edge) -> Void = { requests.values.append($0) }
+            var segments = (0 ..< 200).map { index in
+                TranscriptSegment(startTime: Date(timeIntervalSince1970: Double(index)), text: "row \(index)", isConfirmed: true)
+            }
+            harness.show(segments, onRequestPage: request)
+            #expect(await harness.waitForRows(200, firstText: "row 0"))
+            _ = try await harness.webView.callAsyncJavaScript("""
+            window.requestAnimationFrame = callback => { setTimeout(callback, 0); return 0; };
+            const scroller = document.scrollingElement;
+            scroller.scrollTop = earlier ? 500 : scroller.scrollHeight - scroller.clientHeight - 500;
+            window.dispatchEvent(new Event('scroll'));
+            await new Promise(requestAnimationFrame);
+            """, arguments: ["earlier": edge == .top], in: nil, contentWorld: .page)
+            for index in 0 ..< 3 {
+                // Height changes above the viewport also generate programmatic scroll events.
+                segments[0].translatedText = index.isMultiple(of: 2) ? "update \(index)" : "update \(index)\nsecond line"
+                harness.show(
+                    segments, showsTranslatedText: true, hasEarlier: edge == .top, hasLater: edge == .bottom,
+                    onRequestPage: request
+                )
+                #expect(await harness.waitForText("update \(index)"))
+                _ = try await harness.webView.callAsyncJavaScript("""
+                window.dispatchEvent(new Event('scroll'));
+                await new Promise(requestAnimationFrame);
+                """, arguments: [:], in: nil, contentWorld: .page)
+                #expect(requests.values.isEmpty)
+            }
+            _ = try await harness.webView.callAsyncJavaScript("""
+            Object.defineProperty(document, 'visibilityState', { value: 'visible', configurable: true });
+            window.scrollFrames = [];
+            window.requestAnimationFrame = callback => { window.scrollFrames.push(callback); return window.scrollFrames.length; };
+            document.scrollingElement.scrollTop += earlier ? -20 : 20;
+            window.dispatchEvent(new Event('scroll'));
+            """, arguments: ["earlier": edge == .top], in: nil, contentWorld: .page)
+            // A live update between the scroll event and its frame must not swallow that page demand.
+            segments[0].translatedText = "overlapping update"
+            harness.show(
+                segments, showsTranslatedText: true, hasEarlier: edge == .top, hasLater: edge == .bottom,
+                onRequestPage: request
+            )
+            #expect(await harness.waitForText("overlapping update"))
+            _ = try await harness.webView.evaluateJavaScript("for (const frame of window.scrollFrames.splice(0)) frame(); true")
+            #expect(await pollUntil { requests.values == [edge] })
+        }
+
+        @MainActor
+        private final class PageRequests {
+            var values: [TranscriptWebSurface.Edge] = []
+        }
+
         @MainActor
         private final class FollowState {
             var following = false
@@ -221,13 +275,17 @@
                 _ segments: [TranscriptSegment],
                 showsTranslatedText: Bool = false,
                 contentID: String = "meeting",
+                hasEarlier: Bool = false,
+                hasLater: Bool = false,
                 baseSize: CGFloat = 14,
                 scrollRequest: (token: Int, edge: TranscriptWebSurface.Edge)? = nil,
-                onFollowChange: @escaping @MainActor (Bool) -> Void = { _ in }
+                onFollowChange: @escaping @MainActor (Bool) -> Void = { _ in },
+                onRequestPage: @escaping @MainActor (TranscriptWebSurface.Edge) -> Void = { _ in }
             ) {
                 coordinator.parent = Self.surface(
-                    segments, showsTranslatedText: showsTranslatedText, contentID: contentID, baseSize: baseSize,
-                    scrollRequest: scrollRequest, onFollowChange: onFollowChange
+                    segments, showsTranslatedText: showsTranslatedText, contentID: contentID,
+                    hasEarlier: hasEarlier, hasLater: hasLater, baseSize: baseSize,
+                    scrollRequest: scrollRequest, onFollowChange: onFollowChange, onRequestPage: onRequestPage
                 )
                 coordinator.contentDidChange()
             }
@@ -271,14 +329,18 @@
                 _ segments: [TranscriptSegment],
                 showsTranslatedText: Bool,
                 contentID: String = "meeting",
+                hasEarlier: Bool = false,
+                hasLater: Bool = false,
                 baseSize: CGFloat = 14,
                 scrollRequest: (token: Int, edge: TranscriptWebSurface.Edge)? = nil,
-                onFollowChange: @escaping @MainActor (Bool) -> Void = { _ in }
+                onFollowChange: @escaping @MainActor (Bool) -> Void = { _ in },
+                onRequestPage: @escaping @MainActor (TranscriptWebSurface.Edge) -> Void = { _ in }
             ) -> TranscriptWebSurface {
                 TranscriptWebSurface(
                     contentID: contentID, segments: segments, recordingSessions: [], timeBase: Date(timeIntervalSince1970: 0),
-                    showsTranslatedText: showsTranslatedText, hasEarlier: false, hasLater: false, baseSize: baseSize, scrollRequest: scrollRequest,
-                    onRequestPage: { _ in }, onFollowChange: onFollowChange
+                    showsTranslatedText: showsTranslatedText, hasEarlier: hasEarlier, hasLater: hasLater, baseSize: baseSize,
+                    scrollRequest: scrollRequest,
+                    onRequestPage: onRequestPage, onFollowChange: onFollowChange
                 )
             }
         }

@@ -117,6 +117,7 @@ export function install(root: HTMLElement): void {
   let following = true;
   let sequence = 0;
   let scrollScheduled = false;
+  let reportedScrollTop = 0;
 
   const distanceFromBottom = () => scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight;
 
@@ -131,11 +132,16 @@ export function install(root: HTMLElement): void {
     return undefined;
   };
 
-  const checkScroll = () => {
-    scrollScheduled = false;
+  const reportViewport = () => {
     following = !hasLater && distanceFromBottom() < 24;
     const anchor = visibleAnchor();
     post({ type: "viewport", seq: sequence, following, anchorID: anchor?.element.dataset.rowId, offset: anchor?.top ?? 0 });
+    reportedScrollTop = scroller.scrollTop;
+  };
+
+  const checkScroll = () => {
+    scrollScheduled = false;
+    reportViewport();
     const page = pageToRequest(scroller.scrollTop, distanceFromBottom(), hasEarlier, hasLater);
     if (page && page !== requested) {
       requested = page;
@@ -144,7 +150,8 @@ export function install(root: HTMLElement): void {
   };
 
   window.addEventListener("scroll", () => {
-    if (scrollScheduled) return;
+    // Ignore delayed events from applying rows, but retain a real scroll even if content updates before its frame.
+    if (scrollScheduled || scroller.scrollTop === reportedScrollTop) return;
     scrollScheduled = true;
     if (document.visibilityState === "visible") requestAnimationFrame(checkScroll);
     else checkScroll();
@@ -182,7 +189,7 @@ export function install(root: HTMLElement): void {
     }
     else if (wasAtBottom && !hasLater) scroller.scrollTop = scroller.scrollHeight;
     else if (anchor) scroller.scrollTop += anchor.element.getBoundingClientRect().top - anchor.top;
-    checkScroll();
+    reportViewport();
     // Report after the frame that shows this update. A hidden page draws no frames, so report right away.
     if (document.visibilityState === "visible") requestAnimationFrame(() => post({ type: "presented", seq: update.seq }));
     else post({ type: "presented", seq: update.seq });
