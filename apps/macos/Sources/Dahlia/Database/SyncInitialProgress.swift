@@ -223,7 +223,7 @@ extension SyncInitialProgress {
     }
 
     static func enqueuePending(
-        dbQueue: DatabaseQueue,
+        dbQueue: any DatabaseWriter,
         screenshotContent: ScreenshotContentProvider,
         replaceImages: UUID?,
         onFailure: @Sendable (any Error) throws -> Void

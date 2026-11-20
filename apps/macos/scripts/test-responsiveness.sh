@@ -33,6 +33,8 @@ suites=(
     CodexChatSlashCommandTests            # bounded slash command candidate projection
     GoogleDriveBackupModelTests           # account switches discard stale cloud backup lists
     ScreenshotImageLoaderTests            # interactive decode never waits behind cacheable decode
+    TranscriptWebSurfaceTests             # transcript rows render out of process and recover from a stalled page
+    MainActorHangMonitorTests             # stall reports carry only fixed tags
 )
 filter="$(IFS='|'; echo "${suites[*]}")"
 exec swift test --filter "(${filter})" "$@"

@@ -26,6 +26,25 @@
             #expect(payload.imageAnalysis == nil)
         }
 
+        @Test
+        func localThumbnailsAreStoredOnFirstReadAndReusedAfterward() async throws {
+            let fixture = try Fixture(local: true)
+            defer { fixture.removeFiles() }
+            let queue = fixture.database.dbQueue
+            try await fixture.provider.persistCapture(fixture.image, dbQueue: queue)
+            let thumbnailURL = fixture.directory.appending(path: fixture.source.cacheKey(variant: .thumbnail))
+            #expect(!FileManager.default.fileExists(atPath: thumbnailURL.path))
+
+            let first = try await fixture.provider.content(id: fixture.image.id, variant: .thumbnail, dbQueue: queue)
+            #expect(first.variant == .thumbnail)
+            #expect(await pollUntil { FileManager.default.fileExists(atPath: thumbnailURL.path) })
+
+            // Later reads use the stored copy and never open the original.
+            try FileManager.default.removeItem(at: fixture.imageURL)
+            let second = try await fixture.provider.content(id: fixture.image.id, variant: .thumbnail, dbQueue: queue)
+            #expect(second.data == first.data)
+        }
+
         @Test(arguments: ["none", "meeting", "link"])
         func captureUploadAndAcknowledgementReuseOneFile(laterDeletion: String) async throws {
             let fixture = try Fixture()

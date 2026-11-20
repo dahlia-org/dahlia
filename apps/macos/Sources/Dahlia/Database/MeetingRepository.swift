@@ -56,9 +56,9 @@ final class MeetingRepository {
 
     private nonisolated static let generatedSummaryTagColorHex = "#808080"
 
-    nonisolated let dbQueue: DatabaseQueue
+    nonisolated let dbQueue: any DatabaseWriter
 
-    nonisolated init(dbQueue: DatabaseQueue) {
+    nonisolated init(dbQueue: any DatabaseWriter) {
         self.dbQueue = dbQueue
     }
 
@@ -127,7 +127,7 @@ final class MeetingRepository {
     nonisolated static func registerDiscoveredCloudWorkspaces(
         _ cloudWorkspaces: [CloudWorkspaceRecord],
         connection: DahliaAccountConnectionRecord,
-        dbQueue: DatabaseQueue
+        dbQueue: any DatabaseWriter
     ) async throws -> Bool {
         try await dbQueue.write { db in
             try registerDiscoveredCloudWorkspaces(cloudWorkspaces, connection: connection, in: db)

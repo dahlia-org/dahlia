@@ -30,6 +30,8 @@ struct MeetingListSidebarView: View {
     @State private var isProjectSectionExpanded = true
     @State private var isRecentSectionExpanded = true
     @FocusState private var isRenameFieldFocused: Bool
+    @AppStorage(AppSettings.meetingSidebarRowStyleUserDefaultsKey)
+    private var rowStyleRawValue = MeetingSidebarRowStyle.standard.rawValue
 
     private var canEdit: Bool { sidebarViewModel.canEditCurrentWorkspace }
 
@@ -276,6 +278,7 @@ struct MeetingListSidebarView: View {
         .contextMenu(forSelectionType: UUID.self) { selection in
             if canEdit { contextMenu(for: selection) }
         }
+        .environment(\.meetingSidebarRowStyle, MeetingSidebarRowStyle.resolved(rawValue: rowStyleRawValue))
     }
 
     private var needsProjectMeetingProjection: Bool {

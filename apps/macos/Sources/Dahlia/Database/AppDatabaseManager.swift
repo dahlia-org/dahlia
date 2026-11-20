@@ -8,14 +8,16 @@ import GRDB
 
 /// アプリ全体で単一の SQLite データベースを管理する。
 /// 正アプリは `Application Support/Dahlia`、`run-dev.sh` は分離した開発プロファイルに配置する。
+///
+/// アプリは WAL の `DatabasePool` を使い、画面の読み取りと観測を確定文字起こしの書き込みや索引の再構築と並行させる。
+/// 起動時に別プロセスとの競合で WAL へ切り替えられない場合は、起動を優先して 1 本の `DatabaseQueue` で動かし、次回起動で再試行する。
 final class AppDatabaseManager: Sendable {
-    let dbQueue: DatabaseQueue
-    let searchDBQueue: DatabaseQueue
+    let dbQueue: any DatabaseWriter
     let searchIndexer: BackgroundJobWorker
 
     /// アプリケーションサポートディレクトリに DB を作成・オープンする。
     convenience init(onMigration: (@Sendable () -> Void)? = nil) throws {
-        try self.init(path: Self.databaseURL.path, enablesConcurrentSearch: true, onMigration: onMigration)
+        try self.init(path: Self.databaseURL.path, usesDatabasePool: true, onMigration: onMigration)
         let directory = DahliaApplicationSupport.currentDirectoryURL
         Task.detached(priority: .utility) {
             do {
@@ -29,7 +31,7 @@ final class AppDatabaseManager: Sendable {
 
     init(
         path: String,
-        enablesConcurrentSearch: Bool = false,
+        usesDatabasePool: Bool = false,
         onMigration: (@Sendable () -> Void)? = nil,
         screenshotAnalyzer: any ScreenshotAnalyzing = CodexScreenshotAnalysisService(),
         screenshotRuntimeProviderResolver: @escaping BackgroundJobWorker.RuntimeProviderResolver = {
@@ -47,18 +49,14 @@ final class AppDatabaseManager: Sendable {
                 withIntermediateDirectories: true
             )
         }
-        var configuration = Self.configuration()
-        dbQueue = try DatabaseQueue(path: path, configuration: configuration)
-        let copiesMigratedSchema = path == ":memory:" && onMigration == nil
-        let usesConcurrentSearch: Bool
-        if enablesConcurrentSearch, path != ":memory:" {
-            let journalMode = try? dbQueue.writeWithoutTransaction {
-                try String.fetchOne($0, sql: "PRAGMA journal_mode = WAL")
-            }
-            usesConcurrentSearch = journalMode?.lowercased() == "wal"
+        let configuration = Self.configuration()
+        dbQueue = if usesDatabasePool, path != ":memory:",
+                     let pool = try? DatabasePool(path: path, configuration: configuration) {
+            pool
         } else {
-            usesConcurrentSearch = false
+            try DatabaseQueue(path: path, configuration: configuration)
         }
+        let copiesMigratedSchema = path == ":memory:" && onMigration == nil
         if copiesMigratedSchema {
             try Self.migratedInMemoryDatabase.get().backup(to: dbQueue)
         } else {
@@ -81,12 +79,6 @@ final class AppDatabaseManager: Sendable {
                     try OrphanedRecordingRecovery.finish(in: $0)
                 }
             }
-        }
-        if !usesConcurrentSearch {
-            searchDBQueue = dbQueue
-        } else {
-            configuration.readonly = true
-            searchDBQueue = try DatabaseQueue(path: path, configuration: configuration)
         }
         searchIndexer = BackgroundJobWorker(
             dbQueue: dbQueue,
@@ -120,16 +112,13 @@ final class AppDatabaseManager: Sendable {
         return configuration
     }
 
-    private static let migratedInMemoryDatabase: Result<DatabaseQueue, Error> = Result {
+    private static let migratedInMemoryDatabase: Result<any DatabaseWriter, Error> = Result {
         let database = try DatabaseQueue(configuration: configuration())
         try migrator.migrate(database)
         return database
     }
 
     func close() throws {
-        if searchDBQueue !== dbQueue {
-            try searchDBQueue.close()
-        }
         try dbQueue.close()
     }
 

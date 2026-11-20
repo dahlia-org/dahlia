@@ -10,7 +10,7 @@ enum DocumentPublication {
         let checkpoint: String
     }
 
-    static func candidates(workspaceID: UUID, dbQueue: DatabaseQueue) async throws -> [Candidate] {
+    static func candidates(workspaceID: UUID, dbQueue: any DatabaseWriter) async throws -> [Candidate] {
         let source = try await dbQueue.read { db in
             try MeetingRecord.filter(Column("workspace_id") == workspaceID).order(Column("createdAt")).fetchAll(db)
         }
@@ -57,7 +57,7 @@ enum DocumentPublication {
         return result
     }
 
-    static func publish(_ candidates: [Candidate], workspaceID: UUID, connectionID: UUID, dbQueue: DatabaseQueue) async throws -> [String] {
+    static func publish(_ candidates: [Candidate], workspaceID: UUID, connectionID: UUID, dbQueue: any DatabaseWriter) async throws -> [String] {
         let client = SyncAPIClient(session: .shared)
         let sync = DocumentSyncService.shared(dbQueue: dbQueue, api: client)
         var conflicts: [String] = []

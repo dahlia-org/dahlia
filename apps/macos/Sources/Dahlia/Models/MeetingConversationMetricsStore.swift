@@ -14,7 +14,7 @@ final class MeetingConversationMetricsStore: ObservableObject {
         case failed(String)
     }
 
-    typealias EligibilityLoader = @Sendable (UUID, DatabaseQueue) async throws
+    typealias EligibilityLoader = @Sendable (UUID, any DatabaseWriter) async throws
         -> ServerConversationAnalyticsService.Eligibility
     typealias MetricsLoader = @Sendable (ServerConversationAnalyticsService.Target) async throws
         -> ServerConversationAnalyticsService.Result
@@ -66,7 +66,7 @@ final class MeetingConversationMetricsStore: ObservableObject {
         reloadToken += 1
     }
 
-    func prepare(meetingID: UUID, dbQueue: DatabaseQueue) async {
+    func prepare(meetingID: UUID, dbQueue: any DatabaseWriter) async {
         if self.meetingID != meetingID {
             reset(for: meetingID)
         }

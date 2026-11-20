@@ -3,7 +3,7 @@ import SwiftUI
 
 struct DocumentPublicationView: View {
     let workspace: WorkspaceRecord
-    let dbQueue: DatabaseQueue
+    let dbQueue: any DatabaseWriter
     let close: () -> Void
     @State private var candidates: [DocumentPublication.Candidate] = []
     @State private var archives: [(UUID, String, String)] = []

@@ -58,7 +58,7 @@ extension SidebarViewModel {
         isSearchingMeetings ? isMeetingSearchLimited : isMeetingListLimited
     }
 
-    func startMeetingListObservation(dbQueue: DatabaseQueue, workspaceId: UUID) {
+    func startMeetingListObservation(dbQueue: any DatabaseWriter, workspaceId: UUID) {
         meetingListObservation?.cancel()
         meetingListObservationGeneration &+= 1
         let generation = meetingListObservationGeneration
@@ -91,7 +91,7 @@ extension SidebarViewModel {
         )
     }
 
-    func restartMeetingSearchIfNeeded(dbQueue: DatabaseQueue, workspaceId: UUID) {
+    func restartMeetingSearchIfNeeded(dbQueue: any DatabaseWriter, workspaceId: UUID) {
         guard !meetingSearchCriteria.isEmpty else { return }
         startMeetingSearch(
             dbQueue: dbQueue,
@@ -103,7 +103,7 @@ extension SidebarViewModel {
     }
 
     private func startMeetingSearch(
-        dbQueue: DatabaseQueue,
+        dbQueue: any DatabaseWriter,
         workspaceId: UUID,
         criteria: MeetingSearchCriteria,
         delay: Duration?,
@@ -112,7 +112,7 @@ extension SidebarViewModel {
         meetingSearchTask?.cancel()
         meetingSearchObservationGeneration &+= 1
         let generation = meetingSearchObservationGeneration
-        let searchQueue = searchDBQueue ?? dbQueue
+        let searchQueue = dbQueue
         let rankingPolicy = AppSettings.shared.meetingSearchRankingPolicy
         let appendsCurrentRanking = appending && activeMeetingSearchRankingPolicy == rankingPolicy
         activeMeetingSearchRankingPolicy = rankingPolicy
@@ -208,7 +208,7 @@ extension SidebarViewModel {
         )
     }
 
-    func startMeetingReferencesObservation(dbQueue: DatabaseQueue, workspaceId: UUID) {
+    func startMeetingReferencesObservation(dbQueue: any DatabaseWriter, workspaceId: UUID) {
         meetingReferencesObservation?.cancel()
         meetingReferencesObservationGeneration &+= 1
         let generation = meetingReferencesObservationGeneration
@@ -415,7 +415,7 @@ extension SidebarViewModel {
         startAdditionalMeetingRowsObservationIfNeeded()
     }
 
-    private func loadNextMeetingPage(dbQueue: DatabaseQueue, workspaceId: UUID) {
+    private func loadNextMeetingPage(dbQueue: any DatabaseWriter, workspaceId: UUID) {
         guard let cursor = meetingListCursor else {
             isMeetingListLoadingMore = false
             hasMoreMeetings = false
@@ -427,20 +427,14 @@ extension SidebarViewModel {
         let generation = meetingPageLoadGeneration
         meetingPageLoadTask = Task { [weak self] in
             do {
-                let fetchTask = Task.detached(priority: .userInitiated) {
-                    try dbQueue.read { db in
-                        try MeetingRepository.fetchMeetingSidebarPage(
-                            workspaceId: workspaceId,
-                            after: cursor,
-                            limit: Self.meetingPageSize,
-                            in: db
-                        )
-                    }
-                }
-                let page = try await withTaskCancellationHandler {
-                    try await fetchTask.value
-                } onCancel: {
-                    fetchTask.cancel()
+                // The pool reads off MainActor without waiting for writes, and cancelling interrupts the statement.
+                let page = try await dbQueue.read { db in
+                    try MeetingRepository.fetchMeetingSidebarPage(
+                        workspaceId: workspaceId,
+                        after: cursor,
+                        limit: Self.meetingPageSize,
+                        in: db
+                    )
                 }
                 try Task.checkCancellation()
                 guard let self,

@@ -6,7 +6,7 @@ enum ProjectAppearanceMigration {
     static func migrate(
         _ saved: [String: ProjectAppearance],
         workspaceId: UUID,
-        dbQueue: DatabaseQueue
+        dbQueue: any DatabaseWriter
     ) async throws -> Set<String> {
         try await dbQueue.write { db in
             guard let workspace = try WorkspaceRecord.fetchOne(db, key: workspaceId),

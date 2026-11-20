@@ -26,7 +26,7 @@ actor TranscriptPersistenceWriter {
         let textByteCount: Int
     }
 
-    private let dbQueue: DatabaseQueue
+    private let dbQueue: any DatabaseWriter
     private let meetingId: UUID
     private let recordingSessionId: UUID
     private let persistencePolicy: TranscriptPersistencePolicy
@@ -51,7 +51,7 @@ actor TranscriptPersistenceWriter {
     private static let logger = Logger(subsystem: "com.dahlia", category: "TranscriptPersistence")
 
     init(
-        dbQueue: DatabaseQueue,
+        dbQueue: any DatabaseWriter,
         meetingId: UUID,
         recordingSessionId: UUID,
         persistencePolicy: TranscriptPersistencePolicy,

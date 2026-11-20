@@ -137,20 +137,20 @@ final class CodexChatSelectableTextView: NSTextView {
         invalidateIntrinsicContentSize()
     }
 
+    /// SwiftUI asks for sizes at several probe widths in one layout pass. Only the width the view is laid out at
+    /// (its first usable proposal, then its frame) owns the text layout; other widths get an area-preserving estimate,
+    /// so a probe never throws the layout away and makes every message in the conversation typeset again.
     func measuredHeight(constrainedTo width: CGFloat) -> CGFloat? {
         guard let textContainer, layoutManager != nil else { return nil }
-
-        if measuredWidth != width {
-            let previousWidth = measuredWidth
+        guard let layoutWidth = measuredWidth else {
+            guard width >= 1 else { return nil }
             measuredWidth = width
             textContainer.containerSize = CGSize(width: width, height: .greatestFiniteMagnitude)
             resetLayout(from: 0)
-            // 実測済みの高さがあるなら、同期レイアウトをやり直さず面積を保つ近似値を返し、
-            // 正確な高さは段階レイアウトの収束に任せる。
-            if let previousWidth, measuredDocumentHeight > 0 {
-                measuredDocumentHeight = ceil(measuredDocumentHeight * previousWidth / width)
-                needsImmediateLayout = false
-            }
+            return measuredHeight(constrainedTo: width)
+        }
+        guard abs(layoutWidth - width) < 0.5 else {
+            return width >= 1 ? ceil(measuredDocumentHeight * layoutWidth / width) : measuredDocumentHeight
         }
         if needsImmediateLayout {
             needsImmediateLayout = false
@@ -158,6 +158,19 @@ final class CodexChatSelectableTextView: NSTextView {
         }
         scheduleRemainingLayout()
         return measuredDocumentHeight
+    }
+
+    override func setFrameSize(_ newSize: NSSize) {
+        super.setFrameSize(newSize)
+        guard newSize.width >= 1, let layoutWidth = measuredWidth, abs(layoutWidth - newSize.width) >= 0.5 else { return }
+        measuredWidth = newSize.width
+        textContainer?.containerSize = CGSize(width: newSize.width, height: .greatestFiniteMagnitude)
+        resetLayout(from: 0)
+        // Keep the area until the staged layout converges, instead of a synchronous full layout during a resize.
+        measuredDocumentHeight = ceil(measuredDocumentHeight * layoutWidth / newSize.width)
+        needsImmediateLayout = false
+        scheduleRemainingLayout()
+        invalidateIntrinsicContentSize()
     }
 
     override func copy(_ sender: Any?) {

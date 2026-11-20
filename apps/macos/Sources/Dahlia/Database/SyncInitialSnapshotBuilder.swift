@@ -9,7 +9,7 @@ enum SyncInitialSnapshotBuilder {
     ]
 
     static func enqueuePending(
-        dbQueue: DatabaseQueue,
+        dbQueue: any DatabaseWriter,
         screenshotContent: ScreenshotContentProvider = .shared,
         replaceServerImageAnalysisWorkspaceId: UUID? = nil,
         onFailure: @Sendable (any Error) throws -> Void = { throw $0 }
@@ -22,7 +22,7 @@ enum SyncInitialSnapshotBuilder {
         )
     }
 
-    static func prepareRestore(dbQueue: DatabaseQueue) async throws {
+    static func prepareRestore(dbQueue: any DatabaseWriter) async throws {
         try await dbQueue.write { db in
             let workspaceIds = try UUID.fetchAll(
                 db,

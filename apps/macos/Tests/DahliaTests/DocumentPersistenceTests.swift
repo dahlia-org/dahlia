@@ -289,7 +289,7 @@
             #expect(try await queue.read { try DocumentRecord.notes(in: $0, meetingID: meetingID)?.checkpoint } == result.checkpoint)
         }
 
-        private func seed(server: Bool = false) throws -> (DatabaseQueue, UUID, UUID) {
+        private func seed(server: Bool = false) throws -> (any DatabaseWriter, UUID, UUID) {
             let queue = try AppDatabaseManager(path: ":memory:").dbQueue
             let workspaceID = UUID.v7(), meetingID = UUID.v7()
             try queue.write { db throws in
@@ -314,7 +314,7 @@
             return (queue, workspaceID, meetingID)
         }
 
-        private func remoteDocument(_ queue: DatabaseQueue, meetingID: UUID) async throws -> DocumentRecord {
+        private func remoteDocument(_ queue: any DatabaseWriter, meetingID: UUID) async throws -> DocumentRecord {
             try await queue.read { db in
                 if let existing = try DocumentRecord.notes(in: db, meetingID: meetingID) { return existing }
                 let meeting = try #require(try MeetingRecord.fetchOne(db, key: meetingID))

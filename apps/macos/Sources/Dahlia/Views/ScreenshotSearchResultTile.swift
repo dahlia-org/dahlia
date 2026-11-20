@@ -4,6 +4,7 @@ import SwiftUI
 struct ScreenshotSearchResultTile: View {
     let result: ScreenshotSearchResult
     let isSelected: Bool
+    let imageAvailabilityProvider: (UUID, String) async -> Bool
     let imageDataProvider: (UUID) async -> Data?
     let action: () -> Void
 
@@ -57,6 +58,15 @@ struct ScreenshotSearchResultTile: View {
         }
         .accessibilityLabel(accessibilityLabel)
         .task(id: result.id) {
+            if let contentHash = result.contentHash {
+                await imageLoader.load(
+                    screenshotID: result.id,
+                    contentHash: contentHash,
+                    maxPixelSize: MainSearchDesign.screenshotImageMaxPixelSize,
+                    isAvailable: { await imageAvailabilityProvider(result.id, contentHash) }
+                ) { await imageDataProvider(result.id) }
+                return
+            }
             guard let data = await imageDataProvider(result.id), !Task.isCancelled else { return }
             await imageLoader.load(
                 screenshotID: result.id,

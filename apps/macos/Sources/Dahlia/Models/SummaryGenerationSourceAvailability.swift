@@ -37,7 +37,7 @@ extension SummaryGenerationSourceAvailability {
         usesServer: Bool,
         serverTranscriptMeetingIDs: Set<UUID> = [],
         serverAudioMeetingIDs: Set<UUID> = [],
-        dbQueue: DatabaseQueue
+        dbQueue: any DatabaseWriter
     ) async throws -> Self {
         try await dbQueue.read { db in
             var transcriptCount = 0

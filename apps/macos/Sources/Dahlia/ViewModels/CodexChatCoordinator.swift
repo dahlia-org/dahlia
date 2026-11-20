@@ -327,7 +327,7 @@ final class CodexChatCoordinator {
         meetingID: UUID?,
         projectID: UUID? = nil,
         draftMeeting: DraftMeeting?,
-        dbQueue: DatabaseQueue?
+        dbQueue: (any DatabaseWriter)?
     ) {
         contextProvider.update(
             workspaceID: workspaceID,

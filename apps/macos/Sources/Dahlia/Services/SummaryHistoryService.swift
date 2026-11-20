@@ -13,7 +13,7 @@ struct SummaryHistoryService: Sendable {
         var currentVersion: Int?
     }
 
-    func page(meetingID: UUID, dbQueue: DatabaseQueue, before: String? = nil) async throws -> Page {
+    func page(meetingID: UUID, dbQueue: any DatabaseWriter, before: String? = nil) async throws -> Page {
         if let target = try await ServerSummaryService.shared.target(meetingID: meetingID, dbQueue: dbQueue) {
             guard let origin = URL(string: target.origin) else { throw URLError(.badURL) }
             let data = try await client.data(origin: origin, connectionId: target.connectionID, maximumBytes: 4 * 1024 * 1024) {
@@ -44,7 +44,7 @@ struct SummaryHistoryService: Sendable {
         }
     }
 
-    func document(meetingID: UUID, version: Int, dbQueue: DatabaseQueue) async throws -> SummaryDocument {
+    func document(meetingID: UUID, version: Int, dbQueue: any DatabaseWriter) async throws -> SummaryDocument {
         let json: String
         if let target = try await ServerSummaryService.shared.target(meetingID: meetingID, dbQueue: dbQueue) {
             guard let origin = URL(string: target.origin) else { throw URLError(.badURL) }
@@ -67,7 +67,7 @@ struct SummaryHistoryService: Sendable {
         return try await Task.detached(priority: .userInitiated) { try SummaryDocument.decode(databaseJSON: json) }.value
     }
 
-    func promote(meetingID: UUID, version: Int, dbQueue: DatabaseQueue) async throws {
+    func promote(meetingID: UUID, version: Int, dbQueue: any DatabaseWriter) async throws {
         try Task.checkCancellation()
         try await Task.detached(priority: .userInitiated) {
             try MeetingRepository(dbQueue: dbQueue).promoteSummary(meetingID: meetingID, version: version)

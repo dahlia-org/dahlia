@@ -22,7 +22,7 @@ struct DatabricksOAuthStorage: Sendable {
     /// token request skip SQLite. Only `saveConnections` writes Databricks rows; each save bumps `generation`, so a
     /// read that overlapped a save never stores its older list.
     private struct ConnectionCache {
-        var queue: DatabaseQueue?
+        var queue: (any DatabaseWriter)?
         var connections: [DatabricksConnection]?
         var generation = 0
     }
@@ -33,7 +33,7 @@ struct DatabricksOAuthStorage: Sendable {
     /// in the Keychain under the profile.
     static func local(
         profile: DahliaRuntimeProfile = DahliaApplicationSupport.profile(),
-        database: @escaping @Sendable () -> DatabaseQueue? = AccountsDatabase.current
+        database: @escaping @Sendable () -> (any DatabaseWriter)? = AccountsDatabase.current
     ) -> Self {
         let prefix = "databricksOAuth.\(profile.rawValue)"
         return Self(
@@ -107,13 +107,13 @@ extension DatabricksOAuthStorage {
 
 /// The app database for code that reads accounts synchronously (Databricks storage). Set once at startup.
 enum AccountsDatabase {
-    private static let queue = Mutex<DatabaseQueue?>(nil)
+    private static let queue = Mutex<(any DatabaseWriter)?>(nil)
 
-    static func configure(_ dbQueue: DatabaseQueue) {
+    static func configure(_ dbQueue: any DatabaseWriter) {
         queue.withLock { $0 = dbQueue }
     }
 
-    @Sendable static func current() -> DatabaseQueue? {
+    @Sendable static func current() -> (any DatabaseWriter)? {
         queue.withLock { $0 }
     }
 }

@@ -25,6 +25,62 @@ import Foundation
         }
 
         @Test
+        func hashedCacheHitsSkipTheContentReadAndAChangedHashReadsAgain() async throws {
+            let image = try #require(makeImage(width: 64, height: 64))
+            let data = try #require(ImageEncoder.encode(image, quality: 0.8))
+            // This provider has no database, so any read fails and the call returns nil.
+            let loader = ScreenshotImageLoader(cacheCostLimit: 1024 * 1024, contentProvider: ScreenshotContentProvider())
+            let id = UUID.v7()
+
+            #expect(await loader.image(screenshotID: id, contentHash: "a", data: data, maxPixelSize: 32) != nil)
+            #expect(await loader.image(screenshotID: id, contentHash: "a", data: nil, maxPixelSize: 32) != nil)
+            #expect(await loader.image(screenshotID: id, contentHash: "b", data: nil, maxPixelSize: 32) == nil)
+        }
+
+        @Test
+        func callersWithTheirOwnFetchSkipItOnACacheHit() async throws {
+            let image = try #require(makeImage(width: 64, height: 64))
+            let data = try #require(ImageEncoder.encode(image, quality: 0.8))
+            let model = ScreenshotImageLoadModel(loader: ScreenshotImageLoader(cacheCostLimit: 1024 * 1024))
+            let id = UUID.v7()
+            var fetches = 0
+
+            await model.load(screenshotID: id, contentHash: "a", maxPixelSize: 32, isAvailable: { true }) {
+                fetches += 1
+                return data
+            }
+            await model.load(screenshotID: id, contentHash: "a", maxPixelSize: 32, isAvailable: { true }) {
+                fetches += 1
+                return data
+            }
+
+            #expect(fetches == 1)
+            guard case .loaded = model.state else {
+                Issue.record("Expected the cached image")
+                return
+            }
+        }
+
+        @Test
+        func cacheHitStillChecksCurrentAccess() async throws {
+            let image = try #require(makeImage(width: 64, height: 64))
+            let data = try #require(ImageEncoder.encode(image, quality: 0.8))
+            let model = ScreenshotImageLoadModel(loader: ScreenshotImageLoader())
+            let id = UUID.v7()
+            await model.load(screenshotID: id, contentHash: "a", maxPixelSize: 32, isAvailable: { true }) { data }
+            guard case .loaded = model.state else { Issue.record("Expected initial image")
+                return
+            }
+            await model.load(screenshotID: id, contentHash: "a", maxPixelSize: 32, isAvailable: { false }) {
+                Issue.record("Unavailable image must not be fetched")
+                return data
+            }
+            guard case .failed = model.state else { Issue.record("Stale cache must not be shown")
+                return
+            }
+        }
+
+        @Test
         func invalidImageDataFailsWithoutBlockingFutureLoads() async throws {
             let loader = ScreenshotImageLoader(cacheCostLimit: 1024 * 1024)
             let invalid = await loader.image(

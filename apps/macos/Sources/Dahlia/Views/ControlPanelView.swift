@@ -69,7 +69,6 @@ struct ControlPanelView: View {
             case .transcript:
                 TranscriptTabView(
                     store: viewModel.store,
-                    allowsTextSelection: !viewModel.isListening,
                     showsTranslatedText: viewModel.showsTranscriptTranslations,
                     retryInitialMeetingLoad: viewModel.retryInitialMeetingLoad
                 ) {

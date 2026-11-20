@@ -33,7 +33,7 @@ enum LocalWorkspaceImport {
         organizationId: UUID,
         name: String,
         connection: DahliaAccountConnectionRecord,
-        dbQueue: DatabaseQueue,
+        dbQueue: any DatabaseWriter,
         api: SyncAPIClient
     ) async throws -> CloudWorkspaceRecord {
         let prepared = try await dbQueue.write { db in
@@ -62,7 +62,7 @@ enum LocalWorkspaceImport {
     static func run(
         sourceId: UUID,
         destination: CloudWorkspaceRecord,
-        dbQueue: DatabaseQueue,
+        dbQueue: any DatabaseWriter,
         backup: BackupService,
         api: SyncAPIClient = SyncAPIClient(session: .shared),
         replaceServerImageAnalysis: Bool = false,

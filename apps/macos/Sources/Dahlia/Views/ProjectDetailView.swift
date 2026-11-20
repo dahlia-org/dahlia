@@ -7,7 +7,7 @@ struct ProjectDetailView: View {
     let appearance: ProjectAppearance
     let appearanceForProject: (UUID) -> ProjectAppearance
     let workspaceID: UUID?
-    let dbQueue: DatabaseQueue?
+    let dbQueue: (any DatabaseWriter)?
     let workspaceChangeToken: UInt64
     let displayMode: ProjectDetailDisplayMode
     let onChangeDisplayMode: (ProjectDetailDisplayMode) -> Void

@@ -36,7 +36,7 @@ struct ServerConversationAnalyticsService: Sendable {
         self.client = client
     }
 
-    func eligibility(meetingID: UUID, dbQueue: DatabaseQueue) async throws -> Eligibility {
+    func eligibility(meetingID: UUID, dbQueue: any DatabaseWriter) async throws -> Eligibility {
         let context = try await dbQueue.read { db -> (
             connectionID: UUID,
             origin: URL,

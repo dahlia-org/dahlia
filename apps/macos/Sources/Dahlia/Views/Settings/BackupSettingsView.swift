@@ -16,13 +16,13 @@ struct BackupSettingsView: View {
     @State private var pendingDeleteGeneration: BackupGeneration?
     @State private var pendingRestoreGeneration: BackupGeneration?
 
-    private let dbQueue: DatabaseQueue?
+    private let dbQueue: (any DatabaseWriter)?
     private let onShowUnprocessedRecordings: (UUID) -> Void
     @ObservedObject private var captionViewModel: CaptionViewModel
     @ObservedObject private var settings = AppSettings.shared
 
     init(
-        dbQueue: DatabaseQueue?,
+        dbQueue: (any DatabaseWriter)?,
         captionViewModel: CaptionViewModel,
         onShowUnprocessedRecordings: @escaping (UUID) -> Void
     ) {

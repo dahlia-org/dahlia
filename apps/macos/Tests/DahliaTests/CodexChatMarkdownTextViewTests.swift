@@ -31,7 +31,8 @@ import Foundation
             let exact = try #require(Self.makeTextView().measuredHeight(constrainedTo: 200))
             let textView = Self.makeTextView()
             _ = textView.measuredHeight(constrainedTo: 400)
-            _ = textView.measuredHeight(constrainedTo: 200)
+            // SwiftUI applies the final width through the frame after asking for sizes.
+            textView.setFrameSize(NSSize(width: 200, height: 0))
 
             let settled = try await Self.settledHeight(of: textView, width: 200, expecting: exact)
 
@@ -45,13 +46,28 @@ import Foundation
 
             // リサイズドラッグのように 1 フレーム未満の間隔で幅が変わり続ける状況。
             let widths: [CGFloat] = [400, 360, 320, 280, 240]
+            _ = textView.measuredHeight(constrainedTo: widths[0])
             for width in widths {
-                _ = textView.measuredHeight(constrainedTo: width)
+                textView.setFrameSize(NSSize(width: width, height: 0))
             }
 
             let settled = try await Self.settledHeight(of: textView, width: 240, expecting: exact)
 
             #expect(settled == exact)
+        }
+
+        @Test
+        func probeWidthsLeaveTheLayoutAtTheViewWidth() throws {
+            let textView = Self.makeTextView()
+            let exact = try #require(textView.measuredHeight(constrainedTo: 400))
+
+            // SwiftUI asks at other widths during one layout pass; those must not discard the layout.
+            for probe: CGFloat in [0, 32, 167.5, 688] {
+                _ = textView.measuredHeight(constrainedTo: probe)
+            }
+
+            #expect(textView.measuredHeight(constrainedTo: 400) == exact)
+            #expect(textView.measuredHeight(constrainedTo: 200) == (exact * 400 / 200).rounded(.up))
         }
 
         @Test

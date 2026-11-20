@@ -2122,7 +2122,7 @@
         }
 
         private struct Fixture: Sendable {
-            let queue: DatabaseQueue
+            let queue: any DatabaseWriter
             let workspaceId = UUID.v7()
             let connectionId = UUID.v7()
             let meetingId = UUID.v7()

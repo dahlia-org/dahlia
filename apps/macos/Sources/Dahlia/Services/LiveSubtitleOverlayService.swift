@@ -1,16 +1,14 @@
 import AppKit
 import SwiftUI
 
+/// Shows the latest live captions in a floating panel. The view holds only the newest few entries, so one layout pass
+/// sizes the panel and nothing scrolls.
 @MainActor
 final class LiveSubtitleOverlayService: ObservableObject {
     private let userDefaults: UserDefaults
     private var panel: NSPanel?
     private var hostingView: NSHostingView<LiveSubtitleOverlayView>?
-    private var sizingView: NSHostingView<LiveSubtitleOverlaySizingView>?
-    private var contentModel: ContentModel?
     private var panelMoveObserver: NSObjectProtocol?
-    private var lastResolvedPanelSize: NSSize?
-    private var pendingLayoutTask: Task<Void, Never>?
 
     init(userDefaults: UserDefaults = .standard) {
         self.userDefaults = userDefaults
@@ -21,23 +19,16 @@ final class LiveSubtitleOverlayService: ObservableObject {
             hide()
             return
         }
+        MainActorHangMonitor.shared.mark(.liveSubtitle)
 
-        if let contentModel {
-            guard contentModel.state.payload != payload else { return }
-            contentModel.state = ContentModel.State(
-                payload: payload,
-                viewportHeight: viewportHeight(for: payload)
-            )
-            lastResolvedPanelSize = nil
+        if let hostingView {
+            guard hostingView.rootView.payload != payload else { return }
+            // Replacing the root view invalidates it now, so the next fitting size measures the new captions.
+            hostingView.rootView = LiveSubtitleOverlayView(payload: payload)
+            updatePanelFrame()
         } else {
-            let contentModel = ContentModel(state: ContentModel.State(
-                payload: payload,
-                viewportHeight: viewportHeight(for: payload)
-            ))
-            let overlayView = LiveSubtitleOverlayView(model: contentModel)
-            let hostingView = NSHostingView(rootView: overlayView)
+            let hostingView = NSHostingView(rootView: LiveSubtitleOverlayView(payload: payload))
             hostingView.setFrameSize(resolvedPanelSize(for: hostingView.fittingSize))
-            self.contentModel = contentModel
             self.hostingView = hostingView
             panel = makePanel(with: hostingView)
             panel?.alphaValue = 0
@@ -47,17 +38,10 @@ final class LiveSubtitleOverlayService: ObservableObject {
                 self.panel?.animator().alphaValue = 1
             }
         }
-
-        schedulePanelLayoutUpdate()
     }
 
     func hide() {
-        pendingLayoutTask?.cancel()
-        pendingLayoutTask = nil
-        contentModel = nil
         hostingView = nil
-        sizingView = nil
-        lastResolvedPanelSize = nil
 
         guard let panel else { return }
         self.panel = nil
@@ -98,57 +82,11 @@ final class LiveSubtitleOverlayService: ObservableObject {
         return panel
     }
 
-    private func schedulePanelLayoutUpdate() {
-        pendingLayoutTask?.cancel()
-        pendingLayoutTask = Task { @MainActor [weak self] in
-            await Task.yield()
-            guard !Task.isCancelled else { return }
-            self?.updatePanelLayout(animated: false)
-            self?.pendingLayoutTask = nil
-        }
-    }
-
-    private func viewportHeight(for payload: LiveSubtitleOverlayPayload) -> CGFloat {
-        let rootView = LiveSubtitleOverlaySizingView(entries: payload.visibleEntries)
-        let sizingView: NSHostingView<LiveSubtitleOverlaySizingView>
-        if let existingSizingView = self.sizingView {
-            existingSizingView.rootView = rootView
-            sizingView = existingSizingView
-        } else {
-            let newSizingView = NSHostingView(rootView: rootView)
-            self.sizingView = newSizingView
-            sizingView = newSizingView
-        }
-
-        sizingView.layoutSubtreeIfNeeded()
-        return max(sizingView.fittingSize.height, LiveSubtitleOverlayLayout.minimumViewportHeight).rounded()
-    }
-
-    private func updatePanelLayout(animated: Bool) {
+    private func updatePanelFrame() {
         guard let panel, let hostingView else { return }
-
-        hostingView.layoutSubtreeIfNeeded()
-        let resolvedSize = resolvedPanelSize(for: hostingView.fittingSize)
-        let nextFrame = panelFrame(for: resolvedSize, currentFrame: panel.frame)
-        let cachedSize = lastResolvedPanelSize
-        let sizeChanged = cachedSize.map { !sizesMatch($0, resolvedSize) } ?? false
-        let frameChanged = !framesMatch(panel.frame, nextFrame)
-
-        if cachedSize == nil {
-            lastResolvedPanelSize = resolvedSize
-            guard frameChanged else { return }
-        } else {
-            guard sizeChanged || frameChanged else { return }
-            lastResolvedPanelSize = resolvedSize
-        }
-
-        let shouldDisplayImmediately = sizeChanged && nextFrame.isLargerThan(panel.frame)
-
-        if animated {
-            panel.animator().setFrame(nextFrame, display: true)
-        } else {
-            panel.setFrame(nextFrame, display: shouldDisplayImmediately)
-        }
+        let nextFrame = panelFrame(for: hostingView.fittingSize, currentFrame: panel.frame)
+        guard !framesMatch(panel.frame, nextFrame) else { return }
+        panel.setFrame(nextFrame, display: nextFrame.height > panel.frame.height)
     }
 
     private func panelFrame(for size: NSSize, currentFrame: NSRect? = nil) -> NSRect {
@@ -250,10 +188,6 @@ final class LiveSubtitleOverlayService: ObservableObject {
         NSSize(width: size.width.rounded(), height: size.height.rounded())
     }
 
-    private func sizesMatch(_ lhs: NSSize, _ rhs: NSSize) -> Bool {
-        roundedSize(lhs) == roundedSize(rhs)
-    }
-
     private func framesMatch(_ lhs: NSRect, _ rhs: NSRect) -> Bool {
         roundedFrame(lhs).equalTo(roundedFrame(rhs))
     }
@@ -290,114 +224,18 @@ private enum LiveSubtitleOverlayLayout {
     static let minimumHeight: CGFloat = 72
     static let outerPadding: CGFloat = 12
     static let contentWidth = fixedWidth - outerPadding * 2
-    static let minimumViewportHeight = minimumHeight - outerPadding * 2
     static let anchorDefaultsKey = "liveSubtitleOverlayTopLeftAnchor"
 }
 
-private extension NSRect {
-    func isLargerThan(_ other: NSRect) -> Bool {
-        width > other.width || height > other.height
-    }
-}
-
-private final class ContentModel: ObservableObject {
-    struct State: Equatable {
-        let payload: LiveSubtitleOverlayPayload
-        let viewportHeight: CGFloat
-    }
-
-    @Published var state: State
-
-    init(state: State) {
-        self.state = state
-    }
-}
-
 private struct LiveSubtitleOverlayView: View {
-    @ObservedObject var model: ContentModel
-    @State private var scrollPosition = ScrollPosition(idType: UUID.self)
-    @State private var isFollowingLatest = true
-
-    var body: some View {
-        ScrollView(.vertical) {
-            LazyVStack(alignment: .leading, spacing: 14) {
-                ForEach(model.state.payload.entries) { entry in
-                    LiveSubtitleEntryView(entry: entry)
-
-                    if entry.id != model.state.payload.entries.last?.id {
-                        Divider()
-                            .overlay(Color.white.opacity(0.14))
-                    }
-                }
-            }
-            .scrollTargetLayout()
-            .padding(.horizontal, 20)
-            .padding(.vertical, 16)
-        }
-        .scrollPosition($scrollPosition)
-        .defaultScrollAnchor(.bottom, for: .initialOffset)
-        .defaultScrollAnchor(.bottom, for: .alignment)
-        .onScrollGeometryChange(for: ScrollMetrics.self) { geometry in
-            let visibleBottom = geometry.contentOffset.y + geometry.containerSize.height
-            return ScrollMetrics(
-                contentHeight: geometry.contentSize.height,
-                containerHeight: geometry.containerSize.height,
-                isAtBottom: visibleBottom >= geometry.contentSize.height - 24
-            )
-        } action: { oldMetrics, newMetrics in
-            let layoutHeightChanged = oldMetrics.contentHeight != newMetrics.contentHeight ||
-                oldMetrics.containerHeight != newMetrics.containerHeight
-            if isFollowingLatest, layoutHeightChanged {
-                scrollToLatest()
-            } else {
-                isFollowingLatest = newMetrics.isAtBottom
-            }
-        }
-        .onChange(of: model.state) {
-            guard isFollowingLatest else { return }
-            scrollToLatest()
-        }
-        .frame(
-            width: LiveSubtitleOverlayLayout.contentWidth,
-            height: model.state.viewportHeight,
-            alignment: .leading
-        )
-        .background(
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .fill(Color.black.opacity(0.78))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .stroke(Color.white.opacity(0.12), lineWidth: 1)
-        )
-        .padding(LiveSubtitleOverlayLayout.outerPadding)
-        .dahliaAppearance()
-    }
-
-    private func scrollToLatest() {
-        var transaction = Transaction(animation: nil)
-        transaction.disablesAnimations = true
-        withTransaction(transaction) {
-            scrollPosition.scrollTo(edge: .bottom)
-        }
-    }
-
-    private struct ScrollMetrics: Equatable {
-        let contentHeight: CGFloat
-        let containerHeight: CGFloat
-        let isAtBottom: Bool
-    }
-}
-
-private struct LiveSubtitleOverlaySizingView: View {
-    let entries: [LiveSubtitleOverlayPayload.Entry]
+    let payload: LiveSubtitleOverlayPayload
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            ForEach(entries) { entry in
+            ForEach(payload.entries) { entry in
                 LiveSubtitleEntryView(entry: entry)
 
-                if entry.id != entries.last?.id {
+                if entry.id != payload.entries.last?.id {
                     Divider()
                         .overlay(Color.white.opacity(0.14))
                 }
@@ -407,6 +245,15 @@ private struct LiveSubtitleOverlaySizingView: View {
         .padding(.vertical, 16)
         .frame(width: LiveSubtitleOverlayLayout.contentWidth, alignment: .leading)
         .fixedSize(horizontal: false, vertical: true)
+        .background(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .fill(Color.black.opacity(0.78))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .stroke(Color.white.opacity(0.12), lineWidth: 1)
+        )
+        .padding(LiveSubtitleOverlayLayout.outerPadding)
         .dahliaAppearance()
     }
 }

@@ -17,7 +17,7 @@ struct SyncSnapshotPage: Decodable {
 /// Rebuildable recovery data. Canonical content is never accumulated for an entire Workspace in memory.
 final class SyncSnapshotStore: Sendable {
     private let directory: URL
-    private let database: DatabaseQueue
+    private let database: any DatabaseWriter
 
     init() throws {
         directory = FileManager.default.temporaryDirectory.appendingPathComponent("dahlia-sync-\(UUID().uuidString)")

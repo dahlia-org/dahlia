@@ -7,7 +7,7 @@ extension ScreenshotContentProvider {
     static let localScreenshotConversionCompletedKey = "localScreenshotConversionCompleted"
 
     /// Re-encodes local-workspace screenshots saved before the WebP format and long-edge limit, once per install.
-    func startLocalScreenshotConversionIfNeeded(dbQueue: DatabaseQueue) {
+    func startLocalScreenshotConversionIfNeeded(dbQueue: any DatabaseWriter) {
         guard !UserDefaults.standard.bool(forKey: Self.localScreenshotConversionCompletedKey) else { return }
         Task(priority: .utility) {
             do {
@@ -21,7 +21,7 @@ extension ScreenshotContentProvider {
 
     /// Files are immutable and verified by hash, so each converted image gets a new file ID. Its references move in
     /// one transaction, so an interrupted run never leaves an unreadable screenshot and resumes on the next launch.
-    func convertLocalScreenshots(dbQueue: DatabaseQueue) async throws {
+    func convertLocalScreenshots(dbQueue: any DatabaseWriter) async throws {
         let ids = try await dbQueue.read { db in
             try UUID.fetchAll(db, sql: """
             SELECT f.id FROM files f JOIN workspaces v ON v.id = f.workspace_id
@@ -42,7 +42,7 @@ extension ScreenshotContentProvider {
         }
     }
 
-    private func convertLocalScreenshot(id: UUID, dbQueue: DatabaseQueue) async throws {
+    private func convertLocalScreenshot(id: UUID, dbQueue: any DatabaseWriter) async throws {
         activeFileWork += 1
         defer { activeFileWork -= 1 }
         guard let file = try await dbQueue.read({ try FileRecord.fetchOne($0, key: id) }) else { return }

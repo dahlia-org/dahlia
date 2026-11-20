@@ -25,7 +25,7 @@ extension MeetingContentProvider {
         kind: TextSearchKind,
         cursor: String? = nil,
         limit: Int = 200,
-        dbQueue: DatabaseQueue
+        dbQueue: any DatabaseWriter
     ) async throws -> TextSearchPage {
         let query = query.trimmingCharacters(in: .whitespacesAndNewlines)
         // Server's JavaScript String.length counts UTF-16 code units.
@@ -49,7 +49,7 @@ extension MeetingContentProvider {
 }
 
 extension MeetingContentProvider {
-    func searchAll(workspaceId: UUID, criteria: MeetingSearchCriteria, dbQueue: DatabaseQueue) async throws -> ServerSearchResults {
+    func searchAll(workspaceId: UUID, criteria: MeetingSearchCriteria, dbQueue: any DatabaseWriter) async throws -> ServerSearchResults {
         guard criteria.tagIDs.isEmpty, criteria.projectIDs.count <= 1, criteria.text.utf16.count <= 500,
               let source = try await dbQueue.read({ try SearchSource.read(workspaceId: workspaceId, in: $0) }),
               let origin = URL(string: source.origin) else { throw TextContentError.unavailable }

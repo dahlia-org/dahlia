@@ -29,7 +29,7 @@ extension CodexChatSessionModel {
         return .project(id: project.id, name: project.name, description: project.description)
     }
 
-    func observeScope(dbQueue: DatabaseQueue?) async {
+    func observeScope(dbQueue: (any DatabaseWriter)?) async {
         guard let dbQueue else { return }
         let accountID = accountID
         let threadID = backendThreadID

@@ -7,7 +7,7 @@ struct MainNavigationBreadcrumbs: View {
     let projects: [UUID: ProjectOverviewItem]
     let projectID: UUID?
     let meetingTitle: String?
-    let dbQueue: DatabaseQueue?
+    let dbQueue: (any DatabaseWriter)?
     let onOpenMeeting: (UUID) -> Void
     let appearanceForProject: (UUID) -> ProjectAppearance
     let onSelectWorkspace: (WorkspaceRecord) -> Void

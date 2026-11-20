@@ -10,9 +10,9 @@ import Synchronization
 actor ScreenshotContentProvider {
     static let shared = ScreenshotContentProvider()
 
-    private var database: DatabaseQueue?
+    private var database: (any DatabaseWriter)?
     private let cache: ScreenshotFileStore?
-    private var stores: [ObjectIdentifier: (database: DatabaseQueue, files: ScreenshotFileStore)] = [:]
+    private var stores: [ObjectIdentifier: (database: any DatabaseWriter, files: ScreenshotFileStore)] = [:]
     var activeFileWork = 0
     private let session: URLSession
     private let tokenProvider: @Sendable (UUID, Bool) async throws -> String
@@ -37,7 +37,7 @@ actor ScreenshotContentProvider {
         self.tokenProvider = tokenProvider
     }
 
-    func configure(dbQueue: DatabaseQueue) async {
+    func configure(dbQueue: any DatabaseWriter) async {
         database = dbQueue
         do {
             let workspaceIds = try await dbQueue.read { db in
@@ -56,7 +56,7 @@ actor ScreenshotContentProvider {
         startLocalScreenshotConversionIfNeeded(dbQueue: dbQueue)
     }
 
-    func fileStore(for dbQueue: DatabaseQueue) throws -> ScreenshotFileStore {
+    func fileStore(for dbQueue: any DatabaseWriter) throws -> ScreenshotFileStore {
         if let cache { return cache }
         let key = ObjectIdentifier(dbQueue)
         if let entry = stores[key] { return entry.files }
@@ -73,47 +73,97 @@ actor ScreenshotContentProvider {
         try? trimFiles(dbQueue: database)
     }
 
+    /// Cache hits may skip image I/O, but must still belong to the current Workspace and file source.
+    func isAvailable(id: UUID, workspaceID: UUID, contentHash: String, dbQueue: any DatabaseWriter) async throws -> Bool {
+        try await dbQueue.read { db in
+            guard let screenshot = try MeetingScreenshotRecord.fetchOne(db, key: id),
+                  try MeetingRecord.fetchOne(db, key: screenshot.meetingId)?.workspaceId == workspaceID,
+                  let file = try FileRecord.fetchOne(db, key: screenshot.originalFileId),
+                  file.workspaceId == workspaceID, file.contentHash == contentHash else { return false }
+            guard let reference = file.localReference ?? file.remoteReference else {
+                return try Bool
+                    .fetchOne(db, sql: "SELECT EXISTS(SELECT 1 FROM file_migration_content WHERE fileId = ?)", arguments: [file.id]) == true
+            }
+            let source = try JSONDecoder().decode(ScreenshotRemoteReference.self, from: Data(reference.utf8))
+            return try source.fileId == file.id && source.contentHash == contentHash
+                && Self.matchesCurrentSource(source, workspaceId: workspaceID, in: db)
+        }
+    }
+
     func content(
         id: UUID,
         variant: ScreenshotVariant = .original,
-        dbQueue: DatabaseQueue? = nil
+        dbQueue: (any DatabaseWriter)? = nil
     ) async throws -> ScreenshotContent {
         guard let dbQueue = dbQueue ?? database else { throw ScreenshotContentError.unavailable }
-        let record = try await dbQueue.read { db in
-            try MeetingScreenshotRecord.fetchOne(db, key: id)
+        return try await fileContent(variant: variant, dbQueue: dbQueue, recordAccess: true) { db in
+            guard let record = try MeetingScreenshotRecord.fetchOne(db, key: id) else { throw ScreenshotContentError.deleted }
+            return record.originalFileId
         }
-        guard let record else { throw ScreenshotContentError.deleted }
-        return try await fileContent(id: record.originalFileId, variant: variant, dbQueue: dbQueue)
     }
 
     func fileContent(
         id: UUID,
         variant: ScreenshotVariant = .original,
-        dbQueue: DatabaseQueue,
+        dbQueue: any DatabaseWriter,
         recordAccess: Bool = true
+    ) async throws -> ScreenshotContent {
+        try await fileContent(variant: variant, dbQueue: dbQueue, recordAccess: recordAccess) { _ in id }
+    }
+
+    private struct FileSnapshot {
+        let file: FileRecord
+        let migratedBytes: Data?
+        let source: ScreenshotRemoteReference?
+        let sourceIsCurrent: Bool
+    }
+
+    /// Reads everything the request needs in one read transaction before the file read, and checks once afterward that
+    /// the file was not deleted or re-pointed meanwhile. This provider is serial, so each saved read shortens every
+    /// queued thumbnail's wait.
+    private func fileContent(
+        variant: ScreenshotVariant,
+        dbQueue: any DatabaseWriter,
+        recordAccess: Bool,
+        fileID: @escaping @Sendable (Database) throws -> UUID
     ) async throws -> ScreenshotContent {
         activeFileWork += 1
         defer { activeFileWork -= 1 }
-        guard let file = try await dbQueue.read({ try FileRecord.fetchOne($0, key: id) }) else { throw ScreenshotContentError.deleted }
-        if let bytes = try await dbQueue.read({ try Data.fetchOne(
-            $0,
-            sql: "SELECT imageData FROM file_migration_content WHERE fileId = ?",
-            arguments: [id]
-        ) }) {
+        // Requests from cells that scrolled away are cancelled; drop them before reading or making a thumbnail.
+        try Task.checkCancellation()
+        let snapshot = try await dbQueue.read { db in
+            let id = try fileID(db)
+            guard let file = try FileRecord.fetchOne(db, key: id) else { throw ScreenshotContentError.deleted }
+            if let bytes = try Data.fetchOne(db, sql: "SELECT imageData FROM file_migration_content WHERE fileId = ?", arguments: [id]) {
+                return FileSnapshot(file: file, migratedBytes: bytes, source: nil, sourceIsCurrent: false)
+            }
+            guard let reference = file.localReference ?? file.remoteReference else { throw ScreenshotContentError.unavailable }
+            let source = try JSONDecoder().decode(ScreenshotRemoteReference.self, from: Data(reference.utf8))
+            return try FileSnapshot(
+                file: file, migratedBytes: nil, source: source,
+                sourceIsCurrent: Self.matchesCurrentSource(source, workspaceId: file.workspaceId, in: db)
+            )
+        }
+        let file = snapshot.file
+        if let bytes = snapshot.migratedBytes {
             return ScreenshotContent(data: bytes, mimeType: file.contentType, variant: .original)
         }
-        guard let reference = file.localReference ?? file.remoteReference else { throw ScreenshotContentError.unavailable }
-        let source = try JSONDecoder().decode(ScreenshotRemoteReference.self, from: Data(reference.utf8))
-        guard source.fileId == id, source.contentHash == file.contentHash,
-              try await matchesCurrentSource(source, workspaceId: file.workspaceId, dbQueue: dbQueue) else {
+        guard let source = snapshot.source, source.fileId == file.id, source.contentHash == file.contentHash,
+              snapshot.sourceIsCurrent else {
             throw ScreenshotContentError.authorizationRequired
         }
         let content: ScreenshotContent
         if file.remoteReference == nil || file.localReference != nil && file.localReference != file.remoteReference {
-            guard let original = try fileStore(for: dbQueue).read(source, variant: .original, recordAccess: recordAccess) else {
-                throw ScreenshotContentError.unavailable
+            let files = try fileStore(for: dbQueue)
+            if variant == .thumbnail, let thumbnail = try files.read(source, variant: .thumbnail, recordAccess: recordAccess) {
+                content = thumbnail
+            } else {
+                guard let original = try files.read(source, variant: .original, recordAccess: recordAccess) else {
+                    throw ScreenshotContentError.unavailable
+                }
+                try Task.checkCancellation()
+                content = variant == .thumbnail ? Self.storedThumbnail(of: original, source: source, files: files) : original
             }
-            content = original
         } else {
             do {
                 content = try await remoteContent(source, variant: variant, credentials: dbQueue, recordAccess: recordAccess)
@@ -122,14 +172,36 @@ actor ScreenshotContentProvider {
             }
         }
         try Task.checkCancellation()
-        let current = try await dbQueue.read { try FileRecord.fetchOne($0, key: id) }
-        guard current?.localReference == file.localReference, current?.remoteReference == file.remoteReference,
-              try await matchesCurrentSource(source, workspaceId: file.workspaceId, dbQueue: dbQueue) else { throw ScreenshotContentError.deleted }
+        let unchanged = try await dbQueue.read { db in
+            let current = try FileRecord.fetchOne(db, key: file.id)
+            return try current?.localReference == file.localReference && current?.remoteReference == file.remoteReference
+                && Self.matchesCurrentSource(source, workspaceId: file.workspaceId, in: db)
+        }
+        guard unchanged else { throw ScreenshotContentError.deleted }
         return content
     }
 
+    /// Keeps a small copy of a local original, so a grid revisit reads tens of kilobytes instead of the whole original.
+    /// The copy is checked against the original's hash on read; if it cannot be made, the original is returned.
+    /// `thumb_480` is the list variant with a long edge of at most 480 px (docs/spec/shared/sync.md).
+    nonisolated static let thumbnailLongEdge = 480
+
+    nonisolated static func storedThumbnail(
+        of original: ScreenshotContent,
+        source: ScreenshotRemoteReference,
+        files: ScreenshotFileStore
+    ) -> ScreenshotContent {
+        guard let image = CGImageDecoder.decode(original.data, maxPixelSize: thumbnailLongEdge),
+              let data = ImageEncoder.encodeJPEG(image),
+              let mimeType = ImageEncoder.mimeType(for: data) else { return original }
+        let thumbnail = ScreenshotContent(data: data, mimeType: mimeType, variant: .thumbnail)
+        // Saved here, in order with this actor's removals, so deleting a screenshot never leaves its copy behind.
+        try? files.write(thumbnail, source: source, recordAccess: false)
+        return thumbnail
+    }
+
     /// The helper reports use through the app; it never writes the file index itself.
-    func touch(fileId: UUID, meetingId: UUID, workspaceId: UUID, dbQueue: DatabaseQueue) async throws {
+    func touch(fileId: UUID, meetingId: UUID, workspaceId: UUID, dbQueue: any DatabaseWriter) async throws {
         activeFileWork += 1
         defer { activeFileWork -= 1 }
         let files = try fileStore(for: dbQueue)
@@ -154,16 +226,18 @@ actor ScreenshotContentProvider {
         }
     }
 
-    private func matchesCurrentSource(_ source: ScreenshotRemoteReference, workspaceId: UUID, dbQueue: DatabaseQueue) async throws -> Bool {
-        try await dbQueue.read { db in
-            guard let workspace = try WorkspaceRecord.fetchOne(db, key: workspaceId),
-                  workspace.accountConnectionId == source.accountConnectionId else { return false }
-            guard let connectionId = source.accountConnectionId else { return source.origin.isEmpty }
-            return try DahliaAccountConnectionRecord.fetchOne(db, key: connectionId)?.origin == source.origin
-        }
+    private nonisolated static func matchesCurrentSource(
+        _ source: ScreenshotRemoteReference,
+        workspaceId: UUID,
+        in db: Database
+    ) throws -> Bool {
+        guard let workspace = try WorkspaceRecord.fetchOne(db, key: workspaceId),
+              workspace.accountConnectionId == source.accountConnectionId else { return false }
+        guard let connectionId = source.accountConnectionId else { return source.origin.isEmpty }
+        return try DahliaAccountConnectionRecord.fetchOne(db, key: connectionId)?.origin == source.origin
     }
 
-    func resolved(_ record: MeetingScreenshotRecord, dbQueue: DatabaseQueue? = nil) async throws -> MeetingScreenshotRecord {
+    func resolved(_ record: MeetingScreenshotRecord, dbQueue: (any DatabaseWriter)? = nil) async throws -> MeetingScreenshotRecord {
         if record.imageData != nil { return record }
         let content = try await content(id: record.id, dbQueue: dbQueue)
         var result = record
@@ -172,7 +246,7 @@ actor ScreenshotContentProvider {
         return result
     }
 
-    func resolved(_ records: [MeetingScreenshotRecord], dbQueue: DatabaseQueue? = nil) async throws -> [MeetingScreenshotRecord] {
+    func resolved(_ records: [MeetingScreenshotRecord], dbQueue: (any DatabaseWriter)? = nil) async throws -> [MeetingScreenshotRecord] {
         var result: [MeetingScreenshotRecord] = []
         for record in records {
             try Task.checkCancellation()
@@ -181,7 +255,7 @@ actor ScreenshotContentProvider {
         return result
     }
 
-    nonisolated func retainOriginals(workspaceIds: [UUID], dbQueue: DatabaseQueue) {
+    nonisolated func retainOriginals(workspaceIds: [UUID], dbQueue: any DatabaseWriter) {
         retainedWorkspaces.withLock { counts in
             for workspaceId in workspaceIds {
                 counts[ObjectIdentifier(dbQueue), default: [:]][workspaceId, default: 0] += 1
@@ -189,7 +263,7 @@ actor ScreenshotContentProvider {
         }
     }
 
-    nonisolated func releaseOriginals(workspaceIds: [UUID], dbQueue: DatabaseQueue) {
+    nonisolated func releaseOriginals(workspaceIds: [UUID], dbQueue: any DatabaseWriter) {
         let key = ObjectIdentifier(dbQueue)
         retainedWorkspaces.withLock { counts in
             for workspaceId in workspaceIds {
@@ -204,7 +278,7 @@ actor ScreenshotContentProvider {
     func remoteContent(
         _ source: ScreenshotRemoteReference,
         variant: ScreenshotVariant = .original,
-        credentials: DatabaseQueue,
+        credentials: any DatabaseWriter,
         recordAccess: Bool = true
     ) async throws -> ScreenshotContent {
         let files = try? fileStore(for: credentials)

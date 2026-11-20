@@ -3,7 +3,7 @@ import Foundation
 import GRDB
 
 enum RemoteChangeApplier {
-    static func recoveryGeneration(workspaceId: UUID, expectedConnectionId: UUID, dbQueue: DatabaseQueue) async throws -> Int64? {
+    static func recoveryGeneration(workspaceId: UUID, expectedConnectionId: UUID, dbQueue: any DatabaseWriter) async throws -> Int64? {
         try await dbQueue.read { db in
             guard try SyncTransactionQueue.matchesExpectedConnection(workspaceId: workspaceId, connectionId: expectedConnectionId, in: db),
                   try !SyncTransactionQueue.hasPending(workspaceId: workspaceId, in: db),
@@ -15,7 +15,7 @@ enum RemoteChangeApplier {
     private static func withCurrentAssociation(
         workspaceId: UUID,
         expectedConnectionId: UUID,
-        dbQueue: DatabaseQueue,
+        dbQueue: any DatabaseWriter,
         expectedMutationGeneration: Int64? = nil,
         incrementalContext: RemoteChangePolicy.Context? = nil,
         _ body: @Sendable (Database) throws -> Bool
@@ -42,7 +42,7 @@ enum RemoteChangeApplier {
         meetingIds: Set<UUID>,
         workspaceId: UUID,
         expectedConnectionId: UUID,
-        dbQueue: DatabaseQueue,
+        dbQueue: any DatabaseWriter,
         expectedMutationGeneration: Int64? = nil,
         incrementalContext: RemoteChangePolicy.Context? = nil,
         removesWorkspace: Bool = false,
@@ -72,7 +72,7 @@ enum RemoteChangeApplier {
         meetingIds: Set<UUID>,
         workspaceId: UUID,
         expectedConnectionId: UUID,
-        dbQueue: DatabaseQueue,
+        dbQueue: any DatabaseWriter,
         expectedMutationGeneration: Int64?,
         incrementalContext: RemoteChangePolicy.Context?,
         _ body: () async throws -> Bool
@@ -165,7 +165,7 @@ enum RemoteChangeApplier {
         _ projects: [SyncProjectSnapshot],
         workspaceId: UUID,
         expectedConnectionId: UUID,
-        dbQueue: DatabaseQueue,
+        dbQueue: any DatabaseWriter,
         generation: Int64
     ) async throws -> Bool {
         let existing = try await dbQueue.read { db in
@@ -223,7 +223,7 @@ enum RemoteChangeApplier {
         _ projects: [SyncProjectSnapshot],
         workspaceId: UUID,
         expectedConnectionId: UUID,
-        dbQueue: DatabaseQueue,
+        dbQueue: any DatabaseWriter,
         expectedMutationGeneration: Int64? = nil,
         removeMissing: Bool = true,
         incrementalContext: RemoteChangePolicy.Context? = nil
@@ -374,7 +374,7 @@ enum RemoteChangeApplier {
         meetingId: UUID,
         workspaceId: UUID,
         expectedConnectionId: UUID,
-        dbQueue: DatabaseQueue,
+        dbQueue: any DatabaseWriter,
         expectedMutationGeneration: Int64? = nil,
         incrementalContext: RemoteChangePolicy.Context? = nil
     ) async throws -> Bool {
@@ -419,7 +419,7 @@ enum RemoteChangeApplier {
         meetingId: UUID,
         workspaceId: UUID,
         expectedConnectionId: UUID,
-        dbQueue: DatabaseQueue,
+        dbQueue: any DatabaseWriter,
         expectedMutationGeneration: Int64? = nil,
         incrementalContext: RemoteChangePolicy.Context? = nil
     ) async throws -> Bool {
@@ -515,7 +515,7 @@ enum RemoteChangeApplier {
     static func applyIncremental(
         _ change: SyncChangePage.Change,
         context: RemoteChangePolicy.Context,
-        dbQueue: DatabaseQueue
+        dbQueue: any DatabaseWriter
     ) async throws -> RemoteChangePolicy.Result {
         try Task.checkCancellation()
         let decision = try await dbQueue.read { try RemoteChangePolicy.decision(change, context: context, in: $0) }
@@ -537,7 +537,7 @@ enum RemoteChangeApplier {
         _ cursor: String,
         from previous: String?,
         context: RemoteChangePolicy.Context,
-        dbQueue: DatabaseQueue
+        dbQueue: any DatabaseWriter
     ) async throws -> Bool {
         try await dbQueue.write { db in
             guard try context.isCurrent(in: db),
@@ -555,7 +555,7 @@ enum RemoteChangeApplier {
         cursor: String?,
         workspaceId: UUID,
         expectedConnectionId: UUID,
-        dbQueue: DatabaseQueue,
+        dbQueue: any DatabaseWriter,
         expectedMutationGeneration: Int64? = nil,
         incrementalContext: RemoteChangePolicy.Context? = nil
     ) async throws -> Bool {
@@ -658,7 +658,7 @@ enum RemoteChangeApplier {
         cursor: String?,
         workspaceId: UUID,
         expectedConnectionId: UUID,
-        dbQueue: DatabaseQueue,
+        dbQueue: any DatabaseWriter,
         expectedMutationGeneration: Int64? = nil
     ) async throws -> Bool {
         struct Existing {
@@ -813,7 +813,7 @@ enum RemoteChangeApplier {
         _ cursor: String,
         workspaceId: UUID,
         expectedConnectionId: UUID,
-        dbQueue: DatabaseQueue,
+        dbQueue: any DatabaseWriter,
         expectedMutationGeneration: Int64? = nil
     ) async throws -> Bool {
         try await withCurrentAssociation(
@@ -844,7 +844,7 @@ enum RemoteChangeApplier {
     static func reconcileMissingWorkspace(
         workspaceId: UUID,
         expectedConnectionId: UUID,
-        dbQueue: DatabaseQueue,
+        dbQueue: any DatabaseWriter,
         expectedMutationGeneration: Int64? = nil
     ) async throws -> Bool {
         let ownerReset = try await withCurrentAssociation(
@@ -868,7 +868,7 @@ enum RemoteChangeApplier {
     static func removeRevokedMemberWorkspace(
         workspaceId: UUID,
         expectedConnectionId: UUID,
-        dbQueue: DatabaseQueue,
+        dbQueue: any DatabaseWriter,
         expectedMutationGeneration: Int64? = nil
     ) async throws -> Bool {
         let meetingIds: Set<UUID>? = try await dbQueue.read { db in

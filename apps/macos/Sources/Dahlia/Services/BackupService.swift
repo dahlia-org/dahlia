@@ -55,7 +55,7 @@ actor BackupService {
     static let restoreDirectoryName = "Restore"
     static let pendingRestoreFilename = "pending-restore.json"
 
-    private let dbQueue: DatabaseQueue
+    private let dbQueue: any DatabaseWriter
     private let backupDirectoryURL: URL
     private let restoreDirectoryURL: URL
     private let fileManager: FileManager
@@ -63,7 +63,7 @@ actor BackupService {
     private let appBuild: String
 
     init(
-        dbQueue: DatabaseQueue,
+        dbQueue: any DatabaseWriter,
         applicationSupportURL: URL = DahliaApplicationSupport.currentDirectoryURL,
         fileManager: FileManager = .default,
         appVersion: String = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "development",
@@ -232,7 +232,7 @@ actor BackupService {
 
     nonisolated static func createGeneration(
         workspaceIds: Set<UUID>,
-        dbQueue: DatabaseQueue,
+        dbQueue: any DatabaseWriter,
         directoryURL: URL,
         reason: BackupMetadata.Reason,
         appVersion: String,

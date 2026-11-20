@@ -16,7 +16,7 @@ actor SyncWorker {
     private static let transcriptPatchItemLimit = 50000
     private static let transcriptPatchMaximumChunks = 100
 
-    let dbQueue: DatabaseQueue
+    let dbQueue: any DatabaseWriter
     private let session: URLSession
     private let archiveService: RecordingArchiveService
     private let screenshotContent: ScreenshotContentProvider
@@ -55,7 +55,7 @@ actor SyncWorker {
     private static let pullingWorkspaces = Mutex<Set<PullKey>>([])
 
     init(
-        dbQueue: DatabaseQueue,
+        dbQueue: any DatabaseWriter,
         session: URLSession = .shared,
         apiClient: SyncAPIClient? = nil,
         screenshotContent: ScreenshotContentProvider = .shared,
@@ -774,7 +774,8 @@ actor SyncWorker {
 
     func retrySnapshot(workspaceId: UUID, connectionId: UUID) async throws {
         guard let target = try await pullTarget(workspaceId: workspaceId, connectionId: connectionId) else { throw TextContentError.changed }
-        try await dbQueue.read { db in
+        // The transfer fence lives in the writer connection's temp table, so validate on the writer.
+        try await dbQueue.write { db in
             guard try target.context.isCurrent(in: db) else { throw TextContentError.changed }
             try SyncSnapshotRecovery.validate(workspaceId: workspaceId, in: db)
         }
@@ -1359,7 +1360,7 @@ actor SyncWorker {
     static func needsProjectReconciliation(
         _ changes: [SyncChangePage.Change],
         workspaceId: UUID,
-        dbQueue: DatabaseQueue
+        dbQueue: any DatabaseWriter
     ) async throws -> Bool {
         if changes.contains(where: { $0.entity == .project }) { return true }
         let referencedProjectIDs = Set(changes.compactMap { change in
@@ -1378,7 +1379,7 @@ actor SyncWorker {
     static func missingParentMeetingIDs(
         in changes: [SyncChangePage.Change],
         workspaceId: UUID,
-        dbQueue: DatabaseQueue
+        dbQueue: any DatabaseWriter
     ) async throws -> [UUID] {
         let referencedMeetingIDs = Set(changes.compactMap { change -> UUID? in
             guard change.action == "upsert" else { return nil }
@@ -1401,7 +1402,7 @@ actor SyncWorker {
         }
     }
 
-    static func missingParentFileIDs(in changes: [SyncChangePage.Change], workspaceId: UUID, dbQueue: DatabaseQueue) async throws -> [UUID] {
+    static func missingParentFileIDs(in changes: [SyncChangePage.Change], workspaceId: UUID, dbQueue: any DatabaseWriter) async throws -> [UUID] {
         let referenced = Set(changes.compactMap { change in
             change.entity == .meetingAttachment && change.action == "upsert" ? change.record?.fileId : nil
         })

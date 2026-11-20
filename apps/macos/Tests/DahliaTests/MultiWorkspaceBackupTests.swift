@@ -318,7 +318,7 @@ import GRDB
 
         private func makeLiveCopy(_ fixture: BatchAudioTestFixture) throws -> URL {
             let url = fixture.testRootURL.appending(path: "live.sqlite")
-            let live = try AppDatabaseManager(path: url.path, enablesConcurrentSearch: true)
+            let live = try AppDatabaseManager(path: url.path, usesDatabasePool: true)
             try fixture.database.dbQueue.backup(to: live.dbQueue)
             try live.dbQueue.write { try $0.execute(sql: "UPDATE meetings SET name = 'Changed'") }
             try live.close()

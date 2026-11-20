@@ -23,7 +23,7 @@ final class SummaryHistoryModel {
     var selectedVersion: Int?
     private let service = SummaryHistoryService()
 
-    func load(meetingID: UUID, dbQueue: DatabaseQueue, more: Bool = false) async {
+    func load(meetingID: UUID, dbQueue: any DatabaseWriter, more: Bool = false) async {
         loadGeneration += 1
         let generation = loadGeneration
         isLoading = true
@@ -45,7 +45,7 @@ final class SummaryHistoryModel {
         }
     }
 
-    func select(meetingID: UUID, dbQueue: DatabaseQueue) async {
+    func select(meetingID: UUID, dbQueue: any DatabaseWriter) async {
         loadedDocument = nil
         loadedVersion = nil
         selectionError = nil
@@ -63,7 +63,7 @@ final class SummaryHistoryModel {
         }
     }
 
-    func promote(meetingID: UUID, dbQueue: DatabaseQueue) async -> SummaryDocument? {
+    func promote(meetingID: UUID, dbQueue: any DatabaseWriter) async -> SummaryDocument? {
         guard !isPromoting, let version = selectedVersion, let document else { return nil }
         isPromoting = true
         promotionError = nil

@@ -5,6 +5,7 @@ struct ScreenshotSearchResultsGrid: View {
     let selectedResultID: MainSearchResultID?
     let hasMore: Bool
     let isLoading: Bool
+    let imageAvailabilityProvider: (UUID, String) async -> Bool
     let imageDataProvider: (UUID) async -> Data?
     let onOpen: (ScreenshotSearchResult) -> Void
     let onLoadMore: () -> Void
@@ -15,10 +16,12 @@ struct ScreenshotSearchResultsGrid: View {
                 ScreenshotSearchResultTile(
                     result: screenshot,
                     isSelected: selectedResultID == .screenshot(screenshot.id),
+                    imageAvailabilityProvider: imageAvailabilityProvider,
                     imageDataProvider: imageDataProvider,
                     action: { onOpen(screenshot) }
                 )
                 .id(MainSearchResultID.screenshot(screenshot.id))
+                .onAppear { MainActorHangMonitor.shared.mark(.screenshots) }
             }
         }
 

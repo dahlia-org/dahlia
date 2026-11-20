@@ -4,7 +4,7 @@ import SwiftUI
 struct MeetingBreadcrumbList: View {
     let workspaceID: UUID
     let projectID: UUID?
-    let dbQueue: DatabaseQueue?
+    let dbQueue: (any DatabaseWriter)?
     let onOpenMeeting: (UUID) -> Void
 
     @State private var items: [MeetingSidebarItem] = []

@@ -4,7 +4,7 @@ import Foundation
 import GRDB
 
 extension MeetingContentProvider {
-    func resolve(_ request: TextBrokerRequest, workspaceId: UUID, dbQueue: DatabaseQueue) async throws -> Data {
+    func resolve(_ request: TextBrokerRequest, workspaceId: UUID, dbQueue: any DatabaseWriter) async throws -> Data {
         let store = MeetingAccessStore(database: dbQueue, workspaceID: workspaceId)
         if request.operation == .search {
             guard let query = request.query, let kind = request.kind else { throw TextContentError.unavailable }

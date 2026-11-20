@@ -947,6 +947,10 @@ extension CodexChatSessionModel {
 
     private func updateTurnResponse(id: String, from accumulator: CodexChatTurnAccumulator) {
         guard let index = messages.firstIndex(where: { $0.id == id }) else { return }
+        MainActorHangMonitor.shared.measure(.chat) { applyTurnResponse(at: index, from: accumulator) }
+    }
+
+    private func applyTurnResponse(at index: Int, from accumulator: CodexChatTurnAccumulator) {
         let responseText = accumulator.responseText
         let reasoningText = accumulator.reasoningText
         if messages[index].text != responseText {

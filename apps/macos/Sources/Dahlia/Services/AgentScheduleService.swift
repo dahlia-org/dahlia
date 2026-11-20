@@ -3,7 +3,7 @@ import Foundation
 import GRDB
 
 struct AgentScheduleService: Sendable {
-    let dbQueue: DatabaseQueue
+    let dbQueue: any DatabaseWriter
     func list(account: String) throws -> [ChatScheduleRecord] {
         try dbQueue.read {
             try ChatScheduleRecord.fetchAll(

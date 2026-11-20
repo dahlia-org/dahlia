@@ -95,34 +95,11 @@
             #expect(abs(host.fittingSize.height - font.ascender) < 1)
         }
 
-        @Test
-        func selectableTranscriptStillWrapsAndShowsTranslations() throws {
-            let segment = TranscriptSegment(
-                startTime: .now,
-                text: String(repeating: "長い発話です。", count: 30),
-                translatedText: "Translation",
-                isConfirmed: true
-            )
-            let selection = TextSelectionGroup()
-            selection.update(segments: [segment], showsTranslatedText: true)
-            let host = NSHostingView(rootView: TranscriptRowView(
-                segment: segment,
-                timestamp: "00:00:00",
-                showsTranslatedText: true,
-                allowsTextSelection: true,
-                selection: selection
-            ).frame(width: 320))
-            host.frame = NSRect(x: 0, y: 0, width: 320, height: host.fittingSize.height)
-            host.layoutSubtreeIfNeeded()
-            let text = try #require(textViews(in: host).first)
-            #expect(text.string == segment.text + "\nTranslation")
-            #expect(text.frame.height > NSFont.dahliaBody.pointSize * 2)
-            #expect(!text.isEditable && text.isSelectable)
-        }
-
-        private func textViews(in view: NSView) -> [SelectableTextView] {
-            if let text = view as? SelectableTextView { return [text] }
-            return view.subviews.flatMap { textViews(in: $0) }
+        private func rows(_ segments: [TranscriptSegment], translated: Bool) -> [(id: String, text: String)] {
+            segments.map { segment in
+                let translation = segment.visibleTranslatedText(isEnabled: translated).map { "\n" + $0 } ?? ""
+                return (segment.id.uuidString, segment.displayText + translation)
+            }
         }
 
         @Test
@@ -200,7 +177,7 @@
                 TranscriptSegment(startTime: .now, text: $0, isConfirmed: true)
             }
             let selection = TextSelectionGroup()
-            selection.update(segments: segments, showsTranslatedText: false)
+            selection.update(rows: rows(segments, translated: false))
             selection.begin(at: .init(id: segments[0].id.uuidString, offset: 2))
             selection.extend(to: .init(id: segments[2].id.uuidString, offset: 2))
             #expect(selection.selectedText == "の発話\n途中😀の発話\n最後")
@@ -215,7 +192,7 @@
         func nativeSingleRowSelectionSurvivesMouseUpAndUnchangedUpdates() {
             let segment = TranscriptSegment(startTime: .now, text: "single row")
             let selection = TextSelectionGroup()
-            selection.update(segments: [segment], showsTranslatedText: false)
+            selection.update(rows: rows([segment], translated: false))
             let view = SelectableTextView()
             view.selectionID = segment.id.uuidString
             view.string = segment.text
@@ -223,7 +200,7 @@
             selection.begin(at: .init(id: segment.id.uuidString, offset: 0))
             view.setSelectedRange(NSRange(location: 0, length: 6))
             selection.finish()
-            selection.update(segments: [segment], showsTranslatedText: false)
+            selection.update(rows: rows([segment], translated: false))
             selection.register(view)
             #expect(view.selectedRange() == NSRange(location: 0, length: 6))
             #expect(selection.selectedText == nil)
@@ -234,12 +211,12 @@
             var first = TranscriptSegment(startTime: .now, text: "原文", translatedText: "Translation")
             let last = TranscriptSegment(startTime: .now, text: "次")
             let selection = TextSelectionGroup()
-            selection.update(segments: [first, last], showsTranslatedText: true)
+            selection.update(rows: rows([first, last], translated: true))
             selection.begin(at: .init(id: first.id.uuidString, offset: 0))
             selection.extend(to: .init(id: last.id.uuidString, offset: 1))
             #expect(selection.selectedText == "原文\nTranslation\n次")
             first.text = "更新"
-            selection.update(segments: [first, last], showsTranslatedText: true)
+            selection.update(rows: rows([first, last], translated: true))
             #expect(selection.selectedText == nil)
         }
 
@@ -247,7 +224,7 @@
         func mountedRowsReceiveAndClearTheSharedRange() {
             let segments = ["first", "last"].map { TranscriptSegment(startTime: .now, text: $0) }
             let selection = TextSelectionGroup()
-            selection.update(segments: segments, showsTranslatedText: false)
+            selection.update(rows: rows(segments, translated: false))
             let view = SelectableTextView()
             view.selectionID = segments[1].id.uuidString
             view.string = segments[1].text

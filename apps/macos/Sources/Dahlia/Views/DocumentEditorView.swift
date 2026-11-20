@@ -10,13 +10,13 @@ final class DocumentEditorModel {
     private let sessionID = UUID.v7()
     private var visible = false
     private var loadGeneration = 0
-    static func activeMeetingIDs(dbQueue: DatabaseQueue) -> Set<UUID> {
+    static func activeMeetingIDs(dbQueue: any DatabaseWriter) -> Set<UUID> {
         Set(retained.values.filter { $0.dbQueue === dbQueue }.map(\.documentID))
     }
 
     /// A logical lease spans the asynchronous deletion transaction without holding a lock.
     /// Open or failed editors defer deletion; a newly opened editor cannot race a reserved deletion.
-    static func reserveRemoval(meetingIDs: Set<UUID>, dbQueue: DatabaseQueue, workspaceID: UUID? = nil) -> UUID? {
+    static func reserveRemoval(meetingIDs: Set<UUID>, dbQueue: any DatabaseWriter, workspaceID: UUID? = nil) -> UUID? {
         guard activeMeetingIDs(dbQueue: dbQueue).isDisjoint(with: meetingIDs) else { return nil }
         if let workspaceID, retained.values.contains(where: { $0.dbQueue === dbQueue && $0.orphan?.workspaceID == workspaceID }) { return nil }
         let token = UUID.v7()
@@ -26,7 +26,7 @@ final class DocumentEditorModel {
 
     static func releaseRemoval(_ token: UUID) { removals[token] = nil }
 
-    static func finishLocalSaves(dbQueue: DatabaseQueue? = nil, meetingID: UUID? = nil) async throws {
+    static func finishLocalSaves(dbQueue: (any DatabaseWriter)? = nil, meetingID: UUID? = nil) async throws {
         for model in Array(retained.values)
             where (dbQueue == nil || model.dbQueue === dbQueue) && (meetingID == nil || model.documentID == meetingID) {
             try await model.finishLocalSaves()
@@ -52,7 +52,7 @@ final class DocumentEditorModel {
     var ready = false
     private let persistence: DocumentPersistence
     private let sync: DocumentSyncService
-    private let dbQueue: DatabaseQueue
+    private let dbQueue: any DatabaseWriter
     private let documentID: UUID
     private let orphan: DocumentPersistence.OrphanContext?
     private var hasUnresolvedDraft = false
@@ -72,7 +72,7 @@ final class DocumentEditorModel {
     var resolveMeeting: @MainActor () -> UUID?
 
     init(
-        dbQueue: DatabaseQueue,
+        dbQueue: any DatabaseWriter,
         meetingID: UUID?,
         orphan: DocumentPersistence.OrphanContext? = nil,
         resolveMeeting: @escaping @MainActor () -> UUID?
@@ -379,7 +379,7 @@ struct DocumentEditorView: View {
     let onModelChange: (DocumentEditorModel, Bool) -> Void
 
     init(
-        dbQueue: DatabaseQueue,
+        dbQueue: any DatabaseWriter,
         meetingID: UUID?,
         orphan: DocumentPersistence.OrphanContext?,
         editable: Bool,

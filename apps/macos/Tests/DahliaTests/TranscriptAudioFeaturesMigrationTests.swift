@@ -40,7 +40,7 @@ import GRDB
             ])
         }
 
-        private func makeV31Database() throws -> (DatabaseQueue, UUID) {
+        private func makeV31Database() throws -> (any DatabaseWriter, UUID) {
             let queue = try DatabaseQueue()
             try AppDatabaseManager.migrator.migrate(queue, upTo: "v31_meetingConversationMetrics")
             let now = Date(timeIntervalSince1970: 1_776_384_000)

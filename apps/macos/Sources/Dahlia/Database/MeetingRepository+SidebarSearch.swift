@@ -10,7 +10,7 @@ extension MeetingRepository {
         rankingPolicy: MeetingSearchRankingPolicy = .standard,
         after cursor: MeetingSearchCursor? = nil,
         limit: Int,
-        dbQueue: DatabaseQueue
+        dbQueue: any DatabaseWriter
     ) async throws -> MeetingSearchPage {
         try await searchMeetingSidebarPage(
             workspaceId: workspaceId,
@@ -28,7 +28,7 @@ extension MeetingRepository {
         rankingPolicy: MeetingSearchRankingPolicy = .standard,
         after cursor: MeetingSearchCursor? = nil,
         limit: Int,
-        dbQueue: DatabaseQueue
+        dbQueue: any DatabaseWriter
     ) async throws -> MeetingSearchPage {
         try await withSearchDeadline {
             try await dbQueue.read { db in
@@ -54,7 +54,11 @@ extension MeetingRepository {
     }
 
     nonisolated static func remoteMeetingPage(
-        workspaceId: UUID, criteria: MeetingSearchCriteria, cursor: String?, dbQueue: DatabaseQueue, contentProvider: MeetingContentProvider = .shared
+        workspaceId: UUID,
+        criteria: MeetingSearchCriteria,
+        cursor: String?,
+        dbQueue: any DatabaseWriter,
+        contentProvider: MeetingContentProvider = .shared
     ) async throws -> (items: [MeetingSidebarItem], cursor: String?) {
         var position = cursor
         repeat {
@@ -605,7 +609,7 @@ extension MeetingRepository {
         workspaceID: UUID,
         query: String,
         limit: Int,
-        dbQueue: DatabaseQueue
+        dbQueue: any DatabaseWriter
     ) async throws -> [UUID] {
         try await withSearchDeadline {
             try await dbQueue.read { db in

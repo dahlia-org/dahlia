@@ -318,7 +318,7 @@ import GRDB
         )
     }
 
-    private func fetchMeeting(id: UUID, from dbQueue: DatabaseQueue) throws -> MeetingRecord {
+    private func fetchMeeting(id: UUID, from dbQueue: any DatabaseWriter) throws -> MeetingRecord {
         let record = try dbQueue.read { db in
             try MeetingRecord.fetchOne(db, key: id)
         }

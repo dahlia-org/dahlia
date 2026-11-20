@@ -17,11 +17,11 @@ final class ProjectDetailViewModel {
 
     @ObservationIgnored private var projectIDs: [UUID] = []
     @ObservationIgnored private var workspaceID: UUID?
-    @ObservationIgnored private var dbQueue: DatabaseQueue?
+    @ObservationIgnored private var dbQueue: (any DatabaseWriter)?
     @ObservationIgnored private var listLoadGeneration: UInt64 = 0
     @ObservationIgnored private var calendarLoadGeneration: UInt64 = 0
 
-    func reload(projectIDs: [UUID], workspaceID: UUID?, dbQueue: DatabaseQueue?) async {
+    func reload(projectIDs: [UUID], workspaceID: UUID?, dbQueue: (any DatabaseWriter)?) async {
         listLoadGeneration &+= 1
         let generation = listLoadGeneration
         self.projectIDs = projectIDs
@@ -82,7 +82,7 @@ final class ProjectDetailViewModel {
         containing month: Date,
         projectIDs: [UUID],
         workspaceID: UUID?,
-        dbQueue: DatabaseQueue?,
+        dbQueue: (any DatabaseWriter)?,
         calendar: Calendar = .current
     ) async {
         calendarLoadGeneration &+= 1
@@ -124,24 +124,18 @@ final class ProjectDetailViewModel {
         dateInterval: DateInterval? = nil,
         after cursor: MeetingSidebarCursor? = nil,
         limit: Int,
-        dbQueue: DatabaseQueue
+        dbQueue: any DatabaseWriter
     ) async throws -> MeetingSidebarPage {
-        let task = Task.detached(priority: .userInitiated) {
-            try dbQueue.read { db in
-                try MeetingRepository.fetchProjectHierarchyMeetingPage(
-                    projectIds: projectIDs,
-                    workspaceId: workspaceID,
-                    dateInterval: dateInterval,
-                    after: cursor,
-                    limit: limit,
-                    in: db
-                )
-            }
-        }
-        let page = try await withTaskCancellationHandler {
-            try await task.value
-        } onCancel: {
-            task.cancel()
+        // The pool reads off MainActor without waiting for writes, and cancelling interrupts the statement.
+        let page = try await dbQueue.read { db in
+            try MeetingRepository.fetchProjectHierarchyMeetingPage(
+                projectIds: projectIDs,
+                workspaceId: workspaceID,
+                dateInterval: dateInterval,
+                after: cursor,
+                limit: limit,
+                in: db
+            )
         }
         try Task.checkCancellation()
         return page

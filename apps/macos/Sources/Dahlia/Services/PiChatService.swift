@@ -20,10 +20,10 @@ actor PiChatService: CodexChatServicing {
     /// Upstream measures Curator idleness from process start as well as from the latest chat activity.
     let launchedAt = Date()
     private var backupService: BackupService?
-    private var backupDBQueue: DatabaseQueue?
+    private var backupDBQueue: (any DatabaseWriter)?
     private var historyStore: ChatThreadStore?
 
-    func configureHistory(dbQueue: DatabaseQueue) async throws {
+    func configureHistory(dbQueue: any DatabaseWriter) async throws {
         let store = ChatThreadStore(dbQueue: dbQueue)
         historyStore = store
         learningSkills = AgentSkillService(dbQueue: dbQueue)
@@ -109,7 +109,7 @@ actor PiChatService: CodexChatServicing {
         endRun(turn.id, threadID: threadID, accountID: session.provider.accountKey, status: status, undelivered: turn.pendingSteers)
     }
 
-    func configureBackup(dbQueue: DatabaseQueue, applicationSupportURL: URL = DahliaApplicationSupport.currentDirectoryURL) {
+    func configureBackup(dbQueue: any DatabaseWriter, applicationSupportURL: URL = DahliaApplicationSupport.currentDirectoryURL) {
         backupService = BackupService(dbQueue: dbQueue, applicationSupportURL: applicationSupportURL)
         backupDBQueue = dbQueue
     }

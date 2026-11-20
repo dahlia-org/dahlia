@@ -236,6 +236,9 @@ struct MainSearchPanel: View {
                     selectedResultID: model.selectedResultID,
                     hasMore: model.hasMoreScreenshots,
                     isLoading: model.isLoadingScreenshots,
+                    imageAvailabilityProvider: { id, hash in
+                        await model.screenshotIsAvailable(id: id, contentHash: hash, using: sidebarViewModel)
+                    },
                     imageDataProvider: { id in
                         await model.screenshotImageData(id: id, using: sidebarViewModel)
                     },
@@ -318,6 +321,9 @@ struct MainSearchPanel: View {
                     selectedResultID: model.selectedResultID,
                     hasMore: false,
                     isLoading: false,
+                    imageAvailabilityProvider: { id, hash in
+                        await model.screenshotIsAvailable(id: id, contentHash: hash, using: sidebarViewModel)
+                    },
                     imageDataProvider: { id in await model.screenshotImageData(id: id, using: sidebarViewModel) },
                     onOpen: onOpenScreenshot,
                     onLoadMore: {}

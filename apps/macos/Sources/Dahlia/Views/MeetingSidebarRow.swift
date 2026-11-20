@@ -19,9 +19,9 @@ struct MeetingSidebarRow: View {
     @Environment(MeetingSidebarHoverController.self) private var hoverController
     @State private var isHovered = false
     @State private var hoverRowID = UUID()
-    @State private var rowFrame: CGRect = .zero
-    @AppStorage(AppSettings.meetingSidebarRowStyleUserDefaultsKey)
-    private var rowStyleRawValue = MeetingSidebarRowStyle.standard.rawValue
+    /// The last frame seen while hovered. It lives outside SwiftUI state so recording it never re-renders the row.
+    @State private var rowFrame = RowFrame()
+    @Environment(\.meetingSidebarRowStyle) private var rowStyle
 
     var body: some View {
         VStack(alignment: .leading, spacing: 3) {
@@ -48,13 +48,19 @@ struct MeetingSidebarRow: View {
             verticalOutset: DahliaDesign.meetingSidebarRowHighlightVerticalOutset(for: rowStyle)
         )
         .contentShape(Rectangle())
-        .onGeometryChange(for: CGRect.self) { geometry in
-            geometry.frame(in: .global)
-        } action: { frame in
-            rowFrame = frame
-            hoverController.updateRowFrame(frame, for: item.meetingId, rowID: hoverRowID)
+        .background {
+            // Only the hovered row tracks its frame for the hover card; scrolling rows skip the per-frame geometry work.
+            if isHovered {
+                Color.clear.onGeometryChange(for: CGRect.self) { geometry in
+                    geometry.frame(in: .global)
+                } action: { frame in
+                    rowFrame.value = frame
+                    hoverController.updateRowFrame(frame, for: item.meetingId, rowID: hoverRowID)
+                }
+            }
         }
         .onHover(perform: updateHoverState)
+        .onAppear { MainActorHangMonitor.shared.mark(.sidebar) }
         .onDisappear { hoverController.meetingDisappeared(for: item.meetingId, rowID: hoverRowID) }
         .accessibilityLabel(accessibilityLabel)
     }
@@ -66,16 +72,12 @@ struct MeetingSidebarRow: View {
                 item: item,
                 isActiveRecording: isActiveRecording,
                 projectAppearance: projectAppearance,
-                rowFrame: rowFrame,
+                rowFrame: rowFrame.value,
                 rowID: hoverRowID
             )
         } else {
             hoverController.hoverEnded(for: item.meetingId, rowID: hoverRowID)
         }
-    }
-
-    private var rowStyle: MeetingSidebarRowStyle {
-        MeetingSidebarRowStyle.resolved(rawValue: rowStyleRawValue)
     }
 
     private var compactContent: some View {
@@ -246,6 +248,11 @@ struct MeetingSidebarRow: View {
         }
         return components.joined(separator: ", ")
     }
+}
+
+@MainActor
+private final class RowFrame {
+    var value = CGRect.zero
 }
 
 private struct MeetingTimestampBadge: View {

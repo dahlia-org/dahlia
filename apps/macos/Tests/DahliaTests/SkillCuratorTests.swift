@@ -9,7 +9,7 @@
     struct SkillCuratorTests {
         private let now = Date(timeIntervalSince1970: 1_800_000_000)
 
-        private func setup() throws -> (AgentSkillService, DatabaseQueue, URL) {
+        private func setup() throws -> (AgentSkillService, any DatabaseWriter, URL) {
             let db = try AppDatabaseManager(path: ":memory:").dbQueue
             let root = URL(fileURLWithPath: PiSandbox.realPath(FileManager.default.temporaryDirectory)).appending(path: "curator-\(UUID())")
             try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
@@ -29,7 +29,7 @@
             state: String = "active",
             pinned: Bool = false,
             locked: Bool = false,
-            db: DatabaseQueue,
+            db: any DatabaseWriter,
             root: URL
         ) throws {
             let directory = root.appending(path: name)
@@ -47,7 +47,7 @@
             }
         }
 
-        private func state(_ name: String, _ db: DatabaseQueue) throws -> String? {
+        private func state(_ name: String, _ db: any DatabaseWriter) throws -> String? {
             try db.read { try String.fetchOne($0, sql: "SELECT state FROM agent_skill_states WHERE name=?", arguments: [name]) }
         }
 

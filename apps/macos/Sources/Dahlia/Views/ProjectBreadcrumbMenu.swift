@@ -6,7 +6,7 @@ struct ProjectBreadcrumbMenu: View {
     let parentID: UUID?
     var ancestorIDs: Set<UUID> = []
     let workspaceID: UUID
-    let dbQueue: DatabaseQueue?
+    let dbQueue: (any DatabaseWriter)?
     let appearanceForProject: (UUID) -> ProjectAppearance
     let onOpenProject: (UUID) -> Void
     let onOpenMeeting: (UUID) -> Void

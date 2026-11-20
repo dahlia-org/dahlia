@@ -76,7 +76,7 @@ import GRDB
                 }
             }
             let databaseURL = fixture.testRootURL.appending(path: "live.sqlite")
-            let live = try AppDatabaseManager(path: databaseURL.path, enablesConcurrentSearch: true)
+            let live = try AppDatabaseManager(path: databaseURL.path, usesDatabasePool: true)
             try fixture.database.dbQueue.backup(to: live.dbQueue)
             try await live.dbQueue.write { db in
                 try db.execute(sql: "UPDATE meetings SET name = 'Changed' WHERE id = ?", arguments: [fixture.meeting.id])
@@ -185,7 +185,7 @@ import GRDB
             let service = BackupService(dbQueue: fixture.database.dbQueue, applicationSupportURL: fixture.testRootURL)
             let generation = try await service.createGeneration(workspaceIds: [fixture.meeting.workspaceId])
             let databaseURL = fixture.testRootURL.appending(path: "live.sqlite")
-            let live = try AppDatabaseManager(path: databaseURL.path, enablesConcurrentSearch: true)
+            let live = try AppDatabaseManager(path: databaseURL.path, usesDatabasePool: true)
             try fixture.database.dbQueue.backup(to: live.dbQueue)
             try await live.dbQueue.write { try $0.execute(sql: "UPDATE tags SET colorHex = '#ffffff'") }
             try live.close()
@@ -249,7 +249,7 @@ import GRDB
                 sourceWorkspaceId: fixture.meeting.workspaceId, targetWorkspaceId: fixture.meeting.workspaceId, mode: .overwrite, name: "Test"
             )])
             let databaseURL = fixture.testRootURL.appending(path: "live.sqlite")
-            let live = try AppDatabaseManager(path: databaseURL.path, enablesConcurrentSearch: true)
+            let live = try AppDatabaseManager(path: databaseURL.path, usesDatabasePool: true)
             try fixture.database.dbQueue.backup(to: live.dbQueue)
             try await live.dbQueue.write { try $0.execute(sql: "UPDATE meetings SET name = 'Keep this'") }
             try live.close()

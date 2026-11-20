@@ -211,6 +211,7 @@ extension ScreenshotCollectionView {
             willDisplay item: NSCollectionViewItem,
             forRepresentedObjectAt indexPath: IndexPath
         ) {
+            MainActorHangMonitor.shared.mark(.screenshots)
             guard let item = item as? ScreenshotCollectionViewItem,
                   let id = dataSource?.itemIdentifier(for: indexPath) else { return }
             configure(item, id: id)

@@ -9,6 +9,48 @@
 
     @MainActor
     struct ScreenshotContentTests {
+        @Test
+        func cachedSearchImagesRequireTheCurrentWorkspaceHashAndSource() async throws {
+            let fixture = try ScreenshotContentFixture()
+            let provider = ScreenshotContentProvider()
+            #expect(try await provider.isAvailable(
+                id: fixture.screenshotId,
+                workspaceID: fixture.workspaceId,
+                contentHash: fixture.source.contentHash,
+                dbQueue: fixture.dbQueue
+            ))
+            #expect(try await !provider.isAvailable(
+                id: fixture.screenshotId,
+                workspaceID: .v7(),
+                contentHash: fixture.source.contentHash,
+                dbQueue: fixture.dbQueue
+            ))
+            #expect(try await !provider.isAvailable(
+                id: fixture.screenshotId,
+                workspaceID: fixture.workspaceId,
+                contentHash: "changed",
+                dbQueue: fixture.dbQueue
+            ))
+            try await fixture.dbQueue.write { db in
+                try db.execute(sql: "UPDATE accounts SET origin = ? WHERE id = ?", arguments: ["https://changed.example.test", fixture.connectionId])
+            }
+            #expect(try await !provider.isAvailable(
+                id: fixture.screenshotId,
+                workspaceID: fixture.workspaceId,
+                contentHash: fixture.source.contentHash,
+                dbQueue: fixture.dbQueue
+            ))
+            try await fixture.dbQueue.write { db in
+                try db.execute(sql: "DELETE FROM meetings WHERE id = ?", arguments: [fixture.meetingId])
+            }
+            #expect(try await !provider.isAvailable(
+                id: fixture.screenshotId,
+                workspaceID: fixture.workspaceId,
+                contentHash: fixture.source.contentHash,
+                dbQueue: fixture.dbQueue
+            ))
+        }
+
         private nonisolated static func recordingBody(of request: URLRequest) -> URLRequest {
             var recorded = request
             if let stream = request.httpBodyStream, request.httpBody == nil {
@@ -972,7 +1014,7 @@
     }
 
     /// Canonical text responses for cached bodies and the fixtures' empty transcripts.
-    private func cachedTextResponse(_ request: URLRequest, queue: DatabaseQueue) -> (Int, [String: String], Data)? {
+    private func cachedTextResponse(_ request: URLRequest, queue: any DatabaseWriter) -> (Int, [String: String], Data)? {
         guard let url = request.url else { return nil }
         if url.path.hasSuffix("/documents") { return (200, [:], Data(#"{"items":[],"nextCursor":null}"#.utf8)) }
         if url.path.hasSuffix("/capabilities") { return (200, [:], Data("{\"documents\":{\"version\":1},\"sync\":{\"version\":7}}".utf8)) }
@@ -1061,7 +1103,7 @@
     }
 
     private struct ScreenshotContentFixture: Sendable {
-        let dbQueue: DatabaseQueue
+        let dbQueue: any DatabaseWriter
         let workspaceId = UUID.v7()
         let connectionId = UUID.v7()
         let meetingId = UUID.v7()
@@ -1069,7 +1111,7 @@
         let bytes = Data([1, 2, 3, 4, 5, 6])
         let source: ScreenshotRemoteReference
 
-        init(dbQueue: DatabaseQueue? = nil) throws {
+        init(dbQueue: (any DatabaseWriter)? = nil) throws {
             self.dbQueue = try dbQueue ?? AppDatabaseManager(path: ":memory:").dbQueue
             source = ScreenshotRemoteReference(
                 origin: "https://\(UUID().uuidString.lowercased()).example.test",

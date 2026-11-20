@@ -8,7 +8,7 @@ actor SyncTransferSlots {
     static let backgroundPermits = permits - 1
     private struct Entry: Sendable { weak var value: SyncTransferSlots? }
     private static let registry = Mutex<[ObjectIdentifier: Entry]>([:])
-    private let database: DatabaseQueue
+    private let database: any DatabaseWriter
     private var active: [UUID: Bool] = [:]
     private struct Waiter {
         let id: UUID
@@ -18,9 +18,9 @@ actor SyncTransferSlots {
 
     private var waiting: [Waiter] = []
 
-    private init(database: DatabaseQueue) { self.database = database }
+    private init(database: any DatabaseWriter) { self.database = database }
 
-    nonisolated static func shared(dbQueue: DatabaseQueue) -> SyncTransferSlots {
+    nonisolated static func shared(dbQueue: any DatabaseWriter) -> SyncTransferSlots {
         registry.withLock { values in
             values = values.filter { $0.value.value != nil }
             let key = ObjectIdentifier(dbQueue)

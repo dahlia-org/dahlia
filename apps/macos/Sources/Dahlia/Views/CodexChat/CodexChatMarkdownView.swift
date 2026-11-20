@@ -31,6 +31,7 @@ struct CodexChatMarkdownView: View {
             of: CodexChatMarkdownInput(markdown: markdown, isStreaming: isStreaming),
             initial: true
         ) { _, input in
+            MainActorHangMonitor.shared.mark(.chat)
             projectionModel.submit(input)
         }
         .onDisappear(perform: projectionModel.cancel)

@@ -64,10 +64,16 @@ Sentry はクラッシュスタック、Dahlia のリリース・ビルド、実
 | `piInstallStage` | `release` / `download` / `verification` / `extraction` / `activation` |
 | `piInstallReason` | `http` / `rateLimited` / `invalidResponse` / `invalidRelease` / `missingAsset` / `missingDigest` / `checksumMismatch` / `extractionFailed` / `executableMissing` / `networkTimeout` / `networkOffline` / `networkTLS` / `networkOther` / `fileSystem` |
 | `httpStatus` | `source=piInstallation` のみ、100〜599 の HTTP status code |
+| `hangSurface` | `source=mainActorHang` と SDK の app hang event のみ、`sidebar` / `screenshots` / `transcript` / `liveSubtitle` / `chat` / `other` |
+| `hangDuration` | `source=mainActorHang` のみ、`250ms` / `500ms` / `1s` / `2s` / `5sPlus` |
+| `recording` | `source=mainActorHang` と SDK の app hang event のみ、`active` / `idle` |
+| `hangProcess` | `source=mainActorHang` と SDK の app hang event のみ、`app`（MainActor の停止）/ `web`（文字起こしを描く WebContent プロセスが表示中に 2 秒応答しない、または終了した） |
 
 Pi のインストール・更新失敗は `source=piInstallation` と上記の固定段階・理由で記録する。キャンセルは記録せず、URL、保存先、release version、response body、元の Error の説明文は送らない。
 
 検索索引・画像解析・検索設定の取得と再構築の失敗は、`source` と上記の固定 `errorCode` だけを送る。同じ処理 owner の存続中は同一 source・code の組を一度だけ記録し、録音による停止を含むキャンセルは送らない。モデル名、provider の応答、SQLite の SQL、生のエラー詳細は送らない。
+
+MainActor の応答停止は2通りで扱う。`MainActorHangMonitor` は専用スレッドから main queue の応答遅れだけを測り、他のスレッドを一時停止しない。250 ms 以上の停止を、スタックなしの `source=mainActorHang` と上記の固定タグで送る。同じ画面と長さ区分の組は1回の起動で1度だけ送り、前面になく録音中でもない間の遅れは送らない。2 秒以上の停止は SDK 既定の app hang 検出（`appHangTimeoutInterval` 2 秒）が全スレッドのスタックとともに送り、`beforeSend` が `hangSurface`、`recording`、`hangProcess` だけを付ける。SDK はスタック取得時に全スレッドを一時停止するので、録音の音声スレッドを止める頻度を増やさないよう、しきい値は下げない。WebContent プロセスの停止は `hangProcess=web`、`hangDuration=2s` で、画面ごとに1回の起動で1度だけ送る。画面名は固定値であり、会議名、本文、件数、正確な停止時間は送らない。
 
 Sentry の PII、request、user、extra、自動 breadcrumb、network breadcrumb、失敗 HTTP request、performance trace は無効にする。`beforeBreadcrumb` でも許可カテゴリ以外を破棄する。スクリーンショット自体は送らず、既存のスクリーンショット表示診断では固定 bucket のみ許可する。
 

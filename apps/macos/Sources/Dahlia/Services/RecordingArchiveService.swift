@@ -5,12 +5,12 @@ import OpenAPIRuntime
 
 /// Durable archive preparation runs in an independent background lane, never in recording stop/drain.
 actor RecordingArchiveService {
-    private let dbQueue: DatabaseQueue
+    private let dbQueue: any DatabaseWriter
     private let api: SyncAPIClient
     private let root: URL
     private var isProcessing = false
 
-    init(dbQueue: DatabaseQueue, api: SyncAPIClient = SyncAPIClient(session: .shared), root: URL = BatchAudioStorage.managedRootURL) {
+    init(dbQueue: any DatabaseWriter, api: SyncAPIClient = SyncAPIClient(session: .shared), root: URL = BatchAudioStorage.managedRootURL) {
         self.dbQueue = dbQueue
         self.api = api
         self.root = root

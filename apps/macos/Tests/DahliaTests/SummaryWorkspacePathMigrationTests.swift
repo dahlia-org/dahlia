@@ -46,7 +46,7 @@ import GRDB
         }
 
         private func createV12SummaryDatabase(
-            in dbQueue: DatabaseQueue,
+            in dbQueue: any DatabaseWriter,
             meetingId: UUID,
             createdAt: Date
         ) throws {

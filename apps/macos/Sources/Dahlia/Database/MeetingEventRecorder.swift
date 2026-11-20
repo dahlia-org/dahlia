@@ -20,7 +20,7 @@ enum MeetingEventRecorder {
         let segmentIndex: Int?
     }
 
-    static func recordStarted(sessionId: UUID, dbQueue: DatabaseQueue) async {
+    static func recordStarted(sessionId: UUID, dbQueue: any DatabaseWriter) async {
         do {
             try await dbQueue.write { db in
                 guard let session = try RecordingSessionRecord.fetchOne(db, key: sessionId) else { return }

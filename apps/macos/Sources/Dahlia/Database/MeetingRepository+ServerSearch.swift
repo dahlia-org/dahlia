@@ -6,7 +6,7 @@ extension MeetingRepository {
     nonisolated static func serverSearch(
         workspaceId: UUID,
         criteria: MeetingSearchCriteria,
-        dbQueue: DatabaseQueue,
+        dbQueue: any DatabaseWriter,
         contentProvider: MeetingContentProvider = .shared
     ) async throws -> ServerSearchProjection {
         guard let source = try await dbQueue.read({ try MeetingContentProvider.SearchSource.read(workspaceId: workspaceId, in: $0) })
@@ -40,7 +40,7 @@ extension MeetingRepository {
             let screenshots = try result.screenshots.filter { !pendingScreenshotIds.contains($0.id) }.map { hit -> ScreenshotSearchResult in
                 guard let meetingId = hit.meetingId,
                       let row = try Row.fetchOne(db, sql: """
-                      SELECT s.mimeType FROM meeting_images s JOIN meetings m ON m.id = s.meetingId
+                      SELECT s.mimeType, s.contentHash FROM meeting_images s JOIN meetings m ON m.id = s.meetingId
                       WHERE s.id = ? AND m.id = ? AND m.workspace_id = ? AND s.fileId = ?
                       """, arguments: [hit.id, meetingId, workspaceId, hit.fileId]) else { throw TextContentError.changed }
                 return ScreenshotSearchResult(
@@ -50,6 +50,7 @@ extension MeetingRepository {
                     meetingDescription: "",
                     capturedAt: hit.date,
                     mimeType: row["mimeType"],
+                    contentHash: row["contentHash"],
                     snippet: hit.snippet
                 )
             }

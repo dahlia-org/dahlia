@@ -272,7 +272,7 @@
 
     private struct UnusedMeteringBatchFactory: BatchRecordingSessionFactory {
         func makeSession(
-            dbQueue _: DatabaseQueue,
+            dbQueue _: any DatabaseWriter,
             managedRootURL _: URL,
             meetingId _: UUID,
             recordingSessionId _: UUID,

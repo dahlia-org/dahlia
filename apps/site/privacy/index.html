@@ -82,6 +82,9 @@
             Pi download URLs, installation paths, response bodies, and raw error messages are not sent.
             Search indexing and image-analysis failures use fixed operation and error categories,
             without model names, provider responses, SQL, or raw error details.
+            When the app stops responding, Dahlia sends the fixed screen category, a duration range, and whether a recording
+            was running; for stops of two seconds or longer, the report also includes the app's thread stack traces.
+            Meeting names, content, and exact durations are not sent.
             Automatic network and lifecycle breadcrumb capture and default personal information are
             disabled, and request, user, and extra fields are removed.
           </p>

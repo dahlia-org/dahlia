@@ -285,7 +285,7 @@ import GRDB
         workspaceId: UUID,
         calendarUID: String?,
         recurrenceId: String?,
-        in dbQueue: DatabaseQueue
+        in dbQueue: any DatabaseWriter
     ) throws {
         try dbQueue.write { db in
             try MeetingRecord(

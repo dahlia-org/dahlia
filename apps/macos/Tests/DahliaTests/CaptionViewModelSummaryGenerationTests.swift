@@ -1595,7 +1595,7 @@ import Synchronization
         private var continuation: CheckedContinuation<SummaryDocument?, Never>?
         private var callWaiter: CheckedContinuation<Void, Never>?
 
-        func load(_: UUID, _: DatabaseQueue) async throws -> SummaryDocument? {
+        func load(_: UUID, _: any DatabaseWriter) async throws -> SummaryDocument? {
             await withCheckedContinuation { continuation in
                 self.continuation = continuation
                 callWaiter?.resume()

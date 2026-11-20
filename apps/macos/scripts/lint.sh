@@ -46,6 +46,26 @@ fi
 echo "Resource bundle policy: done"
 
 echo ""
+echo "=== Concurrency policy ==="
+# Task.detached is not a general way off MainActor (docs/spec/desktop/concurrency-and-projection.md). Existing calls are
+# counted per file in the allowlist; a new file or a higher count fails.
+task_detached_allowlist="apps/macos/scripts/task-detached-allowlist.txt"
+task_detached_current="$(grep -RlE 'Task\.detached' apps/macos/Sources | sort | while read -r file; do
+    echo "$(grep -cE 'Task\.detached' "$file") $file"
+done)"
+task_detached_violations="$(echo "$task_detached_current" | while read -r count file; do
+    [ -z "$file" ] && continue
+    allowed="$(awk -v f="$file" '$2 == f { print $1 }' "$task_detached_allowlist")"
+    if [ -z "$allowed" ] || [ "$count" -gt "$allowed" ]; then echo "$file: $count Task.detached (allowed ${allowed:-0})"; fi
+done)"
+if [ -n "$task_detached_violations" ]; then
+    echo "$task_detached_violations" >&2
+    echo "error: use an owned worker, an actor, or GRDB's async read/write instead of a new Task.detached" >&2
+    exit 1
+fi
+echo "Concurrency policy: done"
+
+echo ""
 echo "=== SwiftLint ==="
 if ! command -v swiftlint &>/dev/null; then
     if [[ "$is_ci" == "true" ]]; then

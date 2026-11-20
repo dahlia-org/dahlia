@@ -4,7 +4,7 @@ import Foundation
 import GRDB
 
 extension MeetingContentProvider {
-    func scheduleMaintenance(dbQueue: DatabaseQueue) {
+    func scheduleMaintenance(dbQueue: any DatabaseWriter) {
         let key = ObjectIdentifier(dbQueue)
         guard maintenance[key] == nil else { return }
         maintenance[key] = Task(priority: .utility) {
@@ -60,7 +60,7 @@ extension MeetingContentProvider {
         }
     }
 
-    static func usedBytes(dbQueue: DatabaseQueue) async throws -> Int {
+    static func usedBytes(dbQueue: any DatabaseWriter) async throws -> Int {
         try await dbQueue.read { db in
             try DocumentRetention.usedBytes(in: db) + (Int.fetchOne(db, sql: """
             SELECT coalesce(sum(c.byteCount), 0) FROM sync_content_state c JOIN workspaces v ON v.id = c.workspace_id
@@ -70,7 +70,7 @@ extension MeetingContentProvider {
     }
 
     func trim(
-        dbQueue: DatabaseQueue,
+        dbQueue: any DatabaseWriter,
         capacity: Int = MeetingContentProvider.capacityBytes,
         now: Date = .now,
         retentionDays: Int? = nil
@@ -110,7 +110,7 @@ extension MeetingContentProvider {
         }
     }
 
-    private func evict(entity: TextContentEntity, id: UUID, dbQueue: DatabaseQueue, now: Date, retentionDays: Int?) throws -> Int {
+    private func evict(entity: TextContentEntity, id: UUID, dbQueue: any DatabaseWriter, now: Date, retentionDays: Int?) throws -> Int {
         let raw = entity.rawValue
         let protected = Set(retainedWorkspaces[ObjectIdentifier(dbQueue), default: [:]].keys)
         // Keep lease acquisition and the eviction transaction ordered on this actor.

@@ -121,7 +121,7 @@ final class AppStartupModel {
         let database = if databaseURL == AppDatabaseManager.databaseURL {
             try AppDatabaseManager(onMigration: onMigration)
         } else {
-            try AppDatabaseManager(path: databaseURL.path, enablesConcurrentSearch: true, onMigration: onMigration)
+            try AppDatabaseManager(path: databaseURL.path, usesDatabasePool: true, onMigration: onMigration)
         }
         return (database, outcome)
     }

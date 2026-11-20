@@ -6,7 +6,7 @@
     @testable import Dahlia
 
     struct AgentLearningTests {
-        private func database() throws -> DatabaseQueue {
+        private func database() throws -> any DatabaseWriter {
             try AppDatabaseManager(path: ":memory:").dbQueue
         }
 

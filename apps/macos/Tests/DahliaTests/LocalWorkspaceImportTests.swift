@@ -749,7 +749,7 @@
         init(role: String) throws {
             directory = FileManager.default.temporaryDirectory.appending(path: UUID.v7().uuidString)
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-            database = try AppDatabaseManager(path: directory.appending(path: "import.sqlite").path, enablesConcurrentSearch: true)
+            database = try AppDatabaseManager(path: directory.appending(path: "import.sqlite").path, usesDatabasePool: true)
             connection = .init(id: .v7(), origin: "https://\(UUID.v7().uuidString.lowercased()).invalid", clientID: "test", createdAt: .now)
             source = .init(id: .v7(), path: "/tmp/local-import-source", name: "Local settings", createdAt: .now, lastOpenedAt: .now)
             target = .init(

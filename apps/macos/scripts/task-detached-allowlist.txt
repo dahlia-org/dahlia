@@ -1,0 +1,34 @@
+# Files that may call Task.detached, with the most calls each may keep. CI fails on a new file or a higher count.
+# Prefer an owned worker, an actor, or GRDB's async read/write; lower a count when removing a call.
+1 apps/macos/Sources/Dahlia/Audio/AudioLevelMeteringWorker.swift
+1 apps/macos/Sources/Dahlia/Audio/LiveAudioFrameWorker.swift
+1 apps/macos/Sources/Dahlia/DahliaApp.swift
+1 apps/macos/Sources/Dahlia/Database/AppDatabaseManager.swift
+1 apps/macos/Sources/Dahlia/Database/BackgroundJobWorker.swift
+1 apps/macos/Sources/Dahlia/Database/MeetingRepository+WorkspaceDeletion.swift
+1 apps/macos/Sources/Dahlia/Services/CodexChatContextProvider.swift
+1 apps/macos/Sources/Dahlia/Services/DahliaCloudService.swift
+2 apps/macos/Sources/Dahlia/Services/GoogleCalendarStore.swift
+1 apps/macos/Sources/Dahlia/Services/MeetingLinkApplicationCatalog.swift
+1 apps/macos/Sources/Dahlia/Services/MeetingLinkOpener.swift
+3 apps/macos/Sources/Dahlia/Services/PiChatService.swift
+1 apps/macos/Sources/Dahlia/Services/PiInstaller.swift
+1 apps/macos/Sources/Dahlia/Services/RecordingArchiveService.swift
+5 apps/macos/Sources/Dahlia/Services/RecordingAudioStore.swift
+2 apps/macos/Sources/Dahlia/Services/SummaryHistoryService.swift
+1 apps/macos/Sources/Dahlia/Services/SummaryService+Codex.swift
+1 apps/macos/Sources/Dahlia/Services/TelemetryDeckClient.swift
+1 apps/macos/Sources/Dahlia/Services/WorkspaceSummaryExportService.swift
+1 apps/macos/Sources/Dahlia/Speech/BatchSpeechTranscriberService.swift
+6 apps/macos/Sources/Dahlia/ViewModels/AgentLearningSettingsModel.swift
+1 apps/macos/Sources/Dahlia/ViewModels/AgentOptimizationSettingsModel.swift
+13 apps/macos/Sources/Dahlia/ViewModels/CaptionViewModel.swift
+2 apps/macos/Sources/Dahlia/ViewModels/DahliaCloudAccountController.swift
+2 apps/macos/Sources/Dahlia/ViewModels/PiFileAccessSettingsModel.swift
+3 apps/macos/Sources/Dahlia/ViewModels/PiLaunchSettingsModel.swift
+1 apps/macos/Sources/Dahlia/ViewModels/PiSetupModel.swift
+1 apps/macos/Sources/Dahlia/ViewModels/SetupTourModel.swift
+1 apps/macos/Sources/Dahlia/ViewModels/SidebarViewModel.swift
+1 apps/macos/Sources/Dahlia/Views/Settings/AgentSettingsView.swift
+1 apps/macos/Sources/Dahlia/Views/Settings/AgentSkillDetailView.swift
+1 apps/macos/Sources/DahliaMCP/TelemetryDeckClient.swift

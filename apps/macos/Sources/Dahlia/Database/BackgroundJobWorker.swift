@@ -11,7 +11,7 @@ actor BackgroundJobWorker {
 
     private let archiveService: RecordingArchiveService
     private let apiClient: SyncAPIClient
-    private let dbQueue: DatabaseQueue
+    private let dbQueue: any DatabaseWriter
     private let screenshotAnalyzer: any ScreenshotAnalyzing
     private let inferenceSettingsResolver: @Sendable (WorkspaceRecord) -> AccountInferenceSettings
     private let runtimeProviderResolver: RuntimeProviderResolver
@@ -40,7 +40,7 @@ actor BackgroundJobWorker {
     private static let maximumConcurrentScreenshotAnalysisCount = 2
 
     init(
-        dbQueue: DatabaseQueue,
+        dbQueue: any DatabaseWriter,
         screenshotAnalyzer: any ScreenshotAnalyzing = CodexScreenshotAnalysisService(),
         inferenceSettingsResolver: @escaping @Sendable (WorkspaceRecord) -> AccountInferenceSettings = { AccountInferenceSettings(workspace: $0) },
         apiClient: SyncAPIClient = SyncAPIClient(session: .shared),

@@ -15,7 +15,7 @@ enum BatchAudioCleanupService {
 
     static func deletionTargets(
         meetingIds: Set<UUID>,
-        dbQueue: DatabaseQueue,
+        dbQueue: any DatabaseWriter,
         includeWorkspaceAudio: Bool = true
     ) throws -> [DeletionTarget] {
         guard !meetingIds.isEmpty else { return [] }
@@ -68,7 +68,7 @@ enum BatchAudioCleanupService {
 
     static func deletionTargets(
         workspaceId: UUID,
-        dbQueue: DatabaseQueue
+        dbQueue: any DatabaseWriter
     ) throws -> [DeletionTarget] {
         let meetingIds = try dbQueue.read { db in
             try UUID.fetchAll(

@@ -83,7 +83,7 @@ actor DocumentSyncService {
         let reason: String?
     }
 
-    let dbQueue: DatabaseQueue
+    let dbQueue: any DatabaseWriter
     let api: SyncAPIClient
     let waitForSendWindow: @Sendable () async throws -> Void
     private let persistence: DocumentPersistence
@@ -112,7 +112,7 @@ actor DocumentSyncService {
     private var inFlight: [UUID: Flight] = [:]
 
     init(
-        dbQueue: DatabaseQueue,
+        dbQueue: any DatabaseWriter,
         api: SyncAPIClient = SyncAPIClient(session: .shared),
         waitForSendWindow: @escaping @Sendable () async throws -> Void = { try await Task.sleep(for: .milliseconds(200)) }
     ) {
