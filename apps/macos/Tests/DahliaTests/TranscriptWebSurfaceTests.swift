@@ -182,8 +182,11 @@
             #expect(await (try? harness.webView.evaluateJavaScript("window.sameDocument") as? Bool) == true)
         }
 
-        @Test(arguments: [TranscriptWebSurface.Edge.top, .bottom])
-        func stationaryUpdatesReportViewportWithoutRequestingPages(edge: TranscriptWebSurface.Edge) async throws {
+        @Test(arguments: [TranscriptWebSurface.Edge.top, .bottom], [false, true])
+        func stationaryUpdatesReportViewportWithoutRequestingPages(
+            edge: TranscriptWebSurface.Edge,
+            deliversScrollBeforeUpdate: Bool
+        ) async throws {
             let harness = Harness()
             let requests = PageRequests()
             let request: @MainActor (TranscriptWebSurface.Edge) -> Void = { requests.values.append($0) }
@@ -217,18 +220,41 @@
             Object.defineProperty(document, 'visibilityState', { value: 'visible', configurable: true });
             window.scrollFrames = [];
             window.requestAnimationFrame = callback => { window.scrollFrames.push(callback); return window.scrollFrames.length; };
-            document.scrollingElement.scrollTop += earlier ? -20 : 20;
-            window.dispatchEvent(new Event('scroll'));
-            """, arguments: ["earlier": edge == .top], in: nil, contentWorld: .page)
-            // A live update between the scroll event and its frame must not swallow that page demand.
+            window.holdsScrollEvents = true;
+            window.addEventListener('scroll', event => {
+              if (window.holdsScrollEvents) event.stopImmediatePropagation();
+            }, { capture: true });
+            document.scrollingElement.scrollTop = earlier ? 0 : document.scrollingElement.scrollHeight;
+            if (deliverBefore) {
+              window.holdsScrollEvents = false;
+              window.dispatchEvent(new Event('scroll'));
+              window.holdsScrollEvents = true;
+            }
+            """, arguments: ["earlier": edge == .top, "deliverBefore": deliversScrollBeforeUpdate], in: nil, contentWorld: .page)
+            // Cover both event delivery orderings around apply, including movement to a clamped edge.
             segments[0].translatedText = "overlapping update"
             harness.show(
                 segments, showsTranslatedText: true, hasEarlier: edge == .top, hasLater: edge == .bottom,
                 onRequestPage: request
             )
             #expect(await harness.waitForText("overlapping update"))
-            _ = try await harness.webView.evaluateJavaScript("for (const frame of window.scrollFrames.splice(0)) frame(); true")
+            _ = try await harness.webView.evaluateJavaScript("""
+            window.holdsScrollEvents = false;
+            window.dispatchEvent(new Event('scroll'));
+            for (const frame of window.scrollFrames.splice(0)) frame();
+            true
+            """)
             #expect(await pollUntil { requests.values == [edge] })
+            // A new content identity / explicit destination replaces a previously queued scroll demand.
+            _ = try await harness.webView.evaluateJavaScript("""
+            document.scrollingElement.scrollTop += document.scrollingElement.scrollTop === 0 ? 100 : -100;
+            window.dispatchEvent(new Event('scroll')); true
+            """)
+            segments[0].text = "new context"
+            harness.show(segments, contentID: "other", hasEarlier: true, hasLater: true, scrollRequest: (1, .top), onRequestPage: request)
+            #expect(await harness.waitForText("new context"))
+            _ = try await harness.webView.evaluateJavaScript("for (const frame of window.scrollFrames.splice(0)) frame(); true")
+            #expect(requests.values == [edge])
         }
 
         @MainActor

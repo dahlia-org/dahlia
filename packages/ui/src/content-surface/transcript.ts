@@ -140,6 +140,7 @@ export function install(root: HTMLElement): void {
   };
 
   const checkScroll = () => {
+    if (!scrollScheduled) return;
     scrollScheduled = false;
     reportViewport();
     const page = pageToRequest(scroller.scrollTop, distanceFromBottom(), hasEarlier, hasLater);
@@ -149,15 +150,22 @@ export function install(root: HTMLElement): void {
     }
   };
 
-  window.addEventListener("scroll", () => {
-    // Ignore delayed events from applying rows, but retain a real scroll even if content updates before its frame.
-    if (scrollScheduled || scroller.scrollTop === reportedScrollTop) return;
+  const scheduleScrollCheck = () => {
+    if (scrollScheduled) return;
     scrollScheduled = true;
     if (document.visibilityState === "visible") requestAnimationFrame(checkScroll);
     else checkScroll();
+  };
+
+  window.addEventListener("scroll", () => {
+    if (scroller.scrollTop !== reportedScrollTop) scheduleScrollCheck();
   }, { passive: true });
 
   const apply = (update: TranscriptUpdate) => {
+    // Observe pending movement before our own layout/anchor corrections can overwrite its baseline.
+    const movedBeforeUpdate = scroller.scrollTop !== reportedScrollTop;
+    const replacesViewport = update.reset || update.scrollTo !== undefined;
+    if (replacesViewport) scrollScheduled = false;
     const wasAtBottom = following && distanceFromBottom() < 24;
     // Retain a visible row through prepend and leading-window eviction, including variable row heights.
     const anchor = !update.reset && update.scrollTo === undefined && !wasAtBottom
@@ -190,6 +198,7 @@ export function install(root: HTMLElement): void {
     else if (wasAtBottom && !hasLater) scroller.scrollTop = scroller.scrollHeight;
     else if (anchor) scroller.scrollTop += anchor.element.getBoundingClientRect().top - anchor.top;
     reportViewport();
+    if (movedBeforeUpdate && !replacesViewport) scheduleScrollCheck();
     // Report after the frame that shows this update. A hidden page draws no frames, so report right away.
     if (document.visibilityState === "visible") requestAnimationFrame(() => post({ type: "presented", seq: update.seq }));
     else post({ type: "presented", seq: update.seq });
