@@ -19,6 +19,7 @@ This file applies to the entire repository. Before editing a path covered by a m
 | `apps/server/` | Server tenant isolation, APIs, and runtime: `apps/server/AGENTS.md` |
 | `packages/ui/` | Shared Web UI, browser data layer, and Documents core: `packages/ui/AGENTS.md` |
 | `apps/desktop/` | Online-only Electron alpha: `apps/desktop/AGENTS.md` |
+| `apps/desktop-v2/` | Standalone Electron v2 (recording, on-Mac transcription, summaries): `apps/desktop-v2/AGENTS.md` |
 | `scripts/` | Root compatibility entrypoints for desktop tooling |
 
 `CLAUDE.md` imports the `AGENTS.md` in the same directory with `@AGENTS.md`. Do not maintain duplicate content.

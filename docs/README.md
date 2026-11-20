@@ -17,6 +17,7 @@ Dahlia は Desktop、Server / Private Web、公開サイトを持つモノレポ
 | Desktop | [Telemetry](telemetry.md) / [Release versioning](desktop-release-versioning.md) | 匿名収集規則、desktop release の版管理 |
 | Desktop | [Logs](desktop-logs.md) | ファイルログと OSLog の採取手順、ログ追加の規則 |
 | Desktop（Electron alpha） | [Electron README](../apps/desktop/README.md) | オンライン専用の開発用アルファの起動・構成・制限 |
+| Desktop v2（Electron） | [Desktop v2 README](../apps/desktop-v2/README.md) | 録音・Mac での文字起こし・要約だけの独立した開発版 |
 | Server / Private Web | [Server README](../apps/server/README.md) | API、認証・認可、Workspace 共有、検索、設定、開発 |
 | Server / Cloud | [Deployment](../deploy/README.md) | 配置方法の入口 |
 | Server / Cloud | [Cloudflare](../deploy/cloudflare/README.md) / [Databricks](../deploy/databricks/README.md) | 配置先ごとの手順・制約 |

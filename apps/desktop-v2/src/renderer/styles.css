@@ -1,0 +1,94 @@
+/* Design tokens from Dahlia for macOS (apps/macos/Sources/Dahlia/Views/DahliaDesign.swift, DahliaTypography.swift). */
+@import "tailwindcss";
+
+:root {
+  color-scheme: light dark;
+  --primary: #3f6ea8;
+  --primary-hover: #38659d;
+  --primary-pressed: #2f5a91;
+  --text: #1a1c1f;
+  --text-secondary: #757677;
+  --sidebar-text: #3a3c3e;
+  --content: #ffffff;
+  --surface: #f5f5f6;
+  --separator: rgb(0 0 0 / 0.1);
+  --danger: #e5484d;
+  --backdrop: rgb(0 0 0 / 0.25);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --primary: #4777b3;
+    --primary-hover: #5182bd;
+    --primary-pressed: #3d6aa3;
+    --text: #dfdfdf;
+    --text-secondary: #b4b4b4;
+    --sidebar-text: #c6c5c6;
+    --content: #1e1e1e;
+    --surface: #2a2a2a;
+    --separator: rgb(255 255 255 / 0.1);
+    --danger: #ff6369;
+    --backdrop: rgb(0 0 0 / 0.45);
+  }
+}
+
+@theme inline {
+  --color-primary: var(--primary);
+  --color-primary-hover: var(--primary-hover);
+  --color-primary-pressed: var(--primary-pressed);
+  --color-highlight: color-mix(in srgb, var(--primary) 10%, transparent);
+  --color-hover: color-mix(in srgb, var(--primary) 5%, transparent);
+  --color-text: var(--text);
+  --color-secondary: var(--text-secondary);
+  --color-sidebar-text: var(--sidebar-text);
+  --color-content: var(--content);
+  --color-surface: var(--surface);
+  --color-separator: var(--separator);
+  --color-danger: var(--danger);
+  --color-backdrop: var(--backdrop);
+  --font-sans: -apple-system, BlinkMacSystemFont, "Hiragino Sans", system-ui, sans-serif;
+  /* 14 pt base; secondary 12, title3 15, title2 17, title 22. */
+  --text-body: 14px;
+  --text-small: 12px;
+  --text-title3: 15px;
+  --text-title2: 17px;
+  --text-title: 22px;
+  --radius-field: 8px;
+  --radius-card: 12px;
+  --radius-button: 12px;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+  /* The sidebar shows the window's vibrancy through this. */
+  background: transparent;
+  color: var(--text);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  -webkit-font-smoothing: antialiased;
+  user-select: none;
+}
+
+.drag {
+  -webkit-app-region: drag;
+}
+
+.no-drag,
+button,
+input,
+select {
+  -webkit-app-region: no-drag;
+}
+
+.selectable {
+  user-select: text;
+}
+
+:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--primary) 60%, transparent);
+  outline-offset: 1px;
+}

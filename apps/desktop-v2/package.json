@@ -1,0 +1,37 @@
+{
+  "name": "@dahlia-ai/desktop-v2",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Dahlia Desktop v2: a standalone Electron app that records, transcribes on the Mac and summarizes with a Databricks workspace",
+  "main": "dist/main.js",
+  "scripts": {
+    "build": "vite build && tsup",
+    "build:native": "swift build -c release --package-path native",
+    "check": "pnpm run lint && pnpm run typecheck && pnpm run test && pnpm run build",
+    "dev": "node scripts/dev.mjs",
+    "lint": "eslint .",
+    "package": "pnpm run build && pnpm run build:native && node scripts/package-mac.mjs",
+    "start": "electron .",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@tailwindcss/vite": "^4.3.3",
+    "@types/node": "^26.1.2",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.4",
+    "@vitejs/plugin-react": "^6.0.5",
+    "electron": "44.4.5",
+    "eslint": "^10.8.0",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
+    "tailwindcss": "^4.3.3",
+    "tsup": "^8.5.1",
+    "typescript": "^6.0.3",
+    "typescript-eslint": "^8.70.1",
+    "vite": "^8.2.0",
+    "vitest": "^4.1.10"
+  }
+}
