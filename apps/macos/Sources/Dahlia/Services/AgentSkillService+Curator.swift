@@ -148,6 +148,7 @@ extension AgentSkillService {
     }
 
     /// Moves the package to `skills/.archive/` (Pi skips dot directories), never deleting it.
+    @discardableResult
     func archive(
         name: String,
         account: String,
@@ -155,8 +156,9 @@ extension AgentSkillService {
         source changeSource: String = "curator",
         thread: String? = nil,
         review: String? = nil,
+        expected: JSONValue? = nil,
         authorize: @Sendable (Database) throws -> Void = { _ in }
-    ) throws {
+    ) throws -> Bool {
         switch provenance(name: name, account: account, root: root) {
         case .bundled: throw HermesLearning.failure("skill '\(name)' is a bundled built-in; it is never archived or consolidated")
         case .package: throw HermesLearning.failure("skill '\(name)' is installed by a Pi package; never archive")
@@ -177,9 +179,12 @@ extension AgentSkillService {
             formatter.dateFormat = "yyyyMMddHHmmss"
             destination = archive.appending(path: "\(name)-\(formatter.string(from: .now))")
         }
-        try move(source, to: destination) { db in
+        return try move(source, to: destination, checking: { db in
             try authorize(db)
+            guard try Self.matchesCuratorRecord(db, name: name, account: account, expected: expected) else { return false }
             try Self.authorizeCuration(db, name: name, account: account)
+            return true
+        }) { db in
             try AgentLearningChangeRecord(
                 id: .v7(), accountID: account, kind: "skill", target: name,
                 before: HermesLearning.json(snapshot), after: nil, status: "applied",
@@ -217,12 +222,24 @@ extension AgentSkillService {
         }
     }
 
-    private func move(_ source: URL, to destination: URL, recording: (Database) throws -> Void) throws {
-        try FileManager.default.moveItem(at: source, to: destination)
+    @discardableResult
+    private func move(
+        _ source: URL,
+        to destination: URL,
+        checking: (Database) throws -> Bool = { _ in true },
+        recording: (Database) throws -> Void
+    ) throws -> Bool {
+        var moved = false
         do {
-            try dbQueue.write(recording)
+            return try dbQueue.write { db in
+                guard try checking(db) else { return false }
+                try FileManager.default.moveItem(at: source, to: destination)
+                moved = true
+                try recording(db)
+                return true
+            }
         } catch {
-            try? FileManager.default.moveItem(at: destination, to: source)
+            if moved { try? FileManager.default.moveItem(at: destination, to: source) }
             throw error
         }
     }
@@ -231,37 +248,62 @@ extension AgentSkillService {
     /// schedule loads, which no background pass archives because Dahlia does not rewrite approved schedules.
     func curatorRecords(account: String, root: URL) throws -> JSONValue {
         let scheduled = try scheduleSkills(account: account)
-        let time = { (value: Date?) -> JSONValue in value.map { .string($0.ISO8601Format()) } ?? .null }
         return try .object(Dictionary(uniqueKeysWithValues: managedRows(account: account, root: root).map { row in
             let name: String = row["name"]
-            return (name, .object([
-                "created_by": .string(row["createdBy"]), "state": .string(row["state"]),
-                "use_count": .number(Double(row["useCount"] as Int)), "view_count": .number(Double(row["viewCount"] as Int)),
-                "patch_count": .number(Double(row["patchCount"] as Int)),
-                "last_used_at": time(row["lastUsedAt"]), "last_viewed_at": time(row["lastViewedAt"]),
-                "last_patched_at": time(row["lastPatchedAt"]), "created_at": time(row["createdAt"]),
-                "archived_at": time(row["archivedAt"]), "pinned": .bool(row["pinned"]), "locked": .bool(row["locked"]),
-                "scheduled": .bool(scheduled.contains(name)),
-            ]))
+            return (name, Self.curatorRecord(row, scheduled: scheduled.contains(name)))
         }))
     }
 
+    private static func curatorRecord(_ row: Row, scheduled: Bool) -> JSONValue {
+        let time = { (value: Date?) -> JSONValue in value.map { .string($0.ISO8601Format()) } ?? .null }
+        return .object([
+            "created_by": .string(row["createdBy"]), "state": .string(row["state"]),
+            "use_count": .number(Double(row["useCount"] as Int)), "view_count": .number(Double(row["viewCount"] as Int)),
+            "patch_count": .number(Double(row["patchCount"] as Int)),
+            "last_used_at": time(row["lastUsedAt"]), "last_viewed_at": time(row["lastViewedAt"]),
+            "last_patched_at": time(row["lastPatchedAt"]), "created_at": time(row["createdAt"]),
+            "archived_at": time(row["archivedAt"]), "pinned": .bool(row["pinned"]), "locked": .bool(row["locked"]),
+            "scheduled": .bool(scheduled),
+        ])
+    }
+
+    /// Compare inside the write transaction, so activity or protection changes invalidate the sweep's decision.
+    private static func matchesCuratorRecord(_ db: Database, name: String, account: String, expected: JSONValue?) throws -> Bool {
+        guard let expected else { return true }
+        guard let row = try Row.fetchOne(db, sql: "SELECT * FROM agent_skill_states WHERE accountID=? AND name=?", arguments: [account, name])
+        else { return false }
+        let schedules = try String.fetchAll(db, sql: "SELECT skills FROM chat_schedules WHERE accountID=?", arguments: [account])
+        let scheduled = schedules.contains { ((try? JSONDecoder().decode([String].self, from: Data($0.utf8))) ?? []).contains(name) }
+        return curatorRecord(row, scheduled: scheduled) == expected
+    }
+
     /// The transitions pi-hermes-skills applies: `state` between active and stale, and the first `created_at`.
+    @discardableResult
     func setCuratorFields(
         name: String,
         fields: [String: JSONValue],
         account: String,
+        expected: JSONValue? = nil,
         authorize: @Sendable (Database) throws -> Void
-    ) throws {
-        if let state = fields["state"]?.stringValue {
-            guard ["active", "stale"].contains(state) else { throw HermesLearning.failure("Archive skills with the archive action.") }
-            try setField(name: name, account: account, sql: "state=?", value: state, authorize: authorize)
-        }
-        if let created = fields["created_at"]?.stringValue {
-            let date = (try? Date(created, strategy: Date.ISO8601FormatStyle(includingFractionalSeconds: true)))
-                ?? (try? Date(created, strategy: .iso8601))
-            guard let date else { throw HermesLearning.failure("created_at must be an ISO 8601 time.") }
-            try setField(name: name, account: account, sql: "createdAt=COALESCE(createdAt,?)", value: date, authorize: authorize)
+    ) throws -> Bool {
+        try dbQueue.write { db in
+            try authorize(db)
+            guard try Self.matchesCuratorRecord(db, name: name, account: account, expected: expected) else { return false }
+            try Self.authorizeCuration(db, name: name, account: account)
+            if let state = fields["state"]?.stringValue {
+                guard ["active", "stale"].contains(state) else { throw HermesLearning.failure("Archive skills with the archive action.") }
+                try db.execute(sql: "UPDATE agent_skill_states SET state=? WHERE accountID=? AND name=?", arguments: [state, account, name])
+            }
+            if let created = fields["created_at"]?.stringValue {
+                let date = (try? Date(created, strategy: Date.ISO8601FormatStyle(includingFractionalSeconds: true)))
+                    ?? (try? Date(created, strategy: .iso8601))
+                guard let date else { throw HermesLearning.failure("created_at must be an ISO 8601 time.") }
+                try db.execute(
+                    sql: "UPDATE agent_skill_states SET createdAt=COALESCE(createdAt,?) WHERE accountID=? AND name=?",
+                    arguments: [date, account, name]
+                )
+            }
+            return true
         }
     }
 
@@ -282,17 +324,4 @@ extension AgentSkillService {
         }
     }
 
-    private func setField(
-        name: String,
-        account: String,
-        sql: String,
-        value: some DatabaseValueConvertible,
-        authorize: @Sendable (Database) throws -> Void
-    ) throws {
-        try dbQueue.write {
-            try authorize($0)
-            try Self.authorizeCuration($0, name: name, account: account)
-            try $0.execute(sql: "UPDATE agent_skill_states SET \(sql) WHERE accountID=? AND name=?", arguments: [value, account, name])
-        }
-    }
 }

@@ -1,13 +1,15 @@
 // node --test apps/macos/scripts/test-hermes-skills.mjs
 import assert from "node:assert/strict";
 import fs from "node:fs";
+import childProcess from "node:child_process";
+import { EventEmitter } from "node:events";
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { syncBuiltinESMExports } from "node:module";
 import { join } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
-import { enforceBudget } from "../Sources/Dahlia/PiExtension/pi-hermes-skills/background.ts";
+import { enforceBudget, startBackground } from "../Sources/Dahlia/PiExtension/pi-hermes-skills/background.ts";
 import { applyTransitions, renderCandidates, restoreSkill } from "../Sources/Dahlia/PiExtension/pi-hermes-skills/curator.ts";
 import { defaultSettings, registerHermesSkills, resolveSettings } from "../Sources/Dahlia/PiExtension/pi-hermes-skills/index.ts";
 import { fileSkillTools } from "../Sources/Dahlia/PiExtension/pi-hermes-skills/tools.ts";
@@ -502,4 +504,68 @@ test("archival restores the package if saving its record fails", async (t) => {
   }
   await store.archive("s");
   assert.equal((await store.all()).s.state, "archived");
+});
+
+
+test("required record failures roll back deletes, creates, and earlier writes in a batch", async () => {
+  const { root, store, manage } = account();
+  await manage({ action: "create", name: "original", content: skillText("original") },
+    { action: "write_file", name: "original", file_path: "scripts/run.sh", file_content: "echo saved" });
+  fs.chmodSync(join(root, "original/scripts/run.sh"), 0o700);
+  const records = await store.all();
+  let failedName;
+  const execute = fileSkillTools({ root, skills: () => [], store: { ...store, set: async (name, fields) => {
+    if (name === failedName) throw new Error("Injected record failure");
+    return store.set(name, fields);
+  } } });
+  failedName = "original";
+  await assert.rejects(execute("skill_manage", { operations: [{ action: "delete", name: "original" }] }, {}), /Injected record failure/);
+  assert.equal(readFileSync(join(root, "original/SKILL.md"), "utf8"), skillText("original"));
+  assert.equal(readFileSync(join(root, "original/scripts/run.sh"), "utf8"), "echo saved");
+  assert.equal(statSync(join(root, "original/scripts/run.sh")).mode & 0o777, 0o700);
+  assert.deepEqual(await store.all(), records);
+  for (failedName of ["first", "second"]) {
+    await assert.rejects(execute("skill_manage", { operations: ["first", "second"].map((name) => ({ action: "create", name, content: skillText(name) })) }, {}), /Injected record failure/);
+    assert.ok(!existsSync(join(root, "first")) && !existsSync(join(root, "second")));
+    assert.deepEqual(await store.all(), records);
+  }
+  failedName = undefined;
+  await execute("skill_manage", { operations: [{ action: "delete", name: "original" }] }, {});
+  assert.ok(!existsSync(join(root, "original")));
+  assert.deepEqual(await store.all(), {});
+});
+
+test("detached review freezes its source before spawn and cleans failed starts", (t) => {
+  const root = temporary();
+  const source = join(root, "live.jsonl");
+  const original = 'saved conversation\n';
+  writeFileSync(source, original);
+  let snapshot;
+  let failSynchronously = false;
+  const child = new EventEmitter();
+  child.unref = () => {};
+  t.mock.method(childProcess, "spawn", (_command, args) => {
+    snapshot = args[args.indexOf("--fork") + 1];
+    if (failSynchronously) throw new Error("Injected synchronous spawn failure");
+    fs.appendFileSync(source, 'later turn\n');
+    return child;
+  });
+  syncBuiltinESMExports();
+  try {
+    startBackground({}, { role: "review", prompt: "Review.", fork: source, cwd: root });
+    assert.notEqual(snapshot, source);
+    assert.equal(readFileSync(snapshot, "utf8"), original);
+    assert.equal(readFileSync(source, "utf8"), original + 'later turn\n');
+    child.emit("error", new Error("Injected spawn failure"));
+    assert.ok(!existsSync(snapshot));
+    const before = new Set(readdirSync(tmpdir()).filter((name) => name.startsWith("pi-hermes-skills-")));
+    assert.throws(() => startBackground({}, { role: "review", prompt: "Review.", fork: join(root, "absent"), cwd: root }), /ENOENT/);
+    assert.deepEqual(new Set(readdirSync(tmpdir()).filter((name) => name.startsWith("pi-hermes-skills-"))), before);
+    failSynchronously = true;
+    assert.throws(() => startBackground({}, { role: "review", prompt: "Review.", fork: source, cwd: root }), /Injected synchronous spawn failure/);
+    assert.ok(!existsSync(snapshot));
+  } finally {
+    t.mock.restoreAll();
+    syncBuiltinESMExports();
+  }
 });

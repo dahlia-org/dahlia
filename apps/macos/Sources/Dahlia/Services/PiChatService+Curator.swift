@@ -226,13 +226,16 @@ extension PiChatService {
             case "all":
                 return try await service.curatorRecords(account: account, root: root)
             case "set":
-                try await service.setCuratorFields(name: name, fields: object["fields"]?.objectValue ?? [:], account: account, authorize: running)
+                guard let expected = object["expected"]?.objectValue else { throw HermesLearning.failure("Expected a skill record snapshot.") }
+                return try await .bool(service.setCuratorFields(
+                    name: name, fields: object["fields"]?.objectValue ?? [:], account: account, expected: .object(expected), authorize: running
+                ))
             case "archive":
-                try await service.archive(name: name, account: account, root: root, authorize: running)
+                guard let expected = object["expected"]?.objectValue else { throw HermesLearning.failure("Expected a skill record snapshot.") }
+                return try await .bool(service.archive(name: name, account: account, root: root, expected: .object(expected), authorize: running))
             default:
                 throw HermesLearning.failure("Unknown skill store action.")
             }
-            return .null
         default:
             guard curatorAllowed(runID: runID, provider: provider), method != "memory", PiExecutionProfile.review.allows(method)
             else { throw CancellationError() }

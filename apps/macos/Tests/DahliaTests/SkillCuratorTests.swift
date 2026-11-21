@@ -127,7 +127,7 @@
             try await service.setCuratorFields(name: "legacy", fields: ["created_at": .string("2027-01-15T08:00:00.000Z")], account: "a") { _ in }
             try await service.setCuratorFields(name: "legacy", fields: ["created_at": .string("2030-01-01T00:00:00Z")], account: "a") { _ in }
             let seeded = try await db.read { try Date.fetchOne($0, sql: "SELECT createdAt FROM agent_skill_states WHERE name='legacy'") }
-            #expect(seeded == (try Date("2027-01-15T08:00:00.000Z", strategy: Date.ISO8601FormatStyle(includingFractionalSeconds: true))))
+            #expect(try seeded == Date("2027-01-15T08:00:00.000Z", strategy: Date.ISO8601FormatStyle(includingFractionalSeconds: true)))
             for name in ["pinned", "locked", "scheduled", "asked"] {
                 await #expect(throws: (any Error).self, "\(name)") {
                     try await service.setCuratorFields(name: name, fields: ["state": .string("stale")], account: "a") { _ in }
@@ -140,6 +140,54 @@
             try await service.archive(name: "old", account: "a", root: root)
             #expect(try state("old", db) == "archived")
             #expect(FileManager.default.fileExists(atPath: root.appending(path: ".archive/old/SKILL.md").path))
+        }
+
+        @Test func nativeTransitionsSkipActivityChangedSinceTheSweepAndCanRetry() async throws {
+            let (service, db, root) = try setup()
+            defer { try? FileManager.default.removeItem(at: root) }
+            for name in ["idle", "old", "legacy"] {
+                try managed(name, daysAgo: 40, db: db, root: root)
+            }
+            try await db.write { try $0.execute(sql: "UPDATE agent_skill_states SET createdAt=NULL WHERE name='legacy'") }
+            let records = try #require(try await service.curatorRecords(account: "a", root: root).objectValue)
+            for name in ["idle", "old", "legacy"] {
+                try await service.recordUsage(name: name, account: "a", columns: ["useCount"])
+            }
+            #expect(try await !service.setCuratorFields(
+                name: "idle", fields: ["state": .string("stale")], account: "a", expected: records["idle"]
+            ) { _ in })
+            #expect(try await !service.setCuratorFields(
+                name: "legacy", fields: ["created_at": .string("2027-01-15T08:00:00Z")], account: "a", expected: records["legacy"]
+            ) { _ in })
+            #expect(try await !service.archive(name: "old", account: "a", root: root, expected: records["old"]))
+            #expect(try state("idle", db) == "active")
+            #expect(try state("old", db) == "active")
+            #expect(FileManager.default.fileExists(atPath: root.appending(path: "old/SKILL.md").path))
+            #expect(!FileManager.default.fileExists(atPath: root.appending(path: ".archive/old").path))
+            let changes = try await db.read { try Int.fetchOne($0, sql: "SELECT COUNT(*) FROM agent_learning_changes") }
+            #expect(changes == 0)
+            let created = try await db.read { try Date.fetchOne($0, sql: "SELECT createdAt FROM agent_skill_states WHERE name='legacy'") }
+            #expect(created == nil)
+            // Run authorization is still required even when the snapshot is obsolete.
+            await #expect(throws: CancellationError.self) {
+                try await service.archive(name: "old", account: "a", root: root, expected: records["old"]) { _ in throw CancellationError() }
+            }
+            let beforeAuthorization = try #require(try await service.curatorRecords(account: "a", root: root).objectValue)
+            #expect(try await !service.setCuratorFields(
+                name: "idle", fields: ["state": .string("stale")], account: "a", expected: beforeAuthorization["idle"]
+            ) { db in
+                try AgentSkillService.recordUsage(db, name: "idle", account: "a", columns: ["useCount"])
+            })
+            #expect(try await !service.archive(name: "old", account: "a", root: root, expected: beforeAuthorization["old"]) { db in
+                try AgentSkillService.recordUsage(db, name: "old", account: "a", columns: ["viewCount"])
+            })
+            let current = try #require(try await service.curatorRecords(account: "a", root: root).objectValue)
+            #expect(try await service.setCuratorFields(
+                name: "idle", fields: ["state": .string("stale")], account: "a", expected: current["idle"]
+            ) { _ in })
+            #expect(try await service.archive(name: "old", account: "a", root: root, expected: current["old"]))
+            #expect(try state("idle", db) == "stale")
+            #expect(try state("old", db) == "archived")
         }
 
         @Test func archiveIsRecoverableAndRestoreTakesTheExactNameFirst() async throws {
@@ -347,7 +395,7 @@
             #expect(try state("sample", db) == "active")
             #expect(FileManager.default.fileExists(atPath: root.appending(path: "sample/SKILL.md").path))
             #expect(try await db.read { try AgentLearningChangeRecord.fetchCount($0) } == 0)
-            try await transition { _ in }
+            #expect(try await transition { _ in })
             #expect(try state("sample", db) == (archives ? "archived" : "stale"))
         }
 

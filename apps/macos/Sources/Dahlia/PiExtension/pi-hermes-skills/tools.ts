@@ -147,32 +147,39 @@ export function fileSkillTools(options: {
       return { success: true, message: `Skill '${deleted}' archived. Content absorbed into '${operations[0].absorbed_into ?? ""}'.` };
     }
     const replaced: string[] = [];
+    const recorded: string[] = [];
     try {
       for (const [name, files] of working) {
         replace(join(root, name), files, before.get(name)?.modes);
         replaced.push(name);
       }
+      const now = new Date().toISOString();
+      for (const [name, files] of working) {
+        const original = before.get(name);
+        if (!original) {
+          // Only background passes hand a skill to the Curator.
+          await store.set?.(name, {
+            created_by: role ? "agent" : "learn", created_at: now, use_count: 0, view_count: 0, patch_count: 0,
+            last_used_at: null, last_viewed_at: null, last_patched_at: null, state: "active", pinned: false, archived_at: null,
+          });
+          recorded.push(name);
+        } else if (files.size === 0) {
+          await store.set?.(name, null);
+          recorded.push(name);
+        }
+      }
     } catch (error) {
+      // Keep the snapshots until required record writes succeed, including deletion and later creates in a batch.
       for (const name of replaced) {
         const original = before.get(name);
         replace(join(root, name), original?.files ?? new Map(), original?.modes);
       }
+      for (const name of recorded.reverse()) await store.set?.(name, known[name] ?? null);
       throw error;
     }
-    const now = new Date().toISOString();
+    // Usage counters are best effort, and cannot turn a saved content change into a failed operation.
     for (const [name, files] of working) {
-      const original = before.get(name);
-      if (!original) {
-        // Only background passes hand a skill to the Curator.
-        await store.set?.(name, {
-          created_by: role ? "agent" : "learn", created_at: now, use_count: 0, view_count: 0, patch_count: 0,
-          last_used_at: null, last_viewed_at: null, last_patched_at: null, state: "active", pinned: false, archived_at: null,
-        });
-      } else if (files.size === 0) {
-        await store.set?.(name, null);
-      } else {
-        await store.bump(name, "patch").catch(() => {});
-      }
+      if (before.get(name) && files.size > 0) await store.bump(name, "patch").catch(() => {});
     }
     return { success: true, message: "Skill operations saved atomically." };
   };

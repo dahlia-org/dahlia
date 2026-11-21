@@ -1,7 +1,7 @@
 // Background passes run in a separate Pi process, as Hermes forks a review agent: the session's history (for a skill
 // review) or a fresh session (for consolidation), with only the skill tools.
 import { spawn } from "node:child_process";
-import { existsSync, mkdtempSync, rmSync } from "node:fs";
+import { copyFileSync, existsSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -64,19 +64,27 @@ function piInvocation() {
  */
 export function startBackground(pi: any, options: { role: Role; prompt: string; model?: string; fork?: string; cwd: string }) {
   const scratch = mkdtempSync(join(tmpdir(), "pi-hermes-skills-"));
-  const session = options.fork ? ["--fork", options.fork, "--session-dir", scratch] : ["--no-session"];
-  // Loaded with `-e` rather than installed: the pass needs the same path.
-  const loose = pi.getAllTools?.().find((tool: any) => tool.name === "skill_manage")?.sourceInfo?.origin === "top-level";
-  const [command, ...prefix] = piInvocation();
-  const args = [
-    ...prefix, "--mode", "json", ...session, "--tools", skillToolNames.join(","),
-    ...(options.model ? ["--model", options.model] : []), ...(loose ? ["-e", entry] : []), options.prompt,
-  ];
-  const timeout = options.role === "curator" ? 1_800_000 : 600_000;
-  const child = spawn(command, args, {
-    cwd: options.cwd, detached: true, stdio: "ignore",
-    env: { ...process.env, [ROLE]: options.role, [TIMEOUT]: String(timeout), [SCRATCH]: scratch },
-  });
-  child.on("error", () => rmSync(scratch, { recursive: true, force: true }));
-  child.unref();
+  try {
+    // forkFrom reads lazily during child startup; freeze the triggering conversation before another turn can append.
+    const snapshot = join(scratch, "source.jsonl");
+    if (options.fork) copyFileSync(options.fork, snapshot);
+    const session = options.fork ? ["--fork", snapshot, "--session-dir", scratch] : ["--no-session"];
+    // Loaded with `-e` rather than installed: the pass needs the same path.
+    const loose = pi.getAllTools?.().find((tool: any) => tool.name === "skill_manage")?.sourceInfo?.origin === "top-level";
+    const [command, ...prefix] = piInvocation();
+    const args = [
+      ...prefix, "--mode", "json", ...session, "--tools", skillToolNames.join(","),
+      ...(options.model ? ["--model", options.model] : []), ...(loose ? ["-e", entry] : []), options.prompt,
+    ];
+    const timeout = options.role === "curator" ? 1_800_000 : 600_000;
+    const child = spawn(command, args, {
+      cwd: options.cwd, detached: true, stdio: "ignore",
+      env: { ...process.env, [ROLE]: options.role, [TIMEOUT]: String(timeout), [SCRATCH]: scratch },
+    });
+    child.on("error", () => rmSync(scratch, { recursive: true, force: true }));
+    child.unref();
+  } catch (error) {
+    rmSync(scratch, { recursive: true, force: true });
+    throw error;
+  }
 }

@@ -13,7 +13,7 @@ when unused, and improved on request.
   from elsewhere are read-only. Content is scanned for prompt injection before it is saved.
 - **Usage records**: `skill_view`, a `/skill:` command, or a `read` of a listed skill file counts as a use, in
   `skills/.usage.json` (the format of Hermes Agent's `.usage.json`). The index orders skills by these records.
-- **Skill reviews**: the background review above. It only creates, edits or archives skills; it stops after 16
+- **Skill reviews**: use a snapshot of the conversation when triggered. They only create, edit or archive skills and stop after 16
   responses, 75% of the context window, or 10 minutes.
 - **Curator**: `/hermes-curator` marks agent-created skills stale after 14 days unused and archives them after 30
   (`skills/.archive/`, never deleted). Pinned and locked skills, and skills you wrote, are left alone.
@@ -63,6 +63,10 @@ order from records.
 `registerHermesSkills(pi, host)` lets another extension keep records in its own store (`host.store`), run the skill tools
 itself (`host.tools`), supply the order (`host.rank`), schedule reviews and consolidation itself (`host.review`,
 `host.curator`), and run the optimizer on its own data and approval flow (`host.optimizer`). `false` leaves a part out.
+
+A custom store must compare the optional `expected` record inside its `set` and `archive` mutation boundary. Return
+`false` when it changed so the Curator skips that decision and does not count it as applied. Required record writes
+must either complete or reject without changing the record, so skill tools can roll back failed create/delete operations.
 
 ## License
 

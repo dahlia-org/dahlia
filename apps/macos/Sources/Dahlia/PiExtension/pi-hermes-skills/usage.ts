@@ -30,7 +30,7 @@ export interface UsageStore {
   bump(name: string, kind: UsageKind): Promise<void>;
   /** Every record; without it the index keeps Pi's order and the Curator has nothing to manage. */
   all?(): Promise<Record<string, SkillRecord>>;
-  /** Merges fields (creating the record); `null` forgets it. Stores can skip an obsolete `expected` snapshot with false. */
+  /** Atomically merges fields (`null` forgets); compare `expected` inside the mutation boundary and return false if obsolete. */
   set?(name: string, fields: Partial<SkillRecord> | null, expected?: SkillRecord): Promise<void | boolean>;
   /** Moves an eligible account skill to `.archive/` and marks it archived; false skips an obsolete snapshot. */
   archive?(name: string, expected?: SkillRecord): Promise<void | boolean>;

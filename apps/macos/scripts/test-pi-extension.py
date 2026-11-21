@@ -23,6 +23,7 @@ import tempfile
 import threading
 import urllib.parse
 import urllib.request
+from datetime import datetime, timedelta, timezone
 
 ROOT = Path(__file__).resolve().parents[3]
 EXTENSION = ROOT / "apps/macos/Sources/Dahlia/PiExtension/dahlia.ts"
@@ -513,6 +514,62 @@ def web_access_regression(pi, package=None):
 
 
 
+def curator_store_snapshots(pi):
+    """Real Pi forwards decision snapshots through Dahlia's adapter and does not count skipped transitions."""
+    with tempfile.TemporaryDirectory() as temporary:
+        root = Path(temporary).resolve()
+        agent = root / "agent"
+        records = {}
+        for name, days in [("idle", 20), ("old", 400)]:
+            directory = agent / "skills" / name
+            directory.mkdir(parents=True)
+            (directory / "SKILL.md").write_text(f"---\nname: {name}\ndescription: Test skill\n---\nSteps")
+            stamp = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+            records[name] = {"created_by": "agent", "created_at": stamp, "last_used_at": stamp,
+                             "use_count": 1, "state": "active", "pinned": False}
+        env = dict(os.environ, PI_CODING_AGENT_DIR=str(agent), PI_OFFLINE="1", PI_SKIP_VERSION_CHECK="1", PI_TELEMETRY="0",
+                   DAHLIA_PI_MODE="chat", DAHLIA_PI_PROFILE="review", DAHLIA_PI_CURATOR="1", DAHLIA_PI_BRIDGED_PROVIDERS="",
+                   DAHLIA_PI_CURATOR_SETTINGS=json.dumps({"staleAfterDays": 14, "archiveAfterDays": 90}))
+        process = subprocess.Popen(
+            [pi, "--mode", "rpc", "--no-extensions", "-e", str(EXTENSION), "--no-skills", "--no-context-files",
+             "--no-prompt-templates", "--no-themes", "--no-approve", "--no-session", "--no-tools"],
+            cwd=root, env=env, text=True, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+
+        def send(record):
+            process.stdin.write(json.dumps(record) + "\n")
+            process.stdin.flush()
+
+        mutations = []
+        report = None
+        try:
+            send({"id": "sweep", "type": "prompt", "message": "/hermes-curator"})
+            for line in process.stdout:
+                record = json.loads(line)
+                if record.get("type") == "extension_ui_request" and record.get("title", "").startswith("dahlia:"):
+                    method = record["title"].removeprefix("dahlia:")
+                    payload = json.loads(record["placeholder"])
+                    if method == "skillStore":
+                        if payload["action"] == "all":
+                            answer = records
+                        else:
+                            assert payload["expected"] == records[payload["name"]], payload
+                            mutations.append((payload["action"], payload["name"]))
+                            answer = False
+                    else:
+                        assert method == "curatorReport", (method, payload)
+                        report, answer = payload, None
+                    send({"type": "extension_ui_response", "id": record["id"], "value": json.dumps(answer)})
+                elif record.get("id") == "sweep":
+                    assert record.get("success"), record
+                    break
+            assert mutations == [("set", "idle"), ("archive", "old")], mutations
+            assert report["counts"]["markedStale"] == 0 and report["counts"]["archived"] == 0, report
+        finally:
+            process.stdin.close()
+            process.wait(timeout=20)
+            assert process.returncode == 0, process.stderr.read()
+
+
 def package_resources(pi):
     """Real Pi resolves manifests and filters; account skills and installed package skills/prompts reach chat and the skills tab."""
     with tempfile.TemporaryDirectory() as temporary:
@@ -672,6 +729,7 @@ def main():
     thread_tools(pi)
     triage_denial_regression(pi)
     package_resources(pi)
+    curator_store_snapshots(pi)
     _, results, bridge, _ = run(
         pi, "chat", [{"tool": "dah_create_backup", "args": {"workspace_id": "ws_test"}}, {"text": "done"}],
         ["--no-session", "--tools", "dah_create_backup"], {})

@@ -162,7 +162,7 @@ export default async function (pi: any) {
     // Chat passes the order it computed at launch; other processes keep Pi's order.
     rank: (env.PI_SKILL_INDEX_RANK ?? "").split(",").filter(Boolean),
     store: curatorProcess
-      ? { bump: async () => {}, all: () => store("all"), set: (name, fields) => store("set", { name, fields }), archive: (name) => store("archive", { name }) }
+      ? { bump: async () => {}, all: () => store("all"), set: (name, fields, expected) => store("set", { name, fields, expected }), archive: (name, expected) => store("archive", { name, expected }) }
       : { bump: async (name, kind) => { if (mode === "chat" && bridgeContext) await bridge(bridgeContext, "skillUsage", { name, kind }); } },
     tools: mode === "chat" ? (name, args, ctx) => bridge(ctx, name, args) : false,
     role: env.DAHLIA_PI_PROFILE === "review" ? (env.DAHLIA_PI_CURATOR === "1" ? "curator" : "review") : undefined,
