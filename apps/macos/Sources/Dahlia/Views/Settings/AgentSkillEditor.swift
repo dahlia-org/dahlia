@@ -85,8 +85,8 @@ struct AgentSkillEditor: View {
             let service = try await PiChatService.shared.skillService()
             let root = try await PiChatService.shared.skillsRoot(account)
             let operation: JSONValue = .object(["action": .string("patch"), "name": .string(name), "content": .string(content)])
-            _ = try await service.execute(
-                "skill_manage", payload: .object(["operations": .array([operation])]), account: account.accountKey, root: root, thread: nil,
+            _ = try await service.manageAccountSkills(
+                payload: .object(["operations": .array([operation])]), account: account.accountKey, root: root,
                 expectedSnapshots: [name: original]
             )
             onSaved()

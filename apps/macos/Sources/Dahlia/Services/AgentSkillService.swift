@@ -91,6 +91,19 @@ actor AgentSkillService {
         }
     }
 
+    /// Settings targets account files explicitly, independently of Pi's cached tool catalog.
+    func manageAccountSkills(
+        payload: JSONValue,
+        account: String,
+        root: URL,
+        expectedSnapshots: [String: AgentSkillSnapshot] = [:]
+    ) throws -> JSONValue {
+        try mutate(
+            payload.objectValue ?? [:], catalog: [:], account: account, root: root, thread: nil, review: nil, curator: false,
+            expectedSnapshots: expectedSnapshots, authorize: { _ in }
+        )
+    }
+
     private func mutate(
         _ args: [String: JSONValue],
         catalog: [String: URL],
