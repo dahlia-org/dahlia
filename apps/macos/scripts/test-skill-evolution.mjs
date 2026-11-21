@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
   constraints, evolve, isRelevantToSkill, parseObject, parseProposal, parseScore, registerSkillOptimizer, reflectionPrompt, selectFromPareto, splitSkill,
-} from "../Sources/Dahlia/PiExtension/skill-evolution.ts";
+} from "../Sources/Dahlia/PiExtension/pi-hermes-skills/optimizer.ts";
 
 const field = (name, value) => `[[ ## reasoning ## ]]\nok\n\n[[ ## ${name} ## ]]\n${value}\n\n[[ ## completed ## ]]`;
 
@@ -52,7 +52,19 @@ test("evolve mines conversations, tops up with synthetic cases and keeps an impr
   assert.ok(calls.every((prompt) => !JSON.stringify(prompt).includes("sk-ant-api")));
 });
 
-test("the chat tool runs with Dahlia's input, reports progress, and records every outcome", async () => {
+// The host as Dahlia's extension wires it: each start and outcome goes to the app.
+function bridgeHost(bridge) {
+  return {
+    begin: async (ctx, name) => {
+      const input = await bridge(ctx, "optimizerInput", { name });
+      if (input?.success === false) throw new Error(input.error);
+      return { raw: input.raw, messages: input.messages, token: input.run_id };
+    },
+    finish: (ctx, run, outcome) => bridge(ctx, "optimizerResult", { run_id: run.token, name: run.name, ...outcome }),
+  };
+}
+
+test("the chat tool runs with the host's input, reports progress, and records every outcome", async () => {
   let tool;
   const sent = [];
   const bridge = async (_ctx, method, payload) => {
@@ -62,7 +74,7 @@ test("the chat tool runs with Dahlia's input, reports progress, and records ever
     }
     return true;
   };
-  registerSkillOptimizer({ registerTool: (value) => { tool = value; } }, bridge);
+  registerSkillOptimizer({ registerTool: (value) => { tool = value; } }, bridgeHost(bridge));
   assert.equal(tool.name, "skill_optimize");
   const updates = [];
   const calls = [];
@@ -109,11 +121,11 @@ test("reflection inserts skill and examples literally, including replacement met
 test("the tool surfaces native proposal rejection and records cancellation", async () => {
   let tool;
   const outcomes = [];
-  registerSkillOptimizer({ registerTool: (value) => { tool = value; } }, async (_ctx, method, payload) => {
+  registerSkillOptimizer({ registerTool: (value) => { tool = value; } }, bridgeHost(async (_ctx, method, payload) => {
     if (method === "optimizerInput") return { run_id: "r", name: "review", raw: "---\nname: review\n---\nReview input carefully.", messages: [] };
     outcomes.push(payload);
     return { success: false, error: "Skill changed during optimization." };
-  });
+  }));
   await assert.rejects(tool.execute("id", { name: "review" }, undefined, undefined, fakeContext([])), /Skill changed during optimization/);
   assert.equal(outcomes.at(-1).error, "Skill changed during optimization.");
   const aborted = { ...fakeContext([]), modelRegistry: { streamSimple: () => ({ result: async () => ({ stopReason: "aborted" }) }) } };

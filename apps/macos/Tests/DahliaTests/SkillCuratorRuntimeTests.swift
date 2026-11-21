@@ -2,30 +2,50 @@
     import DahliaRuntimeSupport
     import Foundation
     import GRDB
+    import os
     import Testing
     @testable import Dahlia
 
     @Suite(.timeLimit(.minutes(1)))
     struct SkillCuratorRuntimeTests {
-        @Test(arguments: ["unauthorized", "errorAfterIntermediate", "messageAbort", "settledAbort", "emptyFinal", "success", "budget", "noMessage", "eof"])
+        @Test(arguments: [
+            "unauthorized", "errorAfterIntermediate", "messageAbort", "settledAbort", "emptyFinal", "success",
+            "budget", "noMessage", "eof", "consolidationOff", "drainDuringTransitions", "drainDuringConsolidation",
+        ])
         func consolidationRecordsTerminalOutcome(scenario: String) async throws {
             let script = events(scenario)
             let transports = TestPiTransportLog()
             let provider = CodexRuntimeProvider.databricks(connectionID: .v7())
+            // pi-hermes-skills answers `/hermes-curator` through the bridge before Pi reports the command handled.
+            let report: JSONValue = .object([
+                "counts": .object(["archived": .number(1), "markedStale": .number(0), "reactivated": .number(0)]),
+                "candidates": .string("Agent-created skills (1):\n\n- sample  provenance=agent"),
+            ])
+            let pendingCommand = OSAllocatedUnfairLock<JSONValue?>(initialState: nil)
             let pi = TestPiRuntime(provider: provider) { options in
                 let transport = TestPiTransport { command in
                     guard let id = command["id"] else { return [] }
-                    if command["type"]?.stringValue == "get_commands" {
+                    switch command["type"]?.stringValue {
+                    case "get_commands":
                         return [TestPiTransport.response(id: id, data: .object(["commands": .array([])]))]
+                    case "extension_ui_response":
+                        return pendingCommand.withLock { pending in
+                            defer { pending = nil }
+                            return pending.map { [TestPiTransport.response(id: $0, data: .object(["disposition": .string("handled")]))] } ?? []
+                        }
+                    case "prompt" where command["message"]?.stringValue == "/hermes-curator":
+                        pendingCommand.withLock { $0 = id }
+                        return scenario == "drainDuringTransitions" ? [] : [TestPiTransport.bridgeRequest(id: "report", method: "curatorReport", payload: report)]
+                    default:
+                        return [TestPiTransport.response(id: id)] + (command["type"]?.stringValue == "prompt" ? script : [])
                     }
-                    return [TestPiTransport.response(id: id)] + (command["type"]?.stringValue == "prompt" ? script : [])
                 }
                 if options.mode == .chat { transports.append(transport) }
                 return transport
             }
             defer { try? FileManager.default.removeItem(at: pi.rootURL) }
             let account = provider.accountKey
-            UserDefaults.standard.set(true, forKey: SkillCuratorSettings.consolidateKey(account))
+            UserDefaults.standard.set(!["consolidationOff", "drainDuringTransitions"].contains(scenario), forKey: SkillCuratorSettings.consolidateKey(account))
             defer { UserDefaults.standard.removeObject(forKey: SkillCuratorSettings.consolidateKey(account)) }
             let locator = PiAgentDirectoryLocator(applicationSupportURL: pi.rootURL)
             let root = try locator.agentURL(for: provider).appending(path: "skills/sample")
@@ -40,6 +60,19 @@
             }
             let service = PiChatService(runtime: pi.service, historyStore: ChatThreadStore(dbQueue: db), agentLocator: locator)
             let run = Task { await service.runCurator(provider: provider) }
+            if scenario == "drainDuringTransitions" {
+                let transport = await transports.transport(at: 0)
+                _ = await transport.command("prompt")
+                await service.drainLearningWork()
+                #expect(await !transport.isClosed)
+                await transport.emit(TestPiTransport.bridgeRequest(id: "report", method: "curatorReport", payload: report))
+            } else if scenario == "drainDuringConsolidation" {
+                let transport = await transports.transport(at: 0)
+                _ = await transport.command { $0["type"]?.stringValue == "prompt" && $0["message"]?.stringValue != "/hermes-curator" }
+                UserDefaults.standard.set(false, forKey: SkillCuratorSettings.consolidateKey(account))
+                await service.drainLearningWork()
+                #expect(await transport.isClosed)
+            }
             if scenario == "eof" {
                 let transport = await transports.transport(at: 0)
                 _ = await transport.command("prompt")
@@ -48,11 +81,13 @@
             await run.value
             let saved = try await db.read { try AgentSystemRunRecord.fetchOne($0) }
             let record = try #require(saved)
-            let completed = scenario == "emptyFinal" || scenario == "success"
-            let interrupted = scenario == "messageAbort" || scenario == "settledAbort"
+            let completed = ["emptyFinal", "success", "consolidationOff", "drainDuringTransitions"].contains(scenario)
+            let interrupted = ["messageAbort", "settledAbort", "drainDuringConsolidation"].contains(scenario)
             #expect(record.status == (completed ? "completed" : interrupted ? "interrupted" : "failed"))
             #expect(record.finishedAt != nil)
             #expect(record.report == (scenario == "success" ? "Final report" : ""))
+            if completed { #expect(record.summary.hasPrefix(L10n.agentCuratorAutoSummary(archived: 1, stale: 0, reactivated: 0))) }
+            if ["consolidationOff", "drainDuringTransitions"].contains(scenario) { #expect(record.summary.hasSuffix(L10n.agentCuratorConsolidationOff)) }
             if scenario == "unauthorized" || scenario == "errorAfterIntermediate" {
                 #expect(record.summary.contains(PiRuntimeError.notLoggedIn.localizedDescription))
             }

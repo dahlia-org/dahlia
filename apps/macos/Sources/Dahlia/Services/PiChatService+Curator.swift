@@ -47,6 +47,7 @@ extension PiChatService {
         defer {
             curatorTask = nil
             activeCurator = nil
+            curatorReport = nil
         }
         let account = provider.accountKey
         guard startingTurns.isEmpty, !sessions.values.contains(where: { $0.turn != nil }) else { return }
@@ -62,6 +63,7 @@ extension PiChatService {
         var run = AgentSystemRunRecord(
             id: id, accountID: account, task: "curator", status: "running", summary: "", report: "", startedAt: .now
         )
+        var connection: PiRPCConnection?
         do {
             // Persisted before any work, so a crash still counts as the interval's run.
             let started = run
@@ -70,18 +72,22 @@ extension PiChatService {
                 try started.insert($0)
             }
             let service = try skillService()
-            let root = try skillsRoot(provider)
             try await service.setCatalog(runtime.skills(for: provider), account: account)
-            let counts = try await service.applyCuratorTransitions(
-                account: account, root: root,
-                staleAfterDays: SkillCuratorSettings.staleAfterDays, archiveAfterDays: SkillCuratorSettings.archiveAfterDays(account),
-                authorize: { _ in try authorize() }
+            // pi-hermes-skills applies the transitions through `skillStore` and reports the counts and candidates.
+            let process = try await connectCurator(runID: id, provider: provider, authorize: authorize)
+            connection = process
+            _ = try await process.request("prompt", PiRuntimeService.prompt([.text("/hermes-curator")]))
+            try authorize()
+            guard let report = curatorReport?.objectValue, let counts = report["counts"]?.objectValue
+            else { throw PiRuntimeError.turnFailed("Curator did not report.") }
+            let count = { (key: String) in counts[key]?.intValue ?? 0 }
+            run.summary = L10n.agentCuratorAutoSummary(
+                archived: count("archived"), stale: count("markedStale"), reactivated: count("reactivated")
             )
-            run.summary = L10n.agentCuratorAutoSummary(archived: counts.archived, stale: counts.markedStale, reactivated: counts.reactivated)
             if !SkillCuratorSettings.consolidate(account) {
                 run.summary += "\n" + L10n.agentCuratorConsolidationOff
-            } else if let candidates = try await service.curatorCandidates(account: account, root: root) {
-                let final = try await consolidate(candidates: candidates, runID: id, provider: provider, authorize: authorize)
+            } else if let candidates = report["candidates"]?.stringValue {
+                let final = try await consolidate(candidates: candidates, runID: id, connection: process, provider: provider, authorize: authorize)
                 run.summary += "\n" + (final.isEmpty ? L10n.agentCuratorNoChange : String(final.prefix(240)) + (final.count > 240 ? "…" : ""))
                 run.report = String(final.prefix(20000))
             } else {
@@ -89,89 +95,106 @@ extension PiChatService {
             }
             run.status = "completed"
         } catch {
-            run.status = error is CancellationError ? "interrupted" : "failed"
-            run.summary += (run.summary.isEmpty ? "" : "\n") + error.localizedDescription
+            // A denied transition fails the command; the gate that denied it decides the outcome.
+            let cancelled = error is CancellationError || (try? authorize()) == nil
+                || (activeCurator?.consolidating == true && !SkillCuratorSettings.consolidate(account))
+            run.status = cancelled ? "interrupted" : "failed"
+            run.summary += (run.summary.isEmpty ? "" : "\n") + (cancelled ? CancellationError() : error).localizedDescription
         }
+        if let connection { await runtime.close(connection) }
         run.finishedAt = .now
         let finished = run
         try? await history().dbQueue.write { try finished.save($0) }
         await learningSkills?.finishReview(id)
     }
 
-    /// Upstream `_run_llm_review`: a fork with only the skill tools, the verbatim curator prompt and the candidate list.
-    private func consolidate(
-        candidates: String,
+    /// A process with only the skill tools, the account's Curator settings, and Hermes's Curator role.
+    private func connectCurator(
         runID: String,
         provider: CodexRuntimeProvider,
         authorize: @escaping @Sendable () throws -> Void
-    ) async throws -> String {
+    ) async throws -> PiRPCConnection {
         try authorize()
         let account = provider.accountKey
+        let settings = try HermesLearning.json([
+            "staleAfterDays": SkillCuratorSettings.staleAfterDays, "archiveAfterDays": SkillCuratorSettings.archiveAfterDays(account),
+        ])
         let connection = try await runtime.connect(
             .init(
                 mode: .chat, cwd: agentLocator.agentURL(for: provider),
                 arguments: ["--no-session", "--system-prompt", Self.systemPrompt, "--tools", "skills_list,skill_view,skill_manage"],
-                environment: ["DAHLIA_PI_MEMORY_ENABLED": "0", "DAHLIA_PI_CURATOR": "1"], profile: .review
+                environment: ["DAHLIA_PI_MEMORY_ENABLED": "0", "DAHLIA_PI_CURATOR": "1", "DAHLIA_PI_CURATOR_SETTINGS": settings],
+                profile: .review
             ),
             provider: provider
         ) { [weak self] method, payload in
             guard let self else { throw CancellationError() }
             return try await self.curatorTool(method, payload: payload, runID: runID, provider: provider, authorize: authorize)
         }
-        activeCurator = (runID, account, connection)
+        activeCurator = (runID, account, connection, consolidating: false)
+        return connection
+    }
+
+    /// Upstream `_run_llm_review`: the verbatim curator prompt and the candidate list, with only the skill tools.
+    private func consolidate(
+        candidates: String,
+        runID: String,
+        connection: PiRPCConnection,
+        provider: CodexRuntimeProvider,
+        authorize: @escaping @Sendable () throws -> Void
+    ) async throws -> String {
+        activeCurator?.consolidating = true
+        let account = provider.accountKey
         // Reviews can take several minutes upstream; a sweep of 100 calls gets half an hour.
         let timeout = Task { try? await Task.sleep(for: .seconds(1800))
             if !Task.isCancelled { await self.runtime.close(connection) }
         }
         defer { timeout.cancel() }
-        do {
-            let model = SkillCuratorSettings.model(account)
-            if let slash = model.firstIndex(of: "/") {
-                _ = try await connection.request(
-                    "set_model",
-                    ["provider": .string(String(model[..<slash])), "modelId": .string(String(model[model.index(after: slash)...]))]
-                )
-            }
-            let effort = SkillCuratorSettings.effort(account)
-            if !effort.isEmpty {
-                _ = try await connection.request("set_thinking_level", ["level": .string(PiRuntimeService.thinkingLevel(effort))])
-            }
+        let model = SkillCuratorSettings.model(account)
+        if let slash = model.firstIndex(of: "/") {
+            _ = try await connection.request(
+                "set_model",
+                ["provider": .string(String(model[..<slash])), "modelId": .string(String(model[model.index(after: slash)...]))]
+            )
+        }
+        let effort = SkillCuratorSettings.effort(account)
+        if !effort.isEmpty {
+            _ = try await connection.request("set_thinking_level", ["level": .string(PiRuntimeService.thinkingLevel(effort))])
+        }
+        try authorize()
+        guard curatorAllowed(runID: runID, provider: provider) else { throw CancellationError() }
+        let prompt = (HermesLearning.prompts["curator_review_prompt"] ?? "") + "\n\n" + candidates
+        _ = try await connection.request("prompt", PiRuntimeService.prompt([.text(prompt)]))
+        var responses = 0
+        var lastMessage: [String: JSONValue]?
+        for try await event in connection.events {
             try authorize()
             guard curatorAllowed(runID: runID, provider: provider) else { throw CancellationError() }
-            let prompt = (HermesLearning.prompts["curator_review_prompt"] ?? "") + "\n\n" + candidates
-            _ = try await connection.request("prompt", PiRuntimeService.prompt([.text(prompt)]))
-            var responses = 0
-            var lastMessage: [String: JSONValue]?
-            for try await event in connection.events {
-                try authorize()
-                guard curatorAllowed(runID: runID, provider: provider) else { throw CancellationError() }
-                let object = event.objectValue ?? [:]
-                if object["type"]?.stringValue == "message_end", let message = object["message"]?.objectValue,
-                   message["role"]?.stringValue == "assistant" {
-                    responses += 1
-                    lastMessage = message
-                    // A successful empty report is valid; an error/abort must never reuse intermediate text.
-                    _ = try PiRuntimeService.assistantText(message, allowEmpty: true)
-                    guard responses <= 100 else { throw PiRuntimeError.turnFailed("Curator response limit exceeded.") }
-                }
-                if object["type"]?.stringValue == "agent_settled" {
-                    guard object["aborted"] != .bool(true) else { throw CancellationError() }
-                    let final = try PiRuntimeService.assistantText(lastMessage, allowEmpty: true)
-                    await runtime.close(connection)
-                    return final.trimmingCharacters(in: .whitespacesAndNewlines)
-                }
+            let object = event.objectValue ?? [:]
+            if object["type"]?.stringValue == "message_end", let message = object["message"]?.objectValue,
+               message["role"]?.stringValue == "assistant" {
+                responses += 1
+                lastMessage = message
+                // A successful empty report is valid; an error/abort must never reuse intermediate text.
+                _ = try PiRuntimeService.assistantText(message, allowEmpty: true)
+                guard responses <= 100 else { throw PiRuntimeError.turnFailed("Curator response limit exceeded.") }
             }
-            throw PiRuntimeError.processExited(nil)
-        } catch {
-            await runtime.close(connection)
-            throw error
+            if object["type"]?.stringValue == "agent_settled" {
+                guard object["aborted"] != .bool(true) else { throw CancellationError() }
+                return try PiRuntimeService.assistantText(lastMessage, allowEmpty: true).trimmingCharacters(in: .whitespacesAndNewlines)
+            }
         }
+        throw PiRuntimeError.processExited(nil)
+    }
+
+    /// Transitions need only an enabled Curator; consolidation also needs its switch.
+    private func curatorActive(runID: String, provider: CodexRuntimeProvider) -> Bool {
+        activeCurator?.id == runID && SkillCuratorSettings.enabled(provider.accountKey) && !AgentBackgroundActivity.isRecording
+            && runtime.isSelectedProvider(provider)
     }
 
     private func curatorAllowed(runID: String, provider: CodexRuntimeProvider) -> Bool {
-        let account = provider.accountKey
-        return activeCurator?.id == runID && SkillCuratorSettings.enabled(account) && SkillCuratorSettings.consolidate(account)
-            && !AgentBackgroundActivity.isRecording && runtime.isSelectedProvider(provider)
+        curatorActive(runID: runID, provider: provider) && SkillCuratorSettings.consolidate(provider.accountKey)
     }
 
     private func curatorTool(
@@ -181,21 +204,48 @@ extension PiChatService {
         provider: CodexRuntimeProvider,
         authorize: @escaping @Sendable () throws -> Void
     ) async throws -> JSONValue {
-        guard curatorAllowed(runID: runID, provider: provider), method != "memory", PiExecutionProfile.review.allows(method)
-        else { throw CancellationError() }
+        guard curatorActive(runID: runID, provider: provider) else { throw CancellationError() }
         let service = try skillService()
-        try await service.setCatalog(runtime.skills(for: provider), account: provider.accountKey)
         let runtime = runtime
         let account = provider.accountKey
-        return try await service.execute(
-            method, payload: payload, account: account, root: skillsRoot(provider), thread: nil, review: runID, curator: true
-        ) { db in
+        let root = try skillsRoot(provider)
+        let running: @Sendable (Database) throws -> Void = { db in
             try authorize()
             try Task.checkCancellation()
-            guard runtime.isSelectedProvider(provider), SkillCuratorSettings.enabled(account), SkillCuratorSettings.consolidate(account),
-                  !AgentBackgroundActivity.isRecording,
-                  try String.fetchOne(db, sql: "SELECT status FROM agent_system_runs WHERE id=?", arguments: [runID]) == "running"
+            guard try String.fetchOne(db, sql: "SELECT status FROM agent_system_runs WHERE id=?", arguments: [runID]) == "running"
             else { throw CancellationError() }
+        }
+        switch method {
+        case "curatorReport":
+            curatorReport = payload
+            return .null
+        case "skillStore":
+            let object = payload.objectValue ?? [:]
+            let name = object["name"]?.stringValue ?? ""
+            switch object["action"]?.stringValue {
+            case "all":
+                return try await service.curatorRecords(account: account, root: root)
+            case "set":
+                guard let expected = object["expected"]?.objectValue else { throw HermesLearning.failure("Expected a skill record snapshot.") }
+                return try await .bool(service.setCuratorFields(
+                    name: name, fields: object["fields"]?.objectValue ?? [:], account: account, expected: .object(expected), authorize: running
+                ))
+            case "archive":
+                guard let expected = object["expected"]?.objectValue else { throw HermesLearning.failure("Expected a skill record snapshot.") }
+                return try await .bool(service.archive(name: name, account: account, root: root, expected: .object(expected), authorize: running))
+            default:
+                throw HermesLearning.failure("Unknown skill store action.")
+            }
+        default:
+            guard curatorAllowed(runID: runID, provider: provider), method != "memory", PiExecutionProfile.review.allows(method)
+            else { throw CancellationError() }
+            try await service.setCatalog(runtime.skills(for: provider), account: account)
+            return try await service.execute(
+                method, payload: payload, account: account, root: root, thread: nil, review: runID, curator: true
+            ) { db in
+                try running(db)
+                guard SkillCuratorSettings.consolidate(account) else { throw CancellationError() }
+            }
         }
     }
 
@@ -205,15 +255,9 @@ extension PiChatService {
         try? await history().dbQueue.write { try AgentSystemRunRecord.deleteExpired($0, before: cutoff) }
     }
 
-    func recordSkillRead(path: String, provider: CodexRuntimeProvider) async {
-        guard let service = try? skillService(), let root = try? skillsRoot(provider) else { return }
-        await service.recordRead(path: path, account: provider.accountKey, root: root)
-    }
-
-    /// `/skill:name` loads the skill into the prompt, which upstream counts as use.
-    func recordSkillCommand(_ inputs: [CodexAppServerInput], provider: CodexRuntimeProvider) async {
-        guard case let .text(text)? = inputs.first, text.hasPrefix("/skill:"),
-              let name = text.dropFirst("/skill:".count).split(whereSeparator: \.isWhitespace).first.map(String.init),
+    /// pi-hermes-skills reports a `/skill:` command or a read of a skill file Pi listed, which upstream counts as use.
+    func recordSkillUse(_ payload: JSONValue, provider: CodexRuntimeProvider) async {
+        guard let name = payload.objectValue?["name"]?.stringValue, payload.objectValue?["kind"]?.stringValue == "use",
               AgentSkillService.validName(name), let service = try? skillService() else { return }
         try? await service.recordUsage(name: name, account: provider.accountKey, columns: ["useCount"])
     }

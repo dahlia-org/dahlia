@@ -29,14 +29,6 @@ enum SkillProvenance: String, Sendable {
     }
 }
 
-struct SkillCuratorCounts: Sendable, Equatable {
-    var checked = 0
-    var markedStale = 0
-    var archived = 0
-    var reactivated = 0
-    var seeded = 0
-}
-
 extension AgentSkillService {
     private static let stamps = ["useCount": "lastUsedAt", "viewCount": "lastViewedAt", "patchCount": "lastPatchedAt"]
 
@@ -56,17 +48,6 @@ extension AgentSkillService {
             sql: "UPDATE agent_skill_states SET \(assignments.joined(separator: ",")) WHERE accountID=:account AND name=:name",
             arguments: ["now": now, "account": account, "name": name]
         )
-    }
-
-    /// Pi loads a skill by reading its SKILL.md; that read is the upstream "use".
-    func recordRead(path: String, account: String, root: URL) {
-        let url = URL(filePath: PiSandbox.realPath(URL(filePath: (path as NSString).expandingTildeInPath)))
-        guard url.lastPathComponent == "SKILL.md" else { return }
-        let directory = url.deletingLastPathComponent()
-        let name = catalogs[account]?.first(where: { $0.value == url })?.key
-            ?? (directory.deletingLastPathComponent().path == PiSandbox.realPath(root) ? directory.lastPathComponent : nil)
-        guard let name, Self.validName(name) else { return }
-        try? recordUsage(name: name, account: account, columns: ["useCount"])
     }
 
     /// Skill names, most recently used, viewed or created first, for the chat's budgeted skill index.
@@ -167,6 +148,7 @@ extension AgentSkillService {
     }
 
     /// Moves the package to `skills/.archive/` (Pi skips dot directories), never deleting it.
+    @discardableResult
     func archive(
         name: String,
         account: String,
@@ -174,8 +156,9 @@ extension AgentSkillService {
         source changeSource: String = "curator",
         thread: String? = nil,
         review: String? = nil,
+        expected: JSONValue? = nil,
         authorize: @Sendable (Database) throws -> Void = { _ in }
-    ) throws {
+    ) throws -> Bool {
         switch provenance(name: name, account: account, root: root) {
         case .bundled: throw HermesLearning.failure("skill '\(name)' is a bundled built-in; it is never archived or consolidated")
         case .package: throw HermesLearning.failure("skill '\(name)' is installed by a Pi package; never archive")
@@ -196,9 +179,12 @@ extension AgentSkillService {
             formatter.dateFormat = "yyyyMMddHHmmss"
             destination = archive.appending(path: "\(name)-\(formatter.string(from: .now))")
         }
-        try move(source, to: destination) { db in
+        return try move(source, to: destination, checking: { db in
             try authorize(db)
+            guard try Self.matchesCuratorRecord(db, name: name, account: account, expected: expected) else { return false }
             try Self.authorizeCuration(db, name: name, account: account)
+            return true
+        }) { db in
             try AgentLearningChangeRecord(
                 id: .v7(), accountID: account, kind: "skill", target: name,
                 before: HermesLearning.json(snapshot), after: nil, status: "applied",
@@ -236,79 +222,89 @@ extension AgentSkillService {
         }
     }
 
-    private func move(_ source: URL, to destination: URL, recording: (Database) throws -> Void) throws {
-        try FileManager.default.moveItem(at: source, to: destination)
+    @discardableResult
+    private func move(
+        _ source: URL,
+        to destination: URL,
+        checking: (Database) throws -> Bool = { _ in true },
+        recording: (Database) throws -> Void
+    ) throws -> Bool {
+        var moved = false
         do {
-            try dbQueue.write(recording)
+            return try dbQueue.write { db in
+                guard try checking(db) else { return false }
+                try FileManager.default.moveItem(at: source, to: destination)
+                moved = true
+                try recording(db)
+                return true
+            }
         } catch {
-            try? FileManager.default.moveItem(at: destination, to: source)
+            if moved { try? FileManager.default.moveItem(at: destination, to: source) }
             throw error
         }
     }
 
-    /// Upstream `apply_automatic_transitions`: no LLM, pinned, locked and schedule-referenced skills untouched.
-    func applyCuratorTransitions(
-        account: String,
-        root: URL,
-        now: Date = .now,
-        staleAfterDays: Int,
-        archiveAfterDays: Int,
-        authorize: @Sendable (Database) throws -> Void = { _ in }
-    ) throws -> SkillCuratorCounts {
-        let staleCutoff = now.addingTimeInterval(-Double(staleAfterDays) * 86400)
-        let archiveCutoff = now.addingTimeInterval(-Double(archiveAfterDays) * 86400)
-        let protected = try scheduleSkills(account: account)
-        var counts = SkillCuratorCounts()
-        for row in try managedRows(account: account, root: root) {
-            try dbQueue.read(authorize)
-            counts.checked += 1
+    /// Curator-managed skills for pi-hermes-skills, in Hermes `.usage.json` fields. `scheduled` marks the skills a
+    /// schedule loads, which no background pass archives because Dahlia does not rewrite approved schedules.
+    func curatorRecords(account: String, root: URL) throws -> JSONValue {
+        let scheduled = try scheduleSkills(account: account)
+        return try .object(Dictionary(uniqueKeysWithValues: managedRows(account: account, root: root).map { row in
             let name: String = row["name"]
-            let state: String = row["state"]
-            if row["pinned"] || row["locked"] || protected.contains(name) { continue }
-            // A record from before usage tracking anchors its clock at first sight and waits a full period.
-            guard let created: Date = row["createdAt"] else {
-                try setField(name: name, account: account, sql: "createdAt=?", value: now, authorize: authorize)
-                counts.seeded += 1
-                continue
-            }
-            let anchor = Self.lastActivity(row) ?? created
-            if row["useCount"] == 0, anchor > staleCutoff {
-                if state == "stale" {
-                    try setField(name: name, account: account, sql: "state=?", value: "active", authorize: authorize)
-                    counts.reactivated += 1
-                }
-                continue
-            }
-            if anchor <= archiveCutoff, state != "archived" {
-                try archive(name: name, account: account, root: root, authorize: authorize)
-                counts.archived += 1
-            } else if anchor <= staleCutoff, state == "active" {
-                try setField(name: name, account: account, sql: "state=?", value: "stale", authorize: authorize)
-                counts.markedStale += 1
-            } else if anchor > staleCutoff, state == "stale" {
-                try setField(name: name, account: account, sql: "state=?", value: "active", authorize: authorize)
-                counts.reactivated += 1
-            }
-        }
-        return counts
+            return (name, Self.curatorRecord(row, scheduled: scheduled.contains(name)))
+        }))
     }
 
-    /// Upstream `_render_candidate_list`, or nil when no skill is Curator-managed.
-    func curatorCandidates(account: String, root: URL) throws -> String? {
-        let rows = try managedRows(account: account, root: root)
-        guard !rows.isEmpty else { return nil }
-        let protected = try scheduleSkills(account: account)
-        return (["Agent-created skills (\(rows.count)):\n"] + rows.map { row in
-            let name: String = row["name"]
-            let use: Int = row["useCount"]
-            let view: Int = row["viewCount"]
-            let patches: Int = row["patchCount"]
-            let pinned: Bool = row["pinned"]
-            let state: String = row["state"]
-            return "- \(name)  provenance=agent  state=\(state)  pinned=\(pinned ? "yes" : "no")  "
-                + "cron=\(protected.contains(name) ? "yes" : "no")  activity=\(use + view + patches)  use=\(use)  view=\(view)  "
-                + "patches=\(patches)  last_activity=\(Self.lastActivity(row)?.ISO8601Format() ?? "never")"
-        }).joined(separator: "\n")
+    private static func curatorRecord(_ row: Row, scheduled: Bool) -> JSONValue {
+        let time = { (value: Date?) -> JSONValue in value.map { .string($0.ISO8601Format()) } ?? .null }
+        return .object([
+            "created_by": .string(row["createdBy"]), "state": .string(row["state"]),
+            "use_count": .number(Double(row["useCount"] as Int)), "view_count": .number(Double(row["viewCount"] as Int)),
+            "patch_count": .number(Double(row["patchCount"] as Int)),
+            "last_used_at": time(row["lastUsedAt"]), "last_viewed_at": time(row["lastViewedAt"]),
+            "last_patched_at": time(row["lastPatchedAt"]), "created_at": time(row["createdAt"]),
+            "archived_at": time(row["archivedAt"]), "pinned": .bool(row["pinned"]), "locked": .bool(row["locked"]),
+            "scheduled": .bool(scheduled),
+        ])
+    }
+
+    /// Compare inside the write transaction, so activity or protection changes invalidate the sweep's decision.
+    private static func matchesCuratorRecord(_ db: Database, name: String, account: String, expected: JSONValue?) throws -> Bool {
+        guard let expected else { return true }
+        guard let row = try Row.fetchOne(db, sql: "SELECT * FROM agent_skill_states WHERE accountID=? AND name=?", arguments: [account, name])
+        else { return false }
+        let schedules = try String.fetchAll(db, sql: "SELECT skills FROM chat_schedules WHERE accountID=?", arguments: [account])
+        let scheduled = schedules.contains { ((try? JSONDecoder().decode([String].self, from: Data($0.utf8))) ?? []).contains(name) }
+        return curatorRecord(row, scheduled: scheduled) == expected
+    }
+
+    /// The transitions pi-hermes-skills applies: `state` between active and stale, and the first `created_at`.
+    @discardableResult
+    func setCuratorFields(
+        name: String,
+        fields: [String: JSONValue],
+        account: String,
+        expected: JSONValue? = nil,
+        authorize: @Sendable (Database) throws -> Void
+    ) throws -> Bool {
+        try dbQueue.write { db in
+            try authorize(db)
+            guard try Self.matchesCuratorRecord(db, name: name, account: account, expected: expected) else { return false }
+            try Self.authorizeCuration(db, name: name, account: account)
+            if let state = fields["state"]?.stringValue {
+                guard ["active", "stale"].contains(state) else { throw HermesLearning.failure("Archive skills with the archive action.") }
+                try db.execute(sql: "UPDATE agent_skill_states SET state=? WHERE accountID=? AND name=?", arguments: [state, account, name])
+            }
+            if let created = fields["created_at"]?.stringValue {
+                let date = (try? Date(created, strategy: Date.ISO8601FormatStyle(includingFractionalSeconds: true)))
+                    ?? (try? Date(created, strategy: .iso8601))
+                guard let date else { throw HermesLearning.failure("created_at must be an ISO 8601 time.") }
+                try db.execute(
+                    sql: "UPDATE agent_skill_states SET createdAt=COALESCE(createdAt,?) WHERE accountID=? AND name=?",
+                    arguments: [date, account, name]
+                )
+            }
+            return true
+        }
     }
 
     func provenance(name: String, account: String, root: URL) -> SkillProvenance {
@@ -328,22 +324,4 @@ extension AgentSkillService {
         }
     }
 
-    /// The newest use, view or patch; creation is not activity.
-    private static func lastActivity(_ row: Row) -> Date? {
-        [row["lastUsedAt"], row["lastViewedAt"], row["lastPatchedAt"]].compactMap { (value: Date?) in value }.max()
-    }
-
-    private func setField(
-        name: String,
-        account: String,
-        sql: String,
-        value: some DatabaseValueConvertible,
-        authorize: @Sendable (Database) throws -> Void
-    ) throws {
-        try dbQueue.write {
-            try authorize($0)
-            try Self.authorizeCuration($0, name: name, account: account)
-            try $0.execute(sql: "UPDATE agent_skill_states SET \(sql) WHERE accountID=? AND name=?", arguments: [value, account, name])
-        }
-    }
 }

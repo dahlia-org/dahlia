@@ -16,7 +16,9 @@ actor PiChatService: CodexChatServicing {
     var activeReview: (id: String, account: String, connection: PiRPCConnection, kind: String)?
     var curatorTask: Task<Void, Never>?
     nonisolated let curatorActivityGeneration = OSAllocatedUnfairLock(initialState: 0)
-    var activeCurator: (id: String, account: String, connection: PiRPCConnection)?
+    var activeCurator: (id: String, account: String, connection: PiRPCConnection, consolidating: Bool)?
+    /// The transitions and candidates pi-hermes-skills reported for the active Curator run.
+    var curatorReport: JSONValue?
     /// Upstream measures Curator idleness from process start as well as from the latest chat activity.
     let launchedAt = Date()
     private var backupService: BackupService?
@@ -583,8 +585,6 @@ actor PiChatService: CodexChatServicing {
         if let servers = sessions[threadID]?.mcpServersNeedingSignIn, !servers.isEmpty {
             sessions[threadID]?.turn?.broadcast.yield(.mcpSignInRequired(servers: servers))
         }
-        let provider = session.provider
-        Task { await self.recordSkillCommand(Self.textJoined(inputs), provider: provider) }
         do {
             let accepted = try await connection.request("prompt", PiRuntimeService.prompt(Self.textJoined(inputs)))
             // Pi handled the text itself (for example a `/skill:` expansion error) and starts no run.
@@ -902,6 +902,10 @@ actor PiChatService: CodexChatServicing {
                     .contains(method) {
                     return await self.learningToolResult(method, payload: payload, threadID: threadID, processID: processID)
                 }
+                if method == "skillUsage" {
+                    await self.recordSkillUse(payload, provider: provider)
+                    return .null
+                }
                 // Recorded even after the turn stopped, so the run does not stay running.
                 if method == "optimizerResult" {
                     do {
@@ -1076,10 +1080,6 @@ actor PiChatService: CodexChatServicing {
     }
 
     private func handleToolActivity(_ object: [String: JSONValue], threadID: String) throws {
-        if object["type"]?.stringValue == "tool_execution_start", object["toolName"]?.stringValue == "read",
-           let path = object["args"]?.objectValue?["path"]?.stringValue, let provider = sessions[threadID]?.provider {
-            Task { await self.recordSkillRead(path: path, provider: provider) }
-        }
         if let activity = Self.toolActivity(object) {
             if object["type"]?.stringValue == "tool_execution_end", sessions[threadID]?.turn != nil {
                 try history().appendItems(threadID: threadID, items: [ChatHistoryCodec.toolResult([

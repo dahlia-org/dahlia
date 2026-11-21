@@ -1,0 +1,14 @@
+{
+  "name": "pi-hermes-skills",
+  "version": "0.3.0",
+  "description": "Hermes Agent's skill features for Pi: skill tools, usage records, a budgeted skill index, background skill reviews, the Curator, GEPA skill optimization and /learn.",
+  "license": "MIT",
+  "type": "module",
+  "keywords": ["pi-package"],
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*"
+  },
+  "pi": {
+    "extensions": ["./index.ts"]
+  }
+}

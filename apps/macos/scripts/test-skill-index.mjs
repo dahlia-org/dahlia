@@ -1,7 +1,7 @@
 // node --test apps/macos/scripts/test-skill-index.mjs [PI_DIST=<pi>/dist for the prompt-builder check]
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { clip, formatSkillIndex, registerSkillIndex } from "../Sources/Dahlia/PiExtension/skill-index/index.ts";
+import { clip, formatSkillIndex, registerSkillIndex } from "../Sources/Dahlia/PiExtension/pi-hermes-skills/skill-index.ts";
 
 const skill = (name, description = `Does ${name} things. Use when the user asks about ${name} work in detail.`.repeat(4)) =>
   ({ name, description, filePath: `/skills/${name}/SKILL.md` });
@@ -101,4 +101,19 @@ test("Pi's prompt builder drops <available_skills> for the replaced options", { 
   const prompt = buildSystemPrompt(options);
   const text = typeof prompt === "string" ? prompt : JSON.stringify(prompt);
   assert.ok(!text.includes("available_skills") && !text.includes("/skills/alpha/SKILL.md") && text.includes("- alpha: "));
+});
+
+test("the environment budget overrides a configured budget", () => {
+  const previous = process.env.PI_SKILL_INDEX_BUDGET;
+  process.env.PI_SKILL_INDEX_BUDGET = "1";
+  try {
+    let handler;
+    registerSkillIndex({ on: (_name, fn) => { handler = fn; } }, { budget: 8000 });
+    const options = { selectedTools: ["skill_view"], skills: [skill("alpha")], sections: {} };
+    handler({ systemPromptOptions: options }, {});
+    assert.deepEqual(lines(options.sections.skills), ["- alpha"]);
+  } finally {
+    if (previous === undefined) delete process.env.PI_SKILL_INDEX_BUDGET;
+    else process.env.PI_SKILL_INDEX_BUDGET = previous;
+  }
 });

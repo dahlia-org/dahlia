@@ -80,7 +80,7 @@
             }
         }
 
-        @Test func transitionsFollowUpstreamAndSkipProtectedSkills() async throws {
+        @Test func curatorRecordsExposeManagedSkillsAndGuardEachTransition() async throws {
             let (service, db, root) = try setup()
             defer { try? FileManager.default.removeItem(at: root) }
             try managed("recent", daysAgo: 3, db: db, root: root)
@@ -112,28 +112,82 @@
                 )
             }
 
-            let counts = try await service.applyCuratorTransitions(
-                account: "a", root: root, now: now, staleAfterDays: 14, archiveAfterDays: 30
-            )
+            // pi-hermes-skills applies the transition rules (test-hermes-skills.mjs); Dahlia exports the records and guards each change.
+            let records = try #require(try await service.curatorRecords(account: "a", root: root).objectValue)
+            #expect(Set(records.keys) == ["recent", "idle", "old", "fresh-unused", "back", "pinned", "locked", "scheduled", "legacy"])
+            #expect(records["scheduled"]?.objectValue?["scheduled"] == .bool(true))
+            #expect(records["idle"]?.objectValue?["scheduled"] == .bool(false))
+            #expect(records["back"]?.objectValue?["state"] == .string("stale"))
+            #expect(records["legacy"]?.objectValue?["created_at"] == .null)
+            #expect(records["recent"]?.objectValue?["use_count"] == .number(1))
+            #expect(records["recent"]?.objectValue?["last_used_at"] == .string(now.addingTimeInterval(-3 * 86400).ISO8601Format()))
 
-            #expect(counts == SkillCuratorCounts(checked: 9, markedStale: 1, archived: 1, reactivated: 1, seeded: 1))
-            #expect(try state("recent", db) == "active")
+            try await service.setCuratorFields(name: "idle", fields: ["state": .string("stale")], account: "a") { _ in }
+            #expect(try state("idle", db) == "stale")
+            try await service.setCuratorFields(name: "legacy", fields: ["created_at": .string("2027-01-15T08:00:00.000Z")], account: "a") { _ in }
+            try await service.setCuratorFields(name: "legacy", fields: ["created_at": .string("2030-01-01T00:00:00Z")], account: "a") { _ in }
+            let seeded = try await db.read { try Date.fetchOne($0, sql: "SELECT createdAt FROM agent_skill_states WHERE name='legacy'") }
+            #expect(try seeded == Date("2027-01-15T08:00:00.000Z", strategy: Date.ISO8601FormatStyle(includingFractionalSeconds: true)))
+            for name in ["pinned", "locked", "scheduled", "asked"] {
+                await #expect(throws: (any Error).self, "\(name)") {
+                    try await service.setCuratorFields(name: name, fields: ["state": .string("stale")], account: "a") { _ in }
+                }
+                #expect(try state(name, db) == "active", "\(name)")
+            }
+            await #expect(throws: (any Error).self) {
+                try await service.setCuratorFields(name: "old", fields: ["state": .string("archived")], account: "a") { _ in }
+            }
+            try await service.archive(name: "old", account: "a", root: root)
+            #expect(try state("old", db) == "archived")
+            #expect(FileManager.default.fileExists(atPath: root.appending(path: ".archive/old/SKILL.md").path))
+        }
+
+        @Test func nativeTransitionsSkipActivityChangedSinceTheSweepAndCanRetry() async throws {
+            let (service, db, root) = try setup()
+            defer { try? FileManager.default.removeItem(at: root) }
+            for name in ["idle", "old", "legacy"] {
+                try managed(name, daysAgo: 40, db: db, root: root)
+            }
+            try await db.write { try $0.execute(sql: "UPDATE agent_skill_states SET createdAt=NULL WHERE name='legacy'") }
+            let records = try #require(try await service.curatorRecords(account: "a", root: root).objectValue)
+            for name in ["idle", "old", "legacy"] {
+                try await service.recordUsage(name: name, account: "a", columns: ["useCount"])
+            }
+            #expect(try await !service.setCuratorFields(
+                name: "idle", fields: ["state": .string("stale")], account: "a", expected: records["idle"]
+            ) { _ in })
+            #expect(try await !service.setCuratorFields(
+                name: "legacy", fields: ["created_at": .string("2027-01-15T08:00:00Z")], account: "a", expected: records["legacy"]
+            ) { _ in })
+            #expect(try await !service.archive(name: "old", account: "a", root: root, expected: records["old"]))
+            #expect(try state("idle", db) == "active")
+            #expect(try state("old", db) == "active")
+            #expect(FileManager.default.fileExists(atPath: root.appending(path: "old/SKILL.md").path))
+            #expect(!FileManager.default.fileExists(atPath: root.appending(path: ".archive/old").path))
+            let changes = try await db.read { try Int.fetchOne($0, sql: "SELECT COUNT(*) FROM agent_learning_changes") }
+            #expect(changes == 0)
+            let created = try await db.read { try Date.fetchOne($0, sql: "SELECT createdAt FROM agent_skill_states WHERE name='legacy'") }
+            #expect(created == nil)
+            // Run authorization is still required even when the snapshot is obsolete.
+            await #expect(throws: CancellationError.self) {
+                try await service.archive(name: "old", account: "a", root: root, expected: records["old"]) { _ in throw CancellationError() }
+            }
+            let beforeAuthorization = try #require(try await service.curatorRecords(account: "a", root: root).objectValue)
+            #expect(try await !service.setCuratorFields(
+                name: "idle", fields: ["state": .string("stale")], account: "a", expected: beforeAuthorization["idle"]
+            ) { db in
+                try AgentSkillService.recordUsage(db, name: "idle", account: "a", columns: ["useCount"])
+            })
+            #expect(try await !service.archive(name: "old", account: "a", root: root, expected: beforeAuthorization["old"]) { db in
+                try AgentSkillService.recordUsage(db, name: "old", account: "a", columns: ["viewCount"])
+            })
+            let current = try #require(try await service.curatorRecords(account: "a", root: root).objectValue)
+            #expect(try await service.setCuratorFields(
+                name: "idle", fields: ["state": .string("stale")], account: "a", expected: current["idle"]
+            ) { _ in })
+            #expect(try await service.archive(name: "old", account: "a", root: root, expected: current["old"]))
             #expect(try state("idle", db) == "stale")
             #expect(try state("old", db) == "archived")
-            #expect(!FileManager.default.fileExists(atPath: root.appending(path: "old").path))
-            #expect(FileManager.default.fileExists(atPath: root.appending(path: ".archive/old/SKILL.md").path))
-            #expect(try state("fresh-unused", db) == "active")
-            #expect(try state("back", db) == "active")
-            for name in ["pinned", "locked", "asked", "scheduled", "skill-creator", "legacy"] {
-                #expect(FileManager.default.fileExists(atPath: root.appending(path: name).path), "\(name)")
-            }
-            let seeded = try await db.read { try Date.fetchOne($0, sql: "SELECT createdAt FROM agent_skill_states WHERE name='legacy'") }
-            #expect(seeded == now)
-
-            let candidates = try #require(try await service.curatorCandidates(account: "a", root: root))
-            #expect(candidates.hasPrefix("Agent-created skills ("))
-            #expect(candidates.contains("- scheduled  provenance=agent  state=active  pinned=no  cron=yes  activity=1  use=1"))
-            #expect(!candidates.contains("- old ") && !candidates.contains("- asked ") && !candidates.contains("- skill-creator "))
         }
 
         @Test func archiveIsRecoverableAndRestoreTakesTheExactNameFirst() async throws {
@@ -189,7 +243,8 @@
             try await manage(
                 ["action": .string("patch"), "name": .string("learned"), "old_string": .string("Follow"), "new_string": .string("Run")], review: "r"
             )
-            await service.recordRead(path: root.appending(path: "asked/SKILL.md").path, account: "a", root: root)
+            // pi-hermes-skills reports reads of skill files; chat records them as use.
+            try await service.recordUsage(name: "asked", account: "a", columns: ["useCount"])
             let (owners, counts) = try await db.read { db in
                 let rows = try Row.fetchAll(db, sql: "SELECT name,createdBy,useCount,viewCount,patchCount FROM agent_skill_states ORDER BY name")
                 return (
@@ -324,25 +379,24 @@
             }
         }
 
-        @Test(arguments: [20.0, 40.0])
-        func transitionsRecheckAuthorizationAtMutationAndCanRetry(daysAgo: Double) async throws {
+        @Test(arguments: [false, true])
+        func transitionsRecheckAuthorizationAtMutationAndCanRetry(archives: Bool) async throws {
             let (service, db, root) = try setup()
             defer { try? FileManager.default.removeItem(at: root) }
-            try managed("sample", daysAgo: daysAgo, db: db, root: root)
-            let checks = OSAllocatedUnfairLock(initialState: 0)
-            await #expect(throws: CancellationError.self) {
-                try await service.applyCuratorTransitions(account: "a", root: root, now: now, staleAfterDays: 14, archiveAfterDays: 30) { _ in
-                    let count = checks.withLock { $0 += 1
-                        return $0
-                    }
-                    if count > 1 { throw CancellationError() }
+            try managed("sample", daysAgo: archives ? 40 : 20, db: db, root: root)
+            let transition = { (authorize: @escaping @Sendable (Database) throws -> Void) in
+                if archives {
+                    try await service.archive(name: "sample", account: "a", root: root, authorize: authorize)
+                } else {
+                    try await service.setCuratorFields(name: "sample", fields: ["state": .string("stale")], account: "a", authorize: authorize)
                 }
             }
+            await #expect(throws: CancellationError.self) { try await transition { _ in throw CancellationError() } }
             #expect(try state("sample", db) == "active")
             #expect(FileManager.default.fileExists(atPath: root.appending(path: "sample/SKILL.md").path))
             #expect(try await db.read { try AgentLearningChangeRecord.fetchCount($0) } == 0)
-            _ = try await service.applyCuratorTransitions(account: "a", root: root, now: now, staleAfterDays: 14, archiveAfterDays: 30)
-            #expect(try state("sample", db) == (daysAgo == 40 ? "archived" : "stale"))
+            #expect(try await transition { _ in })
+            #expect(try state("sample", db) == (archives ? "archived" : "stale"))
         }
 
         @Test func indexRankPutsRecentActivityFirstAndSkipsArchivedSkills() async throws {

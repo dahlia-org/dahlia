@@ -2,7 +2,7 @@ import DahliaRuntimeSupport
 import Foundation
 import GRDB
 
-/// hermes-agent-self-evolution for one account skill: the chat tool `skill_optimize` (`skill-evolution.ts`) runs GEPA in the
+/// hermes-agent-self-evolution for one account skill: the chat tool `skill_optimize` (pi-hermes-skills `optimizer.ts`) runs GEPA in the
 /// conversation, and the evolved SKILL.md waits in the skill's history for the user's approval.
 extension PiChatService {
     /// The newest user requests and their replies that the optimizer mines for evaluation examples.
