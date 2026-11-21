@@ -345,6 +345,20 @@
             #expect(try state("sample", db) == (daysAgo == 40 ? "archived" : "stale"))
         }
 
+        @Test func indexRankPutsRecentActivityFirstAndSkipsArchivedSkills() async throws {
+            let (service, db, root) = try setup()
+            try managed("old", daysAgo: 30, db: db, root: root)
+            try managed("recent", daysAgo: 1, db: db, root: root)
+            try managed("viewed", daysAgo: 60, db: db, root: root)
+            try managed("archived", daysAgo: 0, state: "archived", db: db, root: root)
+            try await db.write {
+                try $0.execute(sql: "UPDATE agent_skill_states SET lastViewedAt=? WHERE name='viewed'", arguments: [now])
+                try $0.execute(sql: "INSERT INTO agent_skill_states(accountID,name,createdBy,locked) VALUES('b','other','user',0)")
+            }
+            let rank = try await service.indexRank(account: "a")
+            #expect(rank == ["viewed", "recent", "old"])
+        }
+
         @Test func retentionKeepsTheNewestRunOfEachTask() throws {
             let db = try AppDatabaseManager(path: ":memory:").dbQueue
             try db.write { db in

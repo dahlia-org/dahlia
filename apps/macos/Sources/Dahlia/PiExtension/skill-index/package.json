@@ -1,0 +1,11 @@
+{
+  "name": "pi-skill-index",
+  "version": "0.1.0",
+  "description": "Keeps Pi's skill listing within a prompt budget: one line per skill, least recently used descriptions shortened first.",
+  "license": "MIT",
+  "type": "module",
+  "keywords": ["pi-package"],
+  "pi": {
+    "extensions": ["./index.ts"]
+  }
+}

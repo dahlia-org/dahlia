@@ -17,6 +17,123 @@
         private func operations(_ values: [[String: JSONValue]]) -> JSONValue { .object(["operations": .array(values.map(JSONValue.object))]) }
         private func create(_ text: String)
             -> [String: JSONValue] { ["action": .string("create"), "name": .string("sample"), "content": .string(text)] }
+
+        @Test(arguments: ["bundled", "package"])
+        func catalogWinnerIsPreservedWhenAnAccountSkillHasTheSameName(source: String) async throws {
+            let (service, _, root) = try setup()
+            defer { try? FileManager.default.removeItem(at: root) }
+            let accountRoot = root.appending(path: "account")
+            let selectedDirectory = root.appending(path: "\(source)/sample")
+            let selectedFile = selectedDirectory.appending(path: "SKILL.md")
+            let selectedDescription = "Use when testing a \(source) workflow."
+            let selectedContent = content.replacingOccurrences(of: "reusable workflow", with: "\(source) workflow")
+            try FileManager.default.createDirectory(at: selectedDirectory.appending(path: "references"), withIntermediateDirectories: true)
+            try selectedContent.write(to: selectedFile, atomically: true, encoding: .utf8)
+            try "Selected reference".write(to: selectedDirectory.appending(path: "references/api.md"), atomically: true, encoding: .utf8)
+            try FileManager.default.createDirectory(at: accountRoot, withIntermediateDirectories: true)
+            _ = try await service.execute("skill_manage", payload: operations([create(content)]), account: "a", root: accountRoot, thread: nil)
+            await service.setCatalog([
+                CodexChatSlashCommand(
+                    name: "skill:sample",
+                    description: selectedDescription,
+                    source: "skill",
+                    sourceInfo: .init(path: selectedFile.path)
+                ),
+            ], account: "a")
+
+            let viewed = try await service.execute(
+                "skill_view",
+                payload: .object(["name": .string("sample")]),
+                account: "a",
+                root: accountRoot,
+                thread: nil
+            )
+            #expect(viewed.objectValue?["content"] == .string(selectedContent))
+            #expect(viewed.objectValue?["description"] == .string(selectedDescription))
+            #expect(viewed.objectValue?["path"] == .string(selectedFile.path))
+            let reference = try await service.execute(
+                "skill_view", payload: .object(["name": .string("sample"), "file_path": .string("references/api.md")]),
+                account: "a", root: accountRoot, thread: nil
+            )
+            #expect(reference.objectValue?["content"] == .string("Selected reference"))
+            let listed = try await service.execute("skills_list", payload: .object([:]), account: "a", root: accountRoot, thread: nil)
+            #expect(listed.objectValue?["skills"]?.arrayValue?.first?.objectValue?["description"] == .string(selectedDescription))
+            await #expect(throws: (any Error).self) {
+                try await service.execute("skill_manage", payload: operations([[
+                    "action": .string("patch"), "name": .string("sample"), "content": .string(content + "\nChanged"),
+                ]]), account: "a", root: accountRoot, thread: nil)
+            }
+
+            // A skill created during the process is still found before the next catalog refresh.
+            let fresh = content.replacingOccurrences(of: "sample", with: "fresh")
+            _ = try await service.execute("skill_manage", payload: operations([[
+                "action": .string("create"), "name": .string("fresh"), "content": .string(fresh),
+            ]]), account: "a", root: accountRoot, thread: nil)
+            let newlyCreated = try await service.execute(
+                "skill_view",
+                payload: .object(["name": .string("fresh")]),
+                account: "a",
+                root: accountRoot,
+                thread: nil
+            )
+            #expect(newlyCreated.objectValue?["content"] == .string(fresh))
+        }
+
+        @Test(arguments: ["patch", "delete"])
+        func settingsCanChangeAccountSkillAfterCachedPackageIsRemoved(action: String) async throws {
+            let (service, db, root) = try setup()
+            defer { try? FileManager.default.removeItem(at: root) }
+            let accountRoot = root.appending(path: "account")
+            let package = root.appending(path: "package/sample")
+            try FileManager.default.createDirectory(at: package, withIntermediateDirectories: true)
+            let packageFile = package.appending(path: "SKILL.md")
+            try content.write(to: packageFile, atomically: true, encoding: .utf8)
+            await service.setCatalog([
+                CodexChatSlashCommand(name: "skill:sample", description: "Package skill", source: "skill", sourceInfo: .init(path: packageFile.path)),
+            ], account: "a")
+            try FileManager.default.removeItem(at: package)
+            let accountDirectory = accountRoot.appending(path: "sample")
+            try FileManager.default.createDirectory(at: accountDirectory, withIntermediateDirectories: true)
+            let accountFile = accountDirectory.appending(path: "SKILL.md")
+            try content.write(to: accountFile, atomically: true, encoding: .utf8)
+            let opened = try await service.editableSnapshot(name: "sample", account: "a", root: accountRoot)
+            let changed = content + "\nEdited in Settings."
+            _ = try await service.manageAccountSkills(
+                payload: operations([[
+                    "action": .string(action), "name": .string("sample"), "content": .string(changed),
+                ]]), account: "a", root: accountRoot, expectedSnapshots: ["sample": opened]
+            )
+            if action == "patch" {
+                #expect(try String(contentsOf: accountFile, encoding: .utf8) == changed)
+            } else {
+                #expect(!FileManager.default.fileExists(atPath: accountDirectory.path))
+            }
+            let change = try await db.read {
+                try #require(try AgentLearningChangeRecord.fetchOne($0, sql: "SELECT * FROM agent_learning_changes WHERE accountID='a'"))
+            }
+            try await service.undo(id: change.id, account: "a", root: accountRoot)
+            #expect(try await service.editableSnapshot(name: "sample", account: "a", root: accountRoot) == opened)
+            #expect(!FileManager.default.fileExists(atPath: package.path))
+        }
+
+        @Test func settingsMutationsKeepLockAndPinProtection() async throws {
+            let (service, _, root) = try setup()
+            defer { try? FileManager.default.removeItem(at: root) }
+            _ = try await service.execute("skill_manage", payload: operations([create(content)]), account: "a", root: root, thread: nil)
+            let deletion = operations([["action": .string("delete"), "name": .string("sample")]])
+            try await service.setLocked(name: "sample", account: "a", locked: true)
+            await #expect(throws: (any Error).self) {
+                try await service.manageAccountSkills(payload: deletion, account: "a", root: root)
+            }
+            try await service.setLocked(name: "sample", account: "a", locked: false)
+            try await service.setCuratorManaged(name: "sample", account: "a", managed: true)
+            try await service.setPinned(name: "sample", account: "a", pinned: true)
+            await #expect(throws: (any Error).self) {
+                try await service.manageAccountSkills(payload: deletion, account: "a", root: root)
+            }
+            #expect(try String(contentsOf: root.appending(path: "sample/SKILL.md"), encoding: .utf8) == content)
+        }
+
         @Test func freshReadLockAndUndoPreserveLaterEdits() async throws {
             let (service, db, root) = try setup()
             defer { try? FileManager.default.removeItem(at: root) }
@@ -143,23 +260,19 @@
             let latest = try await service.editableSnapshot(name: "sample", account: "a", root: root)
             let patch = operations([["action": .string("patch"), "name": .string("sample"), "content": .string(content + "\nMy edits.")]])
             await #expect(throws: (any Error).self) {
-                try await service.execute(
-                    "skill_manage",
+                try await service.manageAccountSkills(
                     payload: patch,
                     account: "a",
                     root: root,
-                    thread: nil,
                     expectedSnapshots: ["sample": opened]
                 )
             }
             #expect(try await service.editableSnapshot(name: "sample", account: "a", root: root) == latest)
             // Reloading the latest version allows an intentional save, keeping supporting bytes and permissions.
-            _ = try await service.execute(
-                "skill_manage",
+            _ = try await service.manageAccountSkills(
                 payload: patch,
                 account: "a",
                 root: root,
-                thread: nil,
                 expectedSnapshots: ["sample": latest]
             )
             let saved = try await service.editableSnapshot(name: "sample", account: "a", root: root)
@@ -183,8 +296,8 @@
             #expect(try await state().createdBy == "user")
             #expect(try await !state().pinned)
 
-            _ = try await service.execute(
-                "skill_manage", payload: operations([["action": .string("delete"), "name": .string("sample")]]), account: "a", root: root, thread: nil
+            _ = try await service.manageAccountSkills(
+                payload: operations([["action": .string("delete"), "name": .string("sample")]]), account: "a", root: root
             )
             #expect(!FileManager.default.fileExists(atPath: root.appending(path: "sample").path))
             let deletion = try await db.read {

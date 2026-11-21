@@ -171,7 +171,7 @@ actor PiChatService: CodexChatServicing {
     Call get_meeting_transcript only when the original wording or detail is needed.
 
     # Skills and file access
-    Use Dahlia's preset skills when the user's request matches their descriptions; read a selected skill's SKILL.md with the read tool.
+    Use Dahlia's preset skills when the user's request matches their descriptions; load a selected skill with skill_view.
     The read, ls, write, edit, and bash tools run under Apple Seatbelt. The current folder is writable; Dahlia's
     screenshots, database, preset skills, and installed packages are read-only. Your account's own skills folder is
     read-only to file tools: use skill_manage for every skill change. Newly saved skills load in a new chat process.
@@ -875,6 +875,8 @@ actor PiChatService: CodexChatServicing {
         }
         let reviewArguments = Array(arguments.dropFirst(sessionArguments.count))
         if let memoryPrompt { arguments += ["--append-system-prompt", memoryPrompt] }
+        // The index is an optimization: without the ranking it keeps Pi's order.
+        let skillRank = await (try? skillService().indexRank(account: provider.accountKey)) ?? []
         let connection = try await runtime.connect(
             .init(
                 mode: .chat,
@@ -888,6 +890,8 @@ actor PiChatService: CodexChatServicing {
                     "DAHLIA_PI_MCP_SERVERS": String(decoding: JSONEncoder().encode(serverNames), as: UTF8.self),
                     // Dahlia starts this standalone MCP worker under its dedicated Seatbelt profile.
                     "DAHLIA_PI_WEB_ACCESS": webAccess ? webAccessURL.path : "",
+                    // The skill index keeps descriptions of recently used skills first; fixed for the process.
+                    "PI_SKILL_INDEX_RANK": skillRank.joined(separator: ","),
                 ],
                 fileAccess: fileAccess, profile: profile
             ),

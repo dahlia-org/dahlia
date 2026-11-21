@@ -47,7 +47,8 @@ actor AgentSkillService {
         let args = payload.objectValue ?? [:]
         var catalog = catalogs[account] ?? [:]
         if let names = try? FileManager.default.contentsOfDirectory(atPath: root.path) {
-            for name in names where Self.validName(name) {
+            // Discover newly created skills without replacing Pi's winner for a name collision.
+            for name in names where Self.validName(name) && catalog[name] == nil {
                 let file = root.appending(path: name).appending(path: "SKILL.md")
                 if FileManager.default.fileExists(atPath: file.path) { catalog[name] = file }
             }
@@ -88,6 +89,19 @@ actor AgentSkillService {
             )
         default: throw HermesLearning.failure("Unknown skill tool.")
         }
+    }
+
+    /// Settings targets account files explicitly, independently of Pi's cached tool catalog.
+    func manageAccountSkills(
+        payload: JSONValue,
+        account: String,
+        root: URL,
+        expectedSnapshots: [String: AgentSkillSnapshot] = [:]
+    ) throws -> JSONValue {
+        try mutate(
+            payload.objectValue ?? [:], catalog: [:], account: account, root: root, thread: nil, review: nil, curator: false,
+            expectedSnapshots: expectedSnapshots, authorize: { _ in }
+        )
     }
 
     private func mutate(
