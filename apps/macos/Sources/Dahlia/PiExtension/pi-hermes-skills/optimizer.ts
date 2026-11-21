@@ -1,7 +1,9 @@
 // hermes-agent-self-evolution Phase 1 (evolve one SKILL.md with GEPA) as a chat tool, so the user follows the run and can
-// give further instructions. See hermes/UPSTREAM.md. Dahlia supplies the skill and the account's conversations, and stages
-// the result for the user's approval.
-import { readFileSync } from "node:fs";
+// give further instructions. See hermes/UPSTREAM.md. A host supplies the skill and the conversations to learn from, and
+// decides what happens to the result; without one, the skill file and Pi's sessions are used directly.
+import { readFileSync, writeFileSync } from "node:fs";
+import { assertWritableSkill, fileSkillTools } from "./tools.ts";
+import type { UsageStore } from "./usage.ts";
 
 const upstream = JSON.parse(readFileSync(new URL("./hermes/evolution.json", import.meta.url), "utf8"));
 
@@ -24,41 +26,128 @@ export const containsSecret = (text: string) => secretPatterns.test(text);
 
 type Example = { task_input: string; expected_behavior: string; difficulty: string; category: string; source: string };
 type Scored = { score: number; output: string; feedback: string };
-type Message = { task_input: string; assistant_response?: string };
+export type Message = { task_input: string; assistant_response?: string };
+export type OptimizerResult = Awaited<ReturnType<typeof evolve>>;
+export type OptimizerRun = { name: string; token?: string };
 
-export function registerSkillOptimizer(pi: any, bridge: (ctx: any, method: string, payload: unknown) => Promise<any>) {
+/** What a host provides to run `skill_optimize`. */
+export interface OptimizerHost {
+  /** Replaces the tool description, for example to say where the user approves the result. */
+  description?: string;
+  /** The skill's SKILL.md and recent user requests with their replies, newest first. `token` comes back in `finish`. */
+  begin(ctx: any, name: string): Promise<{ raw: string; messages: Message[]; token?: string }>;
+  /** Called once with the result or the error. Its answer is reported to the model; `{ success: false, error }` fails the tool. */
+  finish(ctx: any, run: OptimizerRun, outcome: OptimizerResult | { error: string }): Promise<unknown>;
+}
+
+const defaultDescription = "Optimize a skill's SKILL.md with GEPA (hermes-agent-self-evolution): build evaluation examples from "
+  + "earlier conversations, evolve the instructions, and propose a better-scoring version for the user's approval. Nothing "
+  + "changes until the user approves. A run takes minutes and hundreds of model calls; start it only when the user asks. "
+  + "Pass the user's extra requirements for the rewrite as `focus`.";
+
+export function registerSkillOptimizer(pi: any, host: OptimizerHost) {
   pi.registerTool({
     name: "skill_optimize",
     label: "Optimize skill",
-    description: "Optimize an account skill's SKILL.md with GEPA (hermes-agent-self-evolution): build evaluation examples from "
-      + "this account's conversations, evolve the instructions, and stage a better-scoring version for the user's approval in "
-      + "Settings → Skills. Nothing changes until the user approves. A run takes minutes and hundreds of model calls; start it "
-      + "only when the user asks. Pass the user's extra requirements for the rewrite as `focus`.",
+    description: host.description ?? defaultDescription,
     parameters: {
       type: "object",
       properties: {
-        name: { type: "string", description: "Account skill to optimize." },
+        name: { type: "string", description: "Skill to optimize." },
         focus: { type: "string", description: "The user's requirements for the rewritten skill, if any." },
       },
       required: ["name"],
       additionalProperties: false,
     },
     execute: async (_id: string, params: any, signal: AbortSignal, onUpdate: any, ctx: any) => {
-      const input = await bridge(ctx, "optimizerInput", { name: params.name });
-      if (input?.success === false) return { isError: true, content: [{ type: "text", text: input.error }] };
-      let result: any;
+      let input: Awaited<ReturnType<OptimizerHost["begin"]>>;
+      try {
+        input = await host.begin(ctx, params.name);
+      } catch (error: any) {
+        return { isError: true, content: [{ type: "text", text: error?.message ?? String(error) }] };
+      }
+      const run = { name: params.name, token: input.token };
       try {
         const progress = (text: string) => onUpdate?.({ content: [{ type: "text", text }] });
-        result = await evolve({ model: ctx.model, modelRegistry: ctx.modelRegistry, signal }, { ...input, focus: params.focus }, progress);
-        const staged = await bridge(ctx, "optimizerResult", { run_id: input.run_id, name: params.name, ...result });
+        const result = await evolve(
+          { model: ctx.model, modelRegistry: ctx.modelRegistry, signal },
+          { name: params.name, raw: input.raw, messages: input.messages, focus: params.focus },
+          progress,
+        );
+        const staged: any = await host.finish(ctx, run, result);
         if (staged?.success === false) throw new Error(staged.error);
         return { content: [{ type: "text", text: JSON.stringify({ ...result, staged }) }] };
       } catch (error: any) {
-        await bridge(ctx, "optimizerResult", { run_id: input.run_id, name: params.name, error: error?.message ?? String(error) });
+        await host.finish(ctx, run, { error: error?.message ?? String(error) });
         throw error;
       }
     },
   });
+}
+
+/** Whether a result is worth proposing: changed, better on the held-out examples, and within the constraints. */
+export const isImprovement = (result: OptimizerResult) =>
+  result.changed && result.improvement > 0 && result.constraints.every((check) => check.passed);
+
+/**
+ * Pi alone: reads the skill file Pi listed and this directory's other Pi sessions. With a UI, the user confirms the
+ * replacement; otherwise the proposal is saved next to the skill as `<file>.optimized`.
+ */
+export function fileOptimizer(
+  options: { root: string; store: UsageStore; skills: () => { name: string; filePath: string }[] },
+): OptimizerHost {
+  const find = async (name: string) => {
+    const skill = options.skills().find((candidate) => candidate.name === name);
+    if (!skill) throw new Error(`Skill '${name}' not found. Use one of the listed skills.`);
+    assertWritableSkill(options.root, name, skill.filePath, (await options.store.all?.())?.[name]);
+    return skill;
+  };
+  return {
+    begin: async (ctx, name) => {
+      const raw = readFileSync((await find(name)).filePath, "utf8");
+      return { raw, messages: await sessionMessages(ctx), token: raw };
+    },
+    finish: async (ctx, run, outcome) => {
+      if ("error" in outcome || !isImprovement(outcome)) return false;
+      let file = (await find(run.name)).filePath;
+      if (readFileSync(file, "utf8") !== run.token) return { success: false, error: "The skill changed during optimization; optimize it again." };
+      const scores = `${outcome.baseline_score.toFixed(2)} → ${outcome.evolved_score.toFixed(2)}`;
+      const approved = ctx?.hasUI && await ctx.ui.confirm(`Replace skill '${run.name}'?`, `Held-out score ${scores}.`);
+      file = (await find(run.name)).filePath;
+      if (readFileSync(file, "utf8") !== run.token) return { success: false, error: "The skill changed during optimization; optimize it again." };
+      if (approved) {
+        const manage = fileSkillTools({ ...options, expected: { name: run.name, content: run.token ?? "" } });
+        await manage("skill_manage", { operations: [{ action: "patch", name: run.name, content: outcome.skill }] }, ctx);
+        return { applied: true };
+      }
+      writeFileSync(`${file}.optimized`, outcome.skill);
+      return { applied: false, proposal: `${file}.optimized` };
+    },
+  };
+}
+
+/** Upstream `HermesSessionImporter` over Pi sessions: each user request with the first reply after it, newest first. */
+export async function sessionMessages(ctx: any, limit = 300): Promise<Message[]> {
+  const { SessionManager } = await import("@earendil-works/pi-coding-agent");
+  const current = ctx?.sessionManager?.getSessionFile?.();
+  const text = (message: any) => typeof message?.content === "string" ? message.content
+    : (message?.content ?? []).flatMap((part: any) => (part?.type === "text" ? [part.text] : [])).join("\n");
+  const pairs: Message[] = [];
+  for (const session of await SessionManager.list(ctx.cwd)) {
+    if (session.path === current) continue;
+    const entries = SessionManager.open(session.path).getEntries().filter((entry: any) => entry.type === "message");
+    let reply = "";
+    for (let i = entries.length - 1; i >= 0 && pairs.length < limit; i--) {
+      const message = entries[i].message;
+      if (message.role === "assistant") reply = text(message) || reply;
+      if (message.role !== "user") continue;
+      const request = text(message);
+      if (request) pairs.push({ task_input: request, assistant_response: reply });
+      reply = "";
+    }
+    if (pairs.length >= limit) break;
+  }
+  return pairs;
 }
 
 // evolution/skills/skill_module.py load_skill and reassemble_skill.
@@ -140,7 +229,7 @@ export async function evolve(
 
 /** RelevanceFilter.filter_and_score over the account's conversations (upstream HermesSessionImporter). */
 async function mineExamples(lm: LM, messages: Message[], name: string, skillText: string, rng: () => number, max = config.evalDatasetSize) {
-  const usable = messages.map((m) => ({ ...m, task_input: stripAmbient(m.task_input ?? "") })).filter((m) => m.task_input?.length >= 10 && !containsSecret(m.task_input) && !containsSecret(m.assistant_response ?? ""));
+  const usable = messages.filter((m) => m.task_input?.length >= 10 && !containsSecret(m.task_input) && !containsSecret(m.assistant_response ?? ""));
   const candidates = usable.filter((m) => isRelevantToSkill(m.task_input, name, skillText));
   if (candidates.length < max) candidates.push(...shuffle(usable.filter((m) => !candidates.includes(m)), rng).slice(0, max * 2));
   const examples: Example[] = [];
@@ -155,7 +244,7 @@ async function mineExamples(lm: LM, messages: Message[], name: string, skillText
       });
       const scoring = parseObject(result.scoring ?? "");
       if (scoring?.relevant === true) {
-        const example = validateExample(message.task_input, scoring.expected_behavior, scoring.difficulty, scoring.category, "dahlia");
+        const example = validateExample(message.task_input, scoring.expected_behavior, scoring.difficulty, scoring.category, "session");
         if (example) examples.push(example);
       }
     } catch {
@@ -181,13 +270,6 @@ async function synthesize(lm: LM, skillText: string, count: number): Promise<Exa
     .map((c: any) => validateExample(c?.task_input, c?.expected_behavior, c?.difficulty, c?.category, "synthetic"))
     .filter((c): c is Example => c !== null);
 }
-
-// The context Dahlia attaches to a chat message (as in mcp-review.ts) is not what the user asked.
-export const stripAmbient = (text: string) => text
-  .replace(/^<context>\n[\s\S]*?<\/context>\s*/, "")
-  .replace(/<(thread_request|thread_results) source="dahlia" untrusted="true">[\s\S]*?<\/\1>/g, "")
-  .replace(/<live_transcript(?: source="dahlia")?>[\s\S]*?<\/live_transcript>/g, "")
-  .trim();
 
 // external_importers.py `_is_relevant_to_skill`. Its keyword step reads Latin letters only, as upstream.
 export function isRelevantToSkill(text: string, name: string, skillText: string) {
@@ -262,7 +344,7 @@ export function parseProposal(reply: string): string | null {
   return value || null;
 }
 
-// constraints.py ConstraintValidator.validate_all for a skill body. Dahlia validates the frontmatter again on approval.
+// constraints.py ConstraintValidator.validate_all for a skill body. A host may validate the frontmatter again on approval.
 export function constraints(text: string, baseline: string) {
   const growth = (text.length - baseline.length) / Math.max(1, baseline.length);
   return [

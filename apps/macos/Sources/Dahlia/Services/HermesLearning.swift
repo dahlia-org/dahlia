@@ -1,12 +1,13 @@
 import Foundation
 
-/// Pinned upstream text. Changes belong in PiExtension/hermes/UPSTREAM.md.
+/// Pinned upstream text. Changes belong in PiExtension/hermes/UPSTREAM.md and pi-hermes-skills/hermes/UPSTREAM.md.
 enum HermesLearning {
-    static let prompts: [String: String] = {
-        guard let data = try? Data(contentsOf: PiBundle.resourceURL("hermes/prompts.json")),
-              let result = try? JSONDecoder().decode([String: String].self, from: data) else { return [:] }
-        return result
-    }()
+    /// Memory and schedule prompts are Dahlia's; the skill review, Curator and skills guidance prompts are the package's.
+    static let prompts: [String: String] = ["hermes/prompts.json", "pi-hermes-skills/hermes/prompts.json"].reduce(into: [:]) { result, path in
+        guard let data = try? Data(contentsOf: PiBundle.resourceURL(path)),
+              let prompts = try? JSONDecoder().decode([String: String].self, from: data) else { return }
+        result.merge(prompts) { first, _ in first }
+    }
 
     private struct Threats: Decodable {
         var patterns: [[String]]
@@ -14,7 +15,7 @@ enum HermesLearning {
     }
 
     private static let threats: Threats? = {
-        guard let data = try? Data(contentsOf: PiBundle.resourceURL("hermes/threat-patterns.json")) else { return nil }
+        guard let data = try? Data(contentsOf: PiBundle.resourceURL("pi-hermes-skills/hermes/threat-patterns.json")) else { return nil }
         return try? JSONDecoder().decode(Threats.self, from: data)
     }()
 

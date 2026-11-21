@@ -5,7 +5,26 @@
 Private Web、Electron、Local MCP、Server MCP、要約と画像解析には追加しない。
 
 Hermes Agent と hermes-agent-self-evolution の固定コミット、プロンプト、ツールスキーマ、検査パターンと差分は
-[UPSTREAM.md](../../../apps/macos/Sources/Dahlia/PiExtension/hermes/UPSTREAM.md) を正本とする。上流はできるだけそのまま再現する。
+[UPSTREAM.md](../../../apps/macos/Sources/Dahlia/PiExtension/hermes/UPSTREAM.md) と、package の
+[UPSTREAM.md](../../../apps/macos/Sources/Dahlia/PiExtension/pi-hermes-skills/hermes/UPSTREAM.md) を正本とする。上流はできるだけそのまま再現する。
+
+## Pi package（pi-hermes-skills）
+
+- スキルの機能（索引・使用の記録・`skills_list`／`skill_view`／`skill_manage`・スキルのふり返り・Curator・最適化・`/learn`）は、同梱の Pi package `PiExtension/pi-hermes-skills` に置き、Dahlia の拡張から `registerHermesSkills` で登録する。メモリー・定期実行・認証・sandbox は Dahlia に置く。
+- package は Dahlia のコード・名前・環境変数を参照せず、Pi だけで動く。Dahlia に依存しないことはテストで検査する。
+- Pi だけで動かす場合の契約は package の README にある。要点:
+  - 記録は Pi の agent directory の `skills/.usage.json`（Hermes の `.usage.json` と同じ形式）、設定は Pi の `settings.json` の `hermesSkills` に置く。
+  - 既定値は Hermes と同じ。ふり返りは入（道具を呼んだ応答10回ごと）、Curator は入、統合は切、最適化は道具を置くだけ（2026-11-21 ユーザー承認）。
+  - ふり返りと統合は、スキル道具だけを持つ別の Pi process で動く。ふり返りは会話を `--fork` で引き継ぐ。
+  - Pi は常駐しないので、Curator を動かす時期は外部（cron など）が `/hermes-curator` を呼んで決める（同日ユーザー決定）。
+- Dahlia は次を差し替える。`.usage.json` と `hermesSkills` は使わない。
+  - スキル道具: bridge で `AgentSkillService` が実行する。設定画面も Pi を起動せずに同じ service で書く。
+  - 記録: `agent_skill_states` に置く。package が検出した `read` と `/skill:` は bridge `skillUsage` で受け取る。
+  - 索引の順位: チャットの起動時に渡す。
+  - ふり返り: 予約と実行を Dahlia の待ち行列で行う。package は応答数と入力量の上限だけを守らせる。
+  - Curator: 後述。
+  - 最適化: 入力と結果を bridge で渡す。
+  - `/learn`: 作者は `Dahlia`、道具の一覧は Dahlia の道具（`cronjob` と `memory` を含む）を渡す。
 
 ## メモリー
 
@@ -50,7 +69,7 @@ Hermes Agent と hermes-agent-self-evolution の固定コミット、プロン�
 
 ## スキルの最適化
 
-- 最適化のループは Pi 拡張（`skill-evolution.ts`）のチャットの道具 `skill_optimize` に置く。アプリはスキルと会話を渡し、結果を承認待ちにするだけにする。DSPy と GEPA の Python は動かさない。
+- 最適化のループは package のチャットの道具 `skill_optimize` に置く。アプリはスキルと会話を渡し、結果を承認待ちにするだけにする。DSPy と GEPA の Python は動かさない。
 - 上流は CLI で手で動かすので、Dahlia でも利用者の会話の中でだけ動かす。設定のスキル → 自動最適化から、新しいチャットで依頼を送る。
 - チャットの中で進み具合を見て、止め、要件（`focus`）や結果への追加の指示を出せる。定期実行はしない。
 - モデルは上流の `optimizer_model` と `eval_model` を1つにして、そのチャットのモデルを使う。対象はロックしていないアカウントのスキル。
@@ -60,7 +79,7 @@ Hermes Agent と hermes-agent-self-evolution の固定コミット、プロン�
 
 ## `/learn`
 
-- Hermes の `/learn`（`agent/learn_prompt.py`）を、同梱の Pi プロンプトテンプレート `PiExtension/prompts/learn.md` として持つ。チャットのコマンド一覧に出て、展開した指示を通常の1ターンとして送る。
+- Hermes の `/learn`（`agent/learn_prompt.py`）を、package の Pi プロンプトテンプレート `prompts/learn.md` として持つ。作者は `Dahlia`、道具の一覧は Dahlia の道具（`cronjob` と `memory` を含む）を Dahlia が渡す。チャットのコマンド一覧に出て、展開した指示を通常の1ターンとして送る。
 - スキルは既存の `skill_manage` で作り、会話で作ったもの（`createdBy='learn'`）として Curator の対象外になる。
 - Pi の引数展開は語に分けて空白でつなぎ直すため、入力フックで依頼文を改行も含めてそのまま差し込む。
 - `/journey`（学習の時系列表示）は持たない。
@@ -70,13 +89,14 @@ Hermes Agent と hermes-agent-self-evolution の固定コミット、プロン�
 - アプリの `Housekeeping` が1分刻みで動き、60回に1回、選択中アカウントについて判定する。
 - 条件は `interval_hours`（初期値7日）の経過と、`min_idle_hours`（2時間、固定）の会話の無操作と起動からの経過。
 - 初回は記録だけを残し、1回分の間隔を待つ。録音中・会話の実行中・ふり返り中は始めない。
-- 1回の整理は、LLM を使わない遷移と、任意の統合パスからなる。遷移では、使われない期間で `active → stale → archived` と移す。stale は14日（固定）、アーカイブまでは `archive_after_days`（初期値30日）。一度も使われていないスキルは、stale の期間より若い間はアーカイブしない。
+- 1回の整理ごとに、スキル道具だけを持つ別の Pi process を起動し、package の `/hermes-curator` で LLM を使わない遷移を行う。遷移の各変更は bridge `skillStore` を通り、`AgentSkillService` が Curator の権限（`createdBy='agent'`、固定・ロック・予定で使うスキルでない）と実行の可否を毎回確かめる。package は件数と候補一覧を bridge `curatorReport` で返し、統合が入なら同じ process で統合パスに進む。
+- 遷移では、使われない期間で `active → stale → archived` と移す。stale は14日（固定）、アーカイブまでは `archive_after_days`（初期値30日）。一度も使われていないスキルは、stale の期間より若い間はアーカイブしない。
 - アーカイブは `skills/.archive/` への移動とし、削除はしない。設定から戻せる。
 - 統合（`consolidate`、初期値は切）では、上流の英文プロンプトと候補一覧を、スキル道具だけを持つ別の Pi process に渡す。上限は100応答・30分とする。モデルと推論の強さは上流の `auxiliary.curator` に当たる設定で選べ、既定は Pi の既定モデルと未指定の強さ。
 - 対象は、アカウントのスキル（`account`、上流の `agent`）のうち、ふり返りや統合パスが作ったもの（`createdBy='agent'`）だけ。会話の中で作ったもの（`learn`）・手で作ったもの（`user`）・Dahlia 同梱（`bundled`）・Pi パッケージ（`package`、上流の `hub`）は対象外。
 - Curator の導入前からあるスキルは `user` とし、整理しない。マイスキルから上流の `adopt` と同じく対象に加え（`agent`）、外す（`user`、固定も外す）ことができる。固定・ロック・予定で使うスキルも触れない。
 - 背景の処理による削除は、`absorbed_into` で統合先を示した場合だけ受け付け、アーカイブとして扱う。固定したスキルは、対話の操作でも削除できない。
-- 使用の記録は、`skill_view`、SKILL.md の `read`、`/skill:` の入力、変更の回数と時刻。ただし統合パス自身の閲覧は数えない（上流では、閲覧したスキルの時計が毎回戻ってしまうため）。上流の `prune_builtins`・全体の snapshot と rollback は持たない。
+- 使用の記録は、`skill_view`、Pi が一覧に出したスキルのファイルの `read`（成功したもの）、`/skill:` の入力、変更の回数と時刻。`read` と `/skill:` は package が検出して bridge で知らせる。ただし統合パス自身の閲覧は数えない（上流では、閲覧したスキルの時計が毎回戻ってしまうため）。上流の `prune_builtins`・全体の snapshot と rollback は持たない。
 - 変更はスキルの変更記録から1件ずつ取り消す。予定のスキル参照も書き換えない（承認済みの予定を無人で変えないため）。
 - Curator とふり返りの実行は `agent_system_runs` に残す。チャット一覧と分けて30日で消すが、各種類の最新の1件は間隔の起点として残す。
 
@@ -89,7 +109,7 @@ Hermes Agent と hermes-agent-self-evolution の固定コミット、プロン�
 - 順位は、アカウントのスキルの最終使用・最終閲覧・作成の時刻のうち最も新しいもので決め、アーカイブ済みは除く。記録のないスキル（同梱・パッケージで未使用のもの）は、Pi の順でその後に並ぶ。
 - 順位はアプリがチャットのプロセス起動時に 1 回だけ渡す。会話の途中で一覧が変わらないので、prompt cache を保つ。
 - 使用記録を取得できない場合は順位付けだけを省略し、Pi の順で一覧・予算・説明の短縮を適用する。チャットの起動は妨げない。
-- 処理は独立した Pi package（`PiExtension/skill-index`）に置き、Dahlia の拡張から登録する。`skill_view` がない Pi では、各行に SKILL.md の path を付けて `read` で読ませる。
+- `skill_view` がない Pi では、各行に SKILL.md の path を付けて `read` で読ませる。
 
 ## 却下した案
 
@@ -97,8 +117,15 @@ Hermes Agent と hermes-agent-self-evolution の固定コミット、プロン�
 - `skill_manage` で長い説明を拒否する（上流の 60 字の上限）: 既存のスキルと最適化・ふり返りに影響が広がる。一覧の側で短くすれば足りる。
 
 - Pi RPC で会話を由来付きで複製する: Pi RPC に由来を付け直して複製する API がないため。
+- Curator の遷移を Swift と package の両方に持つ: 同じ規則を 2 か所で保守することになるため、package に一本化した。代わりに統合が切のアカウントでも、整理のたびに Pi process を起動する。
+- package が Pi のセッション開始時に Curator の間隔を判定して自動で動かす: Pi は常駐しないため、時期は外部に任せる。
+- package の既定の保存先を SQLite にする: `node:sqlite` は Node と Bun の Pi の両方で使えるが、件数が少なく検索も要らず、Hermes の `.usage.json` と同じ形式にできる JSON を選んだ。
 
 ## 未適合・未検証
+
+- 未決: package を利用者に配布する方法（公開用のリポジトリへの書き出しなど）。後回しとユーザーが決めた（2026-11-21）。
+- 未検証: 実アプリのチャットで `skillUsage` が記録されること、実アプリの Curator の process が `skillStore` で遷移を反映すること（Pi 単体と、Dahlia の拡張を Curator の役割で起動した結合確認では確認済み）。
+- 未検証: Pi 単体の `skill_optimize` と統合パスを実モデルで完走させること。異常終了で残った `.usage.json.lock` の引き取り。
 
 - 未解決の危険: 外部の文章の命令と事実の区別は、Hermes の指示とモデルの判断に依存する。
 - 未検証: 対話の bash の通信許可は、この仕様では見直していない。

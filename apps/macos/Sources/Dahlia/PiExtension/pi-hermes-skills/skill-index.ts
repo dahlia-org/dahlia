@@ -1,4 +1,4 @@
-// pi-skill-index: replaces Pi's skill listing with a one-line-per-skill index that fits a prompt budget.
+// Replaces Pi's skill listing with a one-line-per-skill index that fits a prompt budget.
 // Every name stays listed. Over budget, the least recently used skills lose their descriptions first:
 // full text, then 60 characters (Hermes Agent's index width), then the name only.
 // The index is computed from inputs that do not change during a process, so the cached prompt prefix is kept.
@@ -77,25 +77,31 @@ export function formatSkillIndex(skills: IndexedSkill[], options: SkillIndexOpti
   ].join("\n");
 }
 
-/** Reads `PI_SKILL_INDEX_BUDGET` (characters) and `PI_SKILL_INDEX_RANK` (comma-separated names) when options are omitted. */
-export function registerSkillIndex(pi: any, overrides: Partial<Pick<SkillIndexOptions, "budget" | "rank">> = {}) {
-  const env = process.env;
-  const rank = overrides.rank ?? (env.PI_SKILL_INDEX_RANK ?? "").split(",").filter(Boolean);
-  const fixedBudget = overrides.budget ?? (Number(env.PI_SKILL_INDEX_BUDGET) || undefined);
-  pi.on("before_agent_start", (event: any, ctx: any) => {
-    const options = event.systemPromptOptions;
-    const tools: string[] = options.selectedTools ?? [];
-    const loader = tools.includes("skill_view") ? "skill_view" : tools.includes("read") ? "read" : undefined;
-    // Without a loader Pi decides how (and whether) to list skills.
-    if (!loader || !options.skills?.length) return;
-    const budget = fixedBudget ?? Math.round((ctx.model?.contextWindow || DEFAULT_CONTEXT_WINDOW) * CHARS_PER_CONTEXT_TOKEN);
-    const index = formatSkillIndex(options.skills, { budget, rank, loader, canListSkills: tools.includes("skills_list") });
-    // Pi stops listing skills itself; `/skill:name` commands come from the resource loader and still work.
-    options.skills = [];
-    if (index) options.sections.skills = index;
-  });
+export interface SkillIndexHooks {
+  /** Character budget; `PI_SKILL_INDEX_BUDGET`, then 1% of the context window, when unset. */
+  budget?: number;
+  /** Most recently used first; `PI_SKILL_INDEX_RANK` (comma-separated names) when unset. */
+  rank?: string[];
+  /** Receives Pi's skills before the listing is replaced, every run. */
+  onSkills?: (skills: IndexedSkill[]) => void;
 }
 
-export default function (pi: any) {
-  registerSkillIndex(pi);
+/** Reads `options` at each run, so a caller can fill it in at `session_start`. */
+export function registerSkillIndex(pi: any, options: SkillIndexHooks = {}) {
+  pi.on("before_agent_start", (event: any, ctx: any) => {
+    const prompt = event.systemPromptOptions;
+    options.onSkills?.(prompt.skills ?? []);
+    const tools: string[] = prompt.selectedTools ?? [];
+    const loader = tools.includes("skill_view") ? "skill_view" : tools.includes("read") ? "read" : undefined;
+    // Without a loader Pi decides how (and whether) to list skills.
+    if (!loader || !prompt.skills?.length) return;
+    const env = process.env;
+    const rank = options.rank ?? (env.PI_SKILL_INDEX_RANK ?? "").split(",").filter(Boolean);
+    const budget = (Number(env.PI_SKILL_INDEX_BUDGET) || undefined) ?? options.budget
+      ?? Math.round((ctx.model?.contextWindow || DEFAULT_CONTEXT_WINDOW) * CHARS_PER_CONTEXT_TOKEN);
+    const index = formatSkillIndex(prompt.skills, { budget, rank, loader, canListSkills: tools.includes("skills_list") });
+    // Pi stops listing skills itself; `/skill:name` commands come from the resource loader and still work.
+    prompt.skills = [];
+    if (index) prompt.sections.skills = index;
+  });
 }

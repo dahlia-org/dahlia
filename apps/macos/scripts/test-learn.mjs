@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { registerLearn } from "../Sources/Dahlia/PiExtension/learn.ts";
+import { registerLearn } from "../Sources/Dahlia/PiExtension/pi-hermes-skills/learn.ts";
 
 test("/learn keeps the request verbatim and defaults to the current conversation", () => {
   let hook;

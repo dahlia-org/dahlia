@@ -257,7 +257,7 @@ extension PiChatService {
                 await runtime.close(activeReview.connection)
             }
             if let activeCurator, activeCurator.account != account || AgentBackgroundActivity.isRecording ||
-                !SkillCuratorSettings.enabled(account) || !SkillCuratorSettings.consolidate(account) {
+                !SkillCuratorSettings.enabled(account) || (activeCurator.consolidating && !SkillCuratorSettings.consolidate(account)) {
                 await runtime.close(activeCurator.connection)
             }
             try await history().dbQueue.write { db in

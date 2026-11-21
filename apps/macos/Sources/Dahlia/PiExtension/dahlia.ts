@@ -16,9 +16,7 @@ import {
 import { omnigentTools, registerThreadTools, threadTools } from "./thread-tools.ts";
 import { registerLearningTools, learningTools } from "./learning-tools.ts";
 import { reviewMCP } from "./mcp-review.ts";
-import { registerSkillOptimizer } from "./skill-evolution.ts";
-import { learnTemplatePath, registerLearn } from "./learn.ts";
-import { registerSkillIndex } from "./skill-index/index.ts";
+import { learnTemplatePath, registerHermesSkills } from "./pi-hermes-skills/index.ts";
 
 const env = process.env;
 const mode = env.DAHLIA_PI_MODE ?? "control";
@@ -83,6 +81,13 @@ async function bridge(ctx: any, method: string, payload: unknown): Promise<any> 
   return JSON.parse(value);
 }
 
+// The context Dahlia attaches to a chat message (as in mcp-review.ts) is not what the user asked.
+export const stripAmbient = (text: string) => text
+  .replace(/^<context>\n[\s\S]*?<\/context>\s*/, "")
+  .replace(/<(thread_request|thread_results) source="dahlia" untrusted="true">[\s\S]*?<\/\1>/g, "")
+  .replace(/<live_transcript(?: source="dahlia")?>[\s\S]*?<\/live_transcript>/g, "")
+  .trim();
+
 // Pi follows links while discovering skills outside Seatbelt. Only offer ordinary account skill files.
 function accountSkillPaths(directory: string, root = true): string[] {
   try {
@@ -126,25 +131,7 @@ export default async function (pi: any) {
   // Unity AI Gateway sign-ins serve chat's MCP servers and every process's models.
   registerDatabricksProviders(pi);
 
-  let reviewIterations = 0;
-  let reviewInputTokens = 0;
-  // The Curator's consolidation sweep takes 50-100 calls upstream; it has a response ceiling and no aggregate input budget.
-  const curator = env.DAHLIA_PI_CURATOR === "1";
-  const reviewLimit = curator ? 100 : 16;
-  const reviewBudget = (ctx: any) =>
-    curator ? Infinity : ctx.model?.contextWindow > 0 ? Math.min(600_000, ctx.model.contextWindow * 0.75) : 120_000;
-  pi.on("message_end", (event: any, ctx: any) => {
-    if (env.DAHLIA_PI_PROFILE !== "review" || event.message?.role !== "assistant") return;
-    reviewIterations += 1;
-    const usage = event.message.usage ?? {};
-    reviewInputTokens += (usage.input ?? 0) + (usage.cacheRead ?? 0) + (usage.cacheWrite ?? 0);
-    if (reviewIterations >= reviewLimit || reviewInputTokens >= reviewBudget(ctx)) ctx.abort();
-  });
   pi.on("before_provider_request", (event: any, ctx: any) => {
-    if (env.DAHLIA_PI_PROFILE === "review") {
-      // Pi logs hook errors and continues; abort the run explicitly before another request.
-      if (reviewIterations >= reviewLimit || reviewInputTokens >= reviewBudget(ctx)) ctx.abort();
-    }
     const enforce = strictSchemaPayload[ctx.model?.api];
     if (!outputSchema || env.PI_OUTPUT_STRICT_SCHEMA !== "1" || !enforce) return;
     return enforce(event.payload);
@@ -167,7 +154,40 @@ export default async function (pi: any) {
   }
 
   // Review and Curator processes reuse chat's skills, so every mode that lists skills gets the budgeted index.
-  registerSkillIndex(pi);
+  // Skill files, usage and Curator state belong to Dahlia's AgentSkillService (`agent_skill_states`); the package only
+  // detects uses and, in a Curator process, applies the transitions through it. Dahlia schedules reviews and consolidation.
+  const curatorProcess = mode === "chat" && env.DAHLIA_PI_PROFILE === "review" && env.DAHLIA_PI_CURATOR === "1";
+  const store = (action: string, fields: object = {}) => bridge(bridgeContext, "skillStore", { action, ...fields });
+  registerHermesSkills(pi, {
+    // Chat passes the order it computed at launch; other processes keep Pi's order.
+    rank: (env.PI_SKILL_INDEX_RANK ?? "").split(",").filter(Boolean),
+    store: curatorProcess
+      ? { bump: async () => {}, all: () => store("all"), set: (name, fields) => store("set", { name, fields }), archive: (name) => store("archive", { name }) }
+      : { bump: async (name, kind) => { if (mode === "chat" && bridgeContext) await bridge(bridgeContext, "skillUsage", { name, kind }); } },
+    tools: mode === "chat" ? (name, args, ctx) => bridge(ctx, name, args) : false,
+    role: env.DAHLIA_PI_PROFILE === "review" ? (env.DAHLIA_PI_CURATOR === "1" ? "curator" : "review") : undefined,
+    review: false,
+    curator: curatorProcess ? { report: (ctx, report) => bridge(ctx, "curatorReport", report) } : false,
+    settings: curatorProcess ? { curator: JSON.parse(env.DAHLIA_PI_CURATOR_SETTINGS ?? "{}") } : undefined,
+    guidance: false,
+    optimizer: mode !== "chat" ? false : {
+      description: "Optimize an account skill's SKILL.md with GEPA (hermes-agent-self-evolution): build evaluation examples from "
+        + "this account's conversations, evolve the instructions, and stage a better-scoring version for the user's approval in "
+        + "Settings → Skills. Nothing changes until the user approves. A run takes minutes and hundreds of model calls; start it "
+        + "only when the user asks. Pass the user's extra requirements for the rewrite as `focus`.",
+      begin: async (ctx, name) => {
+        const input = await bridge(ctx, "optimizerInput", { name });
+        if (input?.success === false) throw new Error(input.error);
+        const messages = input.messages.map((m: any) => ({ ...m, task_input: stripAmbient(m.task_input ?? "") }));
+        return { raw: input.raw, messages, token: input.run_id };
+      },
+      finish: (ctx, run, outcome) => bridge(ctx, "optimizerResult", { run_id: run.token, name: run.name, ...outcome }),
+    },
+    learn: mode !== "chat" ? false : {
+      agent: "Dahlia",
+      tools: ["bash", "read", "ls", "write", "edit", "cronjob", "memory", "skill_view", "skill_manage"],
+    },
+  });
 
   if (mode === "chat") {
     pi.registerTool({
@@ -212,8 +232,6 @@ export default async function (pi: any) {
       return;
     };
     registerLearningTools(pi, bridge, approve);
-    registerLearn(pi);
-    registerSkillOptimizer(pi, bridge);
     if (env.DAHLIA_PI_MCP_COMMAND) {
       const [command, ...args] = JSON.parse(env.DAHLIA_PI_MCP_COMMAND);
       pi.registerMcpServer("dahlia", { command, args, exposure: "direct", description: "Dahlia meetings, projects, and workspaces" });
