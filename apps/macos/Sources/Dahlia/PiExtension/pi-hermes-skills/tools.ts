@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { chmodSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join, relative, sep } from "node:path";
 import { scanContent } from "./guard.ts";
-import { curationGuard, emptyRecord, type SkillRecord, type UsageStore } from "./usage.ts";
+import { curationGuard, emptyRecord, readSkillRecords, type SkillRecord, type UsageStore } from "./usage.ts";
 
 export const skillToolSchemas: any[] = JSON.parse(readFileSync(new URL("./hermes/tools.json", import.meta.url), "utf8"));
 export const skillToolNames = skillToolSchemas.map((schema) => schema.name as string);
@@ -65,7 +65,6 @@ export function fileSkillTools(options: {
     }
     return files;
   };
-  const records = async () => (await store.all?.()) ?? {};
 
   return async (tool, args, _ctx) => {
     const skills = catalog();
@@ -99,7 +98,7 @@ export function fileSkillTools(options: {
     if (!Array.isArray(operations) || operations.length === 0) throw new Error("Expected a nonempty operations array.");
     if (operations.length > 1 && operations.some((op: any) => op?.action === "delete")) throw new Error("delete must be the sole operation.");
     // A damaged record store fails the change: it holds the locks.
-    const known = await records();
+    const known = await readSkillRecords(store);
     const before = new Map<string, Snapshot | null>();
     const working = new Map<string, Map<string, Buffer>>();
     for (const op of operations) {

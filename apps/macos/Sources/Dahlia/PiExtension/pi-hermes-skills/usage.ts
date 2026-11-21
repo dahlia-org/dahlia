@@ -37,6 +37,15 @@ export interface UsageStore {
   archive?(name: string, expected?: SkillRecord): Promise<void | boolean>;
 }
 
+/** File writers need an authoritative snapshot even when enumeration for the index/Curator is not provided. */
+export async function readSkillRecords(store: UsageStore): Promise<Record<string, SkillRecord>> {
+  if (store.all) return structuredClone(await store.all());
+  if (!store.transaction) throw new Error("File skill operations require readable records or synchronous transactions.");
+  let records: Record<string, SkillRecord> = {};
+  await store.transaction((current) => { records = structuredClone(current); });
+  return records;
+}
+
 const stamps: Record<UsageKind, [keyof SkillRecord, keyof SkillRecord]> = {
   use: ["use_count", "last_used_at"],
   view: ["view_count", "last_viewed_at"],

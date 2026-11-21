@@ -3,7 +3,7 @@
 // decides what happens to the result; without one, the skill file and Pi's sessions are used directly.
 import { readFileSync, writeFileSync } from "node:fs";
 import { assertWritableSkill, fileSkillTools } from "./tools.ts";
-import type { UsageStore } from "./usage.ts";
+import { readSkillRecords, type UsageStore } from "./usage.ts";
 
 const upstream = JSON.parse(readFileSync(new URL("./hermes/evolution.json", import.meta.url), "utf8"));
 
@@ -99,7 +99,7 @@ export function fileOptimizer(
   const find = async (name: string) => {
     const skill = options.skills().find((candidate) => candidate.name === name);
     if (!skill) throw new Error(`Skill '${name}' not found. Use one of the listed skills.`);
-    assertWritableSkill(options.root, name, skill.filePath, (await options.store.all?.())?.[name]);
+    assertWritableSkill(options.root, name, skill.filePath, (await readSkillRecords(options.store))[name]);
     return skill;
   };
   return {

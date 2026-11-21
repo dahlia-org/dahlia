@@ -69,7 +69,8 @@ A custom store must compare the optional `expected` record inside its `set` and 
 restore and file optimizer also require `transaction(change)`: acquire ownership shared with every package and record
 writer, then invoke the synchronous `change(records, save)` callback. `save()` atomically persists the record
 map or throws without changing it. The callback publishes packages and rolls them back on failure before ownership is
-released; it must never await work inside the transaction. Hosts can instead supply their own tools and restoration.
+released; it must never await work inside the transaction. `all()` remains optional: file writers can read a record
+snapshot through `transaction()` without saving. Hosts can instead supply their own tools and restoration.
 
 The file store times out after 10 seconds waiting for its lock and never steals a lock based on age. After a forced
 termination, an abandoned `skills/.usage.json.lock` requires manual removal once no process is using that store.
