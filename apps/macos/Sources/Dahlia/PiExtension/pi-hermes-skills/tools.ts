@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { chmodSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join, relative, sep } from "node:path";
 import { scanContent } from "./guard.ts";
-import type { SkillRecord, UsageStore } from "./usage.ts";
+import { curationGuard, emptyRecord, type SkillRecord, type UsageStore } from "./usage.ts";
 
 export const skillToolSchemas: any[] = JSON.parse(readFileSync(new URL("./hermes/tools.json", import.meta.url), "utf8"));
 export const skillToolNames = skillToolSchemas.map((schema) => schema.name as string);
@@ -134,53 +134,45 @@ export function fileSkillTools(options: {
       apply(op, action, path, files);
       validate(files, name);
     }
-    // Recheck external edits immediately before replacing the packages.
-    for (const [name, original] of before) {
-      const directory = join(root, name);
-      const current = existsSync(directory) ? readPackage(directory) : null;
-      if (!samePackage(current, original)) throw new Error("Skill changed while editing. Read it again and retry.");
-    }
     const deleted = [...working].find(([, files]) => files.size === 0)?.[0];
     if (role && deleted) {
-      // Autonomous deletes stay recoverable: upstream archives them instead of removing the package.
-      await (store.archive ?? (() => Promise.reject(new Error("This store cannot archive skills."))))(deleted);
+      // Autonomous deletes stay recoverable. The store compares the record again under its mutation lock.
+      if (await (store.archive ?? (() => Promise.reject(new Error("This store cannot archive skills."))))(deleted, known[deleted]) === false) {
+        throw new Error("Skill changed while editing. Read it again and retry.");
+      }
       return { success: true, message: `Skill '${deleted}' archived. Content absorbed into '${operations[0].absorbed_into ?? ""}'.` };
     }
-    const replaced: string[] = [];
-    const recorded: string[] = [];
-    try {
-      for (const [name, files] of working) {
-        replace(join(root, name), files, before.get(name)?.modes);
-        replaced.push(name);
+    if (!store.transaction) throw new Error("File skill tools require a store with synchronous transactions, or host-provided tools.");
+    await store.transaction((current, save) => {
+      // Ownership spans the final checks, all package publication, one record flush, and any rollback.
+      for (const [name, original] of before) {
+        if (JSON.stringify(current[name]) !== JSON.stringify(known[name])) throw new Error("Skill records changed while editing. Retry the operation.");
+        const directory = join(root, name);
+        const snapshot = existsSync(directory) ? readPackage(directory) : null;
+        if (!samePackage(snapshot, original)) throw new Error("Skill changed while editing. Read it again and retry.");
       }
       const now = new Date().toISOString();
-      for (const [name, files] of working) {
-        const original = before.get(name);
-        if (!original) {
-          // Only background passes hand a skill to the Curator.
-          await store.set?.(name, {
-            created_by: role ? "agent" : "learn", created_at: now, use_count: 0, view_count: 0, patch_count: 0,
-            last_used_at: null, last_viewed_at: null, last_patched_at: null, state: "active", pinned: false, archived_at: null,
-          });
-          recorded.push(name);
-        } else if (files.size === 0) {
-          await store.set?.(name, null);
-          recorded.push(name);
+      const replaced: string[] = [];
+      try {
+        for (const [name, files] of working) {
+          replace(join(root, name), files, before.get(name)?.modes);
+          replaced.push(name);
+          if (!before.get(name)) current[name] = { ...emptyRecord(now), created_by: role ? "agent" : "learn" };
+          else if (files.size === 0) delete current[name];
+          else {
+            const record = current[name] ?? emptyRecord(now);
+            current[name] = { ...record, patch_count: (Number(record.patch_count) || 0) + 1, last_patched_at: now };
+          }
         }
+        save();
+      } catch (error) {
+        for (const name of replaced) {
+          const original = before.get(name);
+          replace(join(root, name), original?.files ?? new Map(), original?.modes);
+        }
+        throw error;
       }
-    } catch (error) {
-      // Keep the snapshots until required record writes succeed, including deletion and later creates in a batch.
-      for (const name of replaced) {
-        const original = before.get(name);
-        replace(join(root, name), original?.files ?? new Map(), original?.modes);
-      }
-      for (const name of recorded.reverse()) await store.set?.(name, known[name] ?? null);
-      throw error;
-    }
-    // Usage counters are best effort, and cannot turn a saved content change into a failed operation.
-    for (const [name, files] of working) {
-      if (before.get(name) && files.size > 0) await store.bump(name, "patch").catch(() => {});
-    }
+    });
     return { success: true, message: "Skill operations saved atomically." };
   };
 }
@@ -195,12 +187,6 @@ function deleteGuard(name: string, absorbedInto: unknown, record: SkillRecord | 
   }
   if (target === name) throw new Error(`absorbed_into='${target}' cannot equal the skill being deleted.`);
   if (!skills.has(target)) throw new Error(`absorbed_into='${target}' does not exist. Create or patch the umbrella skill first, then retry the delete.`);
-}
-
-/** The Curator changes only the unprotected skills it manages. */
-export function curationGuard(name: string, record: SkillRecord | undefined) {
-  if (record?.created_by !== "agent" || record.pinned || record.locked) throw new Error("Curator cannot change a user-created, pinned, or locked skill.");
-  if (record.scheduled) throw new Error("Curator cannot change a skill used by a scheduled task.");
 }
 
 function apply(op: any, action: string, path: string, files: Map<string, Buffer>) {

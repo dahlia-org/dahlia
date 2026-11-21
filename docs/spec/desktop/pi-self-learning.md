@@ -15,7 +15,8 @@ Hermes Agent と hermes-agent-self-evolution の固定コミット、プロン�
 - Pi だけで動かす場合の契約は package の README にある。要点:
   - 記録は Pi の agent directory の `skills/.usage.json`（Hermes の `.usage.json` と同じ形式）、設定は Pi の `settings.json` の `hermesSkills` に置く。
   - 既定値は Hermes と同じ。ふり返りは入（道具を呼んだ応答10回ごと）、Curator は入、統合は切、最適化は道具を置くだけ（2026-11-21 ユーザー承認）。
-  - ふり返りと統合は、スキル道具だけを持つ別の Pi process で動く。ふり返りは会話を `--fork` で引き継ぐ。
+  - スキルファイルの変更・復元と記録更新は、すべての書き手が共有する排他区間で確定する。失敗時の復元も排他を保持したまま行う。独自の記録アダプターで組み込む場合の同期 transaction の契約は README を参照する。
+  - ふり返りと統合は、スキル道具だけを持つ別の Pi process で動く。ふり返りは開始時点の会話のコピーを `--fork` で引き継ぐ。起動元の終了後も残る `/bin/sh` の監督プロセスが、Pi の起動失敗時を含めて一時コピーを削除する。
   - Pi は常駐しないので、Curator を動かす時期は外部（cron など）が `/hermes-curator` を呼んで決める（同日ユーザー決定）。
 - Dahlia は次を差し替える。`.usage.json` と `hermesSkills` は使わない。
   - スキル道具: bridge で `AgentSkillService` が実行する。設定画面も Pi を起動せずに同じ service で書く。
@@ -125,7 +126,7 @@ Hermes Agent と hermes-agent-self-evolution の固定コミット、プロン�
 
 - 未決: package を利用者に配布する方法（公開用のリポジトリへの書き出しなど）。後回しとユーザーが決めた（2026-11-21）。
 - 未検証: 実アプリのチャットで `skillUsage` が記録されること、実アプリの Curator の process が `skillStore` で遷移を反映すること（Pi 単体と、Dahlia の拡張を Curator の役割で起動した結合確認では確認済み）。
-- 未検証: Pi 単体の `skill_optimize` と統合パスを実モデルで完走させること。異常終了で残った `.usage.json.lock` の引き取り。
+- 未検証: Pi 単体の `skill_optimize` と統合パスを実モデルで完走させること。強制終了で残った `.usage.json.lock` の手動回復（待機のタイムアウトと、古いロックを奪わないことはテスト済み）。
 
 - 未解決の危険: 外部の文章の命令と事実の区別は、Hermes の指示とモデルの判断に依存する。
 - 未検証: 対話の bash の通信許可は、この仕様では見直していない。

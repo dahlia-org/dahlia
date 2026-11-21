@@ -1,8 +1,7 @@
 // Skill usage records, as Hermes Agent's `tools/skill_usage.py` keeps them: one JSON map keyed by skill name.
-import { closeSync, existsSync, mkdirSync, openSync, readFileSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { closeSync, existsSync, mkdirSync, openSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
-import { curationGuard } from "./tools.ts";
 
 export type UsageKind = "use" | "view" | "patch";
 
@@ -30,6 +29,8 @@ export interface UsageStore {
   bump(name: string, kind: UsageKind): Promise<void>;
   /** Every record; without it the index keeps Pi's order and the Curator has nothing to manage. */
   all?(): Promise<Record<string, SkillRecord>>;
+  /** File tools require exclusive ownership shared with every record/package writer. The callback and save are synchronous. */
+  transaction?(change: (records: Record<string, SkillRecord>, save: () => void) => void): Promise<void>;
   /** Atomically merges fields (`null` forgets); compare `expected` inside the mutation boundary and return false if obsolete. */
   set?(name: string, fields: Partial<SkillRecord> | null, expected?: SkillRecord): Promise<void | boolean>;
   /** Moves an eligible account skill to `.archive/` and marks it archived; false skips an obsolete snapshot. */
@@ -47,6 +48,12 @@ export const emptyRecord = (now: string): SkillRecord => ({
   last_used_at: null, last_viewed_at: null, last_patched_at: null,
   created_at: now, state: "active", pinned: false, archived_at: null,
 });
+
+/** The Curator changes only the unprotected skills it manages. */
+export function curationGuard(name: string, record: SkillRecord | undefined) {
+  if (record?.created_by !== "agent" || record.pinned || record.locked) throw new Error("Curator cannot change a user-created, pinned, or locked skill.");
+  if (record.scheduled) throw new Error("Curator cannot change a skill used by a scheduled task.");
+}
 
 /** Pi's agent directory (`PI_CODING_AGENT_DIR`, else `~/.pi/agent`). */
 export const agentDir = () => process.env.PI_CODING_AGENT_DIR || join(homedir(), ".pi", "agent");
@@ -78,6 +85,10 @@ export function fileStore(path = join(agentDir(), "skills", ".usage.json")): Req
   });
   const store: Required<UsageStore> = {
     all: async () => read(),
+    transaction: (edit) => withLock(path, (write) => {
+      const data = read();
+      edit(data, () => write(JSON.stringify(data, null, 2) + "\n"));
+    }),
     bump: async (name, kind) => {
       await change((data, now) => {
         const record: any = { ...emptyRecord(now), ...data[name] };
@@ -115,27 +126,19 @@ export function fileStore(path = join(agentDir(), "skills", ".usage.json")): Req
   return store;
 }
 
-// shortcut: a lock older than 10 s is taken over (Node has no flock); two takers at once can both write. Upgrade to
-// an fcntl lock if records are ever written that often.
-/** Runs `change` while holding `<path>.lock`; `write` replaces the file by renaming a temporary copy. */
-export async function withLock<T>(path: string, change: (write: (text: string) => void) => T): Promise<T> {
+/** Runs a synchronous mutation under `<path>.lock`. A live owner's lock is never stolen based on its age. */
+export async function withLock<T>(path: string, change: (write: (text: string) => void) => T, timeoutMs = 10_000): Promise<T> {
   mkdirSync(dirname(path), { recursive: true });
   const lock = `${path}.lock`;
-  for (let attempt = 0; ; attempt++) {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
     try {
       closeSync(openSync(lock, "wx"));
       break;
     } catch (error: any) {
       if (error.code !== "EEXIST") throw error;
-      let age = 0;
-      try {
-        age = Date.now() - statSync(lock).mtimeMs;
-      } catch {
-        continue;
-      }
-      if (age > 10_000) rmSync(lock, { force: true });
-      else if (attempt > 500) throw new Error(`${lock} is held by another process`);
-      else await new Promise((done) => setTimeout(done, 20));
+      if (Date.now() >= deadline) throw new Error(`${lock} is held by another process`);
+      await new Promise((done) => setTimeout(done, 20));
     }
   }
   try {

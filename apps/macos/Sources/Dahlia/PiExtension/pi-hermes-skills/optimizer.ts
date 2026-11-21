@@ -120,7 +120,12 @@ export function fileOptimizer(
         await manage("skill_manage", { operations: [{ action: "patch", name: run.name, content: outcome.skill }] }, ctx);
         return { applied: true };
       }
-      writeFileSync(`${file}.optimized`, outcome.skill);
+      if (!options.store.transaction) throw new Error("File optimizer proposals require a store with synchronous transactions.");
+      await options.store.transaction((records) => {
+        assertWritableSkill(options.root, run.name, file, records[run.name]);
+        if (readFileSync(file, "utf8") !== run.token) throw new Error("The skill changed during optimization; optimize it again.");
+        writeFileSync(`${file}.optimized`, outcome.skill);
+      });
       return { applied: false, proposal: `${file}.optimized` };
     },
   };

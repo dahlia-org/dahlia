@@ -60,7 +60,7 @@ function piInvocation() {
 
 /**
  * Starts a pass and returns at once; it outlives this session. `fork` copies a session file into a scratch directory that
- * the pass removes when it exits.
+ * a detached supervisor removes when the pass exits, even if Pi cannot load this extension.
  */
 export function startBackground(pi: any, options: { role: Role; prompt: string; model?: string; fork?: string; cwd: string }) {
   const scratch = mkdtempSync(join(tmpdir(), "pi-hermes-skills-"));
@@ -77,7 +77,9 @@ export function startBackground(pi: any, options: { role: Role; prompt: string; 
       ...(options.model ? ["--model", options.model] : []), ...(loose ? ["-e", entry] : []), options.prompt,
     ];
     const timeout = options.role === "curator" ? 1_800_000 : 600_000;
-    const child = spawn(command, args, {
+    // The supervisor outlives this session and owns cleanup even if Pi exits before loading the extension.
+    const supervisor = `scratch=$1; shift; trap '/bin/rm -rf -- "$scratch"' EXIT; "$@"`;
+    const child = spawn("/bin/sh", ["-c", supervisor, "pi-hermes-skills", scratch, command, ...args], {
       cwd: options.cwd, detached: true, stdio: "ignore",
       env: { ...process.env, [ROLE]: options.role, [TIMEOUT]: String(timeout), [SCRATCH]: scratch },
     });

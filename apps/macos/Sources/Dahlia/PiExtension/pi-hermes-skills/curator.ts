@@ -2,7 +2,7 @@
 // created, and an optional LLM consolidation pass. Upstream's interval and idle checks belong to whoever schedules it.
 import { existsSync, readdirSync, renameSync } from "node:fs";
 import { join } from "node:path";
-import type { SkillRecord, UsageStore } from "./usage.ts";
+import { emptyRecord, type SkillRecord, type UsageStore } from "./usage.ts";
 
 export interface CuratorSettings {
   enabled: boolean;
@@ -85,8 +85,17 @@ export async function restoreSkill(store: UsageStore, root: string, name: string
   const duplicates = entries.filter((entry) => entry.startsWith(`${name}-`) && /^\d{14}$/.test(entry.slice(name.length + 1))).sort();
   const found = entries.includes(name) ? name : duplicates.at(-1);
   if (!found) throw new Error(`skill '${name}' not found in archive`);
-  if (existsSync(join(root, name))) throw new Error(`destination already exists: ${join(root, name)}`);
-  if ((await store.all?.())?.[name]?.locked) throw new Error("Skill is locked.");
-  renameSync(join(archive, found), join(root, name));
-  await store.set?.(name, { state: "active", archived_at: null });
+  if (!store.transaction) throw new Error("File skill restore requires a store with synchronous transactions, or host-provided restore.");
+  await store.transaction((records, save) => {
+    if (existsSync(join(root, name))) throw new Error(`destination already exists: ${join(root, name)}`);
+    if (records[name]?.locked) throw new Error("Skill is locked.");
+    renameSync(join(archive, found), join(root, name));
+    try {
+      records[name] = { ...emptyRecord(new Date().toISOString()), ...records[name], state: "active", archived_at: null };
+      save();
+    } catch (error) {
+      renameSync(join(root, name), join(archive, found));
+      throw error;
+    }
+  });
 }

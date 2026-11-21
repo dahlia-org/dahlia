@@ -16,7 +16,7 @@ import { fileSkillTools } from "../Sources/Dahlia/PiExtension/pi-hermes-skills/t
 import { scanContent } from "../Sources/Dahlia/PiExtension/pi-hermes-skills/guard.ts";
 import { registerLearn } from "../Sources/Dahlia/PiExtension/pi-hermes-skills/learn.ts";
 import { fileOptimizer } from "../Sources/Dahlia/PiExtension/pi-hermes-skills/optimizer.ts";
-import { fileStore, rankFromRecords, trackUsage } from "../Sources/Dahlia/PiExtension/pi-hermes-skills/usage.ts";
+import { fileStore, rankFromRecords, trackUsage, withLock } from "../Sources/Dahlia/PiExtension/pi-hermes-skills/usage.ts";
 
 const packageDir = fileURLToPath(new URL("../Sources/Dahlia/PiExtension/pi-hermes-skills/", import.meta.url));
 const temporary = () => mkdtempSync(join(tmpdir(), "pi-hermes-skills-"));
@@ -396,6 +396,23 @@ test("without a host the optimizer proposes next to the skill, or uses the manag
   assert.equal(readFileSync(file, "utf8"), original);
 });
 
+test("headless optimizer proposals recheck the source under package ownership", async () => {
+  const { root, store, manage } = account();
+  const file = join(root, "s/SKILL.md");
+  const original = skillText("s");
+  await manage({ action: "create", name: "s", content: original });
+  const host = fileOptimizer({ root, skills: () => [{ name: "s", filePath: file }], store: {
+    ...store, transaction: async (change) => {
+      await manage({ action: "patch", name: "s", content: skillText("s", "Saved during proposal wait.") });
+      return store.transaction(change);
+    },
+  } });
+  const better = { changed: true, improvement: 0.2, baseline_score: 0.5, evolved_score: 0.7, constraints: [{ passed: true }], skill: skillText("s", "Proposal.") };
+  await assert.rejects(host.finish({ hasUI: false }, { name: "s", token: original }, better), /changed during optimization/);
+  assert.ok(!existsSync(file + ".optimized"));
+  assert.equal(readFileSync(file, "utf8"), skillText("s", "Saved during proposal wait."));
+});
+
 test("the catalog drops deleted and archived cached paths and discovers restored skills", async () => {
   const { root, store, manage } = account();
   await manage({ action: "create", name: "deleted", content: skillText("deleted") });
@@ -507,32 +524,104 @@ test("archival restores the package if saving its record fails", async (t) => {
 });
 
 
-test("required record failures roll back deletes, creates, and earlier writes in a batch", async () => {
+test("one record commit rolls back failed deletes and multi-package edits", async (t) => {
   const { root, store, manage } = account();
   await manage({ action: "create", name: "original", content: skillText("original") },
     { action: "write_file", name: "original", file_path: "scripts/run.sh", file_content: "echo saved" });
   fs.chmodSync(join(root, "original/scripts/run.sh"), 0o700);
   const records = await store.all();
-  let failedName;
-  const execute = fileSkillTools({ root, skills: () => [], store: { ...store, set: async (name, fields) => {
-    if (name === failedName) throw new Error("Injected record failure");
-    return store.set(name, fields);
-  } } });
-  failedName = "original";
-  await assert.rejects(execute("skill_manage", { operations: [{ action: "delete", name: "original" }] }, {}), /Injected record failure/);
-  assert.equal(readFileSync(join(root, "original/SKILL.md"), "utf8"), skillText("original"));
-  assert.equal(readFileSync(join(root, "original/scripts/run.sh"), "utf8"), "echo saved");
-  assert.equal(statSync(join(root, "original/scripts/run.sh")).mode & 0o777, 0o700);
-  assert.deepEqual(await store.all(), records);
-  for (failedName of ["first", "second"]) {
-    await assert.rejects(execute("skill_manage", { operations: ["first", "second"].map((name) => ({ action: "create", name, content: skillText(name) })) }, {}), /Injected record failure/);
+  let fail = true;
+  const rename = fs.renameSync;
+  t.mock.method(fs, "renameSync", (from, to) => {
+    if (fail && to === join(root, ".usage.json")) throw new Error("Injected record failure");
+    return rename(from, to);
+  });
+  syncBuiltinESMExports();
+  try {
+    await assert.rejects(manage({ action: "delete", name: "original" }), /Injected record failure/);
+    const batch = [
+      { action: "patch", name: "original", content: skillText("original", "Attempted patch.") },
+      ...["first", "second"].map((name) => ({ action: "create", name, content: skillText(name) })),
+    ];
+    await assert.rejects(manage(...batch), /Injected record failure/);
+    assert.equal(readFileSync(join(root, "original/SKILL.md"), "utf8"), skillText("original"));
+    assert.equal(readFileSync(join(root, "original/scripts/run.sh"), "utf8"), "echo saved");
+    assert.equal(statSync(join(root, "original/scripts/run.sh")).mode & 0o777, 0o700);
     assert.ok(!existsSync(join(root, "first")) && !existsSync(join(root, "second")));
     assert.deepEqual(await store.all(), records);
+    fail = false;
+    await manage(...batch);
+    assert.equal(readFileSync(join(root, "original/SKILL.md"), "utf8"), skillText("original", "Attempted patch."));
+    await manage({ action: "delete", name: "original" });
+    assert.ok(!existsSync(join(root, "original")) && !(await store.all()).original);
+  } finally {
+    t.mock.restoreAll();
+    syncBuiltinESMExports();
   }
-  failedName = undefined;
-  await execute("skill_manage", { operations: [{ action: "delete", name: "original" }] }, {});
-  assert.ok(!existsSync(join(root, "original")));
-  assert.deepEqual(await store.all(), {});
+});
+
+test("a held failing transaction cannot publish or roll back over a newer acknowledged edit", async () => {
+  const { root, store, manage } = account();
+  await manage({ action: "create", name: "s", content: skillText("s") });
+  let rejectCommit;
+  let entered;
+  const waiting = new Promise((resolve) => { entered = resolve; });
+  const held = new Promise((_resolve, reject) => { rejectCommit = reject; });
+  const execute = fileSkillTools({ root, skills: () => [], store: { ...store, transaction: async (change) => {
+    entered();
+    await held;
+    return store.transaction(change);
+  } } });
+  const failed = execute("skill_manage", { operations: [
+    { action: "patch", name: "s", content: skillText("s", "First patch.") },
+    { action: "create", name: "new", content: skillText("new") },
+  ] }, {});
+  const rejection = assert.rejects(failed, /Held commit failure/);
+  await waiting;
+  assert.equal(readFileSync(join(root, "s/SKILL.md"), "utf8"), skillText("s"));
+  assert.ok(!existsSync(join(root, "new")));
+  await manage({ action: "patch", name: "s", content: skillText("s", "Newer acknowledged patch.") });
+  const acknowledged = await store.all();
+  rejectCommit(new Error("Held commit failure"));
+  await rejection;
+  assert.equal(readFileSync(join(root, "s/SKILL.md"), "utf8"), skillText("s", "Newer acknowledged patch."));
+  assert.deepEqual(await store.all(), acknowledged);
+  assert.ok(!existsSync(join(root, "new")));
+});
+
+test("package publication rechecks records after acquiring ownership", async () => {
+  const { root, store, manage } = account();
+  await manage({ action: "create", name: "s", content: skillText("s") });
+  const execute = fileSkillTools({ root, skills: () => [], store: { ...store, transaction: async (change) => {
+    await store.set("s", { locked: true });
+    return store.transaction(change);
+  } } });
+  await assert.rejects(execute("skill_manage", { operations: [{ action: "delete", name: "s" }] }, {}), /records changed/);
+  assert.equal(readFileSync(join(root, "s/SKILL.md"), "utf8"), skillText("s"));
+  assert.equal((await store.all()).s.locked, true);
+});
+
+test("restore rolls its move back on record failure", async (t) => {
+  const { root, store, manage } = account("review");
+  await manage({ action: "create", name: "s", content: skillText("s") });
+  await store.archive("s");
+  const before = await store.all();
+  const rename = fs.renameSync;
+  t.mock.method(fs, "renameSync", (from, to) => {
+    if (to === join(root, ".usage.json")) throw new Error("Injected record failure");
+    return rename(from, to);
+  });
+  syncBuiltinESMExports();
+  try {
+    await assert.rejects(restoreSkill(store, root, "s"), /Injected record failure/);
+    assert.ok(!existsSync(join(root, "s")) && existsSync(join(root, ".archive/s/SKILL.md")));
+    assert.deepEqual(await store.all(), before);
+  } finally {
+    t.mock.restoreAll();
+    syncBuiltinESMExports();
+  }
+  await restoreSkill(store, root, "s");
+  assert.equal((await store.all()).s.state, "active");
 });
 
 test("detached review freezes its source before spawn and cleans failed starts", (t) => {
@@ -567,5 +656,105 @@ test("detached review freezes its source before spawn and cleans failed starts",
   } finally {
     t.mock.restoreAll();
     syncBuiltinESMExports();
+  }
+});
+
+
+const until = async (predicate) => {
+  const deadline = Date.now() + 5_000;
+  while (!predicate()) {
+    assert.ok(Date.now() < deadline, "Timed out waiting for child state");
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  }
+};
+
+test("package writers in another process wait for ownership and never steal an aged lock", async () => {
+  const { root, store, manage } = account();
+  await manage({ action: "create", name: "s", content: skillText("s") });
+  const path = join(root, ".usage.json");
+  writeFileSync(path + ".lock", "");
+  fs.utimesSync(path + ".lock", new Date(0), new Date(0));
+  await assert.rejects(withLock(path, () => assert.fail("Must not acquire an owned lock"), 0), /held by another process/);
+  const code = `
+    import fs from 'node:fs';
+    import { syncBuiltinESMExports } from 'node:module';
+    import { fileStore } from ${JSON.stringify(new URL("usage.ts", 'file://' + packageDir).href)};
+    import { fileSkillTools } from ${JSON.stringify(new URL("tools.ts", 'file://' + packageDir).href)};
+    const root = process.argv[1];
+    const open = fs.openSync;
+    fs.openSync = (...args) => {
+      try { return open(...args); } catch (error) {
+        if (error.code === 'EEXIST') fs.writeFileSync(root + '/blocked', 'blocked');
+        throw error;
+      }
+    };
+    syncBuiltinESMExports();
+    const tools = fileSkillTools({root, store: fileStore(root + '/.usage.json'), skills: () => []});
+    await tools('skill_manage', {operations: [{action: 'patch', name: 's', content: ${JSON.stringify(skillText("s", "Concurrent patch."))}}]}, {});
+    fs.writeFileSync(root + '/saved', 'saved');
+  `;
+  const child = childProcess.spawn(process.execPath, ["--input-type=module", "-e", code, root], { stdio: ["ignore", "ignore", "pipe"] });
+  let errors = "";
+  child.stderr.on("data", (data) => { errors += data; });
+  const exited = new Promise((resolve) => child.once("exit", resolve));
+  try {
+    await until(() => existsSync(join(root, "blocked")));
+    assert.equal(readFileSync(join(root, "s/SKILL.md"), "utf8"), skillText("s"));
+    assert.ok(!existsSync(join(root, "saved")));
+  } finally {
+    fs.rmSync(path + ".lock", { force: true });
+  }
+  assert.equal(await exited, 0, errors);
+  assert.equal(readFileSync(join(root, "s/SKILL.md"), "utf8"), skillText("s", "Concurrent patch."));
+  assert.equal((await store.all()).s.patch_count, 1);
+});
+
+test("supervisor removes snapshots after Pi exits before extension load, including after its parent exits", async () => {
+  const root = temporary();
+  const source = join(root, "conversation.jsonl");
+  writeFileSync(source, "private conversation");
+  const background = new URL("background.ts", 'file://' + packageDir).href;
+  for (const outliveParent of [false, true]) {
+    const marker = join(root, `started-${outliveParent}`);
+    const script = join(root, `failed-pi-${outliveParent}.mjs`);
+    writeFileSync(script, `
+      import fs from 'node:fs';
+      fs.writeFileSync(${JSON.stringify(marker)}, process.env.PI_HERMES_SKILLS_SCRATCH);
+      const launcher = Number(process.env.PI_TEST_LAUNCHER_PID);
+      const deadline = Date.now() + 5_000;
+      const finish = () => {
+        if (launcher) {
+          try {
+            process.kill(launcher, 0);
+            if (Date.now() > deadline) process.exit(9);
+            return setTimeout(finish, 5);
+          } catch {
+            fs.writeFileSync(${JSON.stringify(marker + "-parent-gone")}, 'gone');
+          }
+        }
+        process.exit(7);
+      };
+      finish();
+    `);
+    if (outliveParent) {
+      // The detached supervisor and Pi survive this launcher; no extension exit hook is ever installed.
+      const launcher = `
+        import { startBackground } from ${JSON.stringify(background)};
+        process.argv[1] = ${JSON.stringify(script)};
+        process.env.PI_TEST_LAUNCHER_PID = String(process.pid);
+        startBackground({}, {role: 'review', prompt: 'Review.', fork: ${JSON.stringify(source)}, cwd: ${JSON.stringify(root)}});
+      `;
+      const result = childProcess.spawnSync(process.execPath, ["--input-type=module", "-e", launcher], { encoding: "utf8" });
+      assert.equal(result.status, 0, result.stderr);
+    } else {
+      const previous = process.argv[1];
+      process.argv[1] = script;
+      try { startBackground({}, { role: "review", prompt: "Review.", fork: source, cwd: root }); }
+      finally { process.argv[1] = previous; }
+    }
+    await until(() => existsSync(marker));
+    const scratch = readFileSync(marker, "utf8");
+    await until(() => !existsSync(scratch));
+    if (outliveParent) assert.ok(existsSync(marker + "-parent-gone"));
   }
 });
