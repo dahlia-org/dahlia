@@ -49,7 +49,10 @@ The review suffix preserves upstream's "You can only call memory and skill manag
 tools…" wording ("skill" when memory is unavailable). The 16-response and aggregate
 input budgets are enforced both by native supervision and by Pi's `ctx.abort()` before
 another provider request; hook exceptions alone do not stop Pi.
-Skill discovery uses Dahlia's enabled account/bundled/package catalog, with no Hermes
+The chat's skill listing follows `agent/prompt_builder.py`'s one-line `- name: description` index without categories
+(`PiExtension/skill-index`). Descriptions stay in full while the listing fits 1% of the context window; over that
+budget, the least recently used are clipped to `SKILL_PROMPT_DESC_LIMIT` (60) and then listed by name only, which
+upstream does not do. Skill discovery uses Dahlia's enabled account/bundled/package catalog, with no Hermes
 category/plugin activation, dependency installation, environment capture or preprocessing.
 `linked_files` groups files under references/templates/assets/scripts; the adapter lists
 all regular supporting files rather than Hermes's extension filters. Supporting file

@@ -47,6 +47,8 @@ skill-name/
 Use valid YAML frontmatter with `name` and `description`. The name is a command identifier: use 1–64 lowercase letters,
 digits, and single hyphens, with no leading or trailing hyphen, and match the directory name. Keep the description
 nonempty and at most 1024 characters. Quote YAML values when punctuation such as `: ` would change their meaning.
+Put what the skill does and when to use it in the first 60 characters: with many skills, the chat's index shortens
+descriptions to that length.
 
 Describe both the capability and when to use it. Add an exclusion only when it prevents a likely routing mistake.
 Keep automatic selection enabled by default. If the user explicitly wants manual-only invocation, use Pi's

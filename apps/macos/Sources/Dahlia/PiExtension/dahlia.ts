@@ -18,6 +18,7 @@ import { registerLearningTools, learningTools } from "./learning-tools.ts";
 import { reviewMCP } from "./mcp-review.ts";
 import { registerSkillOptimizer } from "./skill-evolution.ts";
 import { learnTemplatePath, registerLearn } from "./learn.ts";
+import { registerSkillIndex } from "./skill-index/index.ts";
 
 const env = process.env;
 const mode = env.DAHLIA_PI_MODE ?? "control";
@@ -164,6 +165,9 @@ export default async function (pi: any) {
       };
     });
   }
+
+  // Review and Curator processes reuse chat's skills, so every mode that lists skills gets the budgeted index.
+  registerSkillIndex(pi);
 
   if (mode === "chat") {
     pi.registerTool({

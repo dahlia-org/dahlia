@@ -69,6 +69,16 @@ extension AgentSkillService {
         try? recordUsage(name: name, account: account, columns: ["useCount"])
     }
 
+    /// Skill names, most recently used, viewed or created first, for the chat's budgeted skill index.
+    func indexRank(account: String) throws -> [String] {
+        try dbQueue.read {
+            try String.fetchAll($0, sql: """
+            SELECT name FROM agent_skill_states WHERE accountID=? AND state!='archived'
+            ORDER BY MAX(COALESCE(lastUsedAt,''),COALESCE(lastViewedAt,''),COALESCE(createdAt,'')) DESC, name
+            """, arguments: [account])
+        }
+    }
+
     func isPinned(name: String, account: String) throws -> Bool {
         try dbQueue.read {
             try Bool.fetchOne($0, sql: "SELECT pinned FROM agent_skill_states WHERE accountID=? AND name=?", arguments: [account, name]) ?? false
