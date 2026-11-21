@@ -47,7 +47,8 @@ actor AgentSkillService {
         let args = payload.objectValue ?? [:]
         var catalog = catalogs[account] ?? [:]
         if let names = try? FileManager.default.contentsOfDirectory(atPath: root.path) {
-            for name in names where Self.validName(name) {
+            // Discover newly created skills without replacing Pi's winner for a name collision.
+            for name in names where Self.validName(name) && catalog[name] == nil {
                 let file = root.appending(path: name).appending(path: "SKILL.md")
                 if FileManager.default.fileExists(atPath: file.path) { catalog[name] = file }
             }
