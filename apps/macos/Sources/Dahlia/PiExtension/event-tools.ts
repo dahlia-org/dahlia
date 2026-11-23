@@ -29,16 +29,30 @@ export function listedItemIDs(content: any[]): string[] {
   });
 }
 
-// Page evidence comes from the tool result and its actual request, never from the model's completion text.
+// Preserve the complete request; only JSON object key order and an empty root cursor are irrelevant.
+function requestKey(tool: string, input: Record<string, unknown>): string {
+  function canonical(value: any): any {
+    if (Array.isArray(value)) return value.map(canonical);
+    if (value && typeof value === "object") return Object.fromEntries(Object.keys(value).sort().map(key => [key, canonical(value[key])]));
+    return value;
+  }
+  const request = { ...input };
+  if (request.cursor === "") delete request.cursor;
+  return JSON.stringify([tool, canonical(request)]);
+}
+
+// A continuation obligates intake to observe that exact next request, not an inferred search family.
 function listedPages(event: any): any[] {
   return (event.content ?? []).flatMap((part: any) => {
     try {
       const result = JSON.parse(part?.text ?? "");
       if (!Array.isArray(result?.items) && result?.has_more === undefined && result?.nextCursor === undefined) return [];
+      const input = event.input ?? {};
+      const next = typeof result.nextCursor === "string" ? result.nextCursor : "";
       return [{
-        key: JSON.stringify([event.toolName, event.input?.query ?? ""]),
-        cursor: typeof event.input?.cursor === "string" ? event.input.cursor : "",
-        nextCursor: typeof result.nextCursor === "string" ? result.nextCursor : "",
+        requestKey: requestKey(event.toolName, input),
+        nextRequestKey: next ? requestKey(event.toolName, { ...input, cursor: next }) : "",
+        root: input.cursor === undefined || input.cursor === "",
         hasMore: result.has_more === true,
       }];
     } catch {

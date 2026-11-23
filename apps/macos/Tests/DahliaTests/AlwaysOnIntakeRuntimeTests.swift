@@ -177,7 +177,9 @@
 
         private func page(_ cursor: String = "", next: String = "", key: String = "query", more: Bool = false) -> (String, JSONValue) {
             ("intakeSeen", .object(["ids": .array([]), "pages": .array([.object([
-                "key": .string(key), "cursor": .string(cursor), "nextCursor": .string(next), "hasMore": .bool(more),
+                "requestKey": .string("\(key)|\(cursor)"),
+                "nextRequestKey": .string(next.isEmpty ? "" : "\(key)|\(next)"),
+                "root": .bool(cursor.isEmpty), "hasMore": .bool(more),
             ])])]))
         }
 
@@ -212,6 +214,27 @@
                 .allSatisfy {
                     $0.status == (complete ? "completed" : "failed") && (complete || $0.report.contains("The Source read did not complete"))
                 })
+            #expect(events.count == 2)
+        }
+
+        @Test(arguments: [false, true])
+        func distinctRequestsCompleteIndependently(missingSmallPage: Bool) async throws {
+            // Keys represent complete opaque requests, including page size and any other search argument.
+            var pages = [
+                page(next: "p2", key: "same-query-size-1", more: true),
+                page(key: "same-query-size-100"),
+                page(key: "same-query-size-100-another-filter"),
+            ]
+            if !missingSmallPage { pages.append(page("p2", key: "same-query-size-1")) }
+            let fixture = try fixture(
+                calls: pages + [("eventRecord", Self.twoItems)],
+                ending: [TestPiTransport.assistantEnd("Every returned item recorded."), TestPiTransport.settled()]
+            )
+            defer { try? FileManager.default.removeItem(at: fixture.pi.rootURL) }
+            await drain(fixture)
+            let (source, runs, events) = try await saved(fixture)
+            #expect((source.cursor == nil) == missingSmallPage && source.gapDetectedAt == nil)
+            #expect(runs.map(\.status) == [missingSmallPage ? "failed" : "completed"])
             #expect(events.count == 2)
         }
 

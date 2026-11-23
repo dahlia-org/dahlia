@@ -118,8 +118,18 @@ def http_mcp(authorizations):
                 # Gmail lists messages as JSON text; a thread listing has no threadId and is not a list of items.
                 items = msg["params"].get("arguments", {}).get("probe_items")
                 args = msg["params"].get("arguments", {})
-                text = json.dumps({"items": items, "nextCursor": args.get("probe_next_cursor", ""),
-                                   "has_more": args.get("probe_has_more", False)}) if items is not None else "GATEWAY_OK"
+                next_cursor = args.get("probe_next_cursor", "")
+                if args.get("probe_case") == "pagination":
+                    messages = [{"id": "m1", "threadId": "t1"}, {"id": "m2", "threadId": "t2"}]
+                    cursor = args.get("cursor", "")
+                    if args.get("query") == "other":
+                        items, next_cursor = [], ""
+                    elif args.get("max_results") == 1:
+                        items, next_cursor = {"": (messages[:1], "p2"), "p2": (messages[1:], "p3"), "p3": ([], "")}[cursor]
+                    else:
+                        items, next_cursor = messages, ""
+                text = json.dumps({"items": items, "nextCursor": next_cursor,
+                                   "has_more": bool(next_cursor)}) if items is not None else "GATEWAY_OK"
                 result = {"content": [{"type": "text", "text": text}]}
                 if msg["params"].get("arguments", {}).get("probe_error"):
                     result = {"isError": True, "content": [{"type": "text", "text": "Source page failed"}]}
@@ -1132,8 +1142,13 @@ def main():
 
     # A listing of messages tells Dahlia which items intake read; thread listings and other profiles do not.
     listing = {"probe_items": [{"id": "m1", "threadId": "t1"}, {"id": "m2", "threadId": "t1"}, {"id": "t9"}]}
-    page_key = json.dumps(["mcp__gmail__search_messages", ""], separators=(",", ":"))
-    listed = {"ids": ["m1", "m2"], "pages": [{"key": page_key, "cursor": "", "nextCursor": "", "hasMore": False}]}
+    def request_key(args):
+        request = dict(args)
+        if request.get("cursor") == "":
+            del request["cursor"]
+        return json.dumps(["mcp__gmail__search_messages", request], sort_keys=True, separators=(",", ":"))
+
+    listed = {"ids": ["m1", "m2"], "pages": [{"requestKey": request_key(listing), "nextRequestKey": "", "root": True, "hasMore": False}]}
     for profile, expected in (("intake", [("intakeSeen", listed)]), ("interactive", [])):
         _, results, bridge, _ = run(
             pi, "chat", [{"tool": "mcp__gmail__search_messages", "args": listing}, {"text": "done"}],
@@ -1153,22 +1168,26 @@ def main():
     assert [call for call in bridge if call[0] in ("intakeReadFailed", "intakeSeen")] == [
         ("intakeReadFailed", {}), ("intakeSeen", listed)], bridge
 
-    # Preserve request/query identity and continuation evidence, including an empty terminal page.
-    page_args = [dict(listing, query="after:2026/11/20", probe_next_cursor="p2", probe_has_more=True),
-                 {"query": "other", "probe_items": []},
-                 {"query": "after:2026/11/20", "cursor": "p2", "probe_items": []}]
+    # The same query at different page sizes creates independent exact-request paths. Response controls stay
+    # server-side, so a response's items/cursor cannot contaminate the identity of the request that produced it.
+    small = {"query": "after:2026/11/20", "max_results": 1, "probe_case": "pagination", "filter": {"b": 2, "a": 1}}
+    page_args = [small, {"query": "other", "probe_case": "pagination"},
+                 {"filter": {"a": 1, "b": 2}, "cursor": "p2", "probe_case": "pagination", "max_results": 1, "query": small["query"]},
+                 dict(small, max_results=100), dict(small, cursor="p3"),
+                 dict(small, max_results=100, filter={"a": 9, "b": 2})]
     _, _, bridge, _ = run(
         pi, "chat", [{"tool": "mcp__gmail__search_messages", "args": args} for args in page_args] + [{"text": "done"}],
         ["--no-session", *CHAT_EXTENSIONS, "--tools", "event_record,mcp__gmail__*"],
         {"DAHLIA_PI_MCP_SERVERS": json.dumps(["gmail"]), "DAHLIA_PI_PROFILE": "intake"}, mcp_servers=mcp_servers, auth=auth,
         bridge_answers={"intakeSeen": True})
     pages = [payload["pages"][0] for method, payload in bridge if method == "intakeSeen"]
-    key = json.dumps(["mcp__gmail__search_messages", "after:2026/11/20"], separators=(",", ":"))
-    assert pages == [
-        {"key": key, "cursor": "", "nextCursor": "p2", "hasMore": True},
-        {"key": json.dumps(["mcp__gmail__search_messages", "other"], separators=(",", ":")),
-         "cursor": "", "nextCursor": "", "hasMore": False},
-        {"key": key, "cursor": "p2", "nextCursor": "", "hasMore": False}], pages
+    expected_next = ["p2", "", "p3", "", "", ""]
+    assert pages == [{"requestKey": request_key(args),
+                      "nextRequestKey": request_key(dict(args, cursor=next_cursor)) if next_cursor else "",
+                      "root": not args.get("cursor"), "hasMore": bool(next_cursor)}
+                     for args, next_cursor in zip(page_args, expected_next)], pages
+    assert pages[0]["nextRequestKey"] == pages[2]["requestKey"], pages  # cursor and recursive key ordering only
+    assert len({pages[index]["requestKey"] for index in [0, 3, 5]}) == 3, pages  # every shaping argument retained
 
     # An expired token is refreshed once with the stored refresh token, which Databricks may keep.
     authorizations.clear()

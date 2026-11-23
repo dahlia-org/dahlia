@@ -5,26 +5,32 @@ import Foundation
 /// Intake sees only that Source's read-only MCP tools and `event_record`. The Router and Workers are in
 /// `PiChatService+DahliaBot`.
 extension PiChatService {
-    struct IntakePageChain {
+    struct IntakePages {
         var continuations: [String: String] = [:]
+        var roots: Set<String> = []
         var invalid = false
 
-        mutating func record(cursor: String, nextCursor: String, hasMore: Bool) {
-            if hasMore, nextCursor.isEmpty { invalid = true }
-            if let previous = continuations[cursor], previous != nextCursor { invalid = true }
-            continuations[cursor] = nextCursor
+        mutating func record(request: String, next: String, root: Bool, hasMore: Bool) {
+            if hasMore, next.isEmpty { invalid = true }
+            if let previous = continuations[request], previous != next { invalid = true }
+            continuations[request] = next
+            if root { roots.insert(request) }
         }
 
         var isComplete: Bool {
             guard !invalid else { return false }
-            var visited: Set<String> = []
-            var cursor = ""
-            while visited.insert(cursor).inserted {
-                guard let next = continuations[cursor] else { return false }
-                if next.isEmpty { return visited.count == continuations.count }
-                cursor = next
+            var reached: Set<String> = []
+            for root in roots {
+                var path: Set<String> = []
+                var request = root
+                while true {
+                    guard path.insert(request).inserted, let next = continuations[request] else { return false }
+                    reached.insert(request)
+                    if next.isEmpty { break }
+                    request = next
+                }
             }
-            return false
+            return reached.count == continuations.count
         }
     }
 
@@ -40,7 +46,7 @@ extension PiChatService {
         var readFailed = false
         var readSucceeded = false
         var seen: Set<String> = []
-        var pages: [String: IntakePageChain] = [:]
+        var pages = IntakePages()
     }
 
     /// Rechecked after asynchronous preparation, immediately before autonomous work is published.
@@ -70,7 +76,7 @@ extension PiChatService {
     as a mail thread or a Slack thread), sender, subject, a short excerpt, url (the item's permalink), ref (the IDs \
     you would pass to the source's tools to read the item again), occurred_at (ISO 8601), and direct (true when it is \
     addressed to the user or mentions them). When a listed item has an id field, use it as external_id. Record in \
-    batches as you read. Follow every continuation cursor with the same query, including empty final pages, then stop.
+    batches as you read. Follow every continuation cursor with the same other request arguments, including empty final pages, then stop.
     """
 
     func inboxService() throws -> AgentInboxService {
@@ -186,7 +192,7 @@ extension PiChatService {
             }
             try validateBotActivity(provider: provider, source: source)
             guard activeIntake?.readFailed == false, activeIntake?.readSucceeded == true,
-                  activeIntake?.pages.values.allSatisfy(\.isComplete) == true
+                  activeIntake?.pages.isComplete == true
             else { throw AgentInboxService.Failure(message: "The Source read did not complete. The read position was kept.") }
             let recorded = activeIntake?.recorded ?? 0
             let inbox = try inboxService()
@@ -234,17 +240,13 @@ extension PiChatService {
             let ids = payload.objectValue?["ids"]?.arrayValue?.compactMap(\.stringValue) ?? []
             activeIntake?.seen.formUnion(ids.prefix(1000))
             for page in payload.objectValue?["pages"]?.arrayValue ?? [] {
-                guard let fields = page.objectValue, let key = fields["key"]?.stringValue,
-                      let cursor = fields["cursor"]?.stringValue, let next = fields["nextCursor"]?.stringValue
+                guard let fields = page.objectValue, let request = fields["requestKey"]?.stringValue,
+                      let next = fields["nextRequestKey"]?.stringValue, case let .bool(root)? = fields["root"]
                 else {
                     activeIntake?.readFailed = true
                     continue
                 }
-                activeIntake?.pages[key, default: IntakePageChain()].record(
-                    cursor: cursor,
-                    nextCursor: next,
-                    hasMore: fields["hasMore"] == .bool(true)
-                )
+                activeIntake?.pages.record(request: request, next: next, root: root, hasMore: fields["hasMore"] == .bool(true))
             }
             return .bool(true)
         }
