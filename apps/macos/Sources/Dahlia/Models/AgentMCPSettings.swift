@@ -133,6 +133,17 @@ struct AgentMCPSettings: Codable, Equatable, Sendable {
         providers.first { $0.id == id }
     }
 
+    /// Durable grants bind the registration and endpoint, never its reusable tool-name prefix.
+    func connectionID(for name: String) -> String? {
+        guard let server = servers.first(where: { $0.name == name }), let providerID = server.providerID,
+              let provider = provider(id: providerID) else { return nil }
+        return "\(server.id.uuidString)|\(providerID)|\(server.url(workspaceURL: provider.workspaceURL).absoluteString)"
+    }
+
+    func serverName(for connectionID: String) -> String? {
+        servers.first { self.connectionID(for: $0.name) == connectionID }?.name
+    }
+
     /// Why `name` cannot name a new server, or nil. Internal server names cannot be overridden by gateway services.
     func nameError(_ name: String) -> String? {
         guard name.count <= 40, name.wholeMatch(of: /[a-z0-9_]+/) != nil else { return L10n.mcpServerNameInvalid }

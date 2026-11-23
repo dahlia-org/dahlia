@@ -463,6 +463,7 @@
                 "v65_chatRunPresentation",
                 "v66_skillCurator",
                 "v67_providerAccounts",
+                "v68_alwaysOnAgent",
             ])
             try database.dbQueue.read { db throws in
                 #expect(try Row.fetchAll(db, sql: "PRAGMA foreign_key_check").isEmpty)

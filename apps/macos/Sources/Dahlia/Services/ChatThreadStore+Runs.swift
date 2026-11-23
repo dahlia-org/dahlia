@@ -8,12 +8,14 @@ extension ChatThreadStore {
     /// Kept apart from the status, which the run's own end overwrites.
     func markStoppedByUser(_ id: UUID) throws {
         try dbQueue.write {
+            try AgentInboxService.stopWorker(runID: id, in: $0)
             try $0.execute(sql: "UPDATE chat_runs SET stoppedByUser = 1 WHERE id = ?", arguments: [id])
         }
     }
 
     func interruptQueuedRun(_ id: UUID) throws {
         try dbQueue.write {
+            if try ChatRunRecord.fetchOne($0, key: id)?.status == "queued" { try AgentInboxService.stopWorker(runID: id, in: $0) }
             try $0.execute(sql: "UPDATE chat_runs SET status = 'interrupted' WHERE id = ? AND status = 'queued'", arguments: [id])
         }
     }
@@ -116,10 +118,19 @@ extension ChatThreadStore {
 
     func interruptQueuedRuns(accountID: String, threadID: String? = nil, preservingSchedules: Bool = false) throws {
         try dbQueue.write { db in
+            if !preservingSchedules {
+                let workers = try ChatRunRecord.fetchAll(db, sql: """
+                SELECT r.* FROM chat_runs r JOIN chat_threads t ON t.id=r.threadID
+                WHERE t.accountID=? AND r.status='queued' AND r.origin='task' AND (? IS NULL OR r.threadID=?)
+                """, arguments: [accountID, threadID, threadID])
+                for worker in workers {
+                    try AgentInboxService.stopWorker(runID: worker.id, in: db)
+                }
+            }
             try db.execute(sql: """
             UPDATE chat_runs SET status = 'interrupted' WHERE status = 'queued'
                 AND threadID IN (SELECT id FROM chat_threads WHERE accountID = ?)
-                AND (? IS NULL OR threadID = ?) AND (?=0 OR origin<>'schedule')
+                AND (? IS NULL OR threadID = ?) AND (?=0 OR origin NOT IN ('schedule','task'))
             """, arguments: [accountID, threadID, threadID, preservingSchedules])
         }
     }

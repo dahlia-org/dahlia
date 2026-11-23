@@ -29,7 +29,7 @@ extension PiChatService {
             schedulingAccounts.remove(accountID)
             let canStart = ((try? history().queuedRuns(accountID: accountID)) ?? []).contains {
                 sessions[$0.threadID]?.turn == nil && startingTurns[$0.threadID] == nil
-                    && ($0.origin != "schedule" || !AgentBackgroundActivity.isRecording)
+                    && unattendedRunEligible($0, account: accountID)
             }
             let active = sessions.values.filter { AppAccount.key == accountID && $0.turn != nil && $0.turn?.run.origin != "user" }
                 .count
@@ -42,7 +42,7 @@ extension PiChatService {
             guard AppAccount.key == accountID else {
                 try await history().dbQueue.write {
                     try $0.execute(
-                        sql: "UPDATE chat_runs SET status='interrupted' WHERE status='queued' AND origin<>'schedule' AND threadID IN (SELECT id FROM chat_threads WHERE accountID=?)",
+                        sql: "UPDATE chat_runs SET status='interrupted' WHERE status='queued' AND origin NOT IN ('schedule','task') AND threadID IN (SELECT id FROM chat_threads WHERE accountID=?)",
                         arguments: [accountID]
                     )
                 }
@@ -52,9 +52,12 @@ extension PiChatService {
             canReschedule = true
             let queued = try history().queuedRuns(accountID: accountID)
             for run in queued {
+                guard unattendedRunEligible(run, account: accountID) else { continue }
                 if run.origin == "schedule" {
-                    guard !AgentBackgroundActivity.isRecording else { continue }
                     guard try scheduleService().validateStart(run, account: accountID) else { continue }
+                }
+                if run.origin == "task" {
+                    guard try validateWorkerStart(run, account: accountID) else { continue }
                 }
                 let active = sessions.filter { _, session in
                     AppAccount.key == accountID && session.turn?.run.origin != "user"
@@ -75,7 +78,7 @@ extension PiChatService {
                 } catch {
                     scheduledRuns[run.threadID] = nil
                     // A run that failed after its turn began has already ended; one that never started ends here.
-                    if run.origin == "schedule", AgentBackgroundActivity.isRecording { continue }
+                    if !unattendedRunEligible(run, account: accountID) { continue }
                     if try history().run(id: run.id)?.status == "queued" {
                         endRun(run.id, threadID: run.threadID, accountID: accountID, status: "failed", savingThread: false)
                     }
@@ -85,6 +88,24 @@ extension PiChatService {
             canReschedule = false
             ErrorReportingService.capture(error, context: ["source": "chatRunQueue"])
         }
+    }
+
+    /// The queue and its final post-preparation claim use the same current eligibility.
+    func unattendedRunEligible(_ run: ChatRunRecord, account: String) -> Bool {
+        if ["schedule", "task"].contains(run.origin), AgentBackgroundActivity.isRecording { return false }
+        if run.origin == "task" { return (try? inboxService().isPaused(account: account)) == false }
+        return true
+    }
+
+    func validateUnattendedStart(threadID: String, account: String) throws {
+        guard let queued = scheduledRuns[threadID] else { return }
+        guard unattendedRunEligible(queued, account: account) else { throw CancellationError() }
+        if queued.origin == "task", let session = sessions[threadID] {
+            try validateBotActivity(provider: session.provider)
+            let settings = mcpSettings(session.provider)
+            guard session.workerConnections.allSatisfy({ settings.connectionID(for: $0.key) == $0.value }) else { throw CancellationError() }
+        }
+        if queued.origin == "task", try !validateWorkerStart(queued, account: account) { throw CancellationError() }
     }
 
     func deliverResults(accountID: String) async {
@@ -386,7 +407,7 @@ extension PiChatService {
     ) throws -> ChatRunRecord {
         guard sessions[caller.id]?.turn?.id == turn.id,
               sessions[caller.id]?.turn?.stopRequested == false else { throw CancellationError() }
-        guard try history().thread(id: targetID, accountID: caller.accountID).scheduleID == nil else {
+        guard try history().thread(id: targetID, accountID: caller.accountID).scheduleID == nil, !isTaskThread(targetID) else {
             throw HermesLearning.failure(L10n.agentScheduleReadOnly)
         }
         let text = context.map { CodexChatPromptCodec.encode(text: input, context: $0) } ?? input

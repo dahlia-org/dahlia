@@ -365,6 +365,7 @@ struct DahliaApp: App {
             .init(name: "agentLearning", everyTicks: 1) { await PiChatService.shared.drainLearningWork() },
             .init(name: "skillCurator", everyTicks: 60, firstTick: 2) { await PiChatService.shared.maybeRunCurator() },
             .init(name: "systemRunRetention", everyTicks: 24 * 60, firstTick: 2) { await PiChatService.shared.pruneSystemRuns() },
+            .init(name: "alwaysOn", everyTicks: 1, firstTick: 1) { await PiChatService.shared.drainAlwaysOn() },
         ])
         await PiChatService.shared.configureBackup(dbQueue: db.dbQueue)
         await ScreenshotContentProvider.shared.configure(dbQueue: db.dbQueue)

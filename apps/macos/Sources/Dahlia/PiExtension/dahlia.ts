@@ -14,6 +14,7 @@ import {
 } from "./databricks-provider.ts";
 
 import { omnigentTools, registerThreadTools, threadTools } from "./thread-tools.ts";
+import { botTools, registerBotTools, registerEventTools } from "./event-tools.ts";
 import { registerLearningTools, learningTools } from "./learning-tools.ts";
 import { reviewMCP } from "./mcp-review.ts";
 import { learnTemplatePath, registerHermesSkills } from "./pi-hermes-skills/index.ts";
@@ -201,6 +202,8 @@ export default async function (pi: any) {
     });
     registerThreadTools(pi, bridge);
     registerThreadTools(pi, bridge, omnigentTools);
+    if ((env.DAHLIA_PI_PROFILE ?? "interactive") === "intake") registerEventTools(pi, bridge);
+    registerBotTools(pi, bridge, env.DAHLIA_PI_BOT_HOME === "1" ? "home" : env.DAHLIA_PI_PROFILE ?? "interactive");
     let blockedThisRun = false;
     pi.on("agent_start", () => { blockedThisRun = false; });
     const block = (reason: string) => {
@@ -238,7 +241,8 @@ export default async function (pi: any) {
     }
     const webServer = "dahlia_web_access";
     const webSandbox: string[] = JSON.parse(env.DAHLIA_PI_WEB_SANDBOX ?? "[]");
-    const webEnabled = (env.DAHLIA_PI_PROFILE ?? "interactive") === "interactive"
+    // A Dahlia Bot Worker searches the web only when the user turned it on; Dahlia then passes the worker's path.
+    const webEnabled = ["interactive", "worker"].includes(env.DAHLIA_PI_PROFILE ?? "interactive")
       && !!env.DAHLIA_PI_WEB_ACCESS && !!env.DAHLIA_PI_WEB_NODE && webSandbox.length > 0;
     if (webEnabled) {
       const scratch = join(env.PI_CODING_AGENT_DIR!, "web-access-runtime");
@@ -337,6 +341,18 @@ export default async function (pi: any) {
       if (profile === "scheduled" && !["read", "ls", "skills_list", "skill_view"].includes(name) && !name.startsWith("mcp__")) {
         return block("Scheduled tasks can only read approved sources.");
       }
+      if (profile === "intake") {
+        if (name === "event_record") return;
+        if (!name.startsWith("mcp__")) return block("Intake can only read its source and record events.");
+      }
+      // The Router reads nothing outside its prompt.
+      if (profile === "router") {
+        return botTools.router.some((tool) => tool.name === name) ? undefined : block("The Router only routes events and makes Items.");
+      }
+      if (profile === "worker") {
+        if (botTools.worker.some((tool) => tool.name === name)) return;
+        if (!name.startsWith("mcp__")) return block("A Worker can only read its task's sources and report.");
+      }
       if (name === "memory" && env.DAHLIA_PI_MEMORY_ENABLED !== "1") return block("Memory is disabled.");
       if (learningTools.includes(name)) return;
       const tool = pi.getAllTools().find((tool: any) => tool.name === name);
@@ -347,6 +363,8 @@ export default async function (pi: any) {
       }
 
       if (name === "dah_create_backup" || threadTools.some((tool) => tool.name === name)) return;
+      // The secretary's Home thread only files the user's requests; Dahlia checks the thread before acting.
+      if (env.DAHLIA_PI_BOT_HOME === "1" && botTools.home.some((tool) => tool.name === name)) return;
       // Starting a session runs work outside this Mac, so it is approved like an MCP tool that writes.
       if (omnigentTools.some((tool) => tool.name === name)) {
         return name === "omni_create_session"
@@ -368,6 +386,10 @@ export default async function (pi: any) {
       // Pi lists an MCP tool under its server's namespace; the alias is the server name.
       if (server && chatMcpServers.has(server)) {
         const readOnly = server === "dahlia" ? readOnlyDahliaTool.test(name) : tool.annotations?.readOnlyHint === true;
+        // Intake reads its one source and nothing of Dahlia's.
+        if (profile === "intake") return readOnly && server !== "dahlia" ? undefined : block("Intake can only read its source.");
+        // A Worker never writes on its own; a write becomes an Action the user approves.
+        if (profile === "worker") return readOnly ? undefined : block("A Worker only reads. Describe the write in your report.");
         if (profile === "scheduled") {
           const allowed = new Set<string>(JSON.parse(env.DAHLIA_PI_ALLOWED_TOOLS ?? "[]"));
           if (!readOnly || !allowed.has(name)) return block("This tool was not approved for this schedule.");

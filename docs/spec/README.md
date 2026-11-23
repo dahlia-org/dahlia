@@ -27,6 +27,8 @@ macOS、ローカル SQLite、録音、UI、内蔵 Pi / local MCP。
 - [Electron アルファ版](desktop/electron-alpha.md)
 - [Desktop v2（Electron、独立実装）](desktop/electron-v2.md)
 
+- [Always-on エージェント](desktop/always-on-agent.md)
+
 ## Server / Cloud
 
 Server / Private Web、配置、API、認可、storage。

@@ -125,7 +125,7 @@ extension PiChatService {
             model: record.model,
             reasoningEffort: record.reasoningEffort,
             approvalMethod: sessions[threadID]?.approvalMethod,
-            earlierMessagesCursor: page.earlierCursor, isReadOnly: record.scheduleID != nil,
+            earlierMessagesCursor: page.earlierCursor, isReadOnly: record.scheduleID != nil || isTaskThread(record.id),
             parentThread: parent,
             lastItemSeq: page.lastItemSeq
         )
