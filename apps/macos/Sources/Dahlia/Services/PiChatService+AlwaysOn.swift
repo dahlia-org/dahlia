@@ -6,11 +6,14 @@ import Foundation
 /// `PiChatService+DahliaBot`.
 extension PiChatService {
     struct IntakePages {
-        var continuations: [String: String] = [:]
-        var roots: Set<String> = []
+        // Opaque bridge identities retain byte equality throughout the graph.
+        var continuations: [Data: Data] = [:]
+        var roots: Set<Data> = []
         var invalid = false
 
         mutating func record(request: String, next: String, root: Bool, hasMore: Bool) {
+            let request = Data(request.utf8)
+            let next = Data(next.utf8)
             if hasMore, next.isEmpty { invalid = true }
             if let previous = continuations[request], previous != next { invalid = true }
             continuations[request] = next
@@ -19,9 +22,9 @@ extension PiChatService {
 
         var isComplete: Bool {
             guard !invalid else { return false }
-            var reached: Set<String> = []
+            var reached: Set<Data> = []
             for root in roots {
-                var path: Set<String> = []
+                var path: Set<Data> = []
                 var request = root
                 while true {
                     guard path.insert(request).inserted, let next = continuations[request] else { return false }

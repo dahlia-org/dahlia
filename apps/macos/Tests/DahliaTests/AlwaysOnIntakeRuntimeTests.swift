@@ -238,6 +238,35 @@
             #expect(events.count == 2)
         }
 
+        @Test(arguments: ["queryMismatch", "cursorMismatch", "conflictingNext", "independent", "exact"])
+        func requestIdentityPreservesUnicodeBytes(scenario: String) async throws {
+            let composed = "caf\u{E9}"
+            let decomposed = "cafe\u{301}"
+            #expect(composed == decomposed && Data(composed.utf8) != Data(decomposed.utf8))
+            var pages = [page(next: "p2", key: composed), page("p2", key: composed)]
+            switch scenario {
+            case "queryMismatch": pages = [page(next: "p2", key: composed), page("p2", key: decomposed)]
+            case "cursorMismatch": pages = [page(next: composed), page(decomposed)]
+            case "conflictingNext": pages = [page(next: composed), page(next: decomposed), page(decomposed)]
+            case "independent":
+                pages = [
+                    page(next: "p2", key: composed), page(next: "p3", key: decomposed),
+                    page("p2", key: composed), page("p3", key: decomposed),
+                ]
+            default: break
+            }
+            let fixture = try fixture(
+                calls: pages + [("eventRecord", Self.twoItems)],
+                ending: [TestPiTransport.assistantEnd("Recorded."), TestPiTransport.settled()]
+            )
+            defer { try? FileManager.default.removeItem(at: fixture.pi.rootURL) }
+            await drain(fixture)
+            let (source, runs, _) = try await saved(fixture)
+            let complete = ["independent", "exact"].contains(scenario)
+            #expect((source.cursor != nil) == complete && source.gapDetectedAt == nil)
+            #expect(runs.map(\.status) == [complete ? "completed" : "failed"])
+        }
+
         @Test func aLateIntakeCompletionCannotRestoreDeletedAccountHistory() async throws {
             let fixture = try fixture(calls: [], ending: [])
             defer { try? FileManager.default.removeItem(at: fixture.pi.rootURL) }
