@@ -191,6 +191,50 @@
         }
 
         @Test
+        func aServerWorkspaceBecomesTheAccountsAndKeepsItsMeetings() throws {
+            let fixture = try Fixture()
+            let server = DahliaAccountConnectionRecord(id: .v7(), origin: "https://dahlia.example.com", clientID: "c", createdAt: .now)
+            let workspaceID = UUID.v7()
+            let meetingID = UUID.v7()
+            let serverThread = UUID.v7().uuidString
+            try fixture.database.dbQueue.write { db in
+                try server.insert(db)
+                try WorkspaceRecord(id: workspaceID, path: nil, name: "Server", createdAt: .now, lastOpenedAt: .distantPast).insert(db)
+                try db.execute(sql: """
+                UPDATE workspaces SET accountConnectionId = ?, organizationId = ?, syncRole = 'editor',
+                    syncConfirmedConnectionId = ?, syncPullCursor = 'cursor',
+                    generationSettings = json_set(generationSettings, '$.processing.location', 'remote')
+                WHERE id = ?
+                """, arguments: [server.id, UUID.v7(), server.id, workspaceID])
+                try MeetingRecord(id: meetingID, workspaceId: workspaceID, projectId: nil, name: "M", createdAt: .now, updatedAt: .now)
+                    .insert(db)
+                try ChatThreadRecord(
+                    id: serverThread, accountID: server.id.uuidString.lowercased(), projectID: nil, parentThreadID: nil,
+                    title: "t", model: nil, reasoningEffort: nil, createdAt: .now, updatedAt: .now
+                ).insert(db)
+            }
+
+            try fixture.run()
+            // Every launch moves it again, which changes nothing.
+            try fixture.run()
+
+            let row = try #require(try fixture.database.dbQueue.read { db in
+                try Row.fetchOne(db, sql: """
+                SELECT accountConnectionId, organizationId, syncRole, syncConfirmedConnectionId, syncPullCursor,
+                    json_extract(generationSettings, '$.processing.location') AS location,
+                    (SELECT COUNT(*) FROM meetings WHERE workspace_id = workspaces.id) AS meetings
+                FROM workspaces WHERE id = ?
+                """, arguments: [workspaceID])
+            })
+            #expect(row["accountConnectionId"] as UUID? == nil && row["organizationId"] as UUID? == nil)
+            #expect(row["syncRole"] as String? == nil && row["syncConfirmedConnectionId"] as UUID? == nil)
+            #expect(row["syncPullCursor"] as String? == nil && row["location"] as String? == "local")
+            #expect(row["meetings"] as Int == 1)
+            // The Server account's chats were a separate account's and stay under it.
+            #expect(try fixture.threadAccounts()[serverThread] == server.id.uuidString.lowercased())
+        }
+
+        @Test
         func runningAgainBeforeItCompletedReachesTheSameResult() throws {
             let fixture = try Fixture()
             try fixture.run()

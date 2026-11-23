@@ -46,6 +46,14 @@
                     #expect(local.providerAccount(offering: capability) == nil)
                 }
             }
+            // The signed-in Dahlia account's Gateway is a provider account of the app's account, after Databricks.
+            ProviderAccountDirectory.$connections.withValue([connection]) {
+                ProviderAccountDirectory.$dahliaConnections.withValue([dahliaID, .v7()]) {
+                    #expect(local.providerAccounts == [.databricks(connectionID: databricksID), .dahlia(connectionID: dahliaID)])
+                    #expect(local.providerAccount(piProviderID: "dahlia") == .dahlia(connectionID: dahliaID))
+                    #expect(local.piBridgedProviderIDs.contains("dahlia"))
+                }
+            }
             #expect(dahlia.providerAccounts == [.dahlia(connectionID: dahliaID)])
             #expect(dahlia.providerAccount(offering: .model) == .dahlia(connectionID: dahliaID))
             #expect(dahlia.providerAccount(offering: .calendar) == nil)

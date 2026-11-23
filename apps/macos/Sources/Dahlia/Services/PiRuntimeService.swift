@@ -220,7 +220,7 @@ actor PiRuntimeService {
         if !forceRefresh, let cached = cachedModels[provider] { return cached }
         let generation = modelGeneration
         let load = modelLoads[provider]?.task ?? Task {
-            if case .dahlia = provider { await self.refreshDahliaCatalog(provider) }
+            if let account = provider.providerAccount(piProviderID: "dahlia") { await self.refreshDahliaCatalog(provider, account: account) }
             return try await self.availableModels(provider: provider)
         }
         // Only the open account lists its gateways; the Local Account's subscription status lists it while another is open.
@@ -266,10 +266,9 @@ actor PiRuntimeService {
     }
 
     /// Fetches the Dahlia Server's model list into `models.json`. Failure keeps the last list.
-    private func refreshDahliaCatalog(_ provider: CodexRuntimeProvider) async {
+    private func refreshDahliaCatalog(_ provider: CodexRuntimeProvider, account: ProviderAccount) async {
         guard let agentURL = try? agentLocator.agentURL(for: provider),
               let baseURL = PiProviderConfiguration.dahliaBaseURL(agentURL: agentURL),
-              let account = provider.providerAccount(offering: .model),
               let token = try? await tokenResolver(account),
               let catalog = try? await PiProviderConfiguration.fetchDahliaCatalog(baseURL: baseURL, token: token),
               let providers = try? PiProviderConfiguration.dahliaProvider(baseURL: baseURL, catalog: catalog)

@@ -47,6 +47,7 @@ struct SingleAccountMigration {
         try dbQueue.write { db in
             if let source { try moveRows(from: source, in: db) }
             try db.execute(sql: "UPDATE workspaces SET databricksConnectionId = NULL WHERE databricksConnectionId IS NOT NULL")
+            try Self.moveServerWorkspaces(in: db)
         }
         defaults.set(true, forKey: Self.completedKey)
         try renameLegacyProviderID(source: source)
@@ -226,6 +227,28 @@ struct SingleAccountMigration {
     }
 
     // MARK: Rows
+
+    /// The Desktop no longer syncs with a Dahlia Server, so a Server workspace becomes the account's like any other.
+    /// Its meetings, transcripts, and files stay as they are; content the Server held alone stays missing, and its
+    /// sync queue and state rows stay unread. Chats and agent rows of the Server account keep its `accountID`: it was a
+    /// separate, unreleased account, so they are not merged into this one.
+    static func moveServerWorkspaces(in db: Database) throws {
+        // Documents of a Local workspace have no Server revision and no updates waiting to be sent.
+        try db.execute(sql: """
+        UPDATE document_updates SET pending = 0 WHERE pending <> 0 AND documentId IN (SELECT d.id FROM documents d
+            JOIN workspaces w ON w.id = d.workspace_id WHERE w.accountConnectionId IS NOT NULL);
+        UPDATE document_recoveries SET pending = 0 WHERE pending <> 0 AND documentId IN (SELECT d.id FROM documents d
+            JOIN workspaces w ON w.id = d.workspace_id WHERE w.accountConnectionId IS NOT NULL);
+        UPDATE documents SET generation = NULL, revision = 0
+        WHERE workspace_id IN (SELECT id FROM workspaces WHERE accountConnectionId IS NOT NULL);
+        UPDATE workspaces SET accountConnectionId = NULL, organizationId = NULL, personalUserId = NULL, syncRole = NULL,
+            syncConfirmedConnectionId = NULL, syncPullCursor = NULL, syncLastCommittedCursor = NULL,
+            syncRecoveryState = NULL, syncPullErrorJSON = NULL
+        WHERE accountConnectionId IS NOT NULL OR syncConfirmedConnectionId IS NOT NULL OR syncRole IS NOT NULL;
+        UPDATE workspaces SET generationSettings = json_set(generationSettings, '$.processing.location', 'local')
+        WHERE json_valid(generationSettings) AND json_extract(generationSettings, '$.processing.location') = 'remote';
+        """)
+    }
 
     /// Every table that records an account moves the Databricks account's rows to the account. A row keyed by account
     /// and name (a skill's state) replaces the account's own row of that name.

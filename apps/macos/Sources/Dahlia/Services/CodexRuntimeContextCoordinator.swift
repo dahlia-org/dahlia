@@ -85,7 +85,8 @@ actor CodexRuntimeContextCoordinator {
         let kept = Set(provider.piBridgedProviderIDs).union(AgentMCPSettings.load(for: provider).providers.map(\.id))
         try PiProviderConfiguration.updateProviders(agentURL: agentURL) { recorded in
             recorded = recorded.filter { id, _ in
-                kept.contains(id) || !(PiProviderConfiguration.isAddedWorkspace(id) || id == PiProviderConfiguration.legacyDatabricksProviderID)
+                kept.contains(id) || !(PiProviderConfiguration.isAddedWorkspace(id) || id == PiProviderConfiguration.legacyDatabricksProviderID
+                    || id == "dahlia")
             }
             recorded.merge(providers) { $1 }
         }

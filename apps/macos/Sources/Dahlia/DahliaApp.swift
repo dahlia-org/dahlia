@@ -269,22 +269,13 @@ struct DahliaApp: App {
                     try await initializeApp()
                 }
             }
-            .onChange(of: scenePhase) { _, phase in
-                guard phase == .active, let meetingSyncWorker else { return }
-                ServerAccountSettingsModel.shared.refreshAll()
-                Task { await meetingSyncWorker.applicationBecameActive() }
-            }
             .onChange(of: hasNoWorkspaces, initial: true) { _, hasNoWorkspaces in
                 if hasNoWorkspaces, mainWindowNavigation.setupTourMode == nil {
                     mainWindowNavigation.presentInitialSetupTour()
                 }
             }
             .onChange(of: dahliaAccountController.connections) {
-                ServerAccountSettingsModel.shared.updateConnections(dahliaAccountController.connections)
-                Task {
-                    await reconcileWorkspacesAfterAccountChange()
-                    await meetingSyncWorker?.applicationBecameActive()
-                }
+                Task { await reconcileWorkspacesAfterAccountChange() }
             }
             .modifier(MainWindowOpenWindowRegistrationModifier())
             .environment(mainWindowNavigation)
@@ -446,16 +437,6 @@ struct DahliaApp: App {
         }
         await DahliaCloudCredentialStorage.deleteLegacyCredential()
         await dahliaAccountController.configure(appDatabase: db)
-        ServerAccountSettingsModel.shared.startNetworkMonitoring()
-        ServerAccountSettingsModel.shared.updateConnections(dahliaAccountController.connections)
-        let meetingSyncWorker = SyncWorker(dbQueue: db.dbQueue) {
-            await reconcileWorkspacesAfterAccountChange()
-            await dahliaAccountController.reload()
-        }
-        self.meetingSyncWorker = meetingSyncWorker
-        dahliaAccountController.syncWorker = meetingSyncWorker
-        // Backup restore only changes local workspaces; existing canonical sync resumes normally.
-        await meetingSyncWorker.start()
         do {
             let imageBroker = DahliaImageBrokerServer(dbQueue: db.dbQueue)
             try imageBroker.start()

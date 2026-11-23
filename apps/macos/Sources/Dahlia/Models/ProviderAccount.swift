@@ -1,4 +1,5 @@
 import Foundation
+import Synchronization
 
 /// A kind of service that a provider account offers to Dahlia's features. Storage and database are defined for later
 /// use; no provider account offers them yet.
@@ -63,15 +64,36 @@ enum ProviderAccountDirectory {
             URL(string: connection.host).map { Connection(id: connection.id, workspaceURL: $0) }
         }
     }
+
+    /// Replaces the signed-in Dahlia connections for the current task, so tests never share the app's.
+    @TaskLocal static var dahliaConnections: [UUID]?
+    private static let signedInDahliaConnections = Mutex<[UUID]>([])
+
+    /// The Dahlia connection whose Gateway serves models: the oldest signed-in one.
+    static func dahliaConnectionID() -> UUID? {
+        // shortcut: Pi has one `dahlia` provider, so only the oldest signed-in connection serves models; name each
+        // connection's provider by its host when more than one Dahlia account can be signed in.
+        (dahliaConnections ?? signedInDahliaConnections.withLock { $0 }).first
+    }
+
+    /// Records the signed-in Dahlia connections, oldest first; true when they changed.
+    static func setSignedInDahliaConnections(_ ids: [UUID]) -> Bool {
+        signedInDahliaConnections.withLock { current in
+            defer { current = ids }
+            return current != ids
+        }
+    }
 }
 
 extension CodexRuntimeProvider {
     /// The provider accounts this runtime account uses. This is the one place that maps an account kind to the
     /// connections its features use; features ask for a capability instead of switching on the account. The app's one
-    /// account (Local) uses every Databricks connection.
+    /// account (Local) uses every Databricks connection and the signed-in Dahlia account's Gateway.
     var providerAccounts: [ProviderAccount] {
         switch self {
-        case .local: ProviderAccountDirectory.databricksConnections().map { .databricks(connectionID: $0.id) }
+        case .local:
+            ProviderAccountDirectory.databricksConnections().map { .databricks(connectionID: $0.id) }
+                + [ProviderAccountDirectory.dahliaConnectionID().map { .dahlia(connectionID: $0) }].compactMap(\.self)
         case let .dahlia(connectionID): [.dahlia(connectionID: connectionID)]
         }
     }

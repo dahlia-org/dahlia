@@ -256,6 +256,11 @@ final class DahliaCloudAccountController {
                 ))
             }
             connections = loadedConnections
+            // The app's account uses the signed-in Dahlia account's Gateway as a provider account.
+            if self === Self.shared,
+               ProviderAccountDirectory.setSignedInDahliaConnections(loadedConnections.filter(\.isSignedIn).map(\.id)) {
+                Task { try? await CodexRuntimeContextCoordinator.shared.providerAccountsDidChange() }
+            }
         } catch is CancellationError {
             return
         } catch {
