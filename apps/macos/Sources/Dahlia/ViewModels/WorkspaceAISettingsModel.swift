@@ -23,7 +23,7 @@ final class WorkspaceAISettingsModel {
     private(set) var databricksConnections: [DatabricksConnection] = []
     private(set) var pendingDatabricksSignOut: DatabricksConnection?
 
-    /// The Databricks connection the app's account uses, the oldest, as `CodexRuntimeProvider.providerAccounts` does.
+    /// The Databricks connection the app's account uses, the oldest, as `ProviderAccountDirectory.accounts` does.
     var providerDatabricksConnectionID: UUID? {
         databricksConnections.first?.id
     }
@@ -61,8 +61,8 @@ final class WorkspaceAISettingsModel {
 
     init(
         setupDefaults: UserDefaults = .standard,
-        activateRuntime: @escaping @Sendable (WorkspaceAISettingsSnapshot) async throws -> Void = {
-            try await CodexRuntimeContextCoordinator.shared.activate($0)
+        activateRuntime: @escaping @Sendable (WorkspaceAISettingsSnapshot) async throws -> Void = { _ in
+            try await PiRuntimeContextCoordinator.shared.activate()
         },
         databricksService: DatabricksOAuthService = .shared
     ) {
@@ -88,7 +88,7 @@ final class WorkspaceAISettingsModel {
                 guard let self else { return }
                 await self.reloadDatabricksConnections()
                 // The app's one account uses every connection, so adding or removing one changes its providers.
-                try? await CodexRuntimeContextCoordinator.shared.providerAccountsDidChange()
+                try? await PiRuntimeContextCoordinator.shared.providerAccountsDidChange()
             }
         }
     }

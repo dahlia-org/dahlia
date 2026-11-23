@@ -77,7 +77,7 @@ struct LocalSummarySettingsRows: View {
             }
             if catalog.canRetry { Button(L10n.retry) { reload() }.disabled(catalog.isLoading) }
         }
-        .task(id: modelCatalogContext) { await loadModels(forceRefresh: false, context: modelCatalogContext) }
+        .task { await loadModels(forceRefresh: false) }
         // A sign-in or sign-out elsewhere already cleared Pi's cache, so a plain load lists the new models.
         .onReceive(NotificationCenter.default.publisher(for: PiRuntimeService.modelsDidChange).receive(on: RunLoop.main)) { _ in
             reload(forceRefresh: false)
@@ -105,14 +105,12 @@ struct LocalSummarySettingsRows: View {
 
     private func reload(forceRefresh: Bool = true) {
         retryTask?.cancel()
-        let context = modelCatalogContext
-        retryTask = Task { await loadModels(forceRefresh: forceRefresh, context: context) }
+        retryTask = Task { await loadModels(forceRefresh: forceRefresh) }
     }
 
-    private func loadModels(forceRefresh: Bool, context: CodexRuntimeProvider) async {
+    private func loadModels(forceRefresh: Bool) async {
         await catalog.load(forceRefresh: forceRefresh) {
-            guard await workspaceSettings.waitForRuntimeContext(),
-                  CodexRuntimeContextStore.shared.provider == context else { throw AIConfigurationError.accountNotReady }
+            guard await workspaceSettings.waitForRuntimeContext() else { throw AIConfigurationError.accountNotReady }
         }
     }
 
@@ -167,9 +165,5 @@ struct LocalSummarySettingsRows: View {
                 }
             }
         )
-    }
-
-    private var modelCatalogContext: CodexRuntimeProvider {
-        CodexRuntimeProvider.local
     }
 }

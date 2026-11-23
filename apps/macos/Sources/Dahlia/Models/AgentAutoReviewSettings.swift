@@ -16,12 +16,12 @@ enum AgentAutoReviewSettings {
         agentURL.appending(path: "git/github.com/mats16/pi-auto-review/index.ts")
     }
 
-    static func triageDefaultsKey(for account: CodexRuntimeProvider) -> String {
-        "autoReviewTriage.\(account.accountKey)"
+    static func triageDefaultsKey() -> String {
+        "autoReviewTriage.\(AppAccount.key)"
     }
 
-    static func triageEnabled(for account: CodexRuntimeProvider, defaults: UserDefaults = .standard) -> Bool {
-        defaults.bool(forKey: triageDefaultsKey(for: account))
+    static func triageEnabled(defaults: UserDefaults = .standard) -> Bool {
+        defaults.bool(forKey: triageDefaultsKey())
     }
 
     static func triageConfiguration(services: [JSONValue], gateway: AgentMCPProvider) -> JSONValue? {
@@ -36,11 +36,11 @@ enum AgentAutoReviewSettings {
         ])
     }
 
-    static func defaultsKey(for account: CodexRuntimeProvider) -> String {
-        "autoReviewModel.\(account.accountKey)"
+    static func defaultsKey() -> String {
+        "autoReviewModel.\(AppAccount.key)"
     }
 
-    static func model(for account: CodexRuntimeProvider, defaults: UserDefaults = .standard) -> String {
-        defaults.string(forKey: defaultsKey(for: account)) ?? ""
+    static func model(defaults: UserDefaults = .standard) -> String {
+        defaults.string(forKey: defaultsKey()) ?? ""
     }
 }

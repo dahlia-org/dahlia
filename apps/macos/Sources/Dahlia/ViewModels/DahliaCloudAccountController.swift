@@ -111,7 +111,7 @@ final class DahliaCloudAccountController {
             // The app's account uses the signed-in Dahlia account's Gateway as a provider account.
             if self === Self.shared,
                ProviderAccountDirectory.setSignedInDahliaConnections(loadedConnections.filter(\.isSignedIn).map(\.id)) {
-                Task { try? await CodexRuntimeContextCoordinator.shared.providerAccountsDidChange() }
+                Task { try? await PiRuntimeContextCoordinator.shared.providerAccountsDidChange() }
             }
         } catch is CancellationError {
             return

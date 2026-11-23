@@ -11,9 +11,9 @@ struct OmnigentServiceTests {
         let id = UUID()
         let connections: [ProviderAccountDirectory.Connection] = [.init(id: id, workspaceURL: URL(string: "https://dbc.cloud.databricks.com")!)]
         ProviderAccountDirectory.$connections.withValue(connections) {
-            #expect(OmnigentService.connectionID(for: .local, defaults: defaults) == nil)
-            defaults.set(true, forKey: OmnigentService.enabledKey(CodexRuntimeProvider.local.accountKey))
-            #expect(OmnigentService.connectionID(for: .local, defaults: defaults) == id)
+            #expect(OmnigentService.connectionID(defaults: defaults) == nil)
+            defaults.set(true, forKey: OmnigentService.enabledKey(AppAccount.key))
+            #expect(OmnigentService.connectionID(defaults: defaults) == id)
         }
     }
 

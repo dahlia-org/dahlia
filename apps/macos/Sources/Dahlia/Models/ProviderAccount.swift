@@ -85,25 +85,25 @@ enum ProviderAccountDirectory {
     }
 }
 
-extension CodexRuntimeProvider {
+extension ProviderAccountDirectory {
     /// The provider accounts the app's account uses: every Databricks connection, then the signed-in Dahlia account's
     /// Gateway. Features ask for a capability instead of naming a connection.
-    var providerAccounts: [ProviderAccount] {
-        ProviderAccountDirectory.databricksConnections().map { .databricks(connectionID: $0.id) }
-            + [ProviderAccountDirectory.dahliaConnectionID().map { .dahlia(connectionID: $0) }].compactMap(\.self)
+    static var accounts: [ProviderAccount] {
+        databricksConnections().map { .databricks(connectionID: $0.id) }
+            + [dahliaConnectionID().map { .dahlia(connectionID: $0) }].compactMap(\.self)
     }
 
-    func providerAccount(offering capability: ProviderCapability) -> ProviderAccount? {
-        providerAccounts.first { $0.capabilities.contains(capability) }
+    static func account(offering capability: ProviderCapability) -> ProviderAccount? {
+        accounts.first { $0.capabilities.contains(capability) }
     }
 
     /// The Databricks connection, for features that only Databricks offers (such as Omnigent).
-    var databricksConnectionID: UUID? {
-        providerAccounts.lazy.compactMap(\.databricksConnectionID).first
+    static var databricksConnectionID: UUID? {
+        databricksConnections().first?.id
     }
 
-    /// The provider account behind a Pi provider ID that asks Dahlia for a token, if this account bridges it.
-    func providerAccount(piProviderID: String) -> ProviderAccount? {
-        providerAccounts.first { $0.piProviderID == piProviderID }
+    /// The provider account behind a Pi provider ID that asks Dahlia for a token, if the app bridges it.
+    static func account(piProviderID: String) -> ProviderAccount? {
+        accounts.first { $0.piProviderID == piProviderID }
     }
 }

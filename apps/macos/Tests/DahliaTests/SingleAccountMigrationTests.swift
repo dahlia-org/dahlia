@@ -126,7 +126,7 @@
             #expect(fixture.defaults.string(forKey: "agentMCPs.local") == "dbc-1.cloud.databricks.com")
             #expect(fixture.defaults.string(forKey: "agentMCPs.\(fixture.key)") == "databricks")
             #expect(fixture.defaults.data(forKey: "accountInferenceSettings.local") == Data("inference".utf8))
-            #expect(fixture.secrets[PiLaunchSettings.secretKey(for: .local, id: fixture.secretID)] == "secret")
+            #expect(fixture.secrets[PiLaunchSettings.secretKey(id: fixture.secretID)] == "secret")
 
             #expect(fixture.read("agent/sessions/shared/databricks.jsonl") == "databricks")
             #expect(fixture.read("agent/sessions/shared/local.jsonl") == "local")
@@ -137,7 +137,7 @@
             #expect(signIns.objectValue.map { Set($0.keys) } == ["openai", "dbc-2.cloud.databricks.com"])
             // The old folders stay for a release.
             #expect(fixture.read("accounts/local/pi/skills/shared/SKILL.md") == "local skill")
-            #expect(try fixture.locator.agentURL(for: .local) == fixture.locator.sharedAgentURL)
+            #expect(try fixture.locator.agentURL() == fixture.locator.sharedAgentURL)
         }
 
         @Test

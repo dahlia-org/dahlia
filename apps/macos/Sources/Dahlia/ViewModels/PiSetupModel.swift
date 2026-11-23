@@ -8,11 +8,9 @@ final class PiSetupModel {
     private(set) var isCheckingInstallation = true
     private(set) var isReady = false
     private(set) var errorMessage: String?
-    private let account: CodexRuntimeProvider
     private let defaults: UserDefaults
 
-    init(account: CodexRuntimeProvider, defaults: UserDefaults = .standard) {
-        self.account = account
+    init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
     }
 
@@ -26,7 +24,7 @@ final class PiSetupModel {
         let installed = await managedPiExists()
         guard !Task.isCancelled else { return }
         hasManagedPi = installed
-        isReady = installed && PiBundle.usesManagedPi(for: account, defaults: defaults)
+        isReady = installed && PiBundle.usesManagedPi(defaults: defaults)
         isCheckingInstallation = false
     }
 
@@ -41,7 +39,7 @@ final class PiSetupModel {
         do {
             if !hasManagedPi { try await installPi() }
             try Task.checkCancellation()
-            defaults.set(true, forKey: PiBundle.useManagedPiDefaultsKey(for: account))
+            defaults.set(true, forKey: PiBundle.useManagedPiDefaultsKey())
             hasManagedPi = true
             isReady = true
         } catch {

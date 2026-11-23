@@ -24,7 +24,7 @@ enum SummaryService {
         // Jobs persisted without captured preferences keep the input they had: every candidate.
         let screenshots = if let preferences = generationSettings.workspacePreferences {
             try await SummaryScreenshotSelection.select(
-                screenshots, settings: preferences, runtimeProvider: generationSettings.runtimeProvider, appServer: appServer
+                screenshots, settings: preferences, appServer: appServer
             )
         } else {
             screenshots
@@ -39,9 +39,6 @@ enum SummaryService {
             recordingSessions: recordingSessions
         ))
 
-        guard CodexRuntimeContextStore.shared.provider == generationSettings.runtimeProvider else {
-            throw AIConfigurationError.providerChanged(generationSettings.runtimeProvider.displayName)
-        }
         let models = try await appServer.models()
         let fallbackModel = generationSettings.workspacePreferences?.local.fallbackModel?.nilIfBlank.map {
             PiRuntimeService.matchingModel($0, in: models)?.model ?? $0
@@ -74,7 +71,7 @@ enum SummaryService {
                 developerInstructions: systemPrompt,
                 inputs: inputs,
                 outputSchema: SummaryDocumentResponse.outputSchema
-            ), expectedProvider: generationSettings.runtimeProvider)
+            ))
             var document = try generatedDocument(from: responseText, context: context)
             document.metadata = SummaryMetadata(
                 generatedBy: "local_codex",

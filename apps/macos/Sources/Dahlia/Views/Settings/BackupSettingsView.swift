@@ -115,8 +115,7 @@ struct BackupSettingsView: View {
         }
         .formStyle(.grouped)
         .font(.dahliaBody)
-        .task(id: settings.calendarAccount) {
-            drive.resetForAccount()
+        .task {
             await drive.refresh()
         }
         .overlay {

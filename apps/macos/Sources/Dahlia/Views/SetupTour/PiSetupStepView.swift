@@ -4,9 +4,9 @@ struct PiSetupStepView: View {
     @Binding var isInstalling: Bool
     @State private var model: PiSetupModel
 
-    init(account: CodexRuntimeProvider, isInstalling: Binding<Bool>) {
+    init(isInstalling: Binding<Bool>) {
         _isInstalling = isInstalling
-        _model = State(initialValue: PiSetupModel(account: account))
+        _model = State(initialValue: PiSetupModel())
     }
 
     var body: some View {

@@ -25,32 +25,26 @@ struct AgentSettingsView: View {
         }
     }
 
-    @State private var workspaceSettings = WorkspaceAISettingsModel.shared
-
     var body: some View {
-        let account = CodexRuntimeProvider.local
-        AgentSettingsTabs(account: account)
-            .id(account)
+        AgentSettingsTabs()
     }
 }
 
 private struct AgentSettingsTabs: View {
 
-    let account: CodexRuntimeProvider
     @Environment(MainWindowNavigation.self) private var navigation
     /// Shared by the Models tab's providers and the MCP tab, so a provider added in one shows in the other.
     @State private var mcp: AgentMCPSettingsModel
     @State private var launch: PiLaunchSettingsModel
     @State private var packages: PiPackageSettingsModel
     /// The Local Account's subscriptions, which only it can sign in to.
-    @State private var subscriptions: [CodexAccountController]
+    @State private var subscriptions: [PiSubscriptionController]
 
-    init(account: CodexRuntimeProvider) {
-        self.account = account
-        _mcp = State(initialValue: AgentMCPSettingsModel(account: account))
-        _launch = State(initialValue: PiLaunchSettingsModel(account: account))
-        _packages = State(initialValue: PiPackageSettingsModel(account: account))
-        _subscriptions = State(initialValue: account == .local ? PiSubscription.allCases.map { CodexAccountController(subscription: $0) } : [])
+    init() {
+        _mcp = State(initialValue: AgentMCPSettingsModel())
+        _launch = State(initialValue: PiLaunchSettingsModel())
+        _packages = State(initialValue: PiPackageSettingsModel())
+        _subscriptions = State(initialValue: PiSubscription.allCases.map { PiSubscriptionController(subscription: $0) })
     }
 
     var body: some View {
@@ -76,26 +70,26 @@ private struct AgentSettingsTabs: View {
             switch navigation.agentSettingsTab {
             case .general:
                 Form {
-                    AgentRuntimeSection(provider: account, launch: launch)
+                    AgentRuntimeSection(launch: launch)
                     AgentEnvironmentSection(model: launch)
                     AgentChatSettingsSection()
-                    AgentChatInstructionsSection(account: account)
-                    if account.databricksConnectionID != nil { AgentOmnigentSection(account: account) }
+                    AgentChatInstructionsSection()
+                    if ProviderAccountDirectory.databricksConnectionID != nil { AgentOmnigentSection() }
                 }
                 .formStyle(.grouped)
                 .font(.dahliaBody)
             case .models:
-                AgentModelSettingsView(account: account, mcp: mcp, subscriptions: subscriptions) {
+                AgentModelSettingsView(mcp: mcp, subscriptions: subscriptions) {
                     navigation.openSettings(category: .providers)
                 }
             case .packages:
                 AgentPackageSettingsView(model: packages)
             case .schedules:
-                AgentScheduleSettingsView(account: account)
+                AgentScheduleSettingsView()
             case .mcps:
                 AgentMCPSettingsView(model: mcp, onAdd: presentMCPRegistration)
             case .security:
-                AgentSecuritySettingsView(account: account)
+                AgentSecuritySettingsView()
             }
         }
         .task {
@@ -112,7 +106,6 @@ private struct AgentSettingsTabs: View {
 
 /// Each account chooses PATH discovery or the Pi installation shared by all accounts on this Mac.
 private struct AgentRuntimeSection: View {
-    let provider: CodexRuntimeProvider
     let launch: PiLaunchSettingsModel
     @AppStorage private var useManagedPi: Bool
     @State private var resolvedCommand: Result<String, PiRuntimeError>?
@@ -121,10 +114,9 @@ private struct AgentRuntimeSection: View {
     @State private var isInstalling = false
     @State private var installResult: Result<String, Error>?
 
-    init(provider: CodexRuntimeProvider, launch: PiLaunchSettingsModel) {
-        self.provider = provider
+    init(launch: PiLaunchSettingsModel) {
         self.launch = launch
-        _useManagedPi = AppStorage(wrappedValue: PiBundle.usesManagedPi(for: provider), PiBundle.useManagedPiDefaultsKey(for: provider))
+        _useManagedPi = AppStorage(wrappedValue: PiBundle.usesManagedPi(), PiBundle.useManagedPiDefaultsKey())
     }
 
     var body: some View {
@@ -192,9 +184,9 @@ private struct AgentRuntimeSection: View {
         let selection = useManagedPi
         let revision = launch.commandDiscoveryRevision
         resolvedCommand = nil
-        let (resolved, version) = await Task.detached { [provider] in
+        let (resolved, version) = await Task.detached {
             let url = Result {
-                try PiBundle.executableURL(for: provider)
+                try PiBundle.executableURL()
             }
             .mapError { $0 as? PiRuntimeError ?? .piCommandNotFound(nil) }
             return (url.map(\.path), PiInstaller.installedVersion())
@@ -347,18 +339,17 @@ private struct AgentEnvironmentVariableRow: View {
 /// the subscriptions signed in to (Local Account), and the Databricks workspaces signed in to for MCP servers.
 /// The models each provider offers, to turn on or off. Signing in and out of a provider is on the Providers page.
 private struct AgentProviderSection<Models: View, SubscriptionModels: View>: View {
-    let account: CodexRuntimeProvider
     let model: AgentMCPSettingsModel
-    let subscriptions: [CodexAccountController]
+    let subscriptions: [PiSubscriptionController]
     let onManage: () -> Void
     let enabledCount: (AgentMCPProvider) -> Int?
     @ViewBuilder let modelsContent: (AgentMCPProvider) -> Models
-    let subscriptionEnabledCount: (CodexAccountController) -> Int
-    @ViewBuilder let subscriptionModelsContent: (CodexAccountController) -> SubscriptionModels
+    let subscriptionEnabledCount: (PiSubscriptionController) -> Int
+    @ViewBuilder let subscriptionModelsContent: (PiSubscriptionController) -> SubscriptionModels
     @State private var expandedProviderIDs: Set<String> = []
     @State private var hoveredProviderID: String?
 
-    private var signedInSubscriptions: [CodexAccountController] {
+    private var signedInSubscriptions: [PiSubscriptionController] {
         subscriptions.filter { $0.accountStatus?.isAuthenticated == true }
     }
 
@@ -393,7 +384,7 @@ private struct AgentProviderSection<Models: View, SubscriptionModels: View>: Vie
             ForEach(workspaces) { provider in
                 gatewayRow(provider)
             }
-            if account == .local, signedInSubscriptions.isEmpty, workspaces.isEmpty, model.accountProviders.isEmpty {
+            if signedInSubscriptions.isEmpty, workspaces.isEmpty, model.accountProviders.isEmpty {
                 Text(L10n.agentProvidersEmpty).foregroundStyle(.secondary)
             }
             ForEach([model.errorMessage].compactMap(\.self), id: \.self) { message in
@@ -530,9 +521,8 @@ extension PiSubscription {
 /// only those turned on go to the account's `models.json`, so Pi, and with it the chat, summary, and image analysis model
 /// pickers, knows only them.
 private struct AgentModelSettingsView: View {
-    let account: CodexRuntimeProvider
     let mcp: AgentMCPSettingsModel
-    let subscriptions: [CodexAccountController]
+    let subscriptions: [PiSubscriptionController]
     let onManage: () -> Void
     private let service = PiRuntimeService.shared
     /// Each provider's models by provider ID, as last listed.
@@ -554,7 +544,7 @@ private struct AgentModelSettingsView: View {
     var body: some View {
         Form {
             AgentProviderSection(
-                account: account, model: mcp, subscriptions: subscriptions, onManage: onManage,
+                model: mcp, subscriptions: subscriptions, onManage: onManage,
                 enabledCount: { provider in
                     models[provider.id].map { $0.count(where: { $0.isOn(shownChoices(provider.id)) }) }
                 },
@@ -570,7 +560,7 @@ private struct AgentModelSettingsView: View {
         .font(.dahliaBody)
         // The account's own workspace is found after the tab opens.
         .task(id: mcp.selectableProviders) {
-            choices = AgentModelSettings.choices(for: account)
+            choices = AgentModelSettings.choices()
             await withTaskGroup { group in
                 for provider in mcp.selectableProviders where models[provider.id] == nil {
                     group.addTask { await load(provider, forceRefresh: false) }
@@ -587,13 +577,13 @@ private struct AgentModelSettingsView: View {
         }
     }
 
-    private func subscriptionModelRows(_ controller: CodexAccountController) -> some View {
+    private func subscriptionModelRows(_ controller: PiSubscriptionController) -> some View {
         ForEach(controller.models) { model in
             Toggle(model.displayName, isOn: Binding {
                 AgentModelSettings.isSubscriptionModelOn(model.model, choices: choices)
             } set: { isOn in
                 choices[model.model] = isOn
-                AgentModelSettings.setModel(model.model, on: isOn, for: .local)
+                AgentModelSettings.setModel(model.model, on: isOn)
                 Task { await service.subscriptionModelChoicesDidChange() }
             })
             .toggleStyle(.switch)
@@ -646,7 +636,7 @@ private struct AgentModelSettingsView: View {
         loadingProviderIDs.insert(provider.id)
         defer { loadingProviderIDs.remove(provider.id) }
         do {
-            models[provider.id] = try await service.gatewayModels(for: account, provider: provider, forceRefresh: forceRefresh)
+            models[provider.id] = try await service.gatewayModels(provider: provider, forceRefresh: forceRefresh)
             errors[provider.id] = nil
         } catch is CancellationError {
             // Leaving the tab stops the listing.
@@ -666,10 +656,10 @@ private struct AgentModelSettingsView: View {
             model.isOn(shownChoices(provider.id))
         } set: { isOn in
             choices[model.reference] = isOn
-            AgentModelSettings.setModel(model.reference, on: isOn, for: account)
+            AgentModelSettings.setModel(model.reference, on: isOn)
             Task {
                 do {
-                    try await service.applyGatewayModelChoices(for: account)
+                    try await service.applyGatewayModelChoices()
                     errors[provider.id] = nil
                 } catch {
                     errors[provider.id] = message(error, provider: provider)
@@ -747,8 +737,8 @@ private struct AgentModelDetailsButton: View {
 private struct AgentOmnigentSection: View {
     @AppStorage private var isEnabled: Bool
 
-    init(account: CodexRuntimeProvider) {
-        _isEnabled = AppStorage(wrappedValue: false, OmnigentService.enabledKey(account.accountKey))
+    init() {
+        _isEnabled = AppStorage(wrappedValue: false, OmnigentService.enabledKey(AppAccount.key))
     }
 
     var body: some View {

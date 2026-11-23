@@ -1139,7 +1139,6 @@
 "Workspace ID unavailable from profile" = "Workspace ID unavailable from profile";
 "Could not update the Pi configuration: %@" = "Could not update the Pi configuration: %@";
 "The selected AI account is not ready. Open Accounts and Workspaces in Settings and finish its configuration." = "The selected AI account is not ready. Open Accounts and Workspaces in Settings and finish its configuration.";
-"This chat uses %@. Start a new chat to use the current account." = "This chat uses %@. Start a new chat to use the current account.";
 "Pi returned no available models. Try again." = "Pi returned no available models. Try again.";
 "The saved model is used when available; otherwise the first available model is selected." = "The saved model is used when available; otherwise the first available model is selected.";
 

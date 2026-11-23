@@ -2,16 +2,12 @@ import SwiftUI
 
 /// Settings → Memory for the open account: Hermes memory, its review after conversations, and its change history.
 struct MemorySettingsView: View {
-    @State private var workspaceSettings = WorkspaceAISettingsModel.shared
-
     var body: some View {
-        let account = CodexRuntimeProvider.local
-        AgentMemorySettingsView(account: account).id(account)
+        AgentMemorySettingsView()
     }
 }
 
 struct AgentMemorySettingsView: View {
-    let account: CodexRuntimeProvider
     @Environment(MainWindowNavigation.self) private var navigation
     @State private var model: AgentLearningSettingsModel
     @State private var history: AgentOptimizationSettingsModel
@@ -21,11 +17,10 @@ struct AgentMemorySettingsView: View {
     @State private var confirmClear = false
     @State private var models: [CodexModel] = []
 
-    init(account: CodexRuntimeProvider) {
-        self.account = account
-        _model = State(initialValue: AgentLearningSettingsModel(account: account))
-        _history = State(initialValue: AgentOptimizationSettingsModel(account: account, tasks: ["memoryReview", "review"]))
-        let key = account.accountKey
+    init() {
+        _model = State(initialValue: AgentLearningSettingsModel())
+        _history = State(initialValue: AgentOptimizationSettingsModel(tasks: ["memoryReview", "review"]))
+        let key = AppAccount.key
         _memoryEnabled = AppStorage(wrappedValue: true, AgentLearningSettings.memoryKey(key))
         // Starts from the single review switch that skill and memory organization replaced.
         _memoryReview = AppStorage(wrappedValue: AgentLearningSettings.legacyReviewEnabled(key), AgentLearningSettings.memoryReviewKey(key))
@@ -44,7 +39,7 @@ struct AgentMemorySettingsView: View {
                             Text(L10n.agentMemoryReviewEvery(count)).font(.dahliaBody).tag(count)
                         }
                     }
-                    AgentReviewModelRows(account: account, kind: .memory, models: models)
+                    AgentReviewModelRows(kind: .memory, models: models)
                 }
                 .disabled(!memoryEnabled || !memoryReview)
                 AgentSystemRunRows(model: history, task: "memoryReview", title: L10n.agentReviewRuns)
@@ -84,7 +79,7 @@ struct AgentMemorySettingsView: View {
         .task {
             await model.refresh()
             await history.refresh()
-            models = await (try? PiRuntimeService.shared.models(for: account, forceRefresh: false))?.filter { !$0.hidden } ?? []
+            models = await (try? PiRuntimeService.shared.models(forceRefresh: false))?.filter { !$0.hidden } ?? []
         }
         .onChange(of: memoryEnabled) { Task { await PiChatService.shared.drainLearningWork() } }
         .onChange(of: memoryReview) { Task { await PiChatService.shared.drainLearningWork() } }

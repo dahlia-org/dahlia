@@ -17,20 +17,18 @@ enum PiSubscription: String, CaseIterable, Identifiable, Sendable {
     }
 }
 
-extension CodexRuntimeProvider {
-    /// Pi provider IDs whose models Dahlia offers for this account. Pi lists only those with credentials.
-    var piProviderIDs: [String] {
-        (self == .local ? PiSubscription.allCases.map(\.rawValue) : []) + piBridgedProviderIDs
+/// Writes the account's `models.json` and `mcp.json`. Subscription providers use Pi's built-in catalog.
+enum PiProviderConfiguration {
+    /// Pi provider IDs whose models Dahlia offers. Pi lists only those with credentials.
+    static var providerIDs: [String] {
+        PiSubscription.allCases.map(\.rawValue) + bridgedProviderIDs
     }
 
     /// Providers whose credential the app holds, which the extension resolves through the bridge for each use.
-    var piBridgedProviderIDs: [String] {
-        providerAccounts.map(\.piProviderID)
+    static var bridgedProviderIDs: [String] {
+        ProviderAccountDirectory.accounts.map(\.piProviderID)
     }
-}
 
-/// Writes the account's `models.json` and `mcp.json`. Subscription providers use Pi's built-in catalog.
-enum PiProviderConfiguration {
     /// The Pi provider ID every Databricks account used before each connection was named by its host. Saved settings
     /// that name it move to the host once (`ProviderIDMigration`).
     static let legacyDatabricksProviderID = "databricks"

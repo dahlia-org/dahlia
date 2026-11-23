@@ -9,17 +9,17 @@ enum AgentModelSettings {
         ].contains(reference)
     }
 
-    static func defaultsKey(for account: CodexRuntimeProvider) -> String {
-        "agentGatewayModels.\(account.accountKey)"
+    static func defaultsKey() -> String {
+        "agentGatewayModels.\(AppAccount.key)"
     }
 
-    static func choices(for account: CodexRuntimeProvider, defaults: UserDefaults = .standard) -> [String: Bool] {
-        defaults.dictionary(forKey: defaultsKey(for: account)) as? [String: Bool] ?? [:]
+    static func choices(defaults: UserDefaults = .standard) -> [String: Bool] {
+        defaults.dictionary(forKey: defaultsKey()) as? [String: Bool] ?? [:]
     }
 
-    static func setModel(_ reference: String, on: Bool, for account: CodexRuntimeProvider, defaults: UserDefaults = .standard) {
-        var choices = choices(for: account, defaults: defaults)
+    static func setModel(_ reference: String, on: Bool, defaults: UserDefaults = .standard) {
+        var choices = choices(defaults: defaults)
         choices[reference] = on
-        defaults.set(choices, forKey: defaultsKey(for: account))
+        defaults.set(choices, forKey: defaultsKey())
     }
 }

@@ -46,13 +46,13 @@ import Foundation
             let defaults = try #require(UserDefaults(suiteName: suiteName))
             defer { defaults.removePersistentDomain(forName: suiteName) }
 
-            #expect(AppSettings.enabledCalendarSources(for: .local, in: defaults) == CalendarSource.defaultEnabledSources)
+            #expect(AppSettings.enabledCalendarSources(in: defaults) == CalendarSource.defaultEnabledSources)
             defaults.set("macOS", forKey: "calendarSource")
-            #expect(AppSettings.enabledCalendarSources(for: .local, in: defaults) == [.macOS])
+            #expect(AppSettings.enabledCalendarSources(in: defaults) == [.macOS])
             defaults.set("[\"google\",\"macOS\"]", forKey: CalendarSource.enabledSourcesUserDefaultsKey)
-            #expect(AppSettings.enabledCalendarSources(for: .local, in: defaults) == [.google, .macOS])
-            defaults.set("[\"google\"]", forKey: CalendarSource.enabledSourcesUserDefaultsKey(for: .local))
-            #expect(AppSettings.enabledCalendarSources(for: .local, in: defaults) == [.google])
+            #expect(AppSettings.enabledCalendarSources(in: defaults) == [.google, .macOS])
+            defaults.set("[\"google\"]", forKey: CalendarSource.accountEnabledSourcesUserDefaultsKey)
+            #expect(AppSettings.enabledCalendarSources(in: defaults) == [.google])
         }
 
         @Test

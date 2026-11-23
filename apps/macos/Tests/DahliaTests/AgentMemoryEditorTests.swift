@@ -11,7 +11,7 @@
             ["", String(repeating: "長いメモリーの内容\n", count: 100)]
         )
         func editorKeepsABoundedViewportAndRoomForActions(size: CGSize, content: String) throws {
-            let model = AgentLearningSettingsModel(account: .local)
+            let model = AgentLearningSettingsModel()
             let host = NSHostingView(rootView: AgentMemoryEditor(
                 model: model, target: "user", content: content, onClose: {}, onSave: { _ in }
             ))

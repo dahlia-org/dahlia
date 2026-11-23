@@ -669,7 +669,7 @@ final class CaptionViewModel: ObservableObject {
         audioHardwareQueryService: AudioHardwareQueryService = .shared,
         automaticScreenshotCapture: any AutomaticScreenshotCapturing = AutomaticScreenshotCaptureService(),
         summaryGenerationRunner: @escaping SummaryGenerationRunner = { input in
-            try await CodexRuntimeContextStore.shared.waitUntilActive(input.generationSettings.runtimeProvider)
+            try await PiRuntimeContextStore.shared.waitUntilActive()
             return try await SummaryService.generateSummary(
                 promptContext: input.promptContext,
                 transcriptText: input.transcriptText,
@@ -3972,7 +3972,6 @@ final class CaptionViewModel: ObservableObject {
         func hasSamePersistenceContext(as other: PendingBatchSummaryRequest) -> Bool {
             dbQueue === other.dbQueue
                 && workspaceURL?.standardizedFileURL == other.workspaceURL?.standardizedFileURL
-                && generationSettings.runtimeProvider == other.generationSettings.runtimeProvider
         }
 
         @MainActor
@@ -4245,9 +4244,7 @@ final class CaptionViewModel: ObservableObject {
                 && request.job.recordingSessionID == nil
                 && request.allowsCoalescing
                 && precedingAutomaticRequest.dbQueue === request.dbQueue
-                && precedingAutomaticRequest.workspaceURL?.standardizedFileURL == request.workspaceURL?.standardizedFileURL
-                && precedingAutomaticRequest.generationSettings.runtimeProvider
-                == request.generationSettings.runtimeProvider {
+                && precedingAutomaticRequest.workspaceURL?.standardizedFileURL == request.workspaceURL?.standardizedFileURL {
                 request.mergeOptions(precedingAutomaticRequest.options)
             }
         }
@@ -4265,7 +4262,6 @@ final class CaptionViewModel: ObservableObject {
             completedRequests.first { request in
                 precedingRequest.dbQueue === request.dbQueue
                     && precedingRequest.workspaceURL?.standardizedFileURL == request.workspaceURL?.standardizedFileURL
-                    && precedingRequest.generationSettings.runtimeProvider == request.generationSettings.runtimeProvider
             }
         } ?? completedRequests.first
         guard let first else { return }
@@ -4422,9 +4418,6 @@ final class CaptionViewModel: ObservableObject {
             guard capturedID == workspace.id else { throw SummaryGenerationPreparationError.meetingUnavailable }
         } else {
             request.generationSettings = SummaryGenerationSettings.current(workspace: workspace).applying(options: request.options)
-        }
-        guard request.generationSettings.runtimeProvider == CodexRuntimeProvider.local else {
-            throw AIConfigurationError.accountNotReady
         }
         return request
     }

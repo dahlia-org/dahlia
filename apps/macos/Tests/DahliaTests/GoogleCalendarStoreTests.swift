@@ -13,9 +13,7 @@ import Foundation
             let store = GoogleCalendarStore(
                 signInProvider: MockGoogleCalendarSignInProvider(isConfigured: false),
                 apiClient: MockGoogleCalendarAPIClient(),
-                userDefaults: isolatedUserDefaults(),
-                openAccount: { .local }
-            )
+                userDefaults: isolatedUserDefaults())
 
             #expect(store.state == .unconfigured)
             #expect(!store.isConfigured)
@@ -38,7 +36,6 @@ import Foundation
                 signInProvider: signInProvider,
                 apiClient: apiClient,
                 userDefaults: defaults,
-                openAccount: { .local },
                 now: { fixtureNow }
             )
 
@@ -78,7 +75,6 @@ import Foundation
                     events: [endedEvent, fixtureEvent, calendarEvent(id: "hidden", calendarID: secondaryCalendar.id)]
                 ),
                 userDefaults: defaults,
-                openAccount: { .local },
                 now: { fixtureNow },
                 eventsCacheDirectory: cacheDirectory
             )
@@ -93,7 +89,6 @@ import Foundation
                 signInProvider: signInProvider,
                 apiClient: MockGoogleCalendarAPIClient(calendars: [primaryCalendar], events: [freshEvent]),
                 userDefaults: defaults,
-                openAccount: { .local },
                 now: { fixtureNow },
                 eventsCacheDirectory: cacheDirectory
             )
@@ -114,7 +109,6 @@ import Foundation
         func obsoleteCacheReadCannotReplaceNewerSession(_ interruption: CacheReadInterruption) async {
             let defaults = isolatedUserDefaults()
             seedSelectedCalendars(["primary"], defaults: defaults)
-            let account = CodexRuntimeProvider.local
             let readStarted = AsyncStream<Void>.makeStream()
             let cachedEvents = AsyncStream<[CalendarEvent]>.makeStream()
             defer {
@@ -126,7 +120,6 @@ import Foundation
                 signInProvider: signInProvider,
                 apiClient: MockGoogleCalendarAPIClient(calendars: [primaryCalendar], events: []),
                 userDefaults: defaults,
-                openAccount: { account },
                 now: { fixtureNow },
                 presentingWindowProvider: { NSWindow() },
                 eventsCacheDirectory: temporaryCacheDirectory(),
@@ -175,7 +168,6 @@ import Foundation
                 signInProvider: MockGoogleCalendarSignInProvider(hasPreviousSignIn: true),
                 apiClient: apiClient,
                 userDefaults: defaults,
-                openAccount: { .local },
                 now: { fixtureNow },
                 presentingWindowProvider: { NSWindow() },
                 eventsCacheDirectory: cacheDirectory,
@@ -210,7 +202,6 @@ import Foundation
                 signInProvider: MockGoogleCalendarSignInProvider(hasPreviousSignIn: true),
                 apiClient: apiClient,
                 userDefaults: defaults,
-                openAccount: { .local },
                 now: { fixtureNow },
                 eventsCacheDirectory: cacheDirectory
             )
@@ -230,7 +221,6 @@ import Foundation
                 signInProvider: signInProvider,
                 apiClient: MockGoogleCalendarAPIClient(calendars: [primaryCalendar], events: []),
                 userDefaults: defaults,
-                openAccount: { .local },
                 now: { fixtureNow },
                 eventsCacheDirectory: cacheDirectory
             )
@@ -252,7 +242,6 @@ import Foundation
                 signInProvider: MockGoogleCalendarSignInProvider(hasPreviousSignIn: true),
                 apiClient: MockGoogleCalendarAPIClient(calendars: [primaryCalendar], events: [fixtureEvent]),
                 userDefaults: defaults,
-                openAccount: { .local },
                 now: { fixtureNow },
                 eventsCacheDirectory: cacheDirectory
             )
@@ -282,7 +271,6 @@ import Foundation
                 ),
                 apiClient: apiClient,
                 userDefaults: defaults,
-                openAccount: { .local },
                 now: { fixtureNow }
             )
 
@@ -310,7 +298,6 @@ import Foundation
                 signInProvider: signInProvider,
                 apiClient: apiClient,
                 userDefaults: defaults,
-                openAccount: { .local },
                 now: { fixtureNow }
             )
             await store.restoreSessionIfNeeded()
@@ -343,7 +330,6 @@ import Foundation
                 ),
                 apiClient: apiClient,
                 userDefaults: defaults,
-                openAccount: { .local },
                 now: { fixtureNow },
                 refreshInterval: 0
             )
@@ -382,7 +368,6 @@ import Foundation
                 ),
                 apiClient: apiClient,
                 userDefaults: defaults,
-                openAccount: { .local },
                 now: { fixtureNow },
                 refreshInterval: 0
             )
@@ -418,7 +403,6 @@ import Foundation
                     eventsResult: .failure(CancellationError())
                 ),
                 userDefaults: defaults,
-                openAccount: { .local },
                 now: { fixtureNow }
             )
 
@@ -437,7 +421,6 @@ import Foundation
                 signInProvider: MockGoogleCalendarSignInProvider(hasPreviousSignIn: true),
                 apiClient: apiClient,
                 userDefaults: defaults,
-                openAccount: { .local },
                 now: { fixtureNow }
             )
             await store.restoreSessionIfNeeded()
@@ -463,7 +446,7 @@ import Foundation
             let apiClient = ControllableGoogleCalendarAPIClient(initialEvents: [fixtureEvent])
             let store = GoogleCalendarStore(
                 signInProvider: MockGoogleCalendarSignInProvider(hasPreviousSignIn: true),
-                apiClient: apiClient, userDefaults: defaults, openAccount: { .local }, now: { fixtureNow },
+                apiClient: apiClient, userDefaults: defaults, now: { fixtureNow },
                 presentingWindowProvider: { NSWindow() }
             )
             await store.restoreSessionIfNeeded()
@@ -501,7 +484,6 @@ import Foundation
                 ),
                 apiClient: apiClient,
                 userDefaults: defaults,
-                openAccount: { .local },
                 now: { fixtureNow }
             )
             await store.restoreSessionIfNeeded()
@@ -535,7 +517,6 @@ import Foundation
                 signInProvider: signInProvider,
                 apiClient: apiClient,
                 userDefaults: defaults,
-                openAccount: { .local },
                 now: { fixtureNow }
             )
             await store.restoreSessionIfNeeded()
@@ -568,7 +549,6 @@ import Foundation
                 signInProvider: signInProvider,
                 apiClient: apiClient,
                 userDefaults: defaults,
-                openAccount: { .local },
                 now: { fixtureNow }
             )
             await store.restoreSessionIfNeeded()
@@ -601,7 +581,6 @@ import Foundation
                 signInProvider: signInProvider,
                 apiClient: apiClient,
                 userDefaults: defaults,
-                openAccount: { .local },
                 now: { fixtureNow }
             )
 
@@ -632,9 +611,7 @@ import Foundation
             let store = GoogleCalendarStore(
                 signInProvider: signInProvider,
                 apiClient: MockGoogleCalendarAPIClient(),
-                userDefaults: isolatedUserDefaults(),
-                openAccount: { .local }
-            )
+                userDefaults: isolatedUserDefaults())
 
             await store.restoreSessionIfNeeded()
 
@@ -654,7 +631,6 @@ import Foundation
                 signInProvider: signInProvider,
                 apiClient: apiClient,
                 userDefaults: isolatedUserDefaults(),
-                openAccount: { .local },
                 now: { fixtureNow }
             )
 
@@ -681,7 +657,6 @@ import Foundation
                 signInProvider: signInProvider,
                 apiClient: apiClient,
                 userDefaults: defaults,
-                openAccount: { .local },
                 now: { fixtureNow }
             )
 
@@ -712,7 +687,6 @@ import Foundation
                 signInProvider: signInProvider,
                 apiClient: apiClient,
                 userDefaults: defaults,
-                openAccount: { .local },
                 now: { fixtureNow }
             )
 
@@ -721,7 +695,7 @@ import Foundation
 
             #expect(store.selectedCalendarIDs == [secondaryCalendar.id])
 
-            let saved = defaults.string(forKey: GoogleCalendarStore.selectedCalendarIDsKey(for: .local))
+            let saved = defaults.string(forKey: GoogleCalendarStore.accountSelectedCalendarIDsKey)
             #expect(saved?.contains(secondaryCalendar.id) == true)
         }
 
@@ -732,7 +706,6 @@ import Foundation
                 signInProvider: signInProvider,
                 apiClient: MockGoogleCalendarAPIClient(calendars: [primaryCalendar], events: []),
                 userDefaults: isolatedUserDefaults(),
-                openAccount: { .local },
                 now: { fixtureNow },
                 presentingWindowProvider: { NSWindow() }
             )
@@ -754,9 +727,7 @@ import Foundation
             let store = GoogleCalendarStore(
                 signInProvider: signInProvider,
                 apiClient: MockGoogleCalendarAPIClient(calendars: [primaryCalendar], events: []),
-                userDefaults: isolatedUserDefaults(),
-                openAccount: { .local }
-            )
+                userDefaults: isolatedUserDefaults())
 
             NotificationCenter.default.post(name: ignoredNotification, object: nil)
             await Task.yield()
@@ -779,7 +750,6 @@ import Foundation
                 signInProvider: signInProvider,
                 apiClient: MockGoogleCalendarAPIClient(calendars: [primaryCalendar], events: [fixtureEvent]),
                 userDefaults: defaults,
-                openAccount: { .local },
                 now: { fixtureNow },
                 presentingWindowProvider: { NSWindow() }
             )

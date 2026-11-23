@@ -16,8 +16,8 @@ enum GoogleCalendarProvider: Hashable, Sendable {
 
     /// The saved choice. Unset, or naming a connection the account no longer has, follows the account's Databricks
     /// connection when it has one, as before the choice existed.
-    static func current(account: CodexRuntimeProvider, defaults: UserDefaults = .standard) -> Self {
-        let databricks = account.providerAccount(offering: .calendar)?.databricksConnectionID
+    static func current(defaults: UserDefaults = .standard) -> Self {
+        let databricks = ProviderAccountDirectory.account(offering: .calendar)?.databricksConnectionID
         switch defaults.string(forKey: userDefaultsKey) {
         case "google":
             return .google

@@ -5,7 +5,6 @@ struct ScreenshotAnalysisInput: Sendable {
     let id: UUID
     let imageData: Data?
     let mimeType: String
-    let runtimeProvider: CodexRuntimeProvider
     var outputLanguage: SummaryLanguage = .ja
     var model: String?
     var fallbackModel: String?
@@ -94,7 +93,7 @@ actor CodexScreenshotAnalysisService: ScreenshotAnalyzing {
                 ),
                 inputs: inputs,
                 outputSchema: ScreenshotAnalysisResponse.outputSchema
-            ), expectedProvider: screenshots[0].runtimeProvider)
+            ))
             return try Self.analysis(from: response, screenshots: screenshots)
         }
     }

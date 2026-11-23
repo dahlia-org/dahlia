@@ -21,7 +21,7 @@ import Synchronization
 
         /// The chat process answers every command and runs `onPrompt` for user prompts.
         private static func fixture(
-            customInstructions: @escaping @Sendable (CodexRuntimeProvider) -> String = { _ in "" },
+            customInstructions: @escaping @Sendable () -> String = { "" },
             commands: JSONValue? = nil,
             delaysCommands: Bool = false,
             promptNotifications: [JSONValue] = [],
@@ -50,10 +50,10 @@ import Synchronization
                 workingDirectory: PiWorkingDirectory(override: pi.rootURL.appending(path: "work")),
                 agentLocator: PiAgentDirectoryLocator(applicationSupportURL: pi.rootURL),
                 mcpExecutableURL: URL(filePath: "/usr/bin/true"),
-                reviewModel: { _ in "reviewer/test-model" },
+                reviewModel: { "reviewer/test-model" },
                 customInstructions: customInstructions,
-                mcpSettings: { _ in AgentMCPSettings() },
-                fileAccessSettings: { _ in PiFileAccessSettings() }
+                mcpSettings: { AgentMCPSettings() },
+                fileAccessSettings: { PiFileAccessSettings() }
             )
             Task {
                 // A user prompt starts the scripted turn; extension commands start with "/".
@@ -79,8 +79,7 @@ import Synchronization
             let thread = try await fixture.chat.startThread(model: nil, effort: "medium")
             _ = try await fixture.chat.beginTurn(
                 threadID: thread.id, inputs: [.text("Optimize sample")], model: nil, effort: "medium",
-                approvalMethod: .ask, expectedProvider: .local
-            )
+                approvalMethod: .ask)
             let turn = try #require(await fixture.chat.sessions[thread.id]?.turn?.run)
             let input = try await fixture.chat.optimizerInput(.object(["name": .string("sample")]), run: turn, account: "local", root: root)
             let id = try #require(input.objectValue?["run_id"]?.stringValue)
@@ -116,8 +115,7 @@ import Synchronization
             let thread = try await fixture.chat.startThread(model: nil, effort: "medium")
             _ = try await fixture.chat.beginTurn(
                 threadID: thread.id, inputs: [.text("Create a reminder")], model: nil, effort: "medium",
-                approvalMethod: method, expectedProvider: .local
-            )
+                approvalMethod: method)
             let process = try #require(await fixture.chat.sessions[thread.id]?.processID)
             let schedules = AgentScheduleService(dbQueue: fixture.store.dbQueue)
             let prepared = try await fixture.chat.learningTool("cronjob", payload: .object([
@@ -153,8 +151,7 @@ import Synchronization
             let thread = try await fixture.chat.startThread(model: nil, effort: "medium")
             _ = try await fixture.chat.beginTurn(
                 threadID: thread.id, inputs: [.text("Change the reminder")], model: nil, effort: "medium",
-                approvalMethod: .autoReview, expectedProvider: .local
-            )
+                approvalMethod: .autoReview)
             let process = try #require(await fixture.chat.sessions[thread.id]?.processID)
             let schedules = AgentScheduleService(dbQueue: fixture.store.dbQueue)
             _ = try schedules.execute(.object([
@@ -217,8 +214,7 @@ import Synchronization
             let thread = try await fixture.chat.startThread(model: nil, effort: "medium")
             _ = try await fixture.chat.beginTurn(
                 threadID: thread.id, inputs: [.text("Set a reminder")], model: nil, effort: "medium",
-                approvalMethod: .autoReview, expectedProvider: .local
-            )
+                approvalMethod: .autoReview)
             let process = try #require(await fixture.chat.sessions[thread.id]?.processID)
             let prepared = try await fixture.chat.learningTool("cronjob", payload: .object([
                 "action": .string("create"), "prompt": .string("Read only"), "schedule": .string("30m"),
@@ -252,9 +248,7 @@ import Synchronization
                 inputs: [.text("Question")],
                 model: nil,
                 effort: "medium",
-                approvalMethod: .ask,
-                expectedProvider: .local
-            )
+                approvalMethod: .ask)
             var first = handle.events.makeAsyncIterator()
             while let event = try await first.next() {
                 if case .delta = event { break }
@@ -288,9 +282,7 @@ import Synchronization
                 inputs: [.text("Question")],
                 model: nil,
                 effort: "medium",
-                approvalMethod: .ask,
-                expectedProvider: .local
-            )
+                approvalMethod: .ask)
             await fixture.chatTransport.emit(TestPiTransport.bridgeRequest(id: "approval-card", method: "approval", payload: .object([
                 "kind": .string("mcpToolCall"), "server": .string("dahlia"), "tool": .string("update_meeting"), "arguments": .object([:]),
             ])))
@@ -329,9 +321,7 @@ import Synchronization
                 inputs: [.text("First")],
                 model: nil,
                 effort: "medium",
-                approvalMethod: .ask,
-                expectedProvider: .local
-            )
+                approvalMethod: .ask)
             try await fixture.chat.steer(threadID: thread.id, turnID: "unused", inputs: [.text("Follow-up")])
             let command = await fixture.chatTransport.command("steer")
             #expect(command["message"] == .string("Follow-up"))
@@ -386,9 +376,7 @@ import Synchronization
                 inputs: [.text("Question")],
                 model: nil,
                 effort: "medium",
-                approvalMethod: .ask,
-                expectedProvider: .local
-            )
+                approvalMethod: .ask)
             for try await _ in handle.events {}
             let items = try fixture.store.listItems(threadID: thread.id)
             #expect(items.count == 3)
@@ -422,9 +410,7 @@ import Synchronization
                 inputs: [.text("Question")],
                 model: nil,
                 effort: "medium",
-                approvalMethod: .ask,
-                expectedProvider: .local
-            )
+                approvalMethod: .ask)
             await #expect(throws: (any Error).self) {
                 for try await _ in handle.events {}
             }
@@ -449,9 +435,7 @@ import Synchronization
                 inputs: [.text("Question")],
                 model: nil,
                 effort: "medium",
-                approvalMethod: .ask,
-                expectedProvider: .local
-            )
+                approvalMethod: .ask)
             if processFailsBeforeSettling {
                 await #expect(throws: (any Error).self) {
                     for try await _ in handle.events {}
@@ -460,7 +444,7 @@ import Synchronization
                 for try await _ in handle.events {}
                 await fixture.chat.unsubscribe(threadID: thread.id)
             }
-            let directory = try PiAgentDirectoryLocator(applicationSupportURL: fixture.pi.rootURL).sessionsURL(for: .local)
+            let directory = try PiAgentDirectoryLocator(applicationSupportURL: fixture.pi.rootURL).sessionsURL()
             let file = try #require(PiChatSessionFiles.file(id: thread.id, in: directory))
             try FileManager.default.removeItem(at: file)
             await #expect(throws: (any Error).self) {
@@ -469,9 +453,7 @@ import Synchronization
                     inputs: [.text("Continue")],
                     model: nil,
                     effort: "medium",
-                    approvalMethod: .ask,
-                    expectedProvider: .local
-                )
+                    approvalMethod: .ask)
             }
             #expect(try await fixture.chat.loadThread(id: thread.id).messages.last?.text == "Saved")
             #expect(fixture.pi.launches.all.count(where: { $0.mode == .chat }) == 1)
@@ -497,9 +479,7 @@ import Synchronization
                 inputs: [.text("Question")],
                 model: nil,
                 effort: "medium",
-                approvalMethod: .ask,
-                expectedProvider: .local
-            )
+                approvalMethod: .ask)
             try await fixture.chat.steer(threadID: thread.id, turnID: "x", inputs: [.text("Steer")])
             for try await _ in handle.events {}
             let messages = try fixture.store.messagePage(threadID: thread.id).messages
@@ -520,9 +500,7 @@ import Synchronization
                 inputs: [.text("Question")],
                 model: nil,
                 effort: "medium",
-                approvalMethod: .ask,
-                expectedProvider: .local
-            )
+                approvalMethod: .ask)
             try await fixture.chat.steer(threadID: thread.id, turnID: "x", inputs: [.text("Steer")])
             await #expect(throws: (any Error).self) {
                 for try await _ in handle.events {}
@@ -546,9 +524,7 @@ import Synchronization
                 inputs: [.text("Question")],
                 model: nil,
                 effort: "medium",
-                approvalMethod: .ask,
-                expectedProvider: .local
-            )
+                approvalMethod: .ask)
             await fixture.chat.stopTurn(handle.id)
             for try await _ in handle.events {}
             #expect(try fixture.store.thread(id: thread.id, accountID: "local").status == "interrupted")
@@ -558,7 +534,7 @@ import Synchronization
             await fixture.chat.unsubscribe(threadID: thread.id)
             let record = try fixture.store.thread(id: thread.id, accountID: "local")
             let directory = try PiAgentDirectoryLocator(applicationSupportURL: fixture.pi.rootURL)
-                .sessionsURL(for: .local)
+                .sessionsURL()
             if let file = PiChatSessionFiles.file(id: thread.id, in: directory) { try FileManager.default.removeItem(at: file) }
             // The test transport serves one process, so only the relaunch itself is observable here.
             _ = try? await fixture.chat.beginTurn(
@@ -566,9 +542,7 @@ import Synchronization
                 inputs: [.text("Again")],
                 model: nil,
                 effort: "medium",
-                approvalMethod: .ask,
-                expectedProvider: .local
-            )
+                approvalMethod: .ask)
             #expect(fixture.pi.launches.all.count(where: { $0.mode == .chat }) == 2)
         }
 
@@ -576,7 +550,7 @@ import Synchronization
         func piFilesDoNotOverwriteDatabaseHistoryAndMissingFilesPreventExecution() async throws {
             let fixture = try Self.fixture { _ in }
             defer { try? FileManager.default.removeItem(at: fixture.pi.rootURL) }
-            let directory = try PiAgentDirectoryLocator(applicationSupportURL: fixture.pi.rootURL).sessionsURL(for: .local, workspaceID: .v7())
+            let directory = try PiAgentDirectoryLocator(applicationSupportURL: fixture.pi.rootURL).sessionsURL(workspaceID: .v7())
             let id = UUID.v7().uuidString.lowercased()
             try fixture.store.createThread(ChatThreadRecord(
                 id: id, accountID: "local",
@@ -608,9 +582,7 @@ import Synchronization
                     inputs: [.text("Continue")],
                     model: nil,
                     effort: "medium",
-                    approvalMethod: .ask,
-                    expectedProvider: .local
-                )
+                    approvalMethod: .ask)
             }
             #expect(fixture.pi.launches.all.isEmpty)
         }
@@ -642,8 +614,7 @@ import Synchronization
             let thread = try await fixture.chat.startThread(model: nil, effort: "medium")
             let handle = try await fixture.chat.beginTurn(
                 threadID: thread.id, inputs: [.text("Back up this workspace")], model: nil, effort: "medium",
-                approvalMethod: .ask, expectedProvider: nil
-            )
+                approvalMethod: .ask)
             for try await _ in handle.events {}
             let response = try #require(result.withLock { $0 })
             let value = try JSONDecoder().decode(JSONValue.self, from: Data(response.utf8))
@@ -666,17 +637,14 @@ import Synchronization
             } else {
                 instructions = input
             }
-            let fixture = try Self.fixture(customInstructions: { account in
-                #expect(account == .local)
-                return instructions
-            }) { transport in
+            let fixture = try Self.fixture(customInstructions: { instructions }) { transport in
                 await transport.emit(TestPiTransport.assistantEnd("Done"))
                 await transport.emit(TestPiTransport.settled())
             }
             let thread = try await fixture.chat.startThread(model: nil, effort: "medium")
             let turn = try await fixture.chat.beginTurn(
                 threadID: thread.id, inputs: [.text("Hello")], model: nil, effort: "medium",
-                approvalMethod: .ask, expectedProvider: .local
+                approvalMethod: .ask
             )
             for try await _ in turn.events {}
             let launch = try #require(fixture.pi.launches.all.first { $0.mode == .chat })
@@ -714,8 +682,7 @@ import Synchronization
             ], promptDisposition: "handled") { _ in }
             let thread = try await fixture.chat.startThread(model: nil, effort: "medium")
             let turn = try await fixture.chat.beginTurn(
-                threadID: thread.id, inputs: [.text("/mcp")], model: nil, effort: "medium", approvalMethod: .ask, expectedProvider: nil
-            )
+                threadID: thread.id, inputs: [.text("/mcp")], model: nil, effort: "medium", approvalMethod: .ask)
             var events: [CodexChatTurnEvent] = []
             for try await event in turn.events {
                 events.append(event)
@@ -777,8 +744,7 @@ import Synchronization
             let lease = await fixture.chat.acquireThreadLease(threadID: thread.id)
             let turn = try await fixture.chat.beginTurn(
                 threadID: thread.id, inputs: [.text("Hello")], model: nil, effort: "medium",
-                approvalMethod: .ask, expectedProvider: nil
-            )
+                approvalMethod: .ask)
 
             await fixture.chat.providerAccountsDidChange()
             #expect(await !fixture.chatTransport.isClosed)
@@ -799,8 +765,7 @@ import Synchronization
             let lease = await fixture.chat.acquireThreadLease(threadID: thread.id)
             let turn = try await fixture.chat.beginTurn(
                 threadID: thread.id, inputs: [.text("Hello")], model: nil, effort: "medium",
-                approvalMethod: .ask, expectedProvider: nil
-            )
+                approvalMethod: .ask)
             for try await _ in turn.events {}
             #expect(await !fixture.chatTransport.isClosed)
 
@@ -819,8 +784,7 @@ import Synchronization
             let lease = await fixture.chat.acquireThreadLease(threadID: thread.id)
             let turn = try await fixture.chat.beginTurn(
                 threadID: thread.id, inputs: [.text("Hello")], model: nil, effort: "medium",
-                approvalMethod: .ask, expectedProvider: nil
-            )
+                approvalMethod: .ask)
             for try await _ in turn.events {}
             #expect(try await fixture.chat.commands(threadID: thread.id).isEmpty)
             #expect(fixture.pi.launches.all.filter { $0.mode == .chat }.count == 1)
@@ -846,8 +810,7 @@ import Synchronization
             let thread = try await fixture.chat.startThread(model: nil, effort: "medium")
             let handle = try await fixture.chat.beginTurn(
                 threadID: thread.id, inputs: [.text("inspect agent")], model: nil, effort: "medium",
-                approvalMethod: .ask, expectedProvider: nil
-            )
+                approvalMethod: .ask)
             var events: [CodexChatTurnEvent] = []
             for try await event in handle.events {
                 events.append(event)
@@ -896,9 +859,7 @@ import Synchronization
                 inputs: [.text("<context>\n</context>"), .text("Hi")],
                 model: "openai/gpt-test",
                 effort: "high",
-                approvalMethod: .autoReview,
-                expectedProvider: .local
-            )
+                approvalMethod: .autoReview)
             var events: [CodexChatTurnEvent] = []
             for try await event in handle.events {
                 events.append(event)
@@ -930,7 +891,7 @@ import Synchronization
             #expect(launch.environment["DAHLIA_PI_MCP_SERVERS"] == #"["dahlia"]"#)
             // The Local Account has no gateway MCPs; its mcp.json lists none.
             let mcpJSON = try PiAgentDirectoryLocator(applicationSupportURL: fixture.pi.rootURL)
-                .agentURL(for: .local).appending(path: "mcp.json")
+                .agentURL().appending(path: "mcp.json")
             #expect(FileManager.default.contents(atPath: mcpJSON.path) == Data(#"{"mcpServers":{}}"#.utf8))
         }
 
@@ -958,8 +919,8 @@ import Synchronization
                 workingDirectory: PiWorkingDirectory(override: pi.rootURL.appending(path: "work")),
                 agentLocator: PiAgentDirectoryLocator(applicationSupportURL: pi.rootURL),
                 mcpExecutableURL: URL(filePath: "/usr/bin/true"),
-                mcpSettings: { _ in AgentMCPSettings() },
-                fileAccessSettings: { _ in permissions.withLock { $0 } }
+                mcpSettings: { AgentMCPSettings() },
+                fileAccessSettings: { permissions.withLock { $0 } }
             )
             let thread = try await chat.startThread(model: "openai/gpt-test", effort: "medium")
             let lease = await chat.acquireThreadLease(threadID: thread.id)
@@ -969,8 +930,7 @@ import Synchronization
             for (index, configuration) in [PiFileAccessSettings(), readOnly, readWrite, PiFileAccessSettings()].enumerated() {
                 permissions.withLock { $0 = configuration }
                 let handle = try await chat.beginTurn(
-                    threadID: thread.id, inputs: [.text("Hi")], model: nil, effort: "medium", approvalMethod: .ask, expectedProvider: .local
-                )
+                    threadID: thread.id, inputs: [.text("Hi")], model: nil, effort: "medium", approvalMethod: .ask)
                 let process = await transports.transport(at: index)
                 let launch = try #require(pi.launches.all.last { $0.mode == .chat })
                 #expect(launch.fileAccess == configuration)
@@ -1025,8 +985,8 @@ import Synchronization
                 workingDirectory: PiWorkingDirectory(override: pi.rootURL.appending(path: "work")),
                 agentLocator: PiAgentDirectoryLocator(applicationSupportURL: pi.rootURL),
                 mcpExecutableURL: URL(filePath: "/usr/bin/true"),
-                mcpSettings: { _ in AgentMCPSettings() },
-                fileAccessSettings: { _ in PiFileAccessSettings() }
+                mcpSettings: { AgentMCPSettings() },
+                fileAccessSettings: { PiFileAccessSettings() }
             )
             let thread = try await chat.startThread(model: "openai/gpt-test", effort: "medium")
             _ = await chat.acquireThreadLease(threadID: thread.id)
@@ -1036,9 +996,7 @@ import Synchronization
                 inputs: [.text("Hi")],
                 model: "openai/gpt-new",
                 effort: "medium",
-                approvalMethod: .autoReview,
-                expectedProvider: .local
-            )
+                approvalMethod: .autoReview)
             // The reopened process runs the turn with the approval method the turn asked for.
             let process = await reopened.transport(at: 0)
             await process.emit(TestPiTransport.bridgeRequest(id: "m1", method: "approvalMode", payload: .object([:])))
@@ -1068,8 +1026,7 @@ import Synchronization
 
             let handle = try await fixture.chat.beginTurn(
                 threadID: thread.id, inputs: [.text("run ls")], model: nil, effort: "medium",
-                approvalMethod: .ask, expectedProvider: nil
-            )
+                approvalMethod: .ask)
             var sawResolution = false
             for try await event in handle.events {
                 if case let .approvalRequested(request) = event {
@@ -1095,8 +1052,7 @@ import Synchronization
             let thread = try await fixture.chat.startThread(model: nil, effort: "medium")
             let handle = try await fixture.chat.beginTurn(
                 threadID: thread.id, inputs: [.text("Change data")], model: nil,
-                effort: "medium", approvalMethod: .ask, expectedProvider: .local
-            )
+                effort: "medium", approvalMethod: .ask)
             await fixture.chatTransport.emit(TestPiTransport.bridgeRequest(id: "failing-approval", method: "approval", payload: .object([
                 "kind": .string("mcpToolCall"), "server": .string("dahlia"), "tool": .string("update_meeting"), "arguments": .object([:]),
             ])))
@@ -1135,8 +1091,7 @@ import Synchronization
             let thread = try await fixture.chat.startThread(model: nil, effort: "medium")
             let handle = try await fixture.chat.beginTurn(
                 threadID: thread.id, inputs: [.text("/dahlia-approval autoReview")], model: nil, effort: "medium",
-                approvalMethod: .ask, expectedProvider: nil
-            )
+                approvalMethod: .ask)
             func mode(_ id: String) async -> String? {
                 await fixture.chatTransport.emit(TestPiTransport.bridgeRequest(id: id, method: "approvalMode", payload: .object([:])))
                 return await fixture.chatTransport.command { $0["id"]?.stringValue == id }["value"]?.stringValue
@@ -1171,8 +1126,7 @@ import Synchronization
 
             let handle = try await fixture.chat.beginTurn(
                 threadID: thread.id, inputs: [.text("write")], model: nil, effort: "medium",
-                approvalMethod: .ask, expectedProvider: nil
-            )
+                approvalMethod: .ask)
             var last: CodexChatTurnEvent?
             for try await event in handle.events {
                 if case let .approvalRequested(request) = event {
@@ -1226,8 +1180,7 @@ import Synchronization
             let stopped = Task {
                 try await chat.beginTurn(
                     threadID: thread.id, inputs: [.text("hi")], model: nil, effort: "medium",
-                    approvalMethod: .ask, expectedProvider: nil
-                )
+                    approvalMethod: .ask)
             }
             let first = await log.transport(at: 0)
             _ = await first.command("prompt")
@@ -1237,8 +1190,7 @@ import Synchronization
             #expect(await first.isClosed)
             let next = try await chat.beginTurn(
                 threadID: thread.id, inputs: [.text("again")], model: nil, effort: "medium",
-                approvalMethod: .ask, expectedProvider: nil
-            )
+                approvalMethod: .ask)
             for try await _ in next.events {}
             #expect(log.all.count == 2)
         }
@@ -1246,8 +1198,7 @@ import Synchronization
         @Test(.providerAccounts([.init(id: UUID(), workspaceURL: URL(string: "https://own.cloud.databricks.com")!)]), arguments: [false, true])
         func turnReopensTheThreadAfterItsPiProcessExits(legacyDirectory: Bool) async throws {
             let log = TestPiTransportLog()
-            let account = CodexRuntimeProvider.local
-            let pi = TestPiRuntime(provider: account) { options in
+            let pi = TestPiRuntime { options in
                 let transport = options.mode == .chat
                     ? TestPiTransport { command in
                         guard let id = command["id"] else { return [] }
@@ -1268,21 +1219,20 @@ import Synchronization
                 workingDirectory: PiWorkingDirectory(override: pi.rootURL.appending(path: "work")),
                 agentLocator: PiAgentDirectoryLocator(applicationSupportURL: pi.rootURL),
                 mcpExecutableURL: URL(filePath: "/usr/bin/true"),
-                mcpSettings: { _ in registered.withLock { $0 } },
-                omnigentConnection: { _ in omnigentEnabled.withLock { $0 } ? UUID() : nil }
+                mcpSettings: { registered.withLock { $0 } },
+                omnigentConnection: { omnigentEnabled.withLock { $0 } ? UUID() : nil }
             )
             let thread = try await chat.startThread(model: nil, effort: "medium")
             _ = await chat.acquireThreadLease(threadID: thread.id)
             let sessions = try PiAgentDirectoryLocator(applicationSupportURL: pi.rootURL)
-                .sessionsURL(for: account)
+                .sessionsURL()
             let first = try await chat.beginTurn(
                 threadID: thread.id, inputs: [.text("hi")], model: nil, effort: "medium",
-                approvalMethod: .autoReview, expectedProvider: nil
-            )
+                approvalMethod: .autoReview)
             for try await _ in first.events {}
             var file = try #require(PiChatSessionFiles.file(id: thread.id, in: sessions))
             if legacyDirectory {
-                let legacy = try PiAgentDirectoryLocator(applicationSupportURL: pi.rootURL).sessionsURL(for: account, workspaceID: .v7())
+                let legacy = try PiAgentDirectoryLocator(applicationSupportURL: pi.rootURL).sessionsURL(workspaceID: .v7())
                     .appending(path: file.lastPathComponent)
                 try FileManager.default.moveItem(at: file, to: legacy)
                 file = legacy
@@ -1292,8 +1242,7 @@ import Synchronization
             try await pi.service.reloadConfiguration(interruptActiveOperations: true)
             let handle = try await chat.beginTurn(
                 threadID: thread.id, inputs: [.text("hello")], model: nil, effort: "medium",
-                approvalMethod: .autoReview, expectedProvider: nil
-            )
+                approvalMethod: .autoReview)
             var last: CodexChatTurnEvent?
             for try await event in handle.events {
                 last = event
@@ -1307,15 +1256,14 @@ import Synchronization
             #expect(reopenedFile.resolvingSymlinksInPath().path == file.resolvingSymlinksInPath().path)
             let helperCommand = try #require(reopened.environment["DAHLIA_PI_MCP_COMMAND"])
             #expect(helperCommand.contains("--account"))
-            #expect(helperCommand.contains(account.accountKey))
+            #expect(helperCommand.contains(AppAccount.key))
             #expect(!helperCommand.contains("--workspace-id"))
 
             /// A settings change leaves the open process alone; the next process the thread starts uses the new MCPs.
             func turn(_ text: String) async throws {
                 let handle = try await chat.beginTurn(
                     threadID: thread.id, inputs: [.text(text)], model: nil, effort: "medium",
-                    approvalMethod: .autoReview, expectedProvider: nil
-                )
+                    approvalMethod: .autoReview)
                 for try await _ in handle.events {}
             }
             let provider = try AgentMCPProvider(workspaceURL: #require(URL(string: "https://example.cloud.databricks.com")))
@@ -1343,7 +1291,7 @@ import Synchronization
             // The mcp.json entry names the workspace sign-in, which the extension registers from that file.
             #expect(withGmail.environment["DAHLIA_PI_MCP_PROVIDERS"] == nil)
             #expect(withGmail.arguments.contains { $0.hasSuffix("/" + file.lastPathComponent) })
-            let mcpJSON = try PiAgentDirectoryLocator(applicationSupportURL: pi.rootURL).agentURL(for: account).appending(path: "mcp.json")
+            let mcpJSON = try PiAgentDirectoryLocator(applicationSupportURL: pi.rootURL).agentURL().appending(path: "mcp.json")
             let written = FileManager.default.contents(atPath: mcpJSON.path).map { String(decoding: $0, as: UTF8.self) } ?? ""
             #expect(written.contains("system.ai.gmail"))
             let entries = try JSONDecoder().decode(JSONValue.self, from: Data(written.utf8)).objectValue?["mcpServers"]?.objectValue
@@ -1397,8 +1345,7 @@ import Synchronization
             let turn = Task {
                 try await chat.beginTurn(
                     threadID: thread.id, inputs: [.text("hi")], model: nil, effort: "high",
-                    approvalMethod: .autoReview, expectedProvider: nil
-                )
+                    approvalMethod: .autoReview)
             }
 
             let thinking = await chatTransport.command("set_thinking_level")
@@ -1467,7 +1414,7 @@ import Synchronization
                 workingDirectory: PiWorkingDirectory(override: pi.rootURL.appending(path: "work")),
                 agentLocator: PiAgentDirectoryLocator(applicationSupportURL: pi.rootURL),
                 mcpExecutableURL: URL(filePath: "/usr/bin/true"),
-                mcpSettings: { _ in
+                mcpSettings: {
                     let workspace = AgentMCPProvider(workspaceURL: URL(string: "https://example.cloud.databricks.com")!)
                     return AgentMCPSettings(providers: [workspace], servers: [
                         AgentMCPServer(id: .v7(), name: "slack", providerID: workspace.id, service: "system.ai.slack"),
@@ -1481,8 +1428,7 @@ import Synchronization
             func turn() async throws -> [CodexChatTurnEvent] {
                 let handle = try await chat.beginTurn(
                     threadID: thread.id, inputs: [.text("Hi")], model: "openai/gpt-test", effort: "medium",
-                    approvalMethod: .autoReview, expectedProvider: .local
-                )
+                    approvalMethod: .autoReview)
                 var events: [CodexChatTurnEvent] = []
                 for try await event in handle.events {
                     events.append(event)
@@ -1507,8 +1453,7 @@ import Synchronization
             let thread = try await fixture.chat.startThread(model: nil, effort: "medium")
             _ = try await fixture.chat.beginTurn(
                 threadID: thread.id, inputs: [.text("Update the meeting")], model: nil, effort: "medium",
-                approvalMethod: method, expectedProvider: .local
-            )
+                approvalMethod: method)
             func check(_ id: String, text: String, server: String = "dahlia") async throws -> Bool {
                 await fixture.chatTransport.emit(TestPiTransport.bridgeRequest(id: id, method: "approvalCheck", payload: .object([
                     "kind": .string("mcpToolCall"), "server": .string(server), "tool": .string("update_meeting_summary"),

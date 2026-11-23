@@ -3,15 +3,15 @@ import GRDB
 
 extension PiChatService {
     func relatedThreads(parentThreadID: String) async throws -> [CodexChatThreadSummary] {
-        let provider = try await runtime.currentProvider()
+        try await runtime.requireConfigured()
         let store = try history()
-        _ = try store.thread(id: parentThreadID, accountID: provider.accountKey)
+        _ = try store.thread(id: parentThreadID, accountID: AppAccount.key)
         return try await store.dbQueue.read { db in
             try ChatThreadRecord.fetchAll(db, sql: """
             SELECT * FROM chat_threads WHERE accountID = ? AND (parentThreadID = ? OR id IN (
                 SELECT threadID FROM chat_runs WHERE requestedByThreadID = ?))
             ORDER BY updatedAt DESC LIMIT 100
-            """, arguments: [provider.accountKey, parentThreadID, parentThreadID]).map { thread in
+            """, arguments: [AppAccount.key, parentThreadID, parentThreadID]).map { thread in
                 let request = try ChatRunRecord.fetchOne(db, sql: """
                 SELECT * FROM chat_runs WHERE threadID = ? AND requestedByThreadID = ?
                 ORDER BY createdAt, id LIMIT 1
@@ -65,7 +65,7 @@ extension PiChatService {
             guard let turn = session.turn else { return nil }
             return CodexChatRuntimeState(
                 threadID: id,
-                accountID: session.provider.accountKey,
+                accountID: AppAccount.key,
                 turnID: turn.id,
                 approvals: Array(turn.broadcast.approvals.values).sorted { $0.id < $1.id },
                 isScheduled: turn.run.origin == "schedule"
@@ -112,9 +112,9 @@ extension PiChatService {
 
     /// History and the partial message are captured without an actor suspension, so no event falls between them.
     func attach(threadID: String) async throws -> CodexChatTurnHandle? {
-        let provider = try await runtime.currentProvider()
+        try await runtime.requireConfigured()
         let store = try history()
-        let record = try store.thread(id: threadID, accountID: provider.accountKey)
+        let record = try store.thread(id: threadID, accountID: AppAccount.key)
         guard var turn = sessions[threadID]?.turn else { return nil }
         let page = try store.messagePage(threadID: threadID)
         let parent = try store.parentSummary(for: record)
@@ -151,14 +151,14 @@ extension PiChatService {
         if let activeReview, activeReview.account != accountID { await runtime.close(activeReview.connection) }
         if let activeCurator, activeCurator.account != accountID { await runtime.close(activeCurator.connection) }
         let persisted = (try? history().activeRunAccounts()) ?? []
-        let accounts = Set(sessions.values.map(\.provider.accountKey) + persisted).subtracting([accountID])
+        let accounts = Set(sessions.values.map { _ in AppAccount.key } + persisted).subtracting([accountID])
         stoppingAccounts.formUnion(accounts)
         for account in accounts {
             try? history().suppressRunNotifications(accountID: account)
             try? history().interruptQueuedRuns(accountID: account, preservingSchedules: true)
         }
         publishStates()
-        for (id, session) in sessions where session.provider.accountKey != accountID {
+        for (id, _) in sessions where AppAccount.key != accountID {
             await closeSession(id)
         }
         stoppingAccounts.subtract(accounts)
@@ -172,7 +172,7 @@ extension PiChatService {
     /// requested the running work, or of its parent, even when that choice changed after the run began.
     func effectiveApprovalMethod(_ threadID: String) -> CodexChatApprovalMethod {
         guard let session = sessions[threadID], var method = session.approvalMethod else { return .ask }
-        let parent = (try? history().thread(id: threadID, accountID: session.provider.accountKey))?.parentThreadID
+        let parent = (try? history().thread(id: threadID, accountID: AppAccount.key))?.parentThreadID
         for ceiling in [session.turn?.run.requestedByThreadID, parent].compactMap(\.self) {
             if let chosen = chosenApprovalMethod(ceiling) { method = Self.stricterApproval(method, chosen) }
         }
@@ -180,8 +180,8 @@ extension PiChatService {
     }
 
     func inheritedApprovalMethod(threadID: String, requested: CodexChatApprovalMethod) throws -> CodexChatApprovalMethod {
-        guard let provider = sessions[threadID]?.provider else { return requested }
-        let record = try history().thread(id: threadID, accountID: provider.accountKey)
+        guard sessions[threadID] != nil else { return requested }
+        let record = try history().thread(id: threadID, accountID: AppAccount.key)
         guard let parent = record.parentThreadID else { return requested }
         let parentMethod = chosenApprovalMethod(parent) ?? .autoReview
         return Self.stricterApproval(requested, parentMethod)

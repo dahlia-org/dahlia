@@ -3,39 +3,37 @@ import Foundation
 
 /// The user's installed `pi` command and the Dahlia resources (extension, skills) it runs with.
 enum PiBundle {
-    nonisolated static func useManagedPiDefaultsKey(for provider: CodexRuntimeProvider) -> String {
-        "useManagedPi.\(provider.accountKey)"
+    nonisolated static func useManagedPiDefaultsKey() -> String {
+        "useManagedPi.\(AppAccount.key)"
     }
 
     /// Preserve accounts that already selected Dahlia's installation; other old paths become PATH discovery.
     nonisolated static func usesManagedPi(
-        for provider: CodexRuntimeProvider,
         defaults: UserDefaults = .standard,
         managedExecutableURL: URL = PiInstaller.executableURL
     ) -> Bool {
-        let key = useManagedPiDefaultsKey(for: provider)
+        let key = useManagedPiDefaultsKey()
         if defaults.object(forKey: key) != nil { return defaults.bool(forKey: key) }
-        let legacyPath = defaults.string(forKey: "piExecutablePath.\(provider.accountKey)")?
+        let legacyPath = defaults.string(forKey: "piExecutablePath.\(AppAccount.key)")?
             .trimmingCharacters(in: .whitespaces)
         return legacyPath == managedExecutableURL.path
     }
 
     /// Every Pi process uses the account's managed installation or discovers `pi` on its launch PATH.
     nonisolated static func executableURL(
-        for provider: CodexRuntimeProvider,
         defaults: UserDefaults = .standard,
         managedExecutableURL: URL = PiInstaller.executableURL,
         secret: (String) -> String? = { KeychainService.load(key: $0) }
     ) throws -> URL {
-        if usesManagedPi(for: provider, defaults: defaults, managedExecutableURL: managedExecutableURL) {
+        if usesManagedPi(defaults: defaults, managedExecutableURL: managedExecutableURL) {
             guard CommandLineToolLocator.isExecutableFile(atPath: managedExecutableURL.path) else {
                 throw PiRuntimeError.piCommandNotFound(managedExecutableURL.path)
             }
             return managedExecutableURL
         }
         let environment = ProcessInfo.processInfo.environment
-            .merging(PiLaunchSettings.load(for: provider, defaults: defaults).commandDiscovery
-                .resolvedEnvironment(for: provider, secret: secret)) { $1 }
+            .merging(PiLaunchSettings.load(defaults: defaults).commandDiscovery
+                .resolvedEnvironment(secret: secret)) { $1 }
         guard let url = CommandLineToolLocator.executableURL(named: "pi", environment: environment) else {
             throw PiRuntimeError.piCommandNotFound(nil)
         }
@@ -98,22 +96,22 @@ struct PiAgentDirectoryLocator: Sendable {
         accountsURL.appending(path: accountKey, directoryHint: .isDirectory).appending(path: "pi", directoryHint: .isDirectory)
     }
 
-    func agentURL(for provider: CodexRuntimeProvider) throws -> URL {
-        let url = provider == .local ? sharedAgentURL : legacyAgentURL(accountKey: provider.accountKey)
+    func agentURL() throws -> URL {
+        let url = sharedAgentURL
         try Self.createPrivateDirectory(url)
         try Self.createPrivateDirectory(url.appending(path: "skills", directoryHint: .isDirectory))
         return url
     }
 
-    func sessionsURL(for provider: CodexRuntimeProvider) throws -> URL {
-        let url = try agentURL(for: provider).appending(path: "sessions/shared", directoryHint: .isDirectory)
+    func sessionsURL() throws -> URL {
+        let url = try agentURL().appending(path: "sessions/shared", directoryHint: .isDirectory)
         try Self.createPrivateDirectory(url)
         return url
     }
 
     /// Chats belong to the account that ran them, like its models; a workspace moved to another account leaves them.
-    func sessionsURL(for provider: CodexRuntimeProvider, workspaceID: UUID) throws -> URL {
-        let url = try agentURL(for: provider)
+    func sessionsURL(workspaceID: UUID) throws -> URL {
+        let url = try agentURL()
             .appending(path: "sessions/\(workspaceID.uuidString.lowercased())", directoryHint: .isDirectory)
         try Self.createPrivateDirectory(url)
         return url
@@ -131,7 +129,7 @@ struct PiAgentDirectoryLocator: Sendable {
 
     /// Stable installation ID that Sign in with ChatGPT requires.
     func deviceID() throws -> String {
-        let url = try agentURL(for: .local).appending(path: "dahlia-device-id")
+        let url = try agentURL().appending(path: "dahlia-device-id")
         if let id = try? String(contentsOf: url, encoding: .utf8), UUID(uuidString: id) != nil {
             return id
         }
@@ -154,7 +152,7 @@ struct PiAgentDirectoryLocator: Sendable {
     }
 }
 
-extension CodexRuntimeProvider {
-    /// Names the account's per-account settings and rows. The app has one account, so this is always `local`.
-    nonisolated var accountKey: String { "local" }
+/// The app's one account. Its key names the per-account settings and rows that earlier releases kept for each account.
+enum AppAccount {
+    nonisolated static let key = "local"
 }

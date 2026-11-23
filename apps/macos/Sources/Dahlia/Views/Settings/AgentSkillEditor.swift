@@ -4,7 +4,6 @@ import SwiftUI
 /// Edits an account skill's SKILL.md. Saving goes through `skill_manage`, so the change lands in the skill's history
 /// and can be undone there.
 struct AgentSkillEditor: View {
-    let account: CodexRuntimeProvider
     let name: String
     let onClose: () -> Void
     let onSaved: () -> Void
@@ -66,8 +65,8 @@ struct AgentSkillEditor: View {
         .task {
             do {
                 let service = try await PiChatService.shared.skillService()
-                let root = try await PiChatService.shared.skillsRoot(account)
-                let snapshot = try await service.editableSnapshot(name: name, account: account.accountKey, root: root)
+                let root = try await PiChatService.shared.skillsRoot()
+                let snapshot = try await service.editableSnapshot(name: name, account: AppAccount.key, root: root)
                 guard let data = snapshot.files["SKILL.md"], let text = String(data: data, encoding: .utf8)
                 else { throw HermesLearning.failure("Skill is not UTF-8 text.") }
                 original = snapshot
@@ -83,10 +82,10 @@ struct AgentSkillEditor: View {
         defer { isSaving = false }
         do {
             let service = try await PiChatService.shared.skillService()
-            let root = try await PiChatService.shared.skillsRoot(account)
+            let root = try await PiChatService.shared.skillsRoot()
             let operation: JSONValue = .object(["action": .string("patch"), "name": .string(name), "content": .string(content)])
             _ = try await service.manageAccountSkills(
-                payload: .object(["operations": .array([operation])]), account: account.accountKey, root: root,
+                payload: .object(["operations": .array([operation])]), account: AppAccount.key, root: root,
                 expectedSnapshots: [name: original]
             )
             onSaved()

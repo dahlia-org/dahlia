@@ -72,22 +72,6 @@
             #expect(processing.summaryMode == .remote)
             #expect(processing.workspaceSettings?.processing.location == .remote)
             #expect(processing.generationSettings.modelID == "saved-model")
-            #expect(processing.generationSettings.runtimeProvider == .local)
-        }
-
-        @Test
-        func runtimeProviderReadsEveryEarlierAccountAsTheAppsAccount() throws {
-            let id = UUID()
-            let data = try JSONEncoder().encode(CodexRuntimeProvider.local)
-            #expect(try JSONDecoder().decode(CodexRuntimeProvider.self, from: data) == .local)
-            // A Dahlia account's recordings ran under its own runtime account, which is the app's one account now.
-            let dahlia = Data(#"{"dahlia":{"connectionID":"\#(id.uuidString)"}}"#.utf8)
-            #expect(try JSONDecoder().decode(CodexRuntimeProvider.self, from: dahlia) == .local)
-            // Codex-era Databricks profiles and Databricks-account keys ran under the Local Account, the app's one account now.
-            let legacy = Data(#"{"databricks":{"profile":"DEFAULT"}}"#.utf8)
-            #expect(try JSONDecoder().decode(CodexRuntimeProvider.self, from: legacy) == .local)
-            let legacyWorkspace = Data(#"{"databricksWorkspace":{"connectionID":"\#(id.uuidString)"}}"#.utf8)
-            #expect(try JSONDecoder().decode(CodexRuntimeProvider.self, from: legacyWorkspace) == .local)
         }
 
         @Test
@@ -350,9 +334,7 @@
                     modelID: "saved-model",
                     reasoningEffort: "low",
                     detailLevelInstruction: SummaryDetailLevel.max.instruction,
-                    languageDisplayName: "English",
-                    runtimeProvider: .local
-                ),
+                    languageDisplayName: "English"),
                 workspaceSettings: workspaceSettings
             )
         }

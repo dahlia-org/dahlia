@@ -38,39 +38,39 @@ actor PiRuntimeService {
 
     /// Answers the chat extension's approval and reviewer-model requests.
     typealias ChatBridge = PiRPCConnection.Bridge
-    typealias Launcher = @Sendable (LaunchOptions, CodexRuntimeProvider, URL) throws -> any CodexAppServerTransport
+    typealias Launcher = @Sendable (LaunchOptions, URL) throws -> any CodexAppServerTransport
     typealias TokenResolver = @Sendable (ProviderAccount) async throws -> String
 
     private let agentLocator: PiAgentDirectoryLocator
-    private let contextStore: CodexRuntimeContextStore
+    private let contextStore: PiRuntimeContextStore
     private let configurationReadiness: @Sendable () async -> Bool
     private let launcher: Launcher
     private let tokenResolver: TokenResolver
-    private let modelChoices: @Sendable (CodexRuntimeProvider) -> [String: Bool]
-    private let gatewayWorkspaces: @Sendable (CodexRuntimeProvider) -> [AgentMCPProvider]
-    private var connections: [ObjectIdentifier: (connection: PiRPCConnection, provider: CodexRuntimeProvider, mode: LaunchOptions.Mode)] = [:]
-    private var cachedModels: [CodexRuntimeProvider: [CodexModel]] = [:]
-    private var modelLoads: [CodexRuntimeProvider: (task: Task<[CodexModel], any Error>, waiters: Int)] = [:]
+    private let modelChoices: @Sendable () -> [String: Bool]
+    private let gatewayWorkspaces: @Sendable () -> [AgentMCPProvider]
+    private var connections: [ObjectIdentifier: (connection: PiRPCConnection, mode: LaunchOptions.Mode)] = [:]
+    private var cachedModels: [CodexModel]?
+    private var modelLoad: (task: Task<[CodexModel], any Error>, waiters: Int)?
     private var modelGeneration = 0
-    /// Each account's background listing of its Unity AI Gateways in this activation (see `refreshGateways`).
-    private var gatewayRefreshes: [CodexRuntimeProvider: Task<Void, Never>] = [:]
-    /// Each gateway's listing in flight, by account and provider ID. Every caller joins it, and only the listing still
+    /// The background listing of the Unity AI Gateways in this activation (see `refreshGateways`).
+    private var gatewayRefresh: Task<Void, Never>?
+    /// Each gateway's listing in flight, by provider ID. Every caller joins it, and only the listing still
     /// registered here saves its answer: an activation or sign-in drops the registration, so an older answer that lands
     /// after a newer listing started is discarded.
-    private var gatewayListings: [CodexRuntimeProvider: [String: Task<[JSONValue], any Error>]] = [:]
+    private var gatewayListings: [String: Task<[JSONValue], any Error>] = [:]
     private var isShuttingDown = false
 
     init(
         agentLocator: PiAgentDirectoryLocator = PiAgentDirectoryLocator(),
-        contextStore: CodexRuntimeContextStore = .shared,
+        contextStore: PiRuntimeContextStore = .shared,
         configurationReadiness: @escaping @Sendable () async -> Bool = {
             await WorkspaceAISettingsModel.shared.waitForRuntimeContext()
         },
         launcher: @escaping Launcher = PiRuntimeService.launchPi,
         tokenResolver: @escaping TokenResolver = PiRuntimeService.resolveToken,
-        modelChoices: @escaping @Sendable (CodexRuntimeProvider) -> [String: Bool] = { AgentModelSettings.choices(for: $0) },
-        gatewayWorkspaces: @escaping @Sendable (CodexRuntimeProvider) -> [AgentMCPProvider] = {
-            AgentMCPSettings.load(for: $0).providers.filter { !$0.isAccount }
+        modelChoices: @escaping @Sendable () -> [String: Bool] = { AgentModelSettings.choices() },
+        gatewayWorkspaces: @escaping @Sendable () -> [AgentMCPProvider] = {
+            AgentMCPSettings.load().providers.filter { !$0.isAccount }
         }
     ) {
         self.agentLocator = agentLocator
@@ -87,25 +87,19 @@ actor PiRuntimeService {
     /// Starts a Pi process. The caller owns it and must call `close(_:)`.
     func connect(
         _ options: LaunchOptions,
-        provider: CodexRuntimeProvider,
         chatBridge: ChatBridge? = nil
     ) async throws -> PiRPCConnection {
         guard !isShuttingDown else { throw CancellationError() }
-        // Work of an account being left must not start Pi after the switch drained its processes. The Local
-        // Account's control processes (subscription sign-in and status) run whichever account is open.
-        if let requested = contextStore.requestedProvider, requested != provider, options.mode != .control || provider != .local {
-            throw AIConfigurationError.providerChanged(provider.displayName)
-        }
         if options.profile == .review {
-            let account = provider.accountKey
+            let account = AppAccount.key
             let allowed = options.environment["DAHLIA_PI_CURATOR"] == "1"
                 ? SkillCuratorSettings.enabled(account)
                 : AgentLearningSettings.reviewEnabled(account)
                 && (options.environment["DAHLIA_PI_MEMORY_ENABLED"] != "1" || AgentLearningSettings.memoryReviewEnabled(account))
             guard allowed, !AgentBackgroundActivity.isRecording else { throw CancellationError() }
         }
-        let agentURL = try agentLocator.agentURL(for: provider)
-        let transport = try launcher(options, provider, agentURL)
+        let agentURL = try agentLocator.agentURL()
+        let transport = try launcher(options, agentURL)
         let tokenResolver = tokenResolver
         let connection = PiRPCConnection(transport: transport) { method, payload in
             switch method {
@@ -113,7 +107,7 @@ actor PiRuntimeService {
                 do {
                     // The extension names the provider it needs; only this account's bridged providers get a token.
                     guard let providerID = payload.objectValue?["provider"]?.stringValue,
-                          let account = provider.providerAccount(piProviderID: providerID)
+                          let account = ProviderAccountDirectory.account(piProviderID: providerID)
                     else { throw AIConfigurationError.databricksProfileRequired }
                     return try await .string(tokenResolver(account))
                 } catch is CancellationError {
@@ -136,7 +130,7 @@ actor PiRuntimeService {
                 throw PiRuntimeError.invalidProtocolResponse
             }
         }
-        connections[ObjectIdentifier(connection)] = (connection, provider, options.mode)
+        connections[ObjectIdentifier(connection)] = (connection, options.mode)
         await connection.start()
         return connection
     }
@@ -155,7 +149,7 @@ actor PiRuntimeService {
         if interruptActiveOperations { await closeAll() }
         try await applyingContext?()
         // An activated account lists its gateways again.
-        gatewayRefreshes.removeAll()
+        gatewayRefresh = nil
         gatewayListings.removeAll()
         invalidateModels()
     }
@@ -166,37 +160,30 @@ actor PiRuntimeService {
     }
 
     /// Closes every running process, or only one account's (of one mode), such as after its credentials changed.
-    private func closeAll(of provider: CodexRuntimeProvider? = nil, mode: LaunchOptions.Mode? = nil) async {
-        let closing = connections.filter { (provider == nil || $0.value.provider == provider) && (mode == nil || $0.value.mode == mode) }
+    private func closeAll(mode: LaunchOptions.Mode? = nil) async {
+        let closing = connections.filter { mode == nil || $0.value.mode == mode }
         for (key, entry) in closing {
             connections.removeValue(forKey: key)
             await entry.connection.close()
         }
     }
 
-    func currentProvider(expected: CodexRuntimeProvider? = nil) async throws -> CodexRuntimeProvider {
+    /// Throws until the app's account has written Pi's configuration.
+    func requireConfigured() async throws {
         guard await configurationReadiness() else { throw AIConfigurationError.accountNotReady }
-        let provider = contextStore.provider
-        if let expected, expected != provider { throw AIConfigurationError.accountNotReady }
-        return provider
     }
 
-    nonisolated func isSelectedProvider(_ provider: CodexRuntimeProvider) -> Bool {
-        contextStore.provider == provider && contextStore.requestedProvider == provider && contextStore.isConfigured
+    nonisolated var isConfigured: Bool {
+        contextStore.isConfigured
     }
 
     // MARK: Models
 
     func models(forceRefresh: Bool = false) async throws -> [CodexModel] {
-        try await models(for: currentProvider(), forceRefresh: forceRefresh)
-    }
-
-    func models(for provider: CodexRuntimeProvider, forceRefresh: Bool) async throws -> [CodexModel] {
-        let models = try await listedModels(provider, forceRefresh: forceRefresh)
+        try await requireConfigured()
+        let models = try await listedModels(forceRefresh: forceRefresh)
         if models.isEmpty { throw PiRuntimeError.notLoggedIn }
-        guard contextStore.provider == provider else { throw AIConfigurationError.providerChanged(provider.displayName) }
-        guard provider == .local else { return models }
-        let choices = modelChoices(provider)
+        let choices = modelChoices()
         return models.filter {
             let providerID = String($0.model.prefix { $0 != "/" })
             return PiSubscription(rawValue: providerID) == nil || AgentModelSettings.isSubscriptionModelOn($0.model, choices: choices)
@@ -205,7 +192,7 @@ actor PiRuntimeService {
 
     /// Visibility is app-only: Pi's complete listing still supplies settings and sign-in status.
     func subscriptionModels(for subscription: PiSubscription) async throws -> [CodexModel] {
-        try await listedModels(.local, forceRefresh: false).filter { $0.model.hasPrefix("\(subscription.rawValue)/") }
+        try await listedModels(forceRefresh: false).filter { $0.model.hasPrefix("\(subscription.rawValue)/") }
     }
 
     func subscriptionModelChoicesDidChange() {
@@ -216,46 +203,45 @@ actor PiRuntimeService {
     /// that started before an invalidation (a sign-in, a model switch in Agents settings) is neither cached nor
     /// returned: its callers list again, so a slower old listing cannot replace a newer one. An empty list (nothing
     /// signed in, Server unreachable) is listed again next time.
-    private func listedModels(_ provider: CodexRuntimeProvider, forceRefresh: Bool) async throws -> [CodexModel] {
-        if !forceRefresh, let cached = cachedModels[provider] { return cached }
+    private func listedModels(forceRefresh: Bool) async throws -> [CodexModel] {
+        if !forceRefresh, let cachedModels { return cachedModels }
         let generation = modelGeneration
-        let load = modelLoads[provider]?.task ?? Task {
-            if let account = provider.providerAccount(piProviderID: "dahlia") { await self.refreshDahliaCatalog(provider, account: account) }
-            return try await self.availableModels(provider: provider)
+        let load = modelLoad?.task ?? Task {
+            if let account = ProviderAccountDirectory.account(piProviderID: "dahlia") { await self.refreshDahliaCatalog(account: account) }
+            return try await self.availableModels()
         }
-        // Only the open account lists its gateways; the Local Account's subscription status lists it while another is open.
-        if gatewayRefreshes[provider] == nil, contextStore.provider == provider {
-            gatewayRefreshes[provider] = Task { await self.refreshGateways(provider) }
+        if gatewayRefresh == nil {
+            gatewayRefresh = Task { await self.refreshGateways() }
         }
-        modelLoads[provider] = (load, (modelLoads[provider]?.waiters ?? 0) + 1)
+        modelLoad = (load, (modelLoad?.waiters ?? 0) + 1)
         let result = await withTaskCancellationHandler {
             await Result {
                 try await load.value
             }
         } onCancel: {
-            Task { await self.leaveModelLoad(load, provider: provider) }
+            Task { await self.leaveModelLoad(load) }
         }
-        if modelLoads[provider]?.task == load { modelLoads[provider] = nil }
-        if generation != modelGeneration, !Task.isCancelled, contextStore.provider == provider {
-            return try await listedModels(provider, forceRefresh: false)
+        if modelLoad?.task == load { modelLoad = nil }
+        if generation != modelGeneration, !Task.isCancelled {
+            return try await listedModels(forceRefresh: false)
         }
         let models = try result.get()
-        if generation == modelGeneration, !models.isEmpty { cachedModels[provider] = models }
+        if generation == modelGeneration, !models.isEmpty { cachedModels = models }
         return models
     }
 
-    private func leaveModelLoad(_ load: Task<[CodexModel], any Error>, provider: CodexRuntimeProvider) {
-        guard modelLoads[provider]?.task == load else { return }
-        modelLoads[provider]?.waiters -= 1
-        if modelLoads[provider]?.waiters == 0 {
-            modelLoads[provider] = nil
+    private func leaveModelLoad(_ load: Task<[CodexModel], any Error>) {
+        guard modelLoad?.task == load else { return }
+        modelLoad?.waiters -= 1
+        if modelLoad?.waiters == 0 {
+            modelLoad = nil
             load.cancel()
         }
     }
 
     private func invalidateModels() {
-        cachedModels.removeAll()
-        modelLoads.removeAll()
+        cachedModels = nil
+        modelLoad = nil
         modelGeneration += 1
         notifyModelsDidChange()
     }
@@ -266,8 +252,8 @@ actor PiRuntimeService {
     }
 
     /// Fetches the Dahlia Server's model list into `models.json`. Failure keeps the last list.
-    private func refreshDahliaCatalog(_ provider: CodexRuntimeProvider, account: ProviderAccount) async {
-        guard let agentURL = try? agentLocator.agentURL(for: provider),
+    private func refreshDahliaCatalog(account: ProviderAccount) async {
+        guard let agentURL = try? agentLocator.agentURL(),
               let baseURL = PiProviderConfiguration.dahliaBaseURL(agentURL: agentURL),
               let token = try? await tokenResolver(account),
               let catalog = try? await PiProviderConfiguration.fetchDahliaCatalog(baseURL: baseURL, token: token),
@@ -279,11 +265,11 @@ actor PiRuntimeService {
     // MARK: Unity AI Gateway models
 
     /// Classifiers are not chat models. Discover OpenJev through the account's gateway services instead.
-    func autoReviewTriage(for account: CodexRuntimeProvider, forceRefresh: Bool = false) async throws -> JSONValue? {
-        guard contextStore.provider == account else { throw CancellationError() }
-        let agentURL = try agentLocator.agentURL(for: account)
+    func autoReviewTriage(forceRefresh: Bool = false) async throws -> JSONValue? {
+        guard contextStore.isConfigured else { throw CancellationError() }
+        let agentURL = try agentLocator.agentURL()
         let cacheURL = agentURL.appending(path: "auto-review-triage.json")
-        let gateways = gateways(of: account, agentURL: agentURL)
+        let gateways = gateways(agentURL: agentURL)
         if !forceRefresh {
             guard let data = FileManager.default.contents(atPath: cacheURL.path),
                   let configuration = try? JSONDecoder().decode(JSONValue.self, from: data),
@@ -294,13 +280,13 @@ actor PiRuntimeService {
         for gateway in gateways {
             let services: [JSONValue]
             do {
-                services = try await modelServices(gateway, account: account)
+                services = try await modelServices(gateway)
             } catch is CancellationError {
                 throw CancellationError()
             } catch {
                 continue
             }
-            guard !Task.isCancelled, contextStore.provider == account else { throw CancellationError() }
+            guard !Task.isCancelled, contextStore.isConfigured else { throw CancellationError() }
             if let configuration = AgentAutoReviewSettings.triageConfiguration(services: services, gateway: gateway) {
                 try JSONEncoder().encode(configuration).write(to: cacheURL, options: .atomic)
                 return configuration
@@ -310,40 +296,40 @@ actor PiRuntimeService {
     }
 
     /// The account's gateways: its Databricks provider accounts, then the workspaces added before those were.
-    private func gateways(of account: CodexRuntimeProvider, agentURL _: URL) -> [AgentMCPProvider] {
-        let connections = account.providerAccounts.compactMap(\.databricksConnectionID)
+    private func gateways(agentURL _: URL) -> [AgentMCPProvider] {
+        let connections = ProviderAccountDirectory.accounts.compactMap(\.databricksConnectionID)
         let own = ProviderAccountDirectory.databricksConnections()
             .filter { connections.contains($0.id) }
             .map { AgentMCPProvider(workspaceURL: $0.workspaceURL) }
-        return own + gatewayWorkspaces(account).filter { added in !own.contains { $0.id == added.id } }
+        return own + gatewayWorkspaces().filter { added in !own.contains { $0.id == added.id } }
     }
 
     /// Lists each signed-in gateway's models in Unity Catalog in the background, once per activation or sign-in, so new
     /// ones appear without an app update. Model listings never wait for it: they read `models.json`, and when a gateway's
     /// answer changes `models.json`, model pickers reload. A gateway that does not answer keeps its saved list.
-    private func refreshGateways(_ account: CodexRuntimeProvider) async {
-        guard let agentURL = try? agentLocator.agentURL(for: account) else { return }
-        let signedIn = (try? signedInProviderIDs(account: account)) ?? []
-        let gateways = gateways(of: account, agentURL: agentURL).filter { $0.isAccount || signedIn.contains($0.id) }
+    private func refreshGateways() async {
+        guard let agentURL = try? agentLocator.agentURL() else { return }
+        let signedIn = (try? signedInProviderIDs()) ?? []
+        let gateways = gateways(agentURL: agentURL).filter { $0.isAccount || signedIn.contains($0.id) }
         await withTaskGroup { group in
             for gateway in gateways {
-                group.addTask { try? await self.listGateway(gateway, account: account, agentURL: agentURL) }
+                group.addTask { try? await self.listGateway(gateway, agentURL: agentURL) }
             }
         }
-        if (try? writeGateways(account)) == true { invalidateModels() }
+        if (try? writeGateways()) == true { invalidateModels() }
     }
 
     /// Lists a gateway's models and saves the answer, joining a listing of the same gateway that is already running.
-    private func listGateway(_ gateway: AgentMCPProvider, account: CodexRuntimeProvider, agentURL: URL) async throws {
-        let listing = gatewayListings[account]?[gateway.id] ?? Task {
-            try await self.modelServices(gateway, account: account)
+    private func listGateway(_ gateway: AgentMCPProvider, agentURL: URL) async throws {
+        let listing = gatewayListings[gateway.id] ?? Task {
+            try await self.modelServices(gateway)
         }
-        gatewayListings[account, default: [:]][gateway.id] = listing
+        gatewayListings[gateway.id] = listing
         let result = await Result {
             try await listing.value
         }
-        let isCurrent = gatewayListings[account]?[gateway.id] == listing
-        if isCurrent { gatewayListings[account]?[gateway.id] = nil }
+        let isCurrent = gatewayListings[gateway.id] == listing
+        if isCurrent { gatewayListings[gateway.id] = nil }
         // Every caller that joined sees the listing's failure, such as a sign-in the Models tab must report.
         let services = try result.get()
         // Only the current listing saves: not one superseded by an activation or sign-in, nor a joined caller again.
@@ -351,22 +337,21 @@ actor PiRuntimeService {
         try PiProviderConfiguration.saveGatewayServices(services, providerID: gateway.id, agentURL: agentURL)
     }
 
-    /// The background listing of the account's gateways in this activation, for tests to await.
-    func gatewayRefresh(for account: CodexRuntimeProvider) -> Task<Void, Never>? {
-        gatewayRefreshes[account]
+    /// The background listing of the gateways in this activation, for tests to await.
+    func currentGatewayRefresh() -> Task<Void, Never>? {
+        gatewayRefresh
     }
 
     /// A gateway's models for Agents settings, on and off, from its saved list; it is listed first when it has none yet
     /// or Agents settings retries. `models.json`, and so Pi, holds only those turned on.
     func gatewayModels(
-        for account: CodexRuntimeProvider,
         provider: AgentMCPProvider,
         forceRefresh: Bool
     ) async throws -> [PiProviderConfiguration.DatabricksModel] {
-        let agentURL = try agentLocator.agentURL(for: account)
+        let agentURL = try agentLocator.agentURL()
         if forceRefresh || PiProviderConfiguration.gatewayServices(agentURL: agentURL)[provider.id] == nil {
-            try await listGateway(provider, account: account, agentURL: agentURL)
-            if try writeGateways(account) { invalidateModels() }
+            try await listGateway(provider, agentURL: agentURL)
+            if try writeGateways() { invalidateModels() }
         }
         return try PiProviderConfiguration.databricksModels(
             workspaceURL: provider.workspaceURL,
@@ -378,8 +363,8 @@ actor PiRuntimeService {
 
     /// Applies a switch from Agents settings: `models.json` takes the account's choices from the saved lists, with no
     /// network, and model pickers reload.
-    func applyGatewayModelChoices(for account: CodexRuntimeProvider) throws {
-        try writeGateways(account)
+    func applyGatewayModelChoices() throws {
+        try writeGateways()
         invalidateModels()
     }
 
@@ -387,12 +372,12 @@ actor PiRuntimeService {
     /// answers), and drops workspaces no longer added. A gateway with every model off keeps its provider (the workspace
     /// and sign-in) without models. Returns whether a gateway's entry changed.
     @discardableResult
-    private func writeGateways(_ account: CodexRuntimeProvider) throws -> Bool {
-        let agentURL = try agentLocator.agentURL(for: account)
+    private func writeGateways() throws -> Bool {
+        let agentURL = try agentLocator.agentURL()
         let saved = PiProviderConfiguration.gatewayServices(agentURL: agentURL)
-        let choices = modelChoices(account)
+        let choices = modelChoices()
         var providers: [String: JSONValue] = [:]
-        for gateway in gateways(of: account, agentURL: agentURL) {
+        for gateway in gateways(agentURL: agentURL) {
             let models = try PiProviderConfiguration.databricksModels(
                 workspaceURL: gateway.workspaceURL,
                 services: saved[gateway.id],
@@ -417,14 +402,14 @@ actor PiRuntimeService {
         return changed
     }
 
-    private func availableModels(provider: CodexRuntimeProvider) async throws -> [CodexModel] {
-        let cwd = try agentLocator.agentURL(for: provider)
-        let connection = try await connect(.init(mode: .control, cwd: cwd, arguments: ["--no-session", "--no-tools"]), provider: provider)
+    private func availableModels() async throws -> [CodexModel] {
+        let cwd = try agentLocator.agentURL()
+        let connection = try await connect(.init(mode: .control, cwd: cwd, arguments: ["--no-session", "--no-tools"]))
         let result = await Result {
             try await connection.request("get_available_models", timeout: Self.controlTimeout)
         }
         await close(connection)
-        let providerIDs = Set(provider.piProviderIDs)
+        let providerIDs = Set(PiProviderConfiguration.providerIDs)
         let models = try (result.get().objectValue?["models"]?.arrayValue ?? [])
             .compactMap(\.objectValue)
             // A workspace added in Agents settings is named by its host, the only provider IDs with a dot.
@@ -439,10 +424,10 @@ actor PiRuntimeService {
     // MARK: Subscription sign-in (Local Account only)
 
     /// Ask Pi's resource loader, so validation, package filters, and name collisions match a new chat.
-    func skills(for provider: CodexRuntimeProvider) async throws -> [CodexChatSlashCommand] {
-        let cwd = try agentLocator.agentURL(for: provider)
+    func skills() async throws -> [CodexChatSlashCommand] {
+        let cwd = try agentLocator.agentURL()
         let arguments = ["--no-session", "--no-tools"] + PiBundle.presetSkillURLs().flatMap { ["--skill", $0.path] }
-        let connection = try await connect(.init(mode: .skills, cwd: cwd, arguments: arguments), provider: provider)
+        let connection = try await connect(.init(mode: .skills, cwd: cwd, arguments: arguments))
         let result = await Result {
             try await connection.request("get_commands", timeout: Self.controlTimeout)
         }
@@ -465,7 +450,6 @@ actor PiRuntimeService {
         try await login(
             command: "/dahlia-login \(subscription.rawValue)",
             notificationPrefix: "dahlia:",
-            account: .local,
             environment: ["DAHLIA_PI_DEVICE_ID": agentLocator.deviceID()],
             openURL: openURL
         )
@@ -473,7 +457,7 @@ actor PiRuntimeService {
     }
 
     func signOut(_ subscription: PiSubscription) async throws {
-        try await logout(providerID: subscription.rawValue, account: .local)
+        try await logout(providerID: subscription.rawValue)
         await credentialsDidChange()
     }
 
@@ -483,20 +467,18 @@ actor PiRuntimeService {
     /// `auth.json`. Open chats stop, so the next turn starts a process that connects with it.
     func signIn(
         _ mcpProvider: AgentMCPProvider,
-        account: CodexRuntimeProvider,
         openURL: @escaping @Sendable (URL) async -> Bool
     ) async throws {
         try await login(
             command: "/databricks-login \(mcpProvider.workspaceURL.absoluteString)",
             notificationPrefix: "databricks:",
-            account: account,
             environment: [:],
             openURL: openURL
         )
-        await closeAll(of: account, mode: .chat)
+        await closeAll(mode: .chat)
         // The workspace's models become available.
-        gatewayRefreshes[account] = nil
-        gatewayListings[account]?[mcpProvider.id] = nil
+        gatewayRefresh = nil
+        gatewayListings[mcpProvider.id] = nil
         invalidateModels()
     }
 
@@ -506,66 +488,61 @@ actor PiRuntimeService {
     func signInToService(
         _ service: String,
         of mcpProvider: AgentMCPProvider,
-        account: CodexRuntimeProvider,
         openURL: @escaping @Sendable (URL) async -> Bool
     ) async throws {
         try await login(
             command: "/databricks-connection-login \(mcpProvider.workspaceURL.absoluteString) \(service)",
             notificationPrefix: "databricks:connection_",
-            account: account,
             environment: [:],
             openURL: openURL
         )
-        await closeAll(of: account, mode: .chat)
+        await closeAll(mode: .chat)
     }
 
     /// Removes what Pi and the user kept signed in for an account that signs out: its `auth.json` and its secret
     /// environment variables. Its other files, such as chats, stay.
-    func removeCredentials(of account: CodexRuntimeProvider) async {
-        await closeAll(of: account)
-        if let url = try? agentLocator.agentURL(for: account).appending(path: "auth.json") {
+    func removeCredentials() async {
+        await closeAll()
+        if let url = try? agentLocator.agentURL().appending(path: "auth.json") {
             try? FileManager.default.removeItem(at: url)
         }
-        PiLaunchSettings.removeSecrets(accountKey: account.accountKey)
+        PiLaunchSettings.removeSecrets(accountKey: AppAccount.key)
     }
 
     /// Pi removes a credential without its provider registered, so the generic sign-out serves MCP sign-ins too.
     /// Open chats stop even if the sign-out fails, since the workspace's servers are no longer registered.
-    func signOut(_ mcpProvider: AgentMCPProvider, account: CodexRuntimeProvider) async throws {
+    func signOut(_ mcpProvider: AgentMCPProvider) async throws {
         do {
-            try await logout(providerID: mcpProvider.id, account: account)
+            try await logout(providerID: mcpProvider.id)
         } catch {
-            await closeAll(of: account, mode: .chat)
+            await closeAll(mode: .chat)
             invalidateModels()
             throw error
         }
-        await closeAll(of: account, mode: .chat)
+        await closeAll(mode: .chat)
         invalidateModels()
     }
 
     /// The visible Unity AI Gateway MCP services and descriptions. Pi lists them, so the token stays in Pi.
     func mcpServices(
         _ mcpProvider: AgentMCPProvider,
-        account: CodexRuntimeProvider,
         enabledServices: [String] = []
     ) async throws -> [AgentMCPService] {
         let enabled = enabledServices.isEmpty ? "" : " --enabled \(enabledServices.joined(separator: ","))"
         return try await listing(
             [AgentMCPService].self,
             command: "/databricks-mcp-services \(mcpProvider.listingArguments)\(enabled)",
-            notification: "databricks:mcp_services",
-            account: account
+            notification: "databricks:mcp_services"
         )
     }
 
     /// The Unity AI Gateway model services the sign-in can see, as Unity Catalog lists them. Pi lists them, so the
     /// token stays in Pi.
-    func modelServices(_ mcpProvider: AgentMCPProvider, account: CodexRuntimeProvider) async throws -> [JSONValue] {
+    func modelServices(_ mcpProvider: AgentMCPProvider) async throws -> [JSONValue] {
         try await listing(
             [JSONValue].self,
             command: "/databricks-model-services \(mcpProvider.listingArguments)",
-            notification: "databricks:model_services",
-            account: account
+            notification: "databricks:model_services"
         )
     }
 
@@ -574,11 +551,10 @@ actor PiRuntimeService {
     private func listing<Value: Decodable & Sendable>(
         _: Value.Type,
         command: String,
-        notification name: String,
-        account: CodexRuntimeProvider
+        notification name: String
     ) async throws -> Value {
-        let cwd = try agentLocator.agentURL(for: account)
-        let connection = try await connect(.init(mode: .control, cwd: cwd, arguments: ["--no-session", "--no-tools"]), provider: account)
+        let cwd = try agentLocator.agentURL()
+        let connection = try await connect(.init(mode: .control, cwd: cwd, arguments: ["--no-session", "--no-tools"]))
         let result = await Result {
             // The extension stops listing after 60 seconds.
             try await PiRPCConnection.withTimeout(.seconds(70)) {
@@ -607,8 +583,8 @@ actor PiRuntimeService {
     }
 
     /// Pi provider IDs with a stored credential in the account's `auth.json`. Only the keys are read.
-    func signedInProviderIDs(account: CodexRuntimeProvider) throws -> Set<String> {
-        let url = try agentLocator.agentURL(for: account).appending(path: "auth.json")
+    func signedInProviderIDs() throws -> Set<String> {
+        let url = try agentLocator.agentURL().appending(path: "auth.json")
         guard let data = FileManager.default.contents(atPath: url.path) else { return [] }
         return Set(((try? JSONDecoder().decode(JSONValue.self, from: data))?.objectValue ?? [:]).keys)
     }
@@ -618,14 +594,12 @@ actor PiRuntimeService {
     private func login(
         command: String,
         notificationPrefix prefix: String,
-        account: CodexRuntimeProvider,
         environment: [String: String],
         openURL: @escaping @Sendable (URL) async -> Bool
     ) async throws {
-        let cwd = try agentLocator.agentURL(for: account)
+        let cwd = try agentLocator.agentURL()
         let connection = try await connect(
-            .init(mode: .control, cwd: cwd, arguments: ["--no-session", "--no-tools"], environment: environment),
-            provider: account
+            .init(mode: .control, cwd: cwd, arguments: ["--no-session", "--no-tools"], environment: environment)
         )
         let result = await Result {
             try await PiRPCConnection.withTimeout(Self.loginTimeout) {
@@ -653,9 +627,9 @@ actor PiRuntimeService {
         try result.get()
     }
 
-    private func logout(providerID: String, account: CodexRuntimeProvider) async throws {
-        let cwd = try agentLocator.agentURL(for: account)
-        let connection = try await connect(.init(mode: .control, cwd: cwd, arguments: ["--no-session", "--no-tools"]), provider: account)
+    private func logout(providerID: String) async throws {
+        let cwd = try agentLocator.agentURL()
+        let connection = try await connect(.init(mode: .control, cwd: cwd, arguments: ["--no-session", "--no-tools"]))
         let result = await Result {
             try await connection.request("prompt", ["message": .string("/dahlia-logout \(providerID)")], timeout: Self.controlTimeout)
         }
@@ -665,7 +639,7 @@ actor PiRuntimeService {
 
     /// Running chats reopen with the new credentials on their next turn, and model pickers reload.
     private func credentialsDidChange() async {
-        await closeAll(of: .local)
+        await closeAll()
         invalidateModels()
     }
 
@@ -681,16 +655,14 @@ actor PiRuntimeService {
     /// Returns one JSON object that matches `request.outputSchema`. Refusals, Markdown, truncated, and empty
     /// replies fail instead of reaching a Markdown fallback.
     func generate(
-        _ request: CodexAppServerRequest,
-        expectedProvider: CodexRuntimeProvider? = nil
+        _ request: CodexAppServerRequest
     ) async throws -> String {
-        let provider = try await currentProvider(expected: expectedProvider)
         let model: CodexModel
         do {
-            model = try await Self.resolvedModel(for: request, in: models(for: provider, forceRefresh: false))
+            model = try await Self.resolvedModel(for: request, in: models(forceRefresh: false))
         } catch PiRuntimeError.requestedModelUnavailable {
             // The account may have gained the model since the catalog was cached.
-            model = try await Self.resolvedModel(for: request, in: models(for: provider, forceRefresh: true))
+            model = try await Self.resolvedModel(for: request, in: models(forceRefresh: true))
         }
         let inputs = model.supportsImages ? request.inputs : request.inputs.filter { !$0.isImageRelated }
         let workURL = FileManager.default.temporaryDirectory.appending(path: "dahlia-pi-\(UUID().uuidString)", directoryHint: .isDirectory)
@@ -714,8 +686,7 @@ actor PiRuntimeService {
         if Self.supportsStrictSchema(model: model.model) { environment["PI_OUTPUT_STRICT_SCHEMA"] = "1" }
 
         let connection = try await connect(
-            .init(mode: .summary, cwd: workURL, arguments: arguments, environment: environment),
-            provider: provider
+            .init(mode: .summary, cwd: workURL, arguments: arguments, environment: environment)
         )
         let prompt = Self.prompt(inputs)
         let result = await Result {
@@ -874,13 +845,12 @@ actor PiRuntimeService {
 
     nonisolated static func launchPi(
         _ options: LaunchOptions,
-        provider: CodexRuntimeProvider,
         agentURL: URL
     ) throws -> any CodexAppServerTransport {
-        let executableURL = try PiBundle.executableURL(for: provider)
+        let executableURL = try PiBundle.executableURL()
         let environment = try launchEnvironment(
-            options, provider: provider, agentURL: agentURL, executableURL: executableURL,
-            launch: PiLaunchSettings.load(for: provider)
+            options, agentURL: agentURL, executableURL: executableURL,
+            launch: PiLaunchSettings.load()
         )
         let arguments = try [
             "--mode", "rpc",
@@ -898,7 +868,6 @@ actor PiRuntimeService {
     /// Assemble and validate one environment snapshot immediately before starting the process.
     nonisolated static func launchEnvironment(
         _ options: LaunchOptions,
-        provider: CodexRuntimeProvider,
         agentURL: URL,
         executableURL: URL,
         launch: PiLaunchSettings,
@@ -909,7 +878,7 @@ actor PiRuntimeService {
             !key.hasSuffix("_API_KEY") && !key.hasSuffix("_AUTH_TOKEN") && !key.hasSuffix("_OAUTH_TOKEN") && !key.hasPrefix("PI_")
         }
         // The user's variables for this account come before what Dahlia sets, which overrides them.
-        environment.merge(launch.resolvedEnvironment(for: provider, secret: secret)) { $1 }
+        environment.merge(launch.resolvedEnvironment(secret: secret)) { $1 }
         environment["PATH"] = CommandLineToolLocator.searchPath(for: executableURL, environment: environment)
         environment["PI_CODING_AGENT_DIR"] = agentURL.path
         environment["PI_OFFLINE"] = "1"
@@ -917,7 +886,7 @@ actor PiRuntimeService {
         environment["PI_TELEMETRY"] = "0"
         environment["DAHLIA_PI_MODE"] = options.mode.rawValue
         environment["DAHLIA_PI_AUTO_REVIEW"] = AgentAutoReviewSettings.entryURL(agentURL: agentURL).path
-        environment["DAHLIA_PI_BRIDGED_PROVIDERS"] = provider.piBridgedProviderIDs.joined(separator: ",")
+        environment["DAHLIA_PI_BRIDGED_PROVIDERS"] = PiProviderConfiguration.bridgedProviderIDs.joined(separator: ",")
         environment.merge(options.environment) { $1 }
         environment["DAHLIA_PI_PROFILE"] = options.profile.rawValue
         try PiSandbox.validateSkillsSearchPath(agentURL: agentURL, searchPath: environment["PATH"] ?? "", cwd: options.cwd)

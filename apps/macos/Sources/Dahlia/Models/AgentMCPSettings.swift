@@ -76,12 +76,12 @@ struct AgentMCPSettings: Codable, Equatable, Sendable {
     /// Explicit full-name registrations remain visible even when disabled or absent from discovery.
     var manualServices: [String: [String]]?
 
-    static func defaultsKey(for account: CodexRuntimeProvider) -> String {
-        "agentMCPs.\(account.accountKey)"
+    static func defaultsKey() -> String {
+        "agentMCPs.\(AppAccount.key)"
     }
 
-    static func load(for account: CodexRuntimeProvider, defaults: UserDefaults = .standard) -> Self {
-        var settings = defaults.data(forKey: defaultsKey(for: account)).flatMap { try? JSONDecoder().decode(Self.self, from: $0) } ?? Self()
+    static func load(defaults: UserDefaults = .standard) -> Self {
+        var settings = defaults.data(forKey: defaultsKey()).flatMap { try? JSONDecoder().decode(Self.self, from: $0) } ?? Self()
         settings.servers.removeAll { $0.providerID == nil && $0.service == "lightpanda" }
         if settings.manualServices == nil {
             let manual = (settings.listedServices ?? [:]).mapValues { $0.filter { !$0.hasPrefix("system.ai.") } }
@@ -91,8 +91,8 @@ struct AgentMCPSettings: Codable, Equatable, Sendable {
         return settings
     }
 
-    func save(for account: CodexRuntimeProvider, defaults: UserDefaults = .standard) {
-        defaults.set(try? JSONEncoder().encode(self), forKey: Self.defaultsKey(for: account))
+    func save(defaults: UserDefaults = .standard) {
+        defaults.set(try? JSONEncoder().encode(self), forKey: Self.defaultsKey())
     }
 
     func provider(id: String) -> AgentMCPProvider? {

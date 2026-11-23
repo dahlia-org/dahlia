@@ -30,7 +30,7 @@ struct CodexChatScopeSnapshot: Equatable, Sendable {
             }
         }
         // Every workspace is the app's account's.
-        let workspaces = accountID == CodexRuntimeProvider.local.accountKey ? try WorkspaceRecord.fetchAll(db) : []
+        let workspaces = accountID == AppAccount.key ? try WorkspaceRecord.fetchAll(db) : []
         let projects = try workspaces.flatMap { try ProjectRecord.fetchResolvedAll(workspaceId: $0.id, in: db) }
         let projectsByPath = Dictionary(grouping: projects, by: \.path)
         let workspacesByName = Dictionary(grouping: workspaces, by: \.name)

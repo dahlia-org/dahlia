@@ -8,16 +8,16 @@ struct ProviderAccountsSettingsView: View {
     @State private var workspaceSettings = WorkspaceAISettingsModel.shared
     @ObservedObject private var googleCalendarStore = GoogleCalendarStore.shared
     @ObservedObject private var settings = AppSettings.shared
-    @State private var mcp = AgentMCPSettingsModel(account: .local)
-    @State private var subscriptions = PiSubscription.allCases.map { CodexAccountController(subscription: $0) }
+    @State private var mcp = AgentMCPSettingsModel()
+    @State private var subscriptions = PiSubscription.allCases.map { PiSubscriptionController(subscription: $0) }
     @State private var databricks = DatabricksAccountController()
     @State private var pendingRename: DatabricksConnection?
     @State private var pendingRemoval: AgentMCPProvider?
     @State private var proposedName = ""
     @State private var googleOAuthConsent = GoogleOAuthConsentState()
-    @State private var googleProvider = GoogleCalendarProvider.current(account: .local)
+    @State private var googleProvider = GoogleCalendarProvider.current()
 
-    private var signedInSubscriptions: [CodexAccountController] {
+    private var signedInSubscriptions: [PiSubscriptionController] {
         subscriptions.filter { $0.accountStatus?.isAuthenticated == true }
     }
 
@@ -27,6 +27,66 @@ struct ProviderAccountsSettingsView: View {
     }
 
     var body: some View {
+        form
+            .alert(
+                L10n.renameProviderAccount,
+                isPresented: Binding(get: { pendingRename != nil }, set: { if !$0 { pendingRename = nil } })
+            ) {
+                TextField(L10n.name, text: $proposedName)
+                Button(L10n.save) {
+                    guard let connection = pendingRename else { return }
+                    pendingRename = nil
+                    let name = proposedName
+                    Task { await workspaceSettings.renameDatabricksConnection(connection.id, to: name) }
+                }
+                Button(L10n.cancel, role: .cancel) { pendingRename = nil }
+            } message: {
+                Text(L10n.renameProviderAccountDescription)
+            }
+            .confirmationDialog(
+                pendingRemoval.map { L10n.mcpRemoveWorkspace($0.host) } ?? "",
+                isPresented: Binding(get: { pendingRemoval != nil }, set: { if !$0 { pendingRemoval = nil } }),
+                titleVisibility: .visible
+            ) {
+                Button(L10n.delete, role: .destructive) {
+                    guard let provider = pendingRemoval else { return }
+                    pendingRemoval = nil
+                    Task { await mcp.remove(provider) }
+                }
+                Button(L10n.cancel, role: .cancel) { pendingRemoval = nil }
+            } message: {
+                Text(L10n.mcpRemoveWorkspaceDescription)
+            }
+            .sheet(item: $googleOAuthConsent.pendingDisclosure, onDismiss: connectGoogleIfConsented) { disclosure in
+                GoogleOAuthConsentSheet(disclosure: disclosure) {
+                    googleOAuthConsent.grantConsent()
+                }
+            }
+            .task {
+                mcp.loadAccountProviders()
+                for controller in subscriptions {
+                    await controller.activate()
+                }
+            }
+            // A sign-in made elsewhere (the add modal or the setup tour) updates the subscriptions too.
+            .onReceive(NotificationCenter.default.publisher(for: PiRuntimeService.modelsDidChange).receive(on: RunLoop.main)) { _ in
+                Task {
+                    for controller in subscriptions where !controller.isBusy {
+                        await controller.activate()
+                    }
+                }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: GoogleCalendarProvider.didChange)) { _ in
+                googleProvider = GoogleCalendarProvider.current()
+            }
+            .onChange(of: workspaceSettings.databricksConnections, initial: true) { _, _ in
+                googleProvider = GoogleCalendarProvider.current()
+                mcp.loadAccountProviders()
+            }
+            .onDisappear { navigation.dismissSettingsModal() }
+    }
+
+    private var form: some View {
         Form {
             Section {
                 ForEach(signedInSubscriptions, id: \.subscription) { controller in
@@ -54,62 +114,6 @@ struct ProviderAccountsSettingsView: View {
         }
         .formStyle(.grouped)
         .font(.dahliaBody)
-        .alert(
-            L10n.renameProviderAccount,
-            isPresented: Binding(get: { pendingRename != nil }, set: { if !$0 { pendingRename = nil } })
-        ) {
-            TextField(L10n.name, text: $proposedName)
-            Button(L10n.save) {
-                guard let connection = pendingRename else { return }
-                pendingRename = nil
-                let name = proposedName
-                Task { await workspaceSettings.renameDatabricksConnection(connection.id, to: name) }
-            }
-            Button(L10n.cancel, role: .cancel) { pendingRename = nil }
-        } message: {
-            Text(L10n.renameProviderAccountDescription)
-        }
-        .confirmationDialog(
-            pendingRemoval.map { L10n.mcpRemoveWorkspace($0.host) } ?? "",
-            isPresented: Binding(get: { pendingRemoval != nil }, set: { if !$0 { pendingRemoval = nil } }),
-            titleVisibility: .visible
-        ) {
-            Button(L10n.delete, role: .destructive) {
-                guard let provider = pendingRemoval else { return }
-                pendingRemoval = nil
-                Task { await mcp.remove(provider) }
-            }
-            Button(L10n.cancel, role: .cancel) { pendingRemoval = nil }
-        } message: {
-            Text(L10n.mcpRemoveWorkspaceDescription)
-        }
-        .sheet(item: $googleOAuthConsent.pendingDisclosure, onDismiss: connectGoogleIfConsented) { disclosure in
-            GoogleOAuthConsentSheet(disclosure: disclosure) {
-                googleOAuthConsent.grantConsent()
-            }
-        }
-        .task {
-            mcp.loadAccountProviders()
-            for controller in subscriptions {
-                await controller.activate()
-            }
-        }
-        // A sign-in made elsewhere (the add modal or the setup tour) updates the subscriptions too.
-        .onReceive(NotificationCenter.default.publisher(for: PiRuntimeService.modelsDidChange).receive(on: RunLoop.main)) { _ in
-            Task {
-                for controller in subscriptions where !controller.isBusy {
-                    await controller.activate()
-                }
-            }
-        }
-        .onReceive(NotificationCenter.default.publisher(for: GoogleCalendarProvider.didChange)) { _ in
-            googleProvider = GoogleCalendarProvider.current(account: .local)
-        }
-        .onChange(of: workspaceSettings.databricksConnections, initial: true) { _, _ in
-            googleProvider = GoogleCalendarProvider.current(account: .local)
-            mcp.loadAccountProviders()
-        }
-        .onDisappear { navigation.dismissSettingsModal() }
     }
 
     private var errors: [String] {
@@ -119,7 +123,7 @@ struct ProviderAccountsSettingsView: View {
 
     // MARK: Rows
 
-    private func subscriptionRow(_ controller: CodexAccountController) -> some View {
+    private func subscriptionRow(_ controller: PiSubscriptionController) -> some View {
         AgentProviderRow(title: controller.subscription.displayName, icon: controller.subscription.logo, uses: [L10n.agentProviderModels]) {
             if controller.isSigningOut {
                 ProgressView().controlSize(.small)

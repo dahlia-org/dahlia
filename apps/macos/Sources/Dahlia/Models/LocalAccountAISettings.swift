@@ -12,10 +12,6 @@ struct LocalAccountAISettings: Equatable, Sendable {
     var provider: AIAccountProvider
     var databricksProfile: String
 
-    var runtimeProvider: CodexRuntimeProvider {
-        .local
-    }
-
     init(provider: AIAccountProvider, databricksProfile: String) {
         self.provider = provider
         self.databricksProfile = databricksProfile

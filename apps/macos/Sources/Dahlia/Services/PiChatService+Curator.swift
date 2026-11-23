@@ -10,8 +10,8 @@ extension PiChatService {
 
     /// Housekeeping calls this hourly. Upstream `maybe_run_curator` plus the Dahlia recording and lane gates.
     func maybeRunCurator() async {
-        guard let provider = try? await runtime.currentProvider() else { return }
-        let account = provider.accountKey
+        guard await (try? runtime.requireConfigured()) != nil else { return }
+        let account = AppAccount.key
         guard SkillCuratorSettings.enabled(account), curatorTask == nil, reviewTask == nil, !AgentBackgroundActivity.isRecording,
               startingTurns.isEmpty, !sessions.values.contains(where: { $0.turn != nil }) else { return }
         do {
@@ -37,25 +37,25 @@ extension PiChatService {
             else { return }
             guard curatorTask == nil, reviewTask == nil, startingTurns.isEmpty,
                   !sessions.values.contains(where: { $0.turn != nil }) else { return }
-            curatorTask = Task { await self.runCurator(provider: provider) }
+            curatorTask = Task { await self.runCurator() }
         } catch {
             ErrorReportingService.capture(error, context: ["source": "skillCurator"])
         }
     }
 
-    func runCurator(provider: CodexRuntimeProvider) async {
+    func runCurator() async {
         defer {
             curatorTask = nil
             activeCurator = nil
             curatorReport = nil
         }
-        let account = provider.accountKey
+        let account = AppAccount.key
         guard startingTurns.isEmpty, !sessions.values.contains(where: { $0.turn != nil }) else { return }
         let generation = curatorActivityGeneration.withLock { $0 }
         let runtime = runtime
         let activityGeneration = curatorActivityGeneration
         let authorize: @Sendable () throws -> Void = {
-            guard activityGeneration.withLock({ $0 == generation }), runtime.isSelectedProvider(provider),
+            guard activityGeneration.withLock({ $0 == generation }), runtime.isConfigured,
                   SkillCuratorSettings.enabled(account), !AgentBackgroundActivity.isRecording
             else { throw CancellationError() }
         }
@@ -72,9 +72,9 @@ extension PiChatService {
                 try started.insert($0)
             }
             let service = try skillService()
-            try await service.setCatalog(runtime.skills(for: provider), account: account)
+            try await service.setCatalog(runtime.skills(), account: account)
             // pi-hermes-skills applies the transitions through `skillStore` and reports the counts and candidates.
-            let process = try await connectCurator(runID: id, provider: provider, authorize: authorize)
+            let process = try await connectCurator(runID: id, authorize: authorize)
             connection = process
             _ = try await process.request("prompt", PiRuntimeService.prompt([.text("/hermes-curator")]))
             try authorize()
@@ -87,7 +87,7 @@ extension PiChatService {
             if !SkillCuratorSettings.consolidate(account) {
                 run.summary += "\n" + L10n.agentCuratorConsolidationOff
             } else if let candidates = report["candidates"]?.stringValue {
-                let final = try await consolidate(candidates: candidates, runID: id, connection: process, provider: provider, authorize: authorize)
+                let final = try await consolidate(candidates: candidates, runID: id, connection: process, authorize: authorize)
                 run.summary += "\n" + (final.isEmpty ? L10n.agentCuratorNoChange : String(final.prefix(240)) + (final.count > 240 ? "…" : ""))
                 run.report = String(final.prefix(20000))
             } else {
@@ -111,25 +111,23 @@ extension PiChatService {
     /// A process with only the skill tools, the account's Curator settings, and Hermes's Curator role.
     private func connectCurator(
         runID: String,
-        provider: CodexRuntimeProvider,
         authorize: @escaping @Sendable () throws -> Void
     ) async throws -> PiRPCConnection {
         try authorize()
-        let account = provider.accountKey
+        let account = AppAccount.key
         let settings = try HermesLearning.json([
             "staleAfterDays": SkillCuratorSettings.staleAfterDays, "archiveAfterDays": SkillCuratorSettings.archiveAfterDays(account),
         ])
         let connection = try await runtime.connect(
             .init(
-                mode: .chat, cwd: agentLocator.agentURL(for: provider),
+                mode: .chat, cwd: agentLocator.agentURL(),
                 arguments: ["--no-session", "--system-prompt", Self.systemPrompt, "--tools", "skills_list,skill_view,skill_manage"],
                 environment: ["DAHLIA_PI_MEMORY_ENABLED": "0", "DAHLIA_PI_CURATOR": "1", "DAHLIA_PI_CURATOR_SETTINGS": settings],
                 profile: .review
-            ),
-            provider: provider
+            )
         ) { [weak self] method, payload in
             guard let self else { throw CancellationError() }
-            return try await self.curatorTool(method, payload: payload, runID: runID, provider: provider, authorize: authorize)
+            return try await self.curatorTool(method, payload: payload, runID: runID, authorize: authorize)
         }
         activeCurator = (runID, account, connection, consolidating: false)
         return connection
@@ -140,11 +138,10 @@ extension PiChatService {
         candidates: String,
         runID: String,
         connection: PiRPCConnection,
-        provider: CodexRuntimeProvider,
         authorize: @escaping @Sendable () throws -> Void
     ) async throws -> String {
         activeCurator?.consolidating = true
-        let account = provider.accountKey
+        let account = AppAccount.key
         // Reviews can take several minutes upstream; a sweep of 100 calls gets half an hour.
         let timeout = Task { try? await Task.sleep(for: .seconds(1800))
             if !Task.isCancelled { await self.runtime.close(connection) }
@@ -162,14 +159,14 @@ extension PiChatService {
             _ = try await connection.request("set_thinking_level", ["level": .string(PiRuntimeService.thinkingLevel(effort))])
         }
         try authorize()
-        guard curatorAllowed(runID: runID, provider: provider) else { throw CancellationError() }
+        guard curatorAllowed(runID: runID) else { throw CancellationError() }
         let prompt = (HermesLearning.prompts["curator_review_prompt"] ?? "") + "\n\n" + candidates
         _ = try await connection.request("prompt", PiRuntimeService.prompt([.text(prompt)]))
         var responses = 0
         var lastMessage: [String: JSONValue]?
         for try await event in connection.events {
             try authorize()
-            guard curatorAllowed(runID: runID, provider: provider) else { throw CancellationError() }
+            guard curatorAllowed(runID: runID) else { throw CancellationError() }
             let object = event.objectValue ?? [:]
             if object["type"]?.stringValue == "message_end", let message = object["message"]?.objectValue,
                message["role"]?.stringValue == "assistant" {
@@ -188,27 +185,26 @@ extension PiChatService {
     }
 
     /// Transitions need only an enabled Curator; consolidation also needs its switch.
-    private func curatorActive(runID: String, provider: CodexRuntimeProvider) -> Bool {
-        activeCurator?.id == runID && SkillCuratorSettings.enabled(provider.accountKey) && !AgentBackgroundActivity.isRecording
-            && runtime.isSelectedProvider(provider)
+    private func curatorActive(runID: String) -> Bool {
+        activeCurator?.id == runID && SkillCuratorSettings.enabled(AppAccount.key) && !AgentBackgroundActivity.isRecording
+            && runtime.isConfigured
     }
 
-    private func curatorAllowed(runID: String, provider: CodexRuntimeProvider) -> Bool {
-        curatorActive(runID: runID, provider: provider) && SkillCuratorSettings.consolidate(provider.accountKey)
+    private func curatorAllowed(runID: String) -> Bool {
+        curatorActive(runID: runID) && SkillCuratorSettings.consolidate(AppAccount.key)
     }
 
     private func curatorTool(
         _ method: String,
         payload: JSONValue,
         runID: String,
-        provider: CodexRuntimeProvider,
         authorize: @escaping @Sendable () throws -> Void
     ) async throws -> JSONValue {
-        guard curatorActive(runID: runID, provider: provider) else { throw CancellationError() }
+        guard curatorActive(runID: runID) else { throw CancellationError() }
         let service = try skillService()
         let runtime = runtime
-        let account = provider.accountKey
-        let root = try skillsRoot(provider)
+        let account = AppAccount.key
+        let root = try skillsRoot()
         let running: @Sendable (Database) throws -> Void = { db in
             try authorize()
             try Task.checkCancellation()
@@ -237,9 +233,9 @@ extension PiChatService {
                 throw HermesLearning.failure("Unknown skill store action.")
             }
         default:
-            guard curatorAllowed(runID: runID, provider: provider), method != "memory", PiExecutionProfile.review.allows(method)
+            guard curatorAllowed(runID: runID), method != "memory", PiExecutionProfile.review.allows(method)
             else { throw CancellationError() }
-            try await service.setCatalog(runtime.skills(for: provider), account: account)
+            try await service.setCatalog(runtime.skills(), account: account)
             return try await service.execute(
                 method, payload: payload, account: account, root: root, thread: nil, review: runID, curator: true
             ) { db in
@@ -256,9 +252,9 @@ extension PiChatService {
     }
 
     /// pi-hermes-skills reports a `/skill:` command or a read of a skill file Pi listed, which upstream counts as use.
-    func recordSkillUse(_ payload: JSONValue, provider: CodexRuntimeProvider) async {
+    func recordSkillUse(_ payload: JSONValue) async {
         guard let name = payload.objectValue?["name"]?.stringValue, payload.objectValue?["kind"]?.stringValue == "use",
               AgentSkillService.validName(name), let service = try? skillService() else { return }
-        try? await service.recordUsage(name: name, account: provider.accountKey, columns: ["useCount"])
+        try? await service.recordUsage(name: name, account: AppAccount.key, columns: ["useCount"])
     }
 }

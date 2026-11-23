@@ -15,9 +15,9 @@
                 AgentMCPServer(id: .v7(), name: "github", providerID: "workspace.example.com", service: "system.ai.github"),
                 AgentMCPServer(id: .v7(), name: "slack", providerID: "workspace.example.com", service: "system.ai.slack"),
             ])
-            settings.save(for: .local, defaults: defaults)
+            settings.save(defaults: defaults)
             let navigation = MainWindowNavigation(openMainWindow: {}, initialSettingsCategory: .general, settingsDefaults: defaults)
-            let session = CodexChatSessionModel(service: TestCodexChatService(mode: .complete), runtimeProviderResolver: { .local })
+            let session = CodexChatSessionModel(service: TestCodexChatService(mode: .complete))
             let composer = CodexChatComposer(session: session, configurationPresentation: nil, mcpSettingsDefaults: defaults)
             let measurement = NSHostingView(rootView: composer.environment(navigation))
             measurement.frame.size.width = size.width

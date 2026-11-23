@@ -14,7 +14,7 @@ import Foundation
             let transport = URLSession(configuration: configuration)
             defer { transport.invalidateAndCancel() }
             let signIn = BackupReadSignIn()
-            let model = GoogleDriveBackupModel(signIn: signIn, client: GoogleDriveBackupClient(urlSession: transport), openAccount: { .local })
+            let model = GoogleDriveBackupModel(signIn: signIn, client: GoogleDriveBackupClient(urlSession: transport))
             await model.refresh()
             #expect(model.isAuthorized)
             #expect(model.files.count == 2)

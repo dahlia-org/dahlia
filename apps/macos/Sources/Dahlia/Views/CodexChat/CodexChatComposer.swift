@@ -205,7 +205,7 @@ struct CodexChatComposer: View {
             dismissAddPanel()
             return
         }
-        mcpSettings = AgentMCPSettings.load(for: session.runtimeProvider, defaults: mcpSettingsDefaults)
+        mcpSettings = AgentMCPSettings.load(defaults: mcpSettingsDefaults)
         meetingQuery = ""
         highlightedMeetingID = nil
         consumesTrailingMentionOnSelection = false

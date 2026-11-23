@@ -129,7 +129,7 @@ struct TestPiRuntime {
     let service: PiRuntimeService
     let launches: LaunchLog
     let rootURL: URL
-    let contextStore: CodexRuntimeContextStore
+    let contextStore: PiRuntimeContextStore
 
     final class LaunchLog: @unchecked Sendable {
         // Guarded by `lock`; written by the service's launcher and read by tests after awaiting it.
@@ -146,9 +146,8 @@ struct TestPiRuntime {
     }
 
     init(
-        provider: CodexRuntimeProvider = .local,
         tokenResolver: @escaping PiRuntimeService.TokenResolver = { _ in "test-token" },
-        modelChoices: @escaping @Sendable (CodexRuntimeProvider) -> [String: Bool] = { _ in
+        modelChoices: @escaping @Sendable () -> [String: Bool] = {
             // Runtime fixtures explicitly enable their synthetic and legacy models, like a user's saved choices.
             Dictionary(uniqueKeysWithValues: [
                 "openai/gpt-test", "openai/gpt-new", "openai/gpt", "openai/new", "openai/old",
@@ -157,13 +156,13 @@ struct TestPiRuntime {
                 "openai/gpt-5.6-luna",
             ].map { ($0, true) })
         },
-        gatewayWorkspaces: @escaping @Sendable (CodexRuntimeProvider) -> [AgentMCPProvider] = { _ in [] },
+        gatewayWorkspaces: @escaping @Sendable () -> [AgentMCPProvider] = { [] },
         transport: @escaping @Sendable (PiRuntimeService.LaunchOptions) -> TestPiTransport
     ) {
         let rootURL = FileManager.default.temporaryDirectory
             .appending(path: "dahlia-pi-test-\(UUID().uuidString)", directoryHint: .isDirectory)
-        let contextStore = CodexRuntimeContextStore()
-        contextStore.apply(provider)
+        let contextStore = PiRuntimeContextStore()
+        contextStore.apply()
         let launches = LaunchLog()
         self.rootURL = rootURL
         self.launches = launches
@@ -172,7 +171,7 @@ struct TestPiRuntime {
             agentLocator: PiAgentDirectoryLocator(applicationSupportURL: rootURL),
             contextStore: contextStore,
             configurationReadiness: { true },
-            launcher: { options, _, _ in
+            launcher: { options, _ in
                 launches.append(options)
                 // Fake Pi creates the resume header that a later process needs, without touching user history.
                 if let sessionIndex = options.arguments.firstIndex(of: "--session-id"),
@@ -244,21 +243,19 @@ final class TestPiTransportLog: @unchecked Sendable {
 extension TestPiRuntime {
     /// Lists `models` and answers every structured generation with `reply`.
     static func generating(
-        provider: CodexRuntimeProvider = .local,
         models: [JSONValue],
         reply: String,
         log: TestPiTransportLog = TestPiTransportLog()
     ) -> TestPiRuntime {
-        generating(provider: provider, models: models, replyForModel: { _ in reply }, log: log)
+        generating(models: models, replyForModel: { _ in reply }, log: log)
     }
 
     static func generating(
-        provider: CodexRuntimeProvider = .local,
         models: [JSONValue],
         replyForModel: @escaping @Sendable (String?) -> String,
         log: TestPiTransportLog = TestPiTransportLog()
     ) -> TestPiRuntime {
-        TestPiRuntime(provider: provider) { options in
+        TestPiRuntime { options in
             let model = options.arguments.firstIndex(of: "--model").map { options.arguments[$0 + 1] }
             let transport = if options.mode == .control {
                 TestPiTransport(reply: modelsReply(models))

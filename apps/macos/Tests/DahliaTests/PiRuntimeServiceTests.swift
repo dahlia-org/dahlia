@@ -18,19 +18,19 @@ import os
                 "anthropic/claude-sonnet-4-6", "openai/gpt-6-sol",
             ] + gatewayReferences
             let choices = OSAllocatedUnfairLock(initialState: [String: Bool]())
-            let pi = TestPiRuntime(modelChoices: { _ in choices.withLock { $0 } }) { _ in
+            let pi = TestPiRuntime(modelChoices: { choices.withLock { $0 } }) { _ in
                 TestPiTransport(reply: TestPiRuntime.modelsReply(references.map {
                     let parts = $0.split(separator: "/", maxSplits: 1).map(String.init)
                     return TestPiTransport.model(provider: parts[0], id: parts[1])
                 }))
             }
             defer { try? FileManager.default.removeItem(at: pi.rootURL) }
-            let agentURL = try PiAgentDirectoryLocator(applicationSupportURL: pi.rootURL).agentURL(for: .local)
+            let agentURL = try PiAgentDirectoryLocator(applicationSupportURL: pi.rootURL).agentURL()
             let providers: [String: JSONValue] = ["preserved": .object(["models": .array([])])]
             try PiProviderConfiguration.write(providers, agentURL: agentURL)
             // Finish the initial gateway refresh before counting Pi listings.
             _ = try await pi.service.models()
-            await pi.service.gatewayRefresh(for: .local)?.value
+            await pi.service.currentGatewayRefresh()?.value
 
             #expect(try await pi.service.models().map(\.model) == Array(references.prefix(6)) + gatewayReferences)
             let listingCount = pi.launches.all.count
@@ -59,7 +59,7 @@ import os
         func triageDiscoveryDoesNotUseStaleServicesWhenRefreshFails() async throws {
             let gateway = try AgentMCPProvider(workspaceURL: #require(URL(string: "https://example.cloud.databricks.com")))
             let failListing = OSAllocatedUnfairLock(initialState: false)
-            let pi = TestPiRuntime(gatewayWorkspaces: { _ in [gateway] }) { _ in
+            let pi = TestPiRuntime(gatewayWorkspaces: { [gateway] }) { _ in
                 TestPiTransport { command in
                     guard let id = command["id"] else { return [] }
                     guard command["message"]?.stringValue?.hasPrefix("/databricks-model-services") == true else {
@@ -73,23 +73,23 @@ import os
                 }
             }
             defer { try? FileManager.default.removeItem(at: pi.rootURL) }
-            #expect(try await pi.service.autoReviewTriage(for: .local) == nil)
+            #expect(try await pi.service.autoReviewTriage() == nil)
             #expect(pi.launches.all.isEmpty)
-            #expect(try await pi.service.autoReviewTriage(for: .local, forceRefresh: true) != nil)
+            #expect(try await pi.service.autoReviewTriage(forceRefresh: true) != nil)
             let launches = pi.launches.all.count
-            #expect(try await pi.service.autoReviewTriage(for: .local) != nil)
+            #expect(try await pi.service.autoReviewTriage() != nil)
             #expect(pi.launches.all.count == launches)
             failListing.withLock { $0 = true }
-            #expect(try await pi.service.autoReviewTriage(for: .local, forceRefresh: true) == nil)
+            #expect(try await pi.service.autoReviewTriage(forceRefresh: true) == nil)
             failListing.withLock { $0 = false }
-            #expect(try await pi.service.autoReviewTriage(for: .local, forceRefresh: true) != nil)
+            #expect(try await pi.service.autoReviewTriage(forceRefresh: true) != nil)
         }
 
         @Test
         func triageIsUnavailableWithoutAConnectedGateway() async throws {
             let pi = TestPiRuntime { _ in TestPiTransport() }
             defer { try? FileManager.default.removeItem(at: pi.rootURL) }
-            #expect(try await pi.service.autoReviewTriage(for: .local, forceRefresh: true) == nil)
+            #expect(try await pi.service.autoReviewTriage(forceRefresh: true) == nil)
             #expect(pi.launches.all.isEmpty)
         }
 
@@ -110,7 +110,7 @@ import os
             }
             let pi = TestPiRuntime { _ in transport }
             defer { try? FileManager.default.removeItem(at: pi.rootURL) }
-            let skills = try await pi.service.skills(for: .local)
+            let skills = try await pi.service.skills()
             #expect(skills.map(\.name) == ["skill:learned"])
             #expect(skills.first?.sourceInfo?.path == "/account/skills/learned/SKILL.md")
             let launch = try #require(pi.launches.all.first)
@@ -127,12 +127,11 @@ import os
         private static let schema = Data(#"{"type":"object","properties":{"a":{"type":"string"}},"required":["a"]}"#.utf8)
 
         private static func runtime(
-            provider: CodexRuntimeProvider = .local,
             models: [JSONValue] = [TestPiTransport.model(provider: "openai", id: "gpt-test")],
             summary: [JSONValue],
             transports: TestPiTransportLog = TestPiTransportLog()
         ) -> TestPiRuntime {
-            TestPiRuntime(provider: provider) { options in
+            TestPiRuntime { options in
                 let reply: TestPiTransport.Reply = { command in
                     guard let id = command["id"] else { return [] }
                     return [TestPiTransport.response(id: id)] + (command["type"]?.stringValue == "prompt" ? summary : [])
@@ -213,13 +212,13 @@ import os
         func failedTokenRefreshSurfacesItsErrorInsteadOfTheProviderFailure() async throws {
             // The bridge answers a token request on the account's connection; the error waits for the next turn to read.
             let log = TestPiTransportLog()
-            let pi = TestPiRuntime(provider: .local, tokenResolver: { _ in throw TokenFailure() }) { _ in
+            let pi = TestPiRuntime(tokenResolver: { _ in throw TokenFailure() }) { _ in
                 let transport = TestPiTransport()
                 log.append(transport)
                 return transport
             }
             defer { try? FileManager.default.removeItem(at: pi.rootURL) }
-            let connection = try await pi.service.connect(.init(mode: .summary, cwd: FileManager.default.temporaryDirectory), provider: .local)
+            let connection = try await pi.service.connect(.init(mode: .summary, cwd: FileManager.default.temporaryDirectory))
             let transport = await log.transport(at: 0)
             await transport.emit(TestPiTransport.bridgeRequest(
                 id: "ui-1", method: "token", payload: .object(["provider": .string("own.cloud.databricks.com")])
@@ -246,7 +245,7 @@ import os
         func tokenRequestsResolveOnlyTheNamedBridgedProvider(providerID: String, bridged: Bool) async throws {
             let log = TestPiTransportLog()
             let resolved = ResolvedAccounts()
-            let pi = TestPiRuntime(provider: .local, tokenResolver: { account in
+            let pi = TestPiRuntime(tokenResolver: { account in
                 resolved.append(account)
                 throw TokenFailure()
             }) { _ in
@@ -255,7 +254,7 @@ import os
                 return transport
             }
             defer { try? FileManager.default.removeItem(at: pi.rootURL) }
-            let connection = try await pi.service.connect(.init(mode: .summary, cwd: FileManager.default.temporaryDirectory), provider: .local)
+            let connection = try await pi.service.connect(.init(mode: .summary, cwd: FileManager.default.temporaryDirectory))
             let transport = await log.transport(at: 0)
             await transport.emit(TestPiTransport.bridgeRequest(id: "ui-1", method: "token", payload: .object(["provider": .string(providerID)])))
 
@@ -277,7 +276,6 @@ import os
         func textOnlyModelOmitsImagesAndClaudeGetsStrictSchema() async throws {
             let transports = TestPiTransportLog()
             let pi = Self.runtime(
-                provider: .local,
                 models: [TestPiTransport.model(provider: "anthropic", id: "claude-test", input: ["text"])],
                 summary: [TestPiTransport.assistantEnd(#"{"a":"b"}"#), TestPiTransport.settled()],
                 transports: transports
@@ -299,7 +297,7 @@ import os
         func addedWorkspaceWithEveryModelOffLeavesPi() async throws {
             let workspace = try AgentMCPProvider(workspaceURL: #require(URL(string: "https://dbc-1.cloud.databricks.com")))
             let choices = OSAllocatedUnfairLock(initialState: [String: Bool]())
-            let pi = TestPiRuntime(modelChoices: { _ in choices.withLock { $0 } }, gatewayWorkspaces: { _ in [workspace] }) { _ in
+            let pi = TestPiRuntime(modelChoices: { choices.withLock { $0 } }, gatewayWorkspaces: { [workspace] }) { _ in
                 TestPiTransport { command in
                     guard let id = command["id"] else { return [] }
                     guard command["message"]?.stringValue?.hasPrefix("/databricks-model-services") == true else {
@@ -310,7 +308,7 @@ import os
                     return [TestPiTransport.response(id: id), TestPiTransport.notify("databricks:model_services \(services)")]
                 }
             }
-            let agentURL = try PiAgentDirectoryLocator(applicationSupportURL: pi.rootURL).agentURL(for: .local)
+            let agentURL = try PiAgentDirectoryLocator(applicationSupportURL: pi.rootURL).agentURL()
             defer { try? FileManager.default.removeItem(at: pi.rootURL) }
             let listed = {
                 let data = try Data(contentsOf: agentURL.appending(path: "models.json"))
@@ -319,15 +317,15 @@ import os
             }
 
             // An added workspace starts with every model off.
-            _ = try await pi.service.gatewayModels(for: .local, provider: workspace, forceRefresh: true)
+            _ = try await pi.service.gatewayModels(provider: workspace, forceRefresh: true)
             #expect(try listed().isEmpty)
             choices.withLock { $0["\(workspace.id)/system.ai.gemini-3-8-flash"] = true }
-            try await pi.service.applyGatewayModelChoices(for: .local)
+            try await pi.service.applyGatewayModelChoices()
             #expect(try listed() == ["system.ai.gemini-3-8-flash"])
 
             // The last model of a workspace turned off leaves models.json, while the provider stays for its sign-in.
             choices.withLock { $0["\(workspace.id)/system.ai.gemini-3-8-flash"] = false }
-            try await pi.service.applyGatewayModelChoices(for: .local)
+            try await pi.service.applyGatewayModelChoices()
             #expect(try listed().isEmpty)
         }
 
@@ -335,7 +333,7 @@ import os
         func gatewaysAreListedInTheBackgroundOncePerActivation() async throws {
             let workspace = try AgentMCPProvider(workspaceURL: #require(URL(string: "https://dbc-1.cloud.databricks.com")))
             let listings = OSAllocatedUnfairLock(initialState: [String]())
-            let pi = TestPiRuntime(gatewayWorkspaces: { _ in [workspace] }) { _ in
+            let pi = TestPiRuntime(gatewayWorkspaces: { [workspace] }) { _ in
                 TestPiTransport { command in
                     guard let id = command["id"] else { return [] }
                     if command["type"]?.stringValue == "get_available_models" {
@@ -357,11 +355,11 @@ import os
                 }
             }
             defer { try? FileManager.default.removeItem(at: pi.rootURL) }
-            let agentURL = try PiAgentDirectoryLocator(applicationSupportURL: pi.rootURL).agentURL(for: .local)
+            let agentURL = try PiAgentDirectoryLocator(applicationSupportURL: pi.rootURL).agentURL()
             try Data(#"{"dbc-1.cloud.databricks.com":{}}"#.utf8).write(to: agentURL.appending(path: "auth.json"))
 
             _ = try await pi.service.models()
-            await pi.service.gatewayRefresh(for: .local)?.value
+            await pi.service.currentGatewayRefresh()?.value
             #expect(listings.withLock { $0 } == ["/databricks-model-services https://dbc-1.cloud.databricks.com"])
             #expect(PiProviderConfiguration.gatewayServices(agentURL: agentURL) == [
                 workspace.id: [.object([
@@ -370,14 +368,14 @@ import os
                 ])],
             ])
             // A switch in Agents settings rewrites models.json from the saved list; the pickers' listing lists no gateway.
-            try await pi.service.applyGatewayModelChoices(for: .local)
+            try await pi.service.applyGatewayModelChoices()
             _ = try await pi.service.models()
-            await pi.service.gatewayRefresh(for: .local)?.value
+            await pi.service.currentGatewayRefresh()?.value
             #expect(listings.withLock { $0.count } == 1)
             // Activating the account again lists its gateways again.
             try await pi.service.reloadConfiguration()
             _ = try await pi.service.models()
-            await pi.service.gatewayRefresh(for: .local)?.value
+            await pi.service.currentGatewayRefresh()?.value
             #expect(listings.withLock { $0.count } == 2)
         }
 
@@ -386,7 +384,7 @@ import os
             let workspace = try AgentMCPProvider(workspaceURL: #require(URL(string: "https://dbc-1.cloud.databricks.com")))
             let (listings, listed) = AsyncStream<(TestPiTransport, JSONValue)>.makeStream()
             let count = OSAllocatedUnfairLock(initialState: 0)
-            let pi = TestPiRuntime(gatewayWorkspaces: { _ in [workspace] }) { _ in
+            let pi = TestPiRuntime(gatewayWorkspaces: { [workspace] }) { _ in
                 let current = OSAllocatedUnfairLock<TestPiTransport?>(initialState: nil)
                 let transport = TestPiTransport { command in
                     guard let id = command["id"] else { return [] }
@@ -415,21 +413,21 @@ import os
                 return transport
             }
             defer { try? FileManager.default.removeItem(at: pi.rootURL) }
-            let agentURL = try PiAgentDirectoryLocator(applicationSupportURL: pi.rootURL).agentURL(for: .local)
+            let agentURL = try PiAgentDirectoryLocator(applicationSupportURL: pi.rootURL).agentURL()
             try Data(#"{"dbc-1.cloud.databricks.com":{}}"#.utf8).write(to: agentURL.appending(path: "auth.json"))
 
             // The first listing after activation starts the background listing; the tab opens while it runs.
             _ = try await pi.service.models()
             var iterator = listings.makeAsyncIterator()
             let (transport, id) = try #require(await iterator.next())
-            let tab = Task { try await pi.service.gatewayModels(for: .local, provider: workspace, forceRefresh: false) }
+            let tab = Task { try await pi.service.gatewayModels(provider: workspace, forceRefresh: false) }
             let services = #"[{"name":"model-services/system.ai.kimi-k3","supported_api_types":["mlflow/v1/responses"]}]"#
             await transport.emit(TestPiTransport.response(id: id))
             await transport.emit(TestPiTransport.notify("databricks:model_services \(services)"))
 
             let models = try await tab.value
             #expect(models.map(\.id) == ["system.ai.kimi-k3"])
-            await pi.service.gatewayRefresh(for: .local)?.value
+            await pi.service.currentGatewayRefresh()?.value
             #expect(count.withLock { $0 } == 1)
 
             // A failed listing reaches every caller that joined it, so the tab shows the sign-in it needs.
@@ -437,7 +435,7 @@ import os
             try FileManager.default.removeItem(at: agentURL.appending(path: "gateway-models.json"))
             _ = try await pi.service.models()
             let (failing, failingID) = try #require(await iterator.next())
-            let failedTab = Task { try await pi.service.gatewayModels(for: .local, provider: workspace, forceRefresh: false) }
+            let failedTab = Task { try await pi.service.gatewayModels(provider: workspace, forceRefresh: false) }
             await failing.emit(TestPiTransport.response(id: failingID))
             await failing.emit(TestPiTransport.notify("databricks:model_services_sign_in_required"))
             await #expect(throws: PiRuntimeError.notLoggedIn) { try await failedTab.value }
@@ -447,7 +445,7 @@ import os
         func aListingSupersededByAnActivationSavesNothing() async throws {
             let workspace = try AgentMCPProvider(workspaceURL: #require(URL(string: "https://dbc-1.cloud.databricks.com")))
             let (listings, listed) = AsyncStream<(TestPiTransport, JSONValue)>.makeStream()
-            let pi = TestPiRuntime(gatewayWorkspaces: { _ in [workspace] }) { _ in
+            let pi = TestPiRuntime(gatewayWorkspaces: { [workspace] }) { _ in
                 let current = OSAllocatedUnfairLock<TestPiTransport?>(initialState: nil)
                 let transport = TestPiTransport { command in
                     guard let id = command["id"] else { return [] }
@@ -467,7 +465,7 @@ import os
                 return transport
             }
             defer { try? FileManager.default.removeItem(at: pi.rootURL) }
-            let agentURL = try PiAgentDirectoryLocator(applicationSupportURL: pi.rootURL).agentURL(for: .local)
+            let agentURL = try PiAgentDirectoryLocator(applicationSupportURL: pi.rootURL).agentURL()
             try Data(#"{"dbc-1.cloud.databricks.com":{}}"#.utf8).write(to: agentURL.appending(path: "auth.json"))
             let answer = { (model: String) in
                 TestPiTransport
@@ -479,14 +477,14 @@ import os
 
             // The first listing is held while the account is activated again and lists anew.
             _ = try await pi.service.models()
-            let first = await pi.service.gatewayRefresh(for: .local)
+            let first = await pi.service.currentGatewayRefresh()
             let (older, olderID) = try #require(await iterator.next())
             try await pi.service.reloadConfiguration()
             _ = try await pi.service.models()
             let (newer, newerID) = try #require(await iterator.next())
             await newer.emit(TestPiTransport.response(id: newerID))
             await newer.emit(answer("kimi-k3"))
-            await pi.service.gatewayRefresh(for: .local)?.value
+            await pi.service.currentGatewayRefresh()?.value
             // The older answer lands last and is discarded.
             await older.emit(TestPiTransport.response(id: olderID))
             await older.emit(answer("glm-5-3"))
@@ -498,10 +496,9 @@ import os
 
         @Test(.providerAccounts([.init(id: ownConnectionID, workspaceURL: URL(string: "https://own.cloud.databricks.com")!)]))
         func modelListingsAndSwitchesNeverWaitForAGateway() async throws {
-            let account = CodexRuntimeProvider.local
             let workspaceURL = try #require(URL(string: "https://own.cloud.databricks.com"))
             let choices = ["own.cloud.databricks.com/system.ai.claude-opus-6": true]
-            let pi = TestPiRuntime(provider: account, modelChoices: { _ in choices }) { _ in
+            let pi = TestPiRuntime(modelChoices: { choices }) { _ in
                 // The gateway never answers its listing.
                 TestPiTransport { command in
                     guard let id = command["id"] else { return [] }
@@ -515,7 +512,7 @@ import os
                 }
             }
             defer { try? FileManager.default.removeItem(at: pi.rootURL) }
-            let agentURL = try PiAgentDirectoryLocator(applicationSupportURL: pi.rootURL).agentURL(for: account)
+            let agentURL = try PiAgentDirectoryLocator(applicationSupportURL: pi.rootURL).agentURL()
             try PiProviderConfiguration.write(
                 PiProviderConfiguration.databricksProviders(
                     PiProviderConfiguration.databricksModels(workspaceURL: workspaceURL, providerID: "own.cloud.databricks.com", isProviderAccount: true),
@@ -532,7 +529,7 @@ import os
             ])], providerID: "own.cloud.databricks.com", agentURL: agentURL)
 
             #expect(try await pi.service.models().map(\.model) == ["own.cloud.databricks.com/system.ai.claude-haiku-5-5"])
-            try await pi.service.applyGatewayModelChoices(for: account)
+            try await pi.service.applyGatewayModelChoices()
             let data = try Data(contentsOf: agentURL.appending(path: "models.json"))
             let own = try JSONDecoder().decode(JSONValue.self, from: data).objectValue?["providers"]?.objectValue?["own.cloud.databricks.com"]
             #expect((own?.objectValue?["models"]?.arrayValue ?? []).compactMap { $0.objectValue?["id"]?.stringValue } == ["system.ai.claude-opus-6"])
@@ -541,10 +538,9 @@ import os
 
         @Test(.providerAccounts([.init(id: ownConnectionID, workspaceURL: URL(string: "https://own.cloud.databricks.com")!)]))
         func databricksAccountsOwnGatewayListsThroughPiWithItsBridgedSignIn() async throws {
-            let account = CodexRuntimeProvider.local
             let own = try AgentMCPProvider(workspaceURL: #require(URL(string: "https://own.cloud.databricks.com")))
             let listings = OSAllocatedUnfairLock(initialState: [String]())
-            let pi = TestPiRuntime(provider: account) { _ in
+            let pi = TestPiRuntime { _ in
                 TestPiTransport { command in
                     guard let id = command["id"] else { return [] }
                     guard let message = command["message"]?.stringValue, message.hasPrefix("/databricks-model-services") else {
@@ -558,14 +554,14 @@ import os
             defer { try? FileManager.default.removeItem(at: pi.rootURL) }
 
             await #expect(throws: PiRuntimeError.notLoggedIn) {
-                try await pi.service.gatewayModels(for: account, provider: own, forceRefresh: true)
+                try await pi.service.gatewayModels(provider: own, forceRefresh: true)
             }
             #expect(listings.withLock { $0 } == ["/databricks-model-services https://own.cloud.databricks.com --provider own.cloud.databricks.com"])
         }
 
         @Test(.providerAccounts([.init(id: ownConnectionID, workspaceURL: URL(string: "https://own.cloud.databricks.com")!)]))
         func theAccountsOwnModelsComeBeforeAddedWorkspaces() async throws {
-            let pi = TestPiRuntime(provider: .local) { _ in
+            let pi = TestPiRuntime { _ in
                 TestPiTransport(reply: TestPiRuntime.modelsReply([
                     TestPiTransport.model(provider: "dbc-1.cloud.databricks.com", id: "system.ai.claude-opus-5-5"),
                     TestPiTransport.model(provider: "own.cloud.databricks.com", id: "system.ai.claude-sonnet-5-5"),
@@ -636,7 +632,7 @@ import os
                     thinkingLevelMap: .object(["off": .null, "minimal": .null, "xhigh": .string("xhigh")])
                 ),
             ]
-            let local = Self.runtime(provider: .local, models: models, summary: [])
+            let local = Self.runtime(models: models, summary: [])
 
             // The app's account lists its subscription and its Databricks connection's gateway, in Pi's order.
             let listed = try await local.service.models()
@@ -656,7 +652,7 @@ import os
                 // The legacy single-provider ID is no connection's provider any more.
                 TestPiTransport.model(provider: "databricks", id: "system.ai.gpt-6-luna"),
             ]
-            let pi = TestPiRuntime(provider: .local) { _ in
+            let pi = TestPiRuntime { _ in
                 TestPiTransport(reply: TestPiRuntime.modelsReply(models))
             }
 
@@ -795,7 +791,7 @@ import os
         func signOutClosesTheAccountsProcesses() async throws {
             let pi = TestPiRuntime { _ in TestPiTransport() }
             let cwd = FileManager.default.temporaryDirectory
-            let local = try await pi.service.connect(.init(mode: .chat, cwd: cwd), provider: .local)
+            let local = try await pi.service.connect(.init(mode: .chat, cwd: cwd))
 
             try await pi.service.signOut(.openai)
 

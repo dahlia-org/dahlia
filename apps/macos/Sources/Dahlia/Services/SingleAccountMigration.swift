@@ -12,7 +12,7 @@ struct SingleAccountMigration {
     static let completedKey = "singleAccountMigration.completed"
     /// The Databricks connection whose data moves (empty for none), decided once so a later run moves the same one.
     static let sourceKey = "singleAccountMigration.source"
-    static let accountKey = CodexRuntimeProvider.local.accountKey
+    static let accountKey = AppAccount.key
     static let providerIDsKey = "singleAccountMigration.providerIDs"
 
     var dbQueue: any DatabaseWriter
@@ -138,7 +138,7 @@ struct SingleAccountMigration {
         let databricks = source.uuidString.lowercased()
         for variable in PiLaunchSettings.load(accountKey: databricks, defaults: defaults).variables where variable.isSecret {
             guard let value = loadSecret(PiLaunchSettings.secretKey(accountKey: databricks, id: variable.id)) else { continue }
-            saveSecret(PiLaunchSettings.secretKey(for: .local, id: variable.id), value)
+            saveSecret(PiLaunchSettings.secretKey(id: variable.id), value)
         }
     }
 

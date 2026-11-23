@@ -23,7 +23,7 @@ struct CalendarSettingsView: View {
     @State private var workspaceSettings = WorkspaceAISettingsModel.shared
     @State private var expandedProviderIDs: Set<String> = []
     /// Read again when the choice changes, so the rows follow it.
-    @State private var googleProvider = GoogleCalendarProvider.current(account: .local)
+    @State private var googleProvider = GoogleCalendarProvider.current()
     private let calendarSourceCoordinator = CalendarSourceCoordinator.shared
     private let showsOnlySourceSetup: Bool
     @State private var googleOAuthConsent = GoogleOAuthConsentState()
@@ -68,10 +68,10 @@ struct CalendarSettingsView: View {
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: GoogleCalendarProvider.didChange)) { _ in
-            googleProvider = GoogleCalendarProvider.current(account: .local)
+            googleProvider = GoogleCalendarProvider.current()
         }
         .onChange(of: workspaceSettings.databricksConnections, initial: true) { _, _ in
-            googleProvider = GoogleCalendarProvider.current(account: .local)
+            googleProvider = GoogleCalendarProvider.current()
         }
         .onAppear {
             // The providers in use open, so their connection and calendars show without a click.

@@ -78,15 +78,14 @@ final class SetupTourModel {
 
     /// Resolve the selected account's Pi before opening provider sign-in, which needs Pi itself.
     func advanceFromAccount(
-        isPiAvailable: (CodexRuntimeProvider) async -> Bool = { account in
-            await Task.detached { (try? PiBundle.executableURL(for: account)) != nil }.value
+        isPiAvailable: () async -> Bool = {
+            await Task.detached { (try? PiBundle.executableURL()) != nil }.value
         }
     ) async {
         guard currentStep == .account, canContinue else { return }
-        let account = CodexRuntimeProvider.local
         let generation = accountSelectionGeneration
         isCheckingPi = true
-        let available = await isPiAvailable(account)
+        let available = await isPiAvailable()
         isCheckingPi = false
         guard !Task.isCancelled, generation == accountSelectionGeneration else { return }
         needsPiSetup = !available

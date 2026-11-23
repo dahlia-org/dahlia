@@ -381,7 +381,7 @@ struct DahliaApp: App {
         ])
         await PiChatService.shared.configureBackup(dbQueue: db.dbQueue)
         await ScreenshotContentProvider.shared.configure(dbQueue: db.dbQueue)
-        await CodexRuntimeContextCoordinator.shared.configure(dbQueue: db.dbQueue)
+        await PiRuntimeContextCoordinator.shared.configure(dbQueue: db.dbQueue)
         do {
             try await workspaceAISettings.inheritLocalAccountSettings(from: db.dbQueue)
             try await MeetingRepository(dbQueue: db.dbQueue)

@@ -142,16 +142,15 @@ import Foundation
             let locator = PiAgentDirectoryLocator(applicationSupportURL: root)
             let service = PiPackageService(locator: locator)
             try Data(#"{"packages":["npm:local-tools"]}"#.utf8)
-                .write(to: locator.agentURL(for: .local).appending(path: "settings.json"))
-            #expect(try await service.packages(for: .local) == ["npm:local-tools"])
+                .write(to: locator.agentURL().appending(path: "settings.json"))
+            #expect(try await service.packages() == ["npm:local-tools"])
         }
 
         @Test
-        func packageCommandUsesTheChosenAccountAndCanDownload() throws {
+        func packageCommandUsesTheAgentDirectoryAndCanDownload() throws {
             let directory = URL(fileURLWithPath: "/tmp/package-account")
             let environment = try PiPackageService.environment(
-                account: .local, directory: directory,
-                executable: URL(fileURLWithPath: "/opt/homebrew/bin/pi"), launch: .init()
+                directory: directory, executable: URL(fileURLWithPath: "/opt/homebrew/bin/pi"), launch: .init()
             )
             #expect(environment["PI_CODING_AGENT_DIR"] == directory.path)
             #expect(environment["PI_OFFLINE"] == nil)
@@ -167,8 +166,7 @@ import Foundation
             let launch = PiLaunchSettings(variables: [.init(id: UUID(), name: "PATH", value: path + ":/usr/bin:/bin")])
             #expect(throws: PiRuntimeError.launchFailed(L10n.agentSkillsPathConflict)) {
                 try PiPackageService.environment(
-                    account: .local, directory: directory,
-                    executable: URL(fileURLWithPath: "/usr/bin/true"), launch: launch
+                    directory: directory, executable: URL(fileURLWithPath: "/usr/bin/true"), launch: launch
                 )
             }
         }

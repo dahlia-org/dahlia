@@ -47,16 +47,16 @@ extension PiChatService {
         return service
     }
 
-    func skillsRoot(_ provider: CodexRuntimeProvider) throws -> URL {
-        try agentLocator.agentURL(for: provider).appending(path: "skills")
+    func skillsRoot() throws -> URL {
+        try agentLocator.agentURL().appending(path: "skills")
     }
 
     func learningTool(_ method: String, payload: JSONValue, threadID: String, processID: UUID) async throws -> JSONValue {
         guard let session = sessions[threadID], session.processID == processID, let turn = session.turn, !turn.stopRequested,
-              try await runtime.currentProvider() == session.provider,
+              runtime.isConfigured,
               sessions[threadID]?.processID == processID, sessions[threadID]?.turn?.id == turn.id,
               sessions[threadID]?.turn?.stopRequested == false else { throw CancellationError() }
-        let account = session.provider.accountKey
+        let account = AppAccount.key
         if method == "scheduledTool" {
             let name = payload.objectValue?["name"]?.stringValue ?? ""
             return .bool(session.profile == .scheduled && name.hasPrefix("mcp__") && payload.objectValue?["readOnly"] == .bool(true) && session
@@ -72,14 +72,14 @@ extension PiChatService {
             return try memoryService().execute(payload, account: account, thread: threadID)
         case "skills_list", "skill_view", "skill_manage":
             let service = try skillService()
-            try await service.setCatalog(runtime.skills(for: session.provider), account: account)
+            try await service.setCatalog(runtime.skills(), account: account)
             guard sessions[threadID]?.turn?.id == turn.id else { throw CancellationError() }
             if method == "skill_manage", turn.run.origin == "user" {
                 try learningReset(thread: threadID, column: "skillIterations")
             }
-            return try await service.execute(method, payload: payload, account: account, root: skillsRoot(session.provider), thread: threadID)
+            return try await service.execute(method, payload: payload, account: account, root: skillsRoot(), thread: threadID)
         case "optimizerInput":
-            return try await optimizerInput(payload, run: turn.run, account: account, root: skillsRoot(session.provider))
+            return try await optimizerInput(payload, run: turn.run, account: account, root: skillsRoot())
         case "cronjob", "cronjobCommit":
             let record = try history().thread(id: threadID, accountID: account)
             guard record.parentThreadID == nil,
@@ -250,8 +250,8 @@ extension PiChatService {
 
     func drainLearningWork() async {
         do {
-            let provider = try await runtime.currentProvider()
-            let account = provider.accountKey
+            try await runtime.requireConfigured()
+            let account = AppAccount.key
             if let activeReview, activeReview.account != account || AgentBackgroundActivity.isRecording ||
                 Self.effectiveReviewKind(activeReview.kind, account: activeReview.account) != activeReview.kind {
                 await runtime.close(activeReview.connection)
@@ -281,20 +281,20 @@ extension PiChatService {
                     sql: "SELECT * FROM agent_reviews WHERE accountID=? AND status='pending' ORDER BY createdAt LIMIT 1",
                     arguments: [account]
                 ) }) {
-                reviewTask = Task { await self.runReview(job, provider: provider) }
+                reviewTask = Task { await self.runReview(job) }
             }
         } catch {
             // Missing selected-account authentication is a waiting condition; no other account is substituted.
         }
     }
 
-    private func runReview(_ job: AgentReviewRecord, provider: CodexRuntimeProvider) async {
+    private func runReview(_ job: AgentReviewRecord) async {
         defer { reviewTask = nil
             activeReview = nil
         }
         do {
             guard !AgentBackgroundActivity.isRecording, AgentLearningSettings.reviewEnabled(job.accountID),
-                  try await runtime.currentProvider() == provider else { return }
+                  runtime.isConfigured else { return }
             guard let kind = Self.effectiveReviewKind(job.kind, account: job.accountID) else {
                 try finishReview(job, status: "cancelled")
                 return
@@ -304,13 +304,13 @@ extension PiChatService {
                 return
             }
             let reviewKind: AgentLearningSettings.ReviewKind = kind == "memory" ? .memory : .skill
-            let models = try await runtime.models(for: provider, forceRefresh: false)
+            let models = try await runtime.models(forceRefresh: false)
             guard let model = AgentLearningSettings.prepareReviewModel(job.accountID, kind: reviewKind, models: models)
             else { throw PiRuntimeError.requestedModelUnavailable("") }
             let effort = AgentLearningSettings.reviewEffort(job.accountID, kind: reviewKind)
             let memoryEnabled = kind != "skill"
             let snapshot = try JSONDecoder().decode(ReviewSnapshot.self, from: Data(job.snapshot.utf8))
-            let work = try agentLocator.agentURL(for: provider)
+            let work = try agentLocator.agentURL()
             var environment = snapshot.environment
             environment["DAHLIA_PI_MEMORY_ENABLED"] = kind == "skill" || !memoryEnabled ? "0" : "1"
             let args = snapshot.arguments
@@ -322,11 +322,10 @@ extension PiChatService {
             }
             guard claimed else { return }
             let connection = try await runtime.connect(
-                .init(mode: .chat, cwd: work, arguments: ["--no-session"] + args, environment: environment, profile: .review),
-                provider: provider
+                .init(mode: .chat, cwd: work, arguments: ["--no-session"] + args, environment: environment, profile: .review)
             ) { [weak self] method, payload in
                 guard let self else { throw CancellationError() }
-                return try await self.reviewTool(method, payload: payload, job: job, provider: provider)
+                return try await self.reviewTool(method, payload: payload, job: job)
             }
             activeReview = (job.id, job.accountID, connection, kind)
             let timeout = Task { try? await Task.sleep(for: .seconds(600))
@@ -349,13 +348,13 @@ extension PiChatService {
                     snapshot.conversation + "\n</conversation_snapshot>"
                 guard activeReview?.id == job.id, Self.effectiveReviewKind(kind, account: job.accountID) == kind,
                       !AgentBackgroundActivity.isRecording,
-                      try await runtime.currentProvider() == provider else { throw CancellationError() }
+                      runtime.isConfigured else { throw CancellationError() }
                 _ = try await connection.request("prompt", PiRuntimeService.prompt([.text(prompt)]))
                 var iterations = 0
                 var inputTokens = 0.0
                 for try await event in connection.events {
                     guard Self.effectiveReviewKind(kind, account: job.accountID) == kind, !AgentBackgroundActivity.isRecording,
-                          try await runtime.currentProvider() == provider else { throw CancellationError() }
+                          runtime.isConfigured else { throw CancellationError() }
                     if event.objectValue?["type"]?.stringValue == "message_end", let message = event.objectValue?["message"]?.objectValue,
                        message["role"]?.stringValue == "assistant" {
                         iterations += 1
@@ -379,9 +378,9 @@ extension PiChatService {
         await learningSkills?.finishReview(job.id)
     }
 
-    private func reviewTool(_ method: String, payload: JSONValue, job: AgentReviewRecord, provider: CodexRuntimeProvider) async throws -> JSONValue {
+    private func reviewTool(_ method: String, payload: JSONValue, job: AgentReviewRecord) async throws -> JSONValue {
         guard let active = activeReview, active.id == job.id, !AgentBackgroundActivity.isRecording,
-              try await runtime.currentProvider() == provider, PiExecutionProfile.review.allows(method) else { throw CancellationError() }
+              runtime.isConfigured, PiExecutionProfile.review.allows(method) else { throw CancellationError() }
         if method == "memory" {
             guard active.kind != "skill",
                   AgentLearningSettings.memoryReviewEnabled(job.accountID)
@@ -391,30 +390,30 @@ extension PiChatService {
                 account: job.accountID,
                 thread: job.threadID,
                 review: job.id,
-                authorize: Self.reviewAuthorization(job, provider: provider, runtime: runtime, requiresMemory: true)
+                authorize: Self.reviewAuthorization(job, runtime: runtime, requiresMemory: true)
             )
         }
         guard active.kind != "memory",
               AgentLearningSettings.skillReviewEnabled(job.accountID) else { throw HermesLearning.failure("Skills are unavailable for this review.") }
         let service = try skillService()
-        try await service.setCatalog(runtime.skills(for: provider), account: job.accountID)
+        try await service.setCatalog(runtime.skills(), account: job.accountID)
         return try await service.execute(
             method,
             payload: payload,
             account: job.accountID,
-            root: skillsRoot(provider),
+            root: skillsRoot(),
             thread: job.threadID,
             review: job.id,
-            authorize: Self.reviewAuthorization(job, provider: provider, runtime: runtime)
+            authorize: Self.reviewAuthorization(job, runtime: runtime)
         )
     }
 
     nonisolated static func reviewAuthorization(
-        _ job: AgentReviewRecord, provider: CodexRuntimeProvider, runtime: PiRuntimeService, requiresMemory: Bool = false
+        _ job: AgentReviewRecord, runtime: PiRuntimeService, requiresMemory: Bool = false
     ) -> @Sendable (Database) throws -> Void {
         { db in
             try Task.checkCancellation()
-            guard runtime.isSelectedProvider(provider), !AgentBackgroundActivity.isRecording,
+            guard runtime.isConfigured, !AgentBackgroundActivity.isRecording,
                   requiresMemory ? AgentLearningSettings.memoryReviewEnabled(job.accountID) : AgentLearningSettings.skillReviewEnabled(job.accountID),
                   try AgentReviewRecord.fetchOne(db, key: job.id)?.status == "running" else { throw CancellationError() }
         }
@@ -462,8 +461,8 @@ extension PiChatService {
     }
 
     func notifySchedule(_ run: ChatRunRecord) async {
-        guard let provider = try? await runtime.currentProvider(),
-              let row = try? scheduleService().list(account: provider.accountKey).first(where: { $0.threadID == run.threadID }),
+        guard await (try? runtime.requireConfigured()) != nil,
+              let row = try? scheduleService().list(account: AppAccount.key).first(where: { $0.threadID == run.threadID }),
               row.notify else { return }
         await MeetingNotificationService.shared.deliverAgentSchedule(name: row.name, threadID: row.threadID)
     }

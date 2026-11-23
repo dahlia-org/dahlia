@@ -5,9 +5,9 @@ struct AgentSecuritySettingsView: View {
     @State private var model: PiFileAccessSettingsModel
     @AppStorage private var workingDirectory: String
 
-    init(account: CodexRuntimeProvider) {
-        _model = State(initialValue: PiFileAccessSettingsModel(account: account))
-        _workingDirectory = AppStorage(wrappedValue: "", PiWorkingDirectory.defaultsKey(for: account))
+    init() {
+        _model = State(initialValue: PiFileAccessSettingsModel())
+        _workingDirectory = AppStorage(wrappedValue: "", PiWorkingDirectory.defaultsKey())
     }
 
     var body: some View {

@@ -5,15 +5,11 @@ import Foundation
 import GRDB
 
 actor BackgroundJobWorker {
-    typealias RuntimeProviderResolver = @Sendable () -> CodexRuntimeProvider
-    typealias LocalAccountSettingsResolver = @MainActor @Sendable () -> LocalAccountAISettings
     typealias FailureReporter = @Sendable (SearchFailureDiagnostic) -> Void
 
     private let dbQueue: any DatabaseWriter
     private let screenshotAnalyzer: any ScreenshotAnalyzing
     private let inferenceSettingsResolver: @Sendable (WorkspaceRecord) -> AccountInferenceSettings
-    private let runtimeProviderResolver: RuntimeProviderResolver
-    private let localAccountSettingsResolver: LocalAccountSettingsResolver
     private let failureReporter: FailureReporter
     private var reportedFailures: Set<SearchFailureDiagnostic> = []
     private let observationQueue = DispatchQueue(label: "app.dahlia.search-indexer", qos: .utility)
@@ -41,17 +37,11 @@ actor BackgroundJobWorker {
         dbQueue: any DatabaseWriter,
         screenshotAnalyzer: any ScreenshotAnalyzing = CodexScreenshotAnalysisService(),
         inferenceSettingsResolver: @escaping @Sendable (WorkspaceRecord) -> AccountInferenceSettings = { AccountInferenceSettings(workspace: $0) },
-        runtimeProviderResolver: @escaping RuntimeProviderResolver = { CodexRuntimeContextStore.shared.provider },
-        localAccountSettingsResolver: @escaping LocalAccountSettingsResolver = {
-            WorkspaceAISettingsModel.shared.localAccountSettings
-        },
         failureReporter: @escaping FailureReporter = { ErrorReportingService.captureSearchFailure($0) }
     ) {
         self.dbQueue = dbQueue
         self.screenshotAnalyzer = screenshotAnalyzer
         self.inferenceSettingsResolver = inferenceSettingsResolver
-        self.runtimeProviderResolver = runtimeProviderResolver
-        self.localAccountSettingsResolver = localAccountSettingsResolver
         self.failureReporter = failureReporter
     }
 
@@ -696,7 +686,6 @@ private extension BackgroundJobWorker {
     }
 
     func processScreenshotJobsConcurrently(_ jobs: [SearchIndexJob]) async throws -> Bool {
-        let localSettings = await localAccountSettingsResolver()
         let routing = try await dbQueue.read { [inferenceSettingsResolver] db in
             var inputs: [UUID: ScreenshotAnalysisInput] = [:]
             for job in jobs {
@@ -712,7 +701,6 @@ private extension BackgroundJobWorker {
                     id: screenshot.id,
                     imageData: screenshot.imageData,
                     mimeType: screenshot.mimeType,
-                    runtimeProvider: .local,
                     outputLanguage: outputLanguage,
                     model: analysis.model,
                     fallbackModel: analysis.fallbackModel
@@ -721,19 +709,13 @@ private extension BackgroundJobWorker {
             return inputs
         }
         let inputs = routing
-        let runtimeProvider = runtimeProviderResolver()
         var outcomes = jobs.compactMap { job in
             inputs[job.targetID] == nil ? ScreenshotJobOutcome.missing(job) : nil
         }
-        let deferredJobs = jobs.filter { job in
-            guard let input = inputs[job.targetID] else { return false }
-            return input.runtimeProvider != runtimeProvider
-        }
-        try await deferScreenshotJobsForRuntime(deferredJobs)
         var prerequisiteError: (any Error)?
         await withTaskGroup(of: ScreenshotJobOutcome.self) { group in
             for job in jobs {
-                guard let input = inputs[job.targetID], input.runtimeProvider == runtimeProvider else { continue }
+                guard let input = inputs[job.targetID] else { continue }
                 group.addTask(priority: .utility) { [screenshotAnalyzer] in
                     do {
                         let results = try await screenshotAnalyzer.analyze([input])
@@ -1009,27 +991,6 @@ private extension BackgroundJobWorker {
                 """,
                 arguments: [retryAt, Self.errorCode(error), Date()]
             )
-        }
-    }
-
-    private func deferScreenshotJobsForRuntime(_ jobs: [SearchIndexJob]) async throws {
-        guard !jobs.isEmpty else { return }
-        let retryAt = Date().addingTimeInterval(60)
-        try await dbQueue.write { db in
-            for job in jobs {
-                try db.execute(
-                    sql: """
-                    UPDATE jobs_background
-                    SET status = 'pending', attempts = max(0, attempts - 1), availableAt = ?,
-                        claimedAt = NULL, leaseExpiresAt = NULL, lastErrorCode = ?, updatedAt = ?
-                    WHERE indexKind = 'fts' AND targetKind = ? AND targetKey = ? AND generation = ?
-                    """,
-                    arguments: [
-                        retryAt, "runtimeProviderMismatch", Date(),
-                        job.targetKind, job.targetID, job.generation,
-                    ]
-                )
-            }
         }
     }
 

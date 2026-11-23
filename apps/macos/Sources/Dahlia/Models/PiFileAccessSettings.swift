@@ -16,16 +16,16 @@ struct PiFileAccessSettings: Codable, Equatable, Sendable {
 
     var grants: [Grant] = []
 
-    static func defaultsKey(for account: CodexRuntimeProvider) -> String {
-        "piFileAccess.\(account.accountKey)"
+    static func defaultsKey() -> String {
+        "piFileAccess.\(AppAccount.key)"
     }
 
-    static func load(for account: CodexRuntimeProvider, defaults: UserDefaults = .standard) -> Self {
-        defaults.data(forKey: defaultsKey(for: account)).flatMap { try? JSONDecoder().decode(Self.self, from: $0) } ?? Self()
+    static func load(defaults: UserDefaults = .standard) -> Self {
+        defaults.data(forKey: defaultsKey()).flatMap { try? JSONDecoder().decode(Self.self, from: $0) } ?? Self()
     }
 
-    func save(for account: CodexRuntimeProvider, defaults: UserDefaults = .standard) {
-        defaults.set(try? JSONEncoder().encode(self), forKey: Self.defaultsKey(for: account))
+    func save(defaults: UserDefaults = .standard) {
+        defaults.set(try? JSONEncoder().encode(self), forKey: Self.defaultsKey())
     }
 
     /// Resolve and validate off MainActor, both when editing and when launching (PATH or symlinks may have changed).

@@ -199,7 +199,8 @@ DB の `accountID` と UserDefaults の接尾辞には、当面 `local` を定�
   `workspaces.accountConnectionId`・`organizationId`・`personalUserId`・`sync*` の列と同期のテーブルは DB に残し、起動時の移行（`Services/SingleAccountMigration.swift`）がすべての Workspace で列を空にする。Server Workspace だった Workspace は、会議・文字起こし・ファイルを残したままアカウントの Workspace になる。Server にだけあった本文・画像・録音アーカイブは読めなくなる。
   サインインした Dahlia account の Server の Gateway は、アカウントのプロバイダーアカウント（capability は `model`、Pi のプロバイダー ID は `dahlia`）にした。サインインが 2 つ以上あるときは当面最も古い 1 つだけを使う。
   Server Account で走ったチャットとエージェントの行は、`accountID` に接続の ID を持ったまま残し、移さない（未リリースの別アカウントだったため）。
-- 残り: `CodexRuntimeProvider` 型そのものの置き換え。旧ディレクトリと旧設定キーの削除（1 リリース後）。
+- 実装した（2026-11-24）: `CodexRuntimeProvider` を削除した。機能はアカウントを引数に取らず、アカウントの固定キーは `AppAccount.key`（値は `local`、保存済みの設定キーと行の `accountID` のため）、プロバイダーアカウントは `ProviderAccountDirectory.accounts` から引く。アカウントの切り替えを前提にした判定（チャット・要約・画像解析の「実行中にアカウントが変わった」検査、カレンダーと Drive の「開いているアカウント」の追跡、セットアップツアーのアカウント）も削除した。型名は Codex から Pi に改めた（`PiRuntimeContextStore`、`PiRuntimeContextCoordinator`、`PiSubscriptionController`）。
+- 残り: 旧ディレクトリと旧設定キーの削除（1 リリース後）。
 
 #### 段階 3 の残り
 
@@ -241,10 +242,8 @@ DB の `accountID` と UserDefaults の接尾辞には、当面 `local` を定�
 | 2 | 移行は Local Account を引き継ぎ、最後に使っていた Databricks アカウントのデータを Local へ移すか | そうする（2026-11-23 にユーザーが決定） | アカウントの概念が無くなるので、キーは接続に結び付かない値がよい。複数アカウントを使い分ける利用者がいないので、移す元は 1 つでよい |
 | 3 | モデルごとに読める Workspace を制限する規則を置くか（4 章の反論 2） | 置かない。共有される Workspace の規則は、同期の実装を決めるときに合わせて決める | リリース済みの Workspace はすべて Mac にある。先に規則を作ると、同期の設計を縛る |
 
-プロダクトの原則に関わる変更が 2 件ある。どちらも承認を得てから PRODUCT.md を直す。
-
-- PRODUCT.md:142 の「選択中アカウントの読み取り専用の定期実行」は、「選択中アカウント」という条件が意味を失う。
-- PRODUCT.md:160-163 と用語集の「Local Account / Server Account」は、Server を正本とする同期を前提に書かれている。同期の実装が決まった時点で、この記述ごと書き換える必要がある。
+プロダクトの原則に関わる変更は、2026-11-24 にユーザーが承認し、PRODUCT.md を書き換えた。定期実行は「選択中アカウント」の条件を外し、T5 は Desktop が Server と同期しないことと、同期の方式が未定であることを書いた。
+AGENTS.md の用語集の「Local Account / Server Account」は、Server を正本とする同期を前提に書かれたまま残っている。
 
 T4（他サービスへの連携を Dahlia に実装しない）には抵触しない（2026-11-23 にユーザーが確認）。
 T4 が禁じるのは、Salesforce のように企業ごとに使い方が異なる個別のサービスへ、Dahlia が個別に対応することである。

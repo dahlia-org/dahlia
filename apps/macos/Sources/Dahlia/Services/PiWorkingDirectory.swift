@@ -4,8 +4,8 @@ import Foundation
 /// The folder Dahlia AI's chat works in, set per account under Security. It is writable without additional grants,
 /// so it is a folder the user can see rather than one inside Application Support.
 struct PiWorkingDirectory: Sendable {
-    nonisolated static func defaultsKey(for provider: CodexRuntimeProvider) -> String {
-        "piWorkingDirectory.\(provider.accountKey)"
+    nonisolated static func defaultsKey() -> String {
+        "piWorkingDirectory.\(AppAccount.key)"
     }
 
     /// Outside `~/Documents`, which macOS guards with a permission prompt and may sync to iCloud.
@@ -39,8 +39,8 @@ struct PiWorkingDirectory: Sendable {
     var override: URL?
 
     /// The account's folder, created when missing.
-    func url(for provider: CodexRuntimeProvider, defaults: UserDefaults = .standard) throws -> URL {
-        let configured = (defaults.string(forKey: Self.defaultsKey(for: provider)) ?? "")
+    func url(defaults: UserDefaults = .standard) throws -> URL {
+        let configured = (defaults.string(forKey: Self.defaultsKey()) ?? "")
             .trimmingCharacters(in: .whitespaces).nilIfBlank ?? Self.defaultPath
         let path = (configured as NSString).expandingTildeInPath
         guard override != nil || Self.isAllowed(path) else {

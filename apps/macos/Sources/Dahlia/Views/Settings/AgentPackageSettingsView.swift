@@ -77,7 +77,7 @@ struct AgentPackageSettingsView: View {
             isInstalled: model.isAutoReviewInstalled, install: model.installAutoReview, settingsTitle: L10n.autoReviewSettings
         ) {
             AgentPluginSettingsModal(height: 360, onClose: navigation.dismissSettingsModal) {
-                Form { AgentAutoReviewSettingsSection(account: model.account) }
+                Form { AgentAutoReviewSettingsSection() }
                     .formStyle(.grouped)
             } actions: {
                 Button(L10n.close, action: navigation.dismissSettingsModal)
@@ -93,7 +93,7 @@ struct AgentPackageSettingsView: View {
             packageSource: AgentWebAccessSettings.packageSource, isPackage: AgentWebAccessSettings.isPackage,
             isInstalled: model.isWebAccessInstalled, install: model.installWebAccess, settingsTitle: L10n.webAccessSettings
         ) {
-            AgentWebAccessSettingsModal(account: model.account, onClose: navigation.dismissSettingsModal)
+            AgentWebAccessSettingsModal(onClose: navigation.dismissSettingsModal)
         }
     }
 
@@ -169,7 +169,6 @@ private struct AgentPluginSettingsModal<Content: View, Actions: View>: View {
 
 /// Edits the plugin's `web-search.json`; Save writes it, and the next chat reads it.
 private struct AgentWebAccessSettingsModal: View {
-    let account: CodexRuntimeProvider
     let onClose: () -> Void
     @State private var configuration: AgentWebAccessSettings.Configuration?
     @State private var errorMessage: String?
@@ -229,7 +228,7 @@ private struct AgentWebAccessSettingsModal: View {
         }
         .task {
             do {
-                configuration = try await PiPackageService.shared.webAccessConfiguration(for: account)
+                configuration = try await PiPackageService.shared.webAccessConfiguration()
             } catch {
                 errorMessage = error.localizedDescription
             }
@@ -243,7 +242,7 @@ private struct AgentWebAccessSettingsModal: View {
         Task {
             defer { isSaving = false }
             do {
-                try await PiPackageService.shared.saveWebAccessConfiguration(configuration, for: account)
+                try await PiPackageService.shared.saveWebAccessConfiguration(configuration)
                 onClose()
             } catch {
                 errorMessage = error.localizedDescription

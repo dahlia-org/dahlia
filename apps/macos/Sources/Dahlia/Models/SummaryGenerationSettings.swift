@@ -6,7 +6,6 @@ struct SummaryGenerationSettings: Codable, Equatable, Sendable {
     let reasoningEffort: String
     let detailLevelInstruction: String
     let languageDisplayName: String
-    let runtimeProvider: CodexRuntimeProvider
     var workspaceID: UUID?
     var workspacePreferences: WorkspaceGenerationSettings?
     var customInstructions: String?
@@ -26,10 +25,9 @@ struct SummaryGenerationSettings: Codable, Equatable, Sendable {
             reasoningEffort: preferences.local.reasoningEffort,
             detailLevelInstruction: (detailLevel ?? preferences.summary.detailLevel).instruction,
             languageDisplayName: preferences.outputLanguage.displayName,
-            runtimeProvider: CodexRuntimeProvider.local,
             workspaceID: workspace?.id,
             workspacePreferences: preferences,
-            customInstructions: AgentChatInstructions.loadForSummary(for: CodexRuntimeProvider.local, defaults: defaults)
+            customInstructions: AgentChatInstructions.loadForSummary(defaults: defaults)
         )
     }
 
@@ -38,7 +36,6 @@ struct SummaryGenerationSettings: Codable, Equatable, Sendable {
         return Self(
             modelID: modelID, reasoningEffort: reasoningEffort,
             detailLevelInstruction: detailLevel.instruction, languageDisplayName: languageDisplayName,
-            runtimeProvider: runtimeProvider,
             workspaceID: workspaceID, workspacePreferences: workspacePreferences, customInstructions: customInstructions
         )
     }
@@ -54,7 +51,6 @@ struct SummaryGenerationSettings: Codable, Equatable, Sendable {
             modelID: preferences.local.model, reasoningEffort: preferences.local.reasoningEffort,
             detailLevelInstruction: preferences.summary.detailLevel.instruction,
             languageDisplayName: preferences.outputLanguage.displayName,
-            runtimeProvider: runtimeProvider,
             workspaceID: workspace?.id ?? workspaceID, workspacePreferences: preferences, customInstructions: customInstructions
         )
     }

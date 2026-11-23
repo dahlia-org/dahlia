@@ -4,13 +4,12 @@ import Testing
 @testable import Dahlia
 
 @MainActor
-struct CodexRuntimeAccountIsolationTests {
+struct PiRuntimeContextTests {
     @Test(arguments: [false, true])
     func selectedProviderWaitsForActivationResult(fails: Bool) async {
-        let store = CodexRuntimeContextStore()
-        store.apply(.local)
-        let expected = CodexRuntimeProvider.local
-        store.beginActivation(expected)
+        let store = PiRuntimeContextStore()
+        store.apply()
+        store.beginActivation()
         var started = false
         var finished = false
         var failure: (any Error)?
@@ -18,7 +17,7 @@ struct CodexRuntimeAccountIsolationTests {
             started = true
             defer { finished = true }
             do {
-                try await store.waitUntilActive(expected)
+                try await store.waitUntilActive()
             } catch {
                 failure = error
             }
@@ -29,7 +28,7 @@ struct CodexRuntimeAccountIsolationTests {
         if fails {
             store.activationFailed()
         } else {
-            store.apply(expected)
+            store.apply()
         }
         let completed = await pollUntil { finished }
         waiter.cancel()
@@ -92,7 +91,7 @@ struct CodexRuntimeAccountIsolationTests {
         }
         defer { try? FileManager.default.removeItem(at: pi.rootURL) }
         let locator = PiAgentDirectoryLocator(applicationSupportURL: pi.rootURL)
-        let coordinator = CodexRuntimeContextCoordinator(
+        let coordinator = PiRuntimeContextCoordinator(
             agentLocator: locator,
             databricksClient: databricksClient,
             service: pi.service,
@@ -113,13 +112,13 @@ struct CodexRuntimeAccountIsolationTests {
         try await ProviderAccountDirectory.$connections.withValue([
             .init(id: connection.id, workspaceURL: URL(string: connection.host)!),
         ]) {
-            try await coordinator.activate(provider: .local)
+            try await coordinator.activate()
         }
 
         await #expect(throws: CancellationError.self) { try await generation.value }
         #expect(await summary.isClosed)
-        #expect(pi.contextStore.provider == .local)
-        let models = try String(contentsOf: locator.agentURL(for: .local).appending(path: "models.json"), encoding: .utf8)
+        #expect(pi.contextStore.isConfigured)
+        let models = try String(contentsOf: locator.agentURL().appending(path: "models.json"), encoding: .utf8)
         #expect(models.contains("https:\\/\\/dbc.example.com\\/ai-gateway\\/anthropic") || models
             .contains("https://dbc.example.com/ai-gateway/anthropic"))
     }
@@ -136,19 +135,19 @@ struct CodexRuntimeAccountIsolationTests {
             ).insert(db)
         }
         let locator = PiAgentDirectoryLocator(applicationSupportURL: pi.rootURL)
-        let coordinator = CodexRuntimeContextCoordinator(
+        let coordinator = PiRuntimeContextCoordinator(
             agentLocator: locator,
             databricksClient: DatabricksOAuthService(storage: DatabricksTestStorage(connection: nil).storage),
             service: pi.service,
             contextStore: pi.contextStore
         )
         await coordinator.configure(dbQueue: database.dbQueue)
-        let modelsURL = try locator.agentURL(for: .local).appending(path: "models.json")
+        let modelsURL = try locator.agentURL().appending(path: "models.json")
 
         // Activation records the Server URL without any network request; models are fetched when listed.
         try await ProviderAccountDirectory.$connections.withValue([]) {
             try await ProviderAccountDirectory.$dahliaConnections.withValue([connectionID]) {
-                try await coordinator.activate(provider: .local)
+                try await coordinator.activate()
             }
         }
 

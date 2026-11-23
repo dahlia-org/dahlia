@@ -155,12 +155,7 @@ struct SetupTourView: View {
                 _ = await prepareInitialWorkspace()
         }
         .id(settings.appLanguage)
-        // Outside `.id`, so a language change does not clear the account mid-tour.
-        .onChange(of: tourAccount, initial: true) { _, account in settings.setupTourAccount = account }
-        .onDisappear {
-            accountAdvanceTask?.cancel()
-            settings.setupTourAccount = nil
-        }
+        .onDisappear { accountAdvanceTask?.cancel() }
         .background(Color(nsColor: .windowBackgroundColor))
         .accessibilityElement(children: .contain)
         .windowDismissBehavior(
@@ -188,8 +183,7 @@ struct SetupTourView: View {
         case .workingLanguages:
             WorkingLanguagesSetupStepView()
         case .pi:
-            PiSetupStepView(account: tourAccount, isInstalling: $isInstallingPi)
-                .id(tourAccount)
+            PiSetupStepView(isInstalling: $isInstallingPi)
         case .permissions:
             PermissionSetupStepView()
         case .modelProvider:
@@ -215,8 +209,6 @@ struct SetupTourView: View {
             model.advance()
         }
     }
-
-    private var tourAccount: CodexRuntimeProvider { .local }
 
     private func continueWithLocalAccount() {
         model.selectAccount()

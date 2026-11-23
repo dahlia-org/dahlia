@@ -2,23 +2,21 @@ import SwiftUI
 
 /// Independent model and reasoning settings for memory or skill reviews.
 struct AgentReviewModelRows: View {
-    let account: CodexRuntimeProvider
     let kind: AgentLearningSettings.ReviewKind
     let models: [CodexModel]
     @AppStorage private var model: String
     @AppStorage private var effort: String
 
-    init(account: CodexRuntimeProvider, kind: AgentLearningSettings.ReviewKind, models: [CodexModel]) {
-        self.account = account
+    init(kind: AgentLearningSettings.ReviewKind, models: [CodexModel]) {
         self.kind = kind
         self.models = models
         _model = AppStorage(
-            wrappedValue: AgentLearningSettings.reviewModel(account.accountKey, kind: kind),
-            AgentLearningSettings.reviewModelKey(account.accountKey, kind: kind)
+            wrappedValue: AgentLearningSettings.reviewModel(AppAccount.key, kind: kind),
+            AgentLearningSettings.reviewModelKey(AppAccount.key, kind: kind)
         )
         _effort = AppStorage(
-            wrappedValue: AgentLearningSettings.reviewEffort(account.accountKey, kind: kind),
-            AgentLearningSettings.reviewEffortKey(account.accountKey, kind: kind)
+            wrappedValue: AgentLearningSettings.reviewEffort(AppAccount.key, kind: kind),
+            AgentLearningSettings.reviewEffortKey(AppAccount.key, kind: kind)
         )
     }
 
@@ -39,7 +37,7 @@ struct AgentReviewModelRows: View {
             }
         }
         .onChange(of: models, initial: true) {
-            if let selected = AgentLearningSettings.prepareReviewModel(account.accountKey, kind: kind, models: models) { model = selected }
+            if let selected = AgentLearningSettings.prepareReviewModel(AppAccount.key, kind: kind, models: models) { model = selected }
         }
         LabeledContent(L10n.agentReviewEffort) {
             Picker(L10n.agentReviewEffort, selection: $effort) {

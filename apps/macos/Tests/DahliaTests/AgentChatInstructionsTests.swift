@@ -14,7 +14,7 @@ import SwiftUI
             let defaults = try #require(UserDefaults(suiteName: suite))
             defer { defaults.removePersistentDomain(forName: suite) }
             let host = NSHostingView(rootView: Form {
-                AgentChatInstructionsSection(account: .local, defaults: defaults)
+                AgentChatInstructionsSection(defaults: defaults)
             }.formStyle(.grouped).font(.dahliaBody))
             host.frame = NSRect(x: 0, y: 0, width: 600, height: 300)
             let window = NSWindow(contentRect: host.frame, styleMask: .titled, backing: .buffered, defer: false)
@@ -30,36 +30,27 @@ import SwiftUI
             #expect(textView.alignment == .left || textView.alignment == .natural)
             textView.insertText("日本語で回答してください", replacementRange: NSRange(location: 0, length: 0))
             #expect(await pollUntil {
-                AgentChatInstructions.load(for: .local, defaults: defaults) == "日本語で回答してください"
+                AgentChatInstructions.load(defaults: defaults) == "日本語で回答してください"
             })
             #expect(textView.string == "日本語で回答してください")
         }
 
         @Test
-        func summaryOptInIsAccountLocalAndIgnoresBlankInstructions() throws {
+        func summaryOptInIgnoresBlankInstructions() throws {
             let suite = "AgentChatInstructionsTests.\(UUID.v7())"
             let defaults = try #require(UserDefaults(suiteName: suite))
             defer { defaults.removePersistentDomain(forName: suite) }
-            let accounts: [CodexRuntimeProvider] = [.local]
-            for account in accounts {
-                defaults.set("Focus on decisions", forKey: AgentChatInstructions.defaultsKey(for: account))
-                #expect(AgentChatInstructions.loadForSummary(for: account, defaults: defaults) == nil)
-            }
-            for account in accounts {
-                defaults.set(true, forKey: AgentChatInstructions.summaryEnabledKey(for: account))
-                #expect(AgentChatInstructions.loadForSummary(for: account, defaults: defaults) == "Focus on decisions")
-                for other in accounts where other != account {
-                    #expect(AgentChatInstructions.loadForSummary(for: other, defaults: defaults) == nil)
-                }
-                defaults.set(false, forKey: AgentChatInstructions.summaryEnabledKey(for: account))
-                #expect(AgentChatInstructions.loadForSummary(for: account, defaults: defaults) == nil)
-                #expect(AgentChatInstructions.load(for: account, defaults: defaults) == "Focus on decisions")
-                defaults.set(true, forKey: AgentChatInstructions.summaryEnabledKey(for: account))
-                for blank in ["", " \n\t"] {
-                    defaults.set(blank, forKey: AgentChatInstructions.defaultsKey(for: account))
-                    #expect(AgentChatInstructions.loadForSummary(for: account, defaults: defaults) == nil)
-                }
-                defaults.set(false, forKey: AgentChatInstructions.summaryEnabledKey(for: account))
+            defaults.set("Focus on decisions", forKey: AgentChatInstructions.defaultsKey())
+            #expect(AgentChatInstructions.loadForSummary(defaults: defaults) == nil)
+            defaults.set(true, forKey: AgentChatInstructions.summaryEnabledKey())
+            #expect(AgentChatInstructions.loadForSummary(defaults: defaults) == "Focus on decisions")
+            defaults.set(false, forKey: AgentChatInstructions.summaryEnabledKey())
+            #expect(AgentChatInstructions.loadForSummary(defaults: defaults) == nil)
+            #expect(AgentChatInstructions.load(defaults: defaults) == "Focus on decisions")
+            defaults.set(true, forKey: AgentChatInstructions.summaryEnabledKey())
+            for blank in ["", " \n\t"] {
+                defaults.set(blank, forKey: AgentChatInstructions.defaultsKey())
+                #expect(AgentChatInstructions.loadForSummary(defaults: defaults) == nil)
             }
         }
 
@@ -69,15 +60,14 @@ import SwiftUI
             let defaults = try #require(UserDefaults(suiteName: suite))
             defer { defaults.removePersistentDomain(forName: suite) }
             let workspace = WorkspaceRecord(id: .v7(), path: nil, name: "Test", createdAt: .now, lastOpenedAt: .now)
-            let account = CodexRuntimeProvider.local
-            defaults.set("Focus on decisions", forKey: AgentChatInstructions.defaultsKey(for: account))
+            defaults.set("Focus on decisions", forKey: AgentChatInstructions.defaultsKey())
             let disabled = SummaryGenerationSettings.current(workspace: workspace, defaults: defaults)
             #expect(disabled.customInstructions == nil)
             #expect(!SummaryService.summaryGenerationInstructions(generationSettings: disabled).contains("Focus on decisions"))
-            defaults.set(true, forKey: AgentChatInstructions.summaryEnabledKey(for: account))
+            defaults.set(true, forKey: AgentChatInstructions.summaryEnabledKey())
             let captured = SummaryGenerationSettings.current(workspace: workspace, defaults: defaults)
-            defaults.set("Changed after capture", forKey: AgentChatInstructions.defaultsKey(for: account))
-            defaults.set(false, forKey: AgentChatInstructions.summaryEnabledKey(for: account))
+            defaults.set("Changed after capture", forKey: AgentChatInstructions.defaultsKey())
+            defaults.set(false, forKey: AgentChatInstructions.summaryEnabledKey())
             let adjusted = captured.applying(detailLevel: .concise).applying(options: .manual)
             let restored = try JSONDecoder().decode(SummaryGenerationSettings.self, from: JSONEncoder().encode(adjusted))
             #expect(restored.customInstructions == "Focus on decisions")
@@ -96,23 +86,16 @@ import SwiftUI
         }
 
         @Test
-        func instructionsPersistPerAccountAndCanBeCleared() throws {
+        func instructionsPersistAndCanBeCleared() throws {
             let suite = "AgentChatInstructionsTests.\(UUID.v7())"
             let defaults = try #require(UserDefaults(suiteName: suite))
             defer { defaults.removePersistentDomain(forName: suite) }
-            let accounts: [CodexRuntimeProvider] = [.local]
-            for account in accounts {
-                #expect(AgentChatInstructions.load(for: account, defaults: defaults).isEmpty)
-            }
-            for (index, account) in accounts.enumerated() {
-                defaults.set("Instructions \(index)\n日本語", forKey: AgentChatInstructions.defaultsKey(for: account))
-            }
+            #expect(AgentChatInstructions.load(defaults: defaults).isEmpty)
+            defaults.set("Instructions\n日本語", forKey: AgentChatInstructions.defaultsKey())
             let reloaded = try #require(UserDefaults(suiteName: suite))
-            for (index, account) in accounts.enumerated() {
-                #expect(AgentChatInstructions.load(for: account, defaults: reloaded) == "Instructions \(index)\n日本語")
-            }
-            defaults.set("", forKey: AgentChatInstructions.defaultsKey(for: .local))
-            #expect(AgentChatInstructions.load(for: .local, defaults: defaults).isEmpty)
+            #expect(AgentChatInstructions.load(defaults: reloaded) == "Instructions\n日本語")
+            defaults.set("", forKey: AgentChatInstructions.defaultsKey())
+            #expect(AgentChatInstructions.load(defaults: defaults).isEmpty)
         }
     }
 #endif

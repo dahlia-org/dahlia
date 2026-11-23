@@ -15,12 +15,12 @@
 
             // The values from before per-account settings belong to the first account opened.
             defaults.set(5, forKey: intervalKey)
-            AppSettings.switchMeetingSettings(to: .local, in: defaults)
+            AppSettings.switchMeetingSettings(in: defaults)
             #expect(defaults.integer(forKey: intervalKey) == 5)
             defaults.set("en_US", forKey: localeKey)
 
             // Opening the account again keeps the values it set.
-            AppSettings.switchMeetingSettings(to: .local, in: defaults)
+            AppSettings.switchMeetingSettings(in: defaults)
             #expect(defaults.integer(forKey: intervalKey) == 5)
             #expect(defaults.string(forKey: localeKey) == "en_US")
         }

@@ -4,7 +4,7 @@ import Observation
 /// Sign-in for one Local Account subscription through Pi's own OAuth flow. Each subscription signs in independently.
 @MainActor
 @Observable
-final class CodexAccountController {
+final class PiSubscriptionController {
     let subscription: PiSubscription
     private(set) var accountStatus: PiRuntimeService.AccountStatus?
     private(set) var models: [CodexModel] = []

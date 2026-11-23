@@ -130,8 +130,6 @@ final class CodexChatSessionModel: Identifiable {
     @ObservationIgnored private var approvalMethodSelectionGeneration: UInt = 0
     @ObservationIgnored private var restoreSelectionGeneration: UInt?
     @ObservationIgnored private let workspaceSettings: WorkspaceAISettingsModel
-    @ObservationIgnored private let runtimeProviderResolver: @Sendable () -> CodexRuntimeProvider
-    @ObservationIgnored private var preparedRuntimeProvider: CodexRuntimeProvider?
     @ObservationIgnored private var preparedModelsGeneration: Int?
 
     var hasRecoverablePendingInputs: Bool {
@@ -158,9 +156,6 @@ final class CodexChatSessionModel: Identifiable {
         service: any CodexChatServicing = PiChatService.shared,
         settings: AppSettings = .shared,
         workspaceSettings: WorkspaceAISettingsModel = .shared,
-        runtimeProviderResolver: @escaping @Sendable () -> CodexRuntimeProvider = {
-            CodexRuntimeContextStore.shared.provider
-        },
         contextProvider: any CodexChatContextProviding = CodexChatContextProvider(),
         streamingUpdateInterval: Duration = .milliseconds(50),
         usageTelemetryReporter: @escaping UsageTelemetryReporter = { event in
@@ -170,7 +165,7 @@ final class CodexChatSessionModel: Identifiable {
         self.id = id
         let resolvedWorkspaceID = settings.currentWorkspace?.id
         let usesWorkspaceSettings = workspaceSettings.workspaceID == resolvedWorkspaceID
-        self.accountID = accountID ?? CodexRuntimeProvider.local.accountKey
+        self.accountID = accountID ?? AppAccount.key
         self.backendThreadID = backendThreadID
         self.title = title
         self.messages = messages
@@ -181,7 +176,6 @@ final class CodexChatSessionModel: Identifiable {
         self.service = service
         self.settings = settings
         self.workspaceSettings = workspaceSettings
-        self.runtimeProviderResolver = runtimeProviderResolver
         self.contextProvider = contextProvider
         self.streamingUpdateInterval = streamingUpdateInterval
         self.usageTelemetryReporter = usageTelemetryReporter
@@ -193,29 +187,19 @@ final class CodexChatSessionModel: Identifiable {
         hasSelectedProject = true
     }
 
-    /// Registration shortcuts follow the active account, as Agent settings does.
-    var runtimeProvider: CodexRuntimeProvider { runtimeProviderResolver() }
-
     func slashCommands() async throws -> [CodexChatSlashCommand] {
         guard isBoundToCurrentAccount, !isReleased else { return [] }
-        let provider = runtimeProvider
         let commands = try await service.commands(threadID: backendThreadID)
         try Task.checkCancellation()
-        guard !isReleased, provider == runtimeProvider else { throw CancellationError() }
+        guard !isReleased else { throw CancellationError() }
         return commands
     }
 
     func prepare(forceRefresh: Bool = false) async {
-        let runtimeProvider = runtimeProviderResolver()
-        if let preparedRuntimeProvider, preparedRuntimeProvider != runtimeProvider {
-            errorMessage = AIConfigurationError.providerChanged(preparedRuntimeProvider.displayName).localizedDescription
-            return
-        }
         // A chat that was hidden when the models changed (it missed `modelsDidChange`) lists the new ones when it shows.
         let modelsGeneration = PiRuntimeService.modelsGeneration.withLock { $0 }
         guard models.isEmpty
             || forceRefresh
-            || preparedRuntimeProvider != runtimeProvider
             || preparedModelsGeneration != modelsGeneration
         else { return }
         isLoading = true
@@ -225,10 +209,8 @@ final class CodexChatSessionModel: Identifiable {
             unsubscribeIfPossible()
         }
         do {
-            let loadedModels = try await service.models(forceRefresh: forceRefresh || preparedRuntimeProvider != runtimeProvider)
-            guard runtimeProvider == runtimeProviderResolver() else { return }
+            let loadedModels = try await service.models(forceRefresh: forceRefresh)
             models = loadedModels
-            preparedRuntimeProvider = runtimeProvider
             preparedModelsGeneration = modelsGeneration
             resolveSelections()
         } catch is CancellationError {
@@ -284,21 +266,19 @@ final class CodexChatSessionModel: Identifiable {
     func loadEarlierMessages() async {
         guard !isReleased, !isGenerating, !isRestoring, !isLoadingEarlierMessages,
               let threadID = backendThreadID, let cursor = earlierMessagesCursor else { return }
-        let provider = runtimeProvider
         isLoadingEarlierMessages = true
         earlierMessagesError = nil
         defer { isLoadingEarlierMessages = false }
         do {
             let page = try await service.loadEarlierMessages(threadID: threadID, cursor: cursor)
             try Task.checkCancellation()
-            guard !isReleased, !isGenerating, backendThreadID == threadID, earlierMessagesCursor == cursor,
-                  runtimeProvider == provider else { return }
+            guard !isReleased, !isGenerating, backendThreadID == threadID, earlierMessagesCursor == cursor else { return }
             messages = CodexChatMessage.prependingHistory(page.messages, to: messages)
             earlierMessagesCursor = page.earlierCursor
         } catch is CancellationError {
             // Closing or switching a conversation cancels only its display projection.
         } catch {
-            guard !isReleased, backendThreadID == threadID, runtimeProvider == provider else { return }
+            guard !isReleased, backendThreadID == threadID else { return }
             earlierMessagesError = error.localizedDescription
         }
     }
@@ -1157,8 +1137,7 @@ extension CodexChatSessionModel {
             inputs: inputs,
             model: model,
             effort: effort,
-            approvalMethod: approvalMethod,
-            expectedProvider: preparedRuntimeProvider ?? runtimeProviderResolver()
+            approvalMethod: approvalMethod
         )
     }
 
@@ -1267,10 +1246,6 @@ extension CodexChatSessionModel {
 
         guard !isStopRequested else {
             throw CancellationError()
-        }
-        if let preparedRuntimeProvider,
-           preparedRuntimeProvider != runtimeProviderResolver() {
-            throw AIConfigurationError.providerChanged(preparedRuntimeProvider.displayName)
         }
     }
 

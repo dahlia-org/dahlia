@@ -91,7 +91,7 @@ import Foundation
             defer { try? FileManager.default.removeItem(at: root) }
             let support = root.appending(path: "support")
             let locator = PiAgentDirectoryLocator(applicationSupportURL: support)
-            let agent = try locator.agentURL(for: .local)
+            let agent = try locator.agentURL()
             let other = support.appending(path: "Dahlia/accounts/\(UUID().uuidString.lowercased())/pi")
             try FileManager.default.createDirectory(at: other.appending(path: "skills"), withIntermediateDirectories: true)
             let work = root.appending(path: "work")
@@ -381,9 +381,9 @@ import Foundation
             let link = FileManager.default.temporaryDirectory.appending(path: "PiSandboxTests-\(UUID())")
             try FileManager.default.createSymbolicLink(at: link, withDestinationURL: URL(fileURLWithPath: NSHomeDirectory()))
             defer { try? FileManager.default.removeItem(at: link) }
-            defaults.set(link.path, forKey: PiWorkingDirectory.defaultsKey(for: .local))
+            defaults.set(link.path, forKey: PiWorkingDirectory.defaultsKey())
             #expect(throws: PiRuntimeError.launchFailed(L10n.agentWorkingDirectoryNotAllowed)) {
-                try PiWorkingDirectory().url(for: .local, defaults: defaults)
+                try PiWorkingDirectory().url(defaults: defaults)
             }
         }
 

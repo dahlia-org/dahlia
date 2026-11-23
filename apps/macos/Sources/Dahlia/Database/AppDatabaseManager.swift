@@ -34,12 +34,6 @@ final class AppDatabaseManager: Sendable {
         usesDatabasePool: Bool = false,
         onMigration: (@Sendable () -> Void)? = nil,
         screenshotAnalyzer: any ScreenshotAnalyzing = CodexScreenshotAnalysisService(),
-        screenshotRuntimeProviderResolver: @escaping BackgroundJobWorker.RuntimeProviderResolver = {
-            CodexRuntimeContextStore.shared.provider
-        },
-        localAccountSettingsResolver: @escaping BackgroundJobWorker.LocalAccountSettingsResolver = {
-            WorkspaceAISettingsModel.shared.localAccountSettings
-        },
         searchFailureReporter: @escaping BackgroundJobWorker.FailureReporter = { ErrorReportingService.captureSearchFailure($0) }
     ) throws {
         if path != ":memory:" {
@@ -83,8 +77,6 @@ final class AppDatabaseManager: Sendable {
         searchIndexer = BackgroundJobWorker(
             dbQueue: dbQueue,
             screenshotAnalyzer: screenshotAnalyzer,
-            runtimeProviderResolver: screenshotRuntimeProviderResolver,
-            localAccountSettingsResolver: localAccountSettingsResolver,
             failureReporter: searchFailureReporter
         )
         if path != ":memory:" {

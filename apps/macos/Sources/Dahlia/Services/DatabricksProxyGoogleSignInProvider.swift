@@ -27,7 +27,6 @@ final class DatabricksProxyGoogleSignInProvider: GoogleSignInProviding {
     private let driveClient: GoogleDriveBackupClient
     private let apiClient: any GoogleCalendarAPIClientProviding
     private let userDefaults: UserDefaults
-    private let openAccount: @MainActor () -> CodexRuntimeProvider
     /// The Google identity resolved for one connection; another account's connection never reuses it.
     private var cachedAccount: (connectionID: UUID, account: GoogleCalendarAccount)?
     private var connectionObserver: GoogleAuthSessionObserver?
@@ -39,8 +38,7 @@ final class DatabricksProxyGoogleSignInProvider: GoogleSignInProviding {
         storage: DatabricksOAuthStorage = .local(),
         apiClient: any GoogleCalendarAPIClientProviding = GoogleCalendarAPIClient(),
         driveClient: GoogleDriveBackupClient = GoogleDriveBackupClient(),
-        userDefaults: UserDefaults = .standard,
-        openAccount: @escaping @MainActor () -> CodexRuntimeProvider = { AppSettings.shared.calendarAccount }
+        userDefaults: UserDefaults = .standard
     ) {
         self.sessionKind = sessionKind
         self.direct = direct ?? GoogleSignInAdapter(sessionKind: sessionKind)
@@ -49,9 +47,8 @@ final class DatabricksProxyGoogleSignInProvider: GoogleSignInProviding {
         self.apiClient = apiClient
         self.driveClient = driveClient
         self.userDefaults = userDefaults
-        self.openAccount = openAccount
         // Adding or removing the Databricks connection changes the route; the store re-evaluates through its own
-        // notification. The store follows account switches itself.
+        // notification.
         connectionObserver = GoogleAuthSessionObserver(notificationName: .databricksConnectionDidChange) { [weak self] _ in
             guard let self else { return }
             cachedAccount = nil
@@ -69,7 +66,7 @@ final class DatabricksProxyGoogleSignInProvider: GoogleSignInProviding {
     }
 
     private var connection: DatabricksConnection? {
-        guard let connectionID = GoogleCalendarProvider.current(account: openAccount(), defaults: userDefaults).databricksConnectionID
+        guard let connectionID = GoogleCalendarProvider.current(defaults: userDefaults).databricksConnectionID
         else { return nil }
         return try? storage.loadConnections().first { $0.id == connectionID }
     }

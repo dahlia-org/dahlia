@@ -10,7 +10,7 @@ struct AgentProviderRegistrationView: View {
 
     let model: AgentMCPSettingsModel
     /// The Local Account's subscriptions; other accounts have none.
-    let subscriptions: [CodexAccountController]
+    let subscriptions: [PiSubscriptionController]
     let onClose: () -> Void
 
     @State private var kind: Kind
@@ -18,7 +18,7 @@ struct AgentProviderRegistrationView: View {
     @State private var signInTask: Task<Void, Never>?
     @State private var errorMessage: String?
 
-    init(model: AgentMCPSettingsModel, subscriptions: [CodexAccountController], onClose: @escaping () -> Void) {
+    init(model: AgentMCPSettingsModel, subscriptions: [PiSubscriptionController], onClose: @escaping () -> Void) {
         self.model = model
         self.subscriptions = subscriptions
         self.onClose = onClose

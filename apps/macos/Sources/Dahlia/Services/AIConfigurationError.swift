@@ -4,7 +4,6 @@ enum AIConfigurationError: LocalizedError, Equatable {
     case databricksProfileRequired
     case invalidDatabricksWorkspaceURL
     case accountNotReady
-    case providerChanged(String)
     case updateFailed(String)
 
     var errorDescription: String? {
@@ -15,8 +14,6 @@ enum AIConfigurationError: LocalizedError, Equatable {
             L10n.databricksWorkspaceURLInvalid
         case .accountNotReady:
             L10n.codexAccountConfigurationNotReady
-        case let .providerChanged(provider):
-            L10n.codexChatProviderChanged(provider)
         case let .updateFailed(detail):
             L10n.codexConfigurationUpdateFailed(detail)
         }

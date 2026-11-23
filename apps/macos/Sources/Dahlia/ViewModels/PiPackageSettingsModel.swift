@@ -14,11 +14,9 @@ final class PiPackageSettingsModel {
     private(set) var errorMessage: String?
     private(set) var errorDetails: String?
     private(set) var didChange = false
-    let account: CodexRuntimeProvider
     private let service: PiPackageService
 
-    init(account: CodexRuntimeProvider, service: PiPackageService = .shared) {
-        self.account = account
+    init(service: PiPackageService = .shared) {
         self.service = service
     }
 
@@ -26,9 +24,9 @@ final class PiPackageSettingsModel {
 
     func refresh() async {
         do {
-            isAutoReviewInstalled = await service.isAutoReviewInstalled(for: account)
-            isWebAccessInstalled = await service.isWebAccessInstalled(for: account)
-            packages = try await service.packages(for: account)
+            isAutoReviewInstalled = await service.isAutoReviewInstalled()
+            isWebAccessInstalled = await service.isWebAccessInstalled()
+            packages = try await service.packages()
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -63,7 +61,7 @@ final class PiPackageSettingsModel {
                 changingSource = nil
             }
             do {
-                try await service.change(source, installing: installing, account: account)
+                try await service.change(source, installing: installing)
                 if installing, source == self.source { self.source = "" }
                 didChange = true
                 NotificationCenter.default.post(name: PiPackageService.packagesDidChange, object: nil)

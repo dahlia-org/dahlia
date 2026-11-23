@@ -1,7 +1,6 @@
 import SwiftUI
 
 struct AgentAutoReviewSettingsSection: View {
-    let account: CodexRuntimeProvider
     @AppStorage private var selectedModel: String
     @AppStorage private var triageEnabled: Bool
     @State private var isTriageUnavailable = false
@@ -10,10 +9,9 @@ struct AgentAutoReviewSettingsSection: View {
     @State private var isLoading = false
     @State private var errorMessage: String?
 
-    init(account: CodexRuntimeProvider) {
-        self.account = account
-        _selectedModel = AppStorage(wrappedValue: "", AgentAutoReviewSettings.defaultsKey(for: account))
-        _triageEnabled = AppStorage(wrappedValue: false, AgentAutoReviewSettings.triageDefaultsKey(for: account))
+    init() {
+        _selectedModel = AppStorage(wrappedValue: "", AgentAutoReviewSettings.defaultsKey())
+        _triageEnabled = AppStorage(wrappedValue: false, AgentAutoReviewSettings.triageDefaultsKey())
     }
 
     var body: some View {
@@ -88,7 +86,7 @@ struct AgentAutoReviewSettingsSection: View {
         isTriageUnavailable = false
         defer { isCheckingTriage = false }
         do {
-            let configuration = try await PiRuntimeService.shared.autoReviewTriage(for: account, forceRefresh: true)
+            let configuration = try await PiRuntimeService.shared.autoReviewTriage(forceRefresh: true)
             guard !Task.isCancelled else { return }
             triageEnabled = configuration != nil
             isTriageUnavailable = configuration == nil
@@ -103,7 +101,7 @@ struct AgentAutoReviewSettingsSection: View {
         errorMessage = nil
         defer { isLoading = false }
         do {
-            let loaded = try await PiRuntimeService.shared.models(for: account, forceRefresh: false)
+            let loaded = try await PiRuntimeService.shared.models(forceRefresh: false)
             guard !Task.isCancelled else { return }
             models = loaded.filter { !$0.hidden }
         } catch is CancellationError {

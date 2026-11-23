@@ -120,14 +120,15 @@ actor PiChatService: CodexChatServicing {
 
     /// The settle handler has already saved the thread's status and undelivered steers, and fails the turn if that throws.
     private func endSettledRun(_ runID: UUID, threadID: String, threadStatus: String) {
-        guard let account = sessions[threadID]?.provider.accountKey else { return }
+        guard sessions[threadID] != nil else { return }
+        let account = AppAccount.key
         endRun(runID, threadID: threadID, accountID: account, status: threadStatus == "idle" ? "completed" : threadStatus, savingThread: false)
     }
 
     /// Ends the turn a removed session still held, if any; without one only the published state changes.
     private func endTurn(of session: Session, threadID: String, status: String) {
         guard let turn = session.turn else { return publishStates() }
-        endRun(turn.id, threadID: threadID, accountID: session.provider.accountKey, status: status, undelivered: turn.pendingSteers)
+        endRun(turn.id, threadID: threadID, accountID: AppAccount.key, status: status, undelivered: turn.pendingSteers)
     }
 
     func configureBackup(dbQueue: any DatabaseWriter, applicationSupportURL: URL = DahliaApplicationSupport.currentDirectoryURL) {
@@ -207,7 +208,6 @@ actor PiChatService: CodexChatServicing {
     /// One live Pi process for a thread. Its GRDB history outlives the process.
     struct Session {
         let processID: UUID
-        let provider: CodexRuntimeProvider
         let connection: PiRPCConnection
         let fileAccess: PiFileAccessSettings
         var approvalMethod: CodexChatApprovalMethod?
@@ -246,13 +246,13 @@ actor PiChatService: CodexChatServicing {
     private let workingDirectory: PiWorkingDirectory
     let agentLocator: PiAgentDirectoryLocator
     private let mcpExecutableURL: URL?
-    private let reviewModel: @Sendable (CodexRuntimeProvider) -> String
-    private let reviewTriageEnabled: @Sendable (CodexRuntimeProvider) -> Bool
-    private let customInstructions: @Sendable (CodexRuntimeProvider) -> String
-    private let mcpSettings: @Sendable (CodexRuntimeProvider) -> AgentMCPSettings
+    private let reviewModel: @Sendable () -> String
+    private let reviewTriageEnabled: @Sendable () -> Bool
+    private let customInstructions: @Sendable () -> String
+    private let mcpSettings: @Sendable () -> AgentMCPSettings
     /// The Databricks workspace whose Omnigent chat may call, or nil while the account has it off.
-    let omnigentConnection: @Sendable (CodexRuntimeProvider) -> UUID?
-    private let fileAccessSettings: @Sendable (CodexRuntimeProvider) -> PiFileAccessSettings
+    let omnigentConnection: @Sendable () -> UUID?
+    private let fileAccessSettings: @Sendable () -> PiFileAccessSettings
     var sessions: [String: Session] = [:]
     private var opening: [String: Task<PiRPCConnection, any Error>] = [:]
     private var leases: [String: Set<UUID>] = [:]
@@ -284,12 +284,12 @@ actor PiChatService: CodexChatServicing {
         workingDirectory: PiWorkingDirectory = PiWorkingDirectory(),
         agentLocator: PiAgentDirectoryLocator = PiAgentDirectoryLocator(),
         mcpExecutableURL: URL? = nil,
-        reviewModel: @escaping @Sendable (CodexRuntimeProvider) -> String = { AgentAutoReviewSettings.model(for: $0) },
-        reviewTriageEnabled: @escaping @Sendable (CodexRuntimeProvider) -> Bool = { AgentAutoReviewSettings.triageEnabled(for: $0) },
-        customInstructions: @escaping @Sendable (CodexRuntimeProvider) -> String = { AgentChatInstructions.load(for: $0) },
-        mcpSettings: @escaping @Sendable (CodexRuntimeProvider) -> AgentMCPSettings = { AgentMCPSettings.load(for: $0) },
-        fileAccessSettings: @escaping @Sendable (CodexRuntimeProvider) -> PiFileAccessSettings = { PiFileAccessSettings.load(for: $0) },
-        omnigentConnection: @escaping @Sendable (CodexRuntimeProvider) -> UUID? = { OmnigentService.connectionID(for: $0) }
+        reviewModel: @escaping @Sendable () -> String = { AgentAutoReviewSettings.model() },
+        reviewTriageEnabled: @escaping @Sendable () -> Bool = { AgentAutoReviewSettings.triageEnabled() },
+        customInstructions: @escaping @Sendable () -> String = { AgentChatInstructions.load() },
+        mcpSettings: @escaping @Sendable () -> AgentMCPSettings = { AgentMCPSettings.load() },
+        fileAccessSettings: @escaping @Sendable () -> PiFileAccessSettings = { PiFileAccessSettings.load() },
+        omnigentConnection: @escaping @Sendable () -> UUID? = { OmnigentService.connectionID() }
     ) {
         self.runtime = runtime
         self.historyStore = historyStore
@@ -338,25 +338,25 @@ actor PiChatService: CodexChatServicing {
     }
 
     func listThreads(cursor: String?) async throws -> CodexChatThreadPage {
-        let provider = try await runtime.currentProvider()
-        return try history().listThreads(accountID: provider.accountKey, cursor: cursor)
+        try await runtime.requireConfigured()
+        return try history().listThreads(accountID: AppAccount.key, cursor: cursor)
     }
 
     func markThreadSeen(id: String, through seq: Int64) async throws {
-        let provider = try await runtime.currentProvider()
+        try await runtime.requireConfigured()
         let store = try history()
         try await Task.detached(priority: .userInitiated) {
-            try store.markThreadSeen(id: id, accountID: provider.accountKey, through: seq)
+            try store.markThreadSeen(id: id, accountID: AppAccount.key, through: seq)
         }.value
     }
 
     func loadThread(id: String) async throws -> CodexChatThread {
-        let provider = try await runtime.currentProvider()
+        try await runtime.requireConfigured()
         let store = try history()
         // A reopened view shows the method chosen in this thread instead of replacing it with the default.
         let approvalMethod = chosenApprovalMethod(id)
         return try await Task.detached(priority: .userInitiated) {
-            let record = try store.thread(id: id, accountID: provider.accountKey)
+            let record = try store.thread(id: id, accountID: AppAccount.key)
             let page = try store.messagePage(threadID: id)
             let parent = try store.parentSummary(for: record)
             return CodexChatThread(
@@ -374,35 +374,35 @@ actor PiChatService: CodexChatServicing {
     }
 
     func loadEarlierMessages(threadID: String, cursor: String) async throws -> CodexChatMessagePage {
-        let provider = try await runtime.currentProvider()
+        try await runtime.requireConfigured()
         let store = try history()
         guard let before = Int64(cursor) else { throw PiRuntimeError.invalidProtocolResponse }
         return try await Task.detached(priority: .userInitiated) {
-            _ = try store.thread(id: threadID, accountID: provider.accountKey)
+            _ = try store.thread(id: threadID, accountID: AppAccount.key)
             return try store.messagePage(threadID: threadID, before: before)
         }.value
     }
 
     /// Restoring history never starts a Pi process.
     func resumeThread(id: String) async throws -> CodexChatThread {
-        let provider = try await runtime.currentProvider()
-        _ = try history().thread(id: id, accountID: provider.accountKey)
+        try await runtime.requireConfigured()
+        _ = try history().thread(id: id, accountID: AppAccount.key)
         return try await loadThread(id: id)
     }
 
     func startThread(model: String?, effort: String, context: CodexChatContext?) async throws -> CodexChatThread {
-        let provider = try await runtime.currentProvider()
-        let directory = try agentLocator.sessionsURL(for: provider)
+        try await runtime.requireConfigured()
+        let directory = try agentLocator.sessionsURL()
         let available = try await runtime.models()
         guard !available.isEmpty else { throw PiRuntimeError.notLoggedIn }
         let selected = try PiRuntimeService.resolvedModel(
             for: CodexAppServerRequest(model: model, developerInstructions: "", inputs: [], outputSchema: Data()), in: available
         )
-        guard try await runtime.currentProvider() == provider else { throw AIConfigurationError.providerChanged(provider.displayName) }
+        guard runtime.isConfigured else { throw AIConfigurationError.accountNotReady }
         let threadID = UUID.v7().uuidString.lowercased()
         try history().createThread(ChatThreadRecord(
             id: threadID,
-            accountID: provider.accountKey,
+            accountID: AppAccount.key,
             title: "",
             model: selected.model,
             reasoningEffort: effort,
@@ -434,8 +434,8 @@ actor PiChatService: CodexChatServicing {
     }
 
     func renameThread(threadID: String, name: String) async throws {
-        let provider = try await runtime.currentProvider()
-        _ = try history().thread(id: threadID, accountID: provider.accountKey)
+        try await runtime.requireConfigured()
+        _ = try history().thread(id: threadID, accountID: AppAccount.key)
         try history().updateThread(id: threadID, title: name)
         guard let connection = sessions[threadID]?.connection else {
             pendingNames[threadID] = name
@@ -467,8 +467,7 @@ actor PiChatService: CodexChatServicing {
         inputs: [CodexAppServerInput],
         model: String?,
         effort: String,
-        approvalMethod: CodexChatApprovalMethod,
-        expectedProvider: CodexRuntimeProvider?
+        approvalMethod: CodexChatApprovalMethod
     ) async throws -> CodexChatTurnHandle {
         guard startingTurns[threadID] == nil else { throw PiRuntimeError.rpcError(code: nil, message: "turn already starting") }
         startingTurns[threadID] = 1
@@ -476,7 +475,7 @@ actor PiChatService: CodexChatServicing {
         do {
             let handle = try await startTurn(
                 threadID: threadID, inputs: inputs, model: model, effort: effort,
-                approvalMethod: approvalMethod, expectedProvider: expectedProvider
+                approvalMethod: approvalMethod
             )
             finishStartingTurn(threadID)
             await closeIfUnused(threadID)
@@ -499,25 +498,21 @@ actor PiChatService: CodexChatServicing {
         inputs: [CodexAppServerInput],
         model: String?,
         effort: String,
-        approvalMethod: CodexChatApprovalMethod,
-        expectedProvider: CodexRuntimeProvider?
+        approvalMethod: CodexChatApprovalMethod
     ) async throws -> CodexChatTurnHandle {
-        let currentProvider = try await runtime.currentProvider()
-        let record = try history().thread(id: threadID, accountID: currentProvider.accountKey)
+        try await runtime.requireConfigured()
+        let record = try history().thread(id: threadID, accountID: AppAccount.key)
         guard record.scheduleID == nil || scheduledRuns[threadID]?.origin == "schedule" else {
             throw HermesLearning.failure(L10n.agentScheduleReadOnly)
         }
         var connection = try await connection(threadID: threadID)
         let session = try live(threadID, connection)
-        if let expectedProvider, expectedProvider != session.provider {
-            throw AIConfigurationError.providerChanged(expectedProvider.displayName)
-        }
         guard session.turn == nil else { throw PiRuntimeError.rpcError(code: nil, message: "turn already active") }
         // A run with no user present never loosens the thread's own method. With no choice made in the thread, the
         // requester's own child takes the run's method, and any other thread counts as Auto review.
         var inheritedMethod = approvalMethod
         if let scheduled = scheduledRuns[threadID] {
-            let parentID = try history().thread(id: threadID, accountID: session.provider.accountKey).parentThreadID
+            let parentID = try history().thread(id: threadID, accountID: AppAccount.key).parentThreadID
             let isRequestersChild = parentID != nil && parentID == scheduled.requestedByThreadID
             // The requester may have tightened its method while this run waited in the queue.
             let ceiling = scheduled.requestedByThreadID.flatMap(chosenApprovalMethod).map { Self.stricterApproval(approvalMethod, $0) }
@@ -547,9 +542,6 @@ actor PiChatService: CodexChatServicing {
                 await closeSession(threadID)
                 connection = try await self.connection(threadID: threadID)
                 // The reopened session starts from defaults: this turn's account and approval method apply to it too.
-                if let expectedProvider, try expectedProvider != live(threadID, connection).provider {
-                    throw AIConfigurationError.providerChanged(expectedProvider.displayName)
-                }
                 sessions[threadID]?.approvalMethod = approvalMethod
                 _ = try await connection.request("set_model", parameters)
             }
@@ -565,7 +557,7 @@ actor PiChatService: CodexChatServicing {
             throw PiRuntimeError.rpcError(code: nil, message: "turn already active")
         }
 
-        try validateScheduledStart(threadID: threadID, account: session.provider.accountKey)
+        try validateScheduledStart(threadID: threadID, account: AppAccount.key)
         let (events, continuation) = AsyncThrowingStream<CodexChatTurnEvent, any Error>.makeStream(bufferingPolicy: .bufferingOldest(256))
         let runID = UUID.v7()
         let run = try scheduledRuns.removeValue(forKey: threadID) ?? history().enqueueRun(ChatRunRecord(
@@ -597,7 +589,7 @@ actor PiChatService: CodexChatServicing {
             }
             try history().setRunStatus(run.id, status: "running")
         } catch {
-            endRun(run.id, threadID: threadID, accountID: session.provider.accountKey, status: "failed", savingThread: false)
+            endRun(run.id, threadID: threadID, accountID: AppAccount.key, status: "failed", savingThread: false)
             throw error
         }
         sessions[threadID]?.turn = turn
@@ -622,7 +614,7 @@ actor PiChatService: CodexChatServicing {
                 sessions[threadID]?.turn = nil
             }
             failed.broadcast.finish(throwing: error)
-            endRun(run.id, threadID: threadID, accountID: session.provider.accountKey, status: "failed")
+            endRun(run.id, threadID: threadID, accountID: AppAccount.key, status: "failed")
             // Stopped before Pi acknowledged the prompt, which it may already be running with no turn left to stop it.
             // Closing ends that run; the next turn reopens the thread from its session file.
             if error is CancellationError { await runtime.close(connection) }
@@ -742,13 +734,13 @@ actor PiChatService: CodexChatServicing {
     }
 
     func interruptActiveTurn(threadID: String, turnID _: String?) async {
-        guard let provider = try? await runtime.currentProvider(),
-              (try? history().thread(id: threadID, accountID: provider.accountKey)) != nil else { return }
-        try? history().suppressRunNotifications(accountID: provider.accountKey, threadID: threadID)
-        try? history().interruptQueuedRuns(accountID: provider.accountKey, threadID: threadID)
+        guard await (try? runtime.requireConfigured()) != nil,
+              (try? history().thread(id: threadID, accountID: AppAccount.key)) != nil else { return }
+        try? history().suppressRunNotifications(accountID: AppAccount.key, threadID: threadID)
+        try? history().interruptQueuedRuns(accountID: AppAccount.key, threadID: threadID)
         publishStates()
         await abort(threadID: threadID)
-        await deliverResults(accountID: provider.accountKey)
+        await deliverResults(accountID: AppAccount.key)
     }
 
     func abort(threadID: String) async {
@@ -770,16 +762,16 @@ actor PiChatService: CodexChatServicing {
 
     /// The thread's live process, reopening its session file when the process has exited. Concurrent callers share one open.
     private func connection(threadID: String) async throws -> PiRPCConnection {
-        let provider = try await runtime.currentProvider()
-        let record = try history().thread(id: threadID, accountID: provider.accountKey)
+        try await runtime.requireConfigured()
+        let record = try history().thread(id: threadID, accountID: AppAccount.key)
         if let session = sessions[threadID] {
             if await session.connection.isOpen {
                 guard sessions[threadID]?.connection === session.connection else { return try await connection(threadID: threadID) }
                 if sessions[threadID]?
                     .turn != nil ||
-                    (session.profile != .scheduled && session.fileAccess == fileAccessSettings(session.provider) && session.profile
+                    (session.profile != .scheduled && session.fileAccess == fileAccessSettings() && session.profile
                         .rawValue == (scheduledRuns[threadID]?.profile ?? "interactive") && session.memoryEnabled == AgentLearningSettings
-                        .memoryEnabled(provider.accountKey)) { return session.connection }
+                        .memoryEnabled(AppAccount.key)) { return session.connection }
                 // Seatbelt is fixed at process start. Reopen idle threads before the next turn, including revocations.
                 await closeSession(threadID)
                 return try await connection(threadID: threadID)
@@ -801,7 +793,7 @@ actor PiChatService: CodexChatServicing {
             guard try !history().hasAssistantReply(threadID: threadID) else {
                 throw PiRuntimeError.rpcError(code: nil, message: L10n.chatResumeStateMissing)
             }
-            newThreads[threadID] = try (agentLocator.sessionsURL(for: provider), record.model ?? "")
+            newThreads[threadID] = try (agentLocator.sessionsURL(), record.model ?? "")
         }
         let task = Task {
             if let url = existingFile {
@@ -833,17 +825,17 @@ actor PiChatService: CodexChatServicing {
         threadID: String, sessionFile: URL? = nil, sessionArguments: [String]
     ) async throws -> PiRPCConnection {
         let processID = UUID.v7()
-        let provider = try await runtime.currentProvider()
-        let workURL = try workingDirectory.url(for: provider)
+        try await runtime.requireConfigured()
+        let workURL = try workingDirectory.url()
         // Pi runs a thread in the folder its session file names, so an older thread moves to the folder set now.
         if let sessionFile {
             try PiChatSessionFiles.setWorkingDirectory(workURL, in: sessionFile)
         }
         let mcpCommand = try Self.mcpCommand(
             executableURL: mcpExecutableURL ?? DahliaMCPBundle.executableURL(),
-            accountID: provider.accountKey
+            accountID: AppAccount.key
         )
-        let fileAccess = fileAccessSettings(provider)
+        let fileAccess = fileAccessSettings()
         let accessDescription = fileAccess.grants.map {
             "\($0.access.rawValue) (\($0.isDirectory ? "directory and descendants" : "file only")): \($0.path)"
         }.joined(separator: "\n")
@@ -851,25 +843,25 @@ actor PiChatService: CodexChatServicing {
 
         Dahlia's database: \(MeetingAccessStore.defaultDatabaseURL.path)
         Dahlia's screenshots: \(ScreenshotFileStore.defaultDirectory.path)
-        Your account skills folder (managed through skill_manage): \(agentLocator.agentURL(for: provider).appending(path: "skills").path)
+        Your account skills folder (managed through skill_manage): \(agentLocator.agentURL().appending(path: "skills").path)
         Additional file access (protected Dahlia data and runtime code remain restricted):
         \(accessDescription.isEmpty ? "None" : accessDescription)
         """
         // Pi reads mcp.json only when it starts, so settings changes reach the next process the account starts. `--tools`
         // and the allowlist come from this same snapshot: a process that reads another thread's newer file stays limited to it.
-        let mcp = mcpSettings(provider)
+        let mcp = mcpSettings()
         let mcpServers = mcp.piServers
-        try PiProviderConfiguration.writeMCPServers(mcpServers, agentURL: agentLocator.agentURL(for: provider))
+        try PiProviderConfiguration.writeMCPServers(mcpServers, agentURL: agentLocator.agentURL())
         let serverNames = ["dahlia"] + mcpServers.keys.sorted()
         // `--no-extensions` also drops Pi's MCP extension; explicitly enable it and the tools chat may call.
-        let isChild = (try? history().thread(id: threadID, accountID: provider.accountKey).parentThreadID) != nil
+        let isChild = (try? history().thread(id: threadID, accountID: AppAccount.key).parentThreadID) != nil
         let threadTools = Self.readThreadTools + (isChild ? [] : Self.manageThreadTools)
-            + (omnigentConnection(provider) == nil ? [] : Self.readOmnigentTools + (isChild ? [] : ["omni_create_session"]))
+            + (omnigentConnection() == nil ? [] : Self.readOmnigentTools + (isChild ? [] : ["omni_create_session"]))
         let profile = PiExecutionProfile(rawValue: scheduledRuns[threadID]?.profile ?? "interactive") ?? .interactive
-        let memoryEnabled = AgentLearningSettings.memoryEnabled(provider.accountKey)
+        let memoryEnabled = AgentLearningSettings.memoryEnabled(AppAccount.key)
         let learningTools = ["skills_list", "skill_view"] +
             (profile == .interactive ? ["skill_manage", "cronjob", "skill_optimize"] + (memoryEnabled ? ["memory"] : []) : [])
-        let agentURL = try agentLocator.agentURL(for: provider)
+        let agentURL = try agentLocator.agentURL()
         // A scheduled run only reads approved sources. Pi reads a missing web search setting as on, Dahlia as off.
         let webAccessURL = AgentWebAccessSettings.entryURL(agentURL: agentURL)
         let webAccess = profile == .interactive && FileManager.default.fileExists(atPath: webAccessURL.path)
@@ -877,7 +869,7 @@ actor PiChatService: CodexChatServicing {
         let tools = profile.fileTools + learningTools + (profile == .interactive ? ["dah_create_backup"] + threadTools : [])
             + (webAccess ? AgentWebAccessSettings.toolNames : []) + serverNames.map { "mcp__\($0)__*" }
         let allowedTools = try scheduledRuns[threadID].map {
-            try scheduleService().allowedTools(runID: $0.id, account: provider.accountKey)
+            try scheduleService().allowedTools(runID: $0.id, account: AppAccount.key)
         } ?? []
         // Only chat calls MCP servers; Dahlia's extension registers the sign-ins mcp.json names.
         var arguments = sessionArguments + [
@@ -885,20 +877,20 @@ actor PiChatService: CodexChatServicing {
             "--tools", tools.joined(separator: ","),
             "--system-prompt", Self.systemPrompt + dataPaths,
         ]
-        let instructions = Self.customInstructionsPrompt(customInstructions(provider))
+        let instructions = Self.customInstructionsPrompt(customInstructions())
         if !instructions.isEmpty {
             arguments += ["--append-system-prompt", instructions]
         }
         arguments += ["--append-system-prompt", HermesLearning.prompts["skills_guidance"] ?? ""]
         let memoryPrompt = try memoryEnabled ? (HermesLearning.prompts["memory_guidance"] ?? "") + "\n\n" +
-            memoryService().snapshot(account: provider.accountKey) : nil
+            memoryService().snapshot(account: AppAccount.key) : nil
         for skill in PiBundle.presetSkillURLs() {
             arguments += ["--skill", skill.path]
         }
         let reviewArguments = Array(arguments.dropFirst(sessionArguments.count))
         if let memoryPrompt { arguments += ["--append-system-prompt", memoryPrompt] }
         // The index is an optimization: without the ranking it keeps Pi's order.
-        let skillRank = await (try? skillService().indexRank(account: provider.accountKey)) ?? []
+        let skillRank = await (try? skillService().indexRank(account: AppAccount.key)) ?? []
         let connection = try await runtime.connect(
             .init(
                 mode: .chat,
@@ -917,7 +909,6 @@ actor PiChatService: CodexChatServicing {
                 ],
                 fileAccess: fileAccess, profile: profile
             ),
-            provider: provider,
             chatBridge: { [weak self] method, payload in
                 guard let self else { return .string(method == "approval" ? "cancel" : "ask") }
                 if ["memory", "skills_list", "skill_view", "skill_manage", "cronjob", "cronjobCommit", "scheduledTool", "optimizerInput"]
@@ -925,13 +916,13 @@ actor PiChatService: CodexChatServicing {
                     return await self.learningToolResult(method, payload: payload, threadID: threadID, processID: processID)
                 }
                 if method == "skillUsage" {
-                    await self.recordSkillUse(payload, provider: provider)
+                    await self.recordSkillUse(payload)
                     return .null
                 }
                 // Recorded even after the turn stopped, so the run does not stay running.
                 if method == "optimizerResult" {
                     do {
-                        return try await self.optimizerResult(payload, account: provider.accountKey, root: self.skillsRoot(provider))
+                        return try await self.optimizerResult(payload, account: AppAccount.key, root: self.skillsRoot())
                     } catch { return .object(["success": .bool(false), "error": .string(error.localizedDescription)]) }
                 }
                 if method.hasPrefix("thread_") {
@@ -956,7 +947,7 @@ actor PiChatService: CodexChatServicing {
             }
         )
         sessions[threadID] = try Session(
-            processID: processID, provider: provider, connection: connection, fileAccess: fileAccess,
+            processID: processID, connection: connection, fileAccess: fileAccess,
             reviewArguments: reviewArguments, reviewMemoryPrompt: memoryPrompt, reviewEnvironment: [
                 "DAHLIA_PI_MCP_COMMAND": HermesLearning.json(mcpCommand),
                 "DAHLIA_PI_MCP_SERVERS": HermesLearning.json(serverNames),
@@ -1116,13 +1107,10 @@ actor PiChatService: CodexChatServicing {
 
     private func createBackup(threadID: String, processID: UUID, payload: JSONValue, directory: URL) async throws -> JSONValue {
         guard sessions[threadID]?.processID == processID, let backupService, let backupDBQueue,
-              let provider = sessions[threadID]?.provider,
               let rawID = payload.objectValue?["workspace_id"]?.stringValue else { throw BackupServiceError.invalidBackup }
         let workspaceID = try TypeID.decode(rawID, as: .workspace)
-        let belongsToAccount = try await backupDBQueue.read { db in
-            try WorkspaceRecord.exists(db, key: workspaceID) && CodexRuntimeProvider.local == provider
-        }
-        guard belongsToAccount else { throw BackupServiceError.invalidBackup }
+        let exists = try await backupDBQueue.read { db in try WorkspaceRecord.exists(db, key: workspaceID) }
+        guard exists else { throw BackupServiceError.invalidBackup }
         let generation = try await backupService.createGeneration(workspaceIds: [workspaceID])
         guard sessions[threadID]?.processID == processID else { throw CancellationError() }
         let destination = directory.appending(path: generation.fileURL.lastPathComponent)
@@ -1138,14 +1126,14 @@ actor PiChatService: CodexChatServicing {
             return .bool(Self.approvalRequest(id: UUID.v7().uuidString, payload: payload, mcpServers: session.mcpServers)?.canApprove == true)
         }
         if method == "reviewTriage" {
-            guard isLive, let provider = sessions[threadID]?.provider, reviewTriageEnabled(provider) else { return .null }
-            let configuration = try? await runtime.autoReviewTriage(for: provider)
-            guard sessions[threadID]?.processID == processID, reviewTriageEnabled(provider) else { return .null }
+            guard isLive, reviewTriageEnabled() else { return .null }
+            let configuration = try? await runtime.autoReviewTriage()
+            guard sessions[threadID]?.processID == processID, reviewTriageEnabled() else { return .null }
             return configuration ?? .null
         }
         if method == "reviewModel" {
-            guard isLive, let provider = sessions[threadID]?.provider else { return .string("") }
-            return .string(reviewModel(provider))
+            guard isLive else { return .string("") }
+            return .string(reviewModel())
         }
         if sessions[threadID]?.profile != .interactive { return .string("decline") }
         if method == "approvalMode" {
@@ -1192,8 +1180,8 @@ actor PiChatService: CodexChatServicing {
     }
 
     func sessionFile(id: String) async throws -> URL {
-        let provider = try await runtime.currentProvider()
-        let root = try agentLocator.agentURL(for: provider).appending(path: "sessions")
+        try await runtime.requireConfigured()
+        let root = try agentLocator.agentURL().appending(path: "sessions")
         // Keep reopening files written by releases that used one subdirectory per Workspace.
         let directories = (try? FileManager.default.contentsOfDirectory(at: root, includingPropertiesForKeys: nil)) ?? []
         for directory in directories {

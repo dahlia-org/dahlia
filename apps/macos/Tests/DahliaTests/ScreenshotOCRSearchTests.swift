@@ -25,9 +25,7 @@ import Synchronization
             let worker = BackgroundJobWorker(
                 dbQueue: database.dbQueue,
                 screenshotAnalyzer: analyzer,
-                inferenceSettingsResolver: { _ in captured },
-                runtimeProviderResolver: { .local },
-                localAccountSettingsResolver: { .init(provider: .chatGPTSubscription, databricksProfile: "") }
+                inferenceSettingsResolver: { _ in captured }
             )
             let meeting = makeMeeting(workspaceID: workspace.id)
             let screenshot = MeetingScreenshotRecord(
@@ -251,9 +249,7 @@ import Synchronization
             let analyzer = StubScreenshotAnalyzer(text: "画像だけの固有検索語")
             let database = try AppDatabaseManager(
                 path: ":memory:",
-                screenshotAnalyzer: analyzer,
-                screenshotRuntimeProviderResolver: { .local },
-                localAccountSettingsResolver: { .init(provider: .databricks, databricksProfile: "WORK") }
+                screenshotAnalyzer: analyzer
             )
             let workspace = {
                 var workspace = makeWorkspace()
@@ -341,8 +337,7 @@ import Synchronization
             #expect(screenshotPage.items.first?.meetingID == meeting.id)
             #expect(screenshotPage.items.first?.meetingDescription == "検索対象のミーティング説明")
             #expect(meetingPage.items.isEmpty)
-            #expect(await analyzer.runtimeProviders[screenshot.id] == .local)
-            #expect(await analyzer.runtimeProviders[localScreenshot.id] == .local)
+            #expect(await analyzer.analyzedIDs == [screenshot.id, localScreenshot.id])
             #expect(try await database.dbQueue.read { db in
                 try MeetingScreenshotRecord.fetchOne(db, key: localScreenshot.id)?.ocrText
             } == "画像だけの固有検索語")
@@ -1201,8 +1196,6 @@ import Synchronization
             try AppDatabaseManager(
                 path: ":memory:",
                 screenshotAnalyzer: screenshotAnalyzer,
-                screenshotRuntimeProviderResolver: { .local },
-                localAccountSettingsResolver: { .init(provider: .chatGPTSubscription, databricksProfile: "") },
                 searchFailureReporter: failureReporter
             )
         }
@@ -1232,7 +1225,7 @@ import Synchronization
 
     private actor StubScreenshotAnalyzer: ScreenshotAnalyzing {
         let text: String
-        private(set) var runtimeProviders: [UUID: CodexRuntimeProvider] = [:]
+        private(set) var analyzedIDs: Set<UUID> = []
         private(set) var models: [String] = []
         private(set) var fallbackModels: [String?] = []
 
@@ -1242,7 +1235,7 @@ import Synchronization
 
         func analyze(_ screenshots: [ScreenshotAnalysisInput]) async throws -> [ScreenshotAnalysis] {
             for screenshot in screenshots {
-                runtimeProviders[screenshot.id] = screenshot.runtimeProvider
+                analyzedIDs.insert(screenshot.id)
                 models.append(screenshot.model ?? CodexScreenshotAnalysisService.defaultModels[0])
                 fallbackModels.append(screenshot.fallbackModel)
             }

@@ -40,8 +40,7 @@ import Synchronization
                 sessionKind: .drive, direct: direct,
                 oauth: DatabricksOAuthService(storage: memory.storage) { _ in throw CancellationError() },
                 storage: memory.storage, driveClient: GoogleDriveBackupClient(urlSession: transport),
-                userDefaults: defaults, openAccount: { .local }
-            )
+                userDefaults: defaults)
             let session = try await provider.restorePreviousSignIn()
             #expect(session.grantedScopes == GoogleOAuthScope.drive)
             #expect(session.account.email == "drive@example.com")
@@ -108,14 +107,14 @@ import Synchronization
             let defaults = makeDefaults()
             let id = UUID.v7()
             ProviderAccountDirectory.$connections.withValue([.init(id: id, workspaceURL: URL(string: "https://dbc-1.cloud.databricks.com")!)]) {
-                #expect(GoogleCalendarProvider.current(account: .local, defaults: defaults) == .databricks(connectionID: id))
+                #expect(GoogleCalendarProvider.current(defaults: defaults) == .databricks(connectionID: id))
                 defaults.set("google", forKey: GoogleCalendarProvider.userDefaultsKey)
-                #expect(GoogleCalendarProvider.current(account: .local, defaults: defaults) == .google)
+                #expect(GoogleCalendarProvider.current(defaults: defaults) == .google)
                 defaults.set(UUID.v7().uuidString, forKey: GoogleCalendarProvider.userDefaultsKey)
-                #expect(GoogleCalendarProvider.current(account: .local, defaults: defaults) == .databricks(connectionID: id))
+                #expect(GoogleCalendarProvider.current(defaults: defaults) == .databricks(connectionID: id))
             }
             ProviderAccountDirectory.$connections.withValue([]) {
-                #expect(GoogleCalendarProvider.current(account: .local, defaults: defaults) == .google)
+                #expect(GoogleCalendarProvider.current(defaults: defaults) == .google)
             }
         }
 
@@ -208,9 +207,7 @@ import Synchronization
             let direct = FakeDirectProvider()
             let provider = DatabricksProxyGoogleSignInProvider(
                 direct: direct, oauth: service, storage: memory.storage,
-                apiClient: FakeAPIClient(result: .success([])), userDefaults: makeDefaults(),
-                openAccount: { .local }
-            )
+                apiClient: FakeAPIClient(result: .success([])), userDefaults: makeDefaults())
             _ = try await provider.restorePreviousSignIn()
             let (posts, continuation) = AsyncStream.makeStream(of: Void.self)
             let token = NotificationCenter.default.addObserver(
@@ -263,9 +260,7 @@ import Synchronization
             }
             let provider = DatabricksProxyGoogleSignInProvider(
                 direct: FakeDirectProvider(), oauth: service, storage: memory.storage,
-                apiClient: FakeAPIClient(result: .success([])), userDefaults: makeDefaults(),
-                openAccount: { .local }
-            )
+                apiClient: FakeAPIClient(result: .success([])), userDefaults: makeDefaults())
 
             let error = await #expect(throws: GoogleSignInError.self) { try await provider.restorePreviousSignIn() }
             #expect(error?.errorDescription == L10n.googleAccountNoPreviousSession)
@@ -358,9 +353,7 @@ import Synchronization
             direct: FakeDirectProvider,
             userDefaults: UserDefaults? = nil,
             apiClient: FakeAPIClient = FakeAPIClient(result: .success([])),
-            account: CodexRuntimeProvider? = nil
         ) -> DatabricksProxyGoogleSignInProvider {
-            let account = account ?? .local
             let memory = DatabricksTestStorage(connection: connection)
             if let connection {
                 memory.state.withLock { $0.credentials[connection.id] = Self.credential }
@@ -370,9 +363,7 @@ import Synchronization
                 oauth: DatabricksOAuthService(storage: memory.storage) { _ in throw CancellationError() },
                 storage: memory.storage,
                 apiClient: apiClient,
-                userDefaults: userDefaults ?? makeDefaults(),
-                openAccount: { account }
-            )
+                userDefaults: userDefaults ?? makeDefaults())
         }
     }
 

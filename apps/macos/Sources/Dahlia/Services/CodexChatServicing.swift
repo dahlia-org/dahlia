@@ -27,8 +27,7 @@ protocol CodexChatServicing: Sendable {
         inputs: [CodexAppServerInput],
         model: String?,
         effort: String,
-        approvalMethod: CodexChatApprovalMethod,
-        expectedProvider: CodexRuntimeProvider?
+        approvalMethod: CodexChatApprovalMethod
     ) async throws -> CodexChatTurnHandle
     func updateApprovalMethod(
         threadID: String,
@@ -66,8 +65,7 @@ extension CodexChatServicing {
         inputs: [CodexAppServerInput],
         model: String?,
         effort: String,
-        approvalMethod: CodexChatApprovalMethod,
-        expectedProvider _: CodexRuntimeProvider? = nil
+        approvalMethod: CodexChatApprovalMethod
     ) async throws -> CodexChatTurnHandle {
         let events = try await send(
             threadID: threadID,

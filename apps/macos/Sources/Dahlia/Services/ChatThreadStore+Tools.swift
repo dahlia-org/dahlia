@@ -156,14 +156,14 @@ extension ChatThreadStore {
                 let id = try TypeID.decode(raw, as: .meeting)
                 guard let meeting = try MeetingRecord.fetchOne(db, key: id),
                       try WorkspaceRecord.exists(db, key: meeting.workspaceId),
-                      CodexRuntimeProvider.local.accountKey == accountID else { throw PiRuntimeError.invalidProtocolResponse }
+                      AppAccount.key == accountID else { throw PiRuntimeError.invalidProtocolResponse }
                 return .meeting(id: id, name: meeting.name, calendarEvent: nil)
             }
             if let raw = arguments["project_id"]?.stringValue {
                 let id = try TypeID.decode(raw, as: .project)
                 guard let project = try ProjectRecord.fetchOne(db, key: id),
                       try WorkspaceRecord.exists(db, key: project.workspaceId),
-                      CodexRuntimeProvider.local.accountKey == accountID else { throw PiRuntimeError.invalidProtocolResponse }
+                      AppAccount.key == accountID else { throw PiRuntimeError.invalidProtocolResponse }
                 return .project(id: id, name: project.name, description: project.description)
             }
             return nil

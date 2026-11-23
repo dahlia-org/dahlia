@@ -9,8 +9,8 @@ final class GoogleCalendarStore: ObservableObject {
     static let selectedCalendarIDsKey = "googleCalendarSelectedCalendarIDs"
 
     /// Each account reaches Google by its own route, possibly as another Google account, so each keeps its selection.
-    static func selectedCalendarIDsKey(for account: CodexRuntimeProvider) -> String {
-        "\(selectedCalendarIDsKey).\(account.accountKey)"
+    static var accountSelectedCalendarIDsKey: String {
+        "\(selectedCalendarIDsKey).\(AppAccount.key)"
     }
 
     enum State: Equatable {
@@ -61,9 +61,7 @@ final class GoogleCalendarStore: ObservableObject {
     private let signInProvider: any GoogleSignInProviding
     private let apiClient: any GoogleCalendarAPIClientProviding
     private let userDefaults: UserDefaults
-    private let openAccount: @MainActor () -> CodexRuntimeProvider
     /// The account whose selection is loaded; a load still running for the previous account saves to it, not the new one.
-    private var selectionAccount: CodexRuntimeProvider
     private let now: () -> Date
     private let refreshInterval: TimeInterval
     private let daysAhead: Int
@@ -74,7 +72,6 @@ final class GoogleCalendarStore: ObservableObject {
     private var isDisconnecting = false
     private var isLoadingAccountData = false
     private var authChangeObserver: GoogleAuthSessionObserver?
-    private var accountChangeObserver: AnyCancellable?
     private var providerChangeObserver: AnyCancellable?
     private var provider: GoogleCalendarProvider?
     private var refreshGeneration: UInt64 = 0
@@ -91,7 +88,6 @@ final class GoogleCalendarStore: ObservableObject {
         signInProvider: any GoogleSignInProviding = DatabricksProxyGoogleSignInProvider(),
         apiClient: any GoogleCalendarAPIClientProviding = GoogleCalendarAPIClient(),
         userDefaults: UserDefaults = .standard,
-        openAccount: @escaping @MainActor () -> CodexRuntimeProvider = { AppSettings.shared.calendarAccount },
         now: @escaping () -> Date = Date.init,
         refreshInterval: TimeInterval = 300,
         daysAhead: Int = 7,
@@ -104,22 +100,17 @@ final class GoogleCalendarStore: ObservableObject {
         self.signInProvider = signInProvider
         self.apiClient = apiClient
         self.userDefaults = userDefaults
-        self.openAccount = openAccount
-        self.selectionAccount = openAccount()
         self.now = now
         self.refreshInterval = refreshInterval
         self.daysAhead = daysAhead
         self.presentingWindowProvider = presentingWindowProvider
         let sessionDidChangeNotification = signInProvider.sessionDidChangeNotification
-        self.selectedCalendarIDs = Self.loadSelectedCalendarIDs(from: userDefaults, account: selectionAccount)
+        self.selectedCalendarIDs = Self.loadSelectedCalendarIDs(from: userDefaults)
         self.state = signInProvider.isConfigured ? .signedOut : .unconfigured
         authChangeObserver = GoogleAuthSessionObserver(notificationName: sessionDidChangeNotification) { [weak self] forceSignOut in
             await self?.handleAuthSessionChanged(forceSignOut: forceSignOut)
         }
-        // Delivered synchronously as the account changes, not queued behind a session change still restoring.
-        accountChangeObserver = NotificationCenter.default.publisher(for: .calendarAccountDidChange)
-            .sink { [weak self] _ in self?.switchToOpenAccountIfChanged() }
-        provider = GoogleCalendarProvider.current(account: openAccount(), defaults: userDefaults)
+        provider = GoogleCalendarProvider.current(defaults: userDefaults)
         providerChangeObserver = NotificationCenter.default.publisher(for: GoogleCalendarProvider.didChange)
             .sink { [weak self] _ in self?.reloadIfProviderChanged() }
     }
@@ -468,23 +459,11 @@ final class GoogleCalendarStore: ObservableObject {
     /// running for it before any of them can publish, then restore with the new account's selection and route.
     /// Another provider reads Google Calendar now: its own sign-in, calendars, and cached events.
     private func reloadIfProviderChanged() {
-        let current = GoogleCalendarProvider.current(account: openAccount(), defaults: userDefaults)
+        let current = GoogleCalendarProvider.current(defaults: userDefaults)
         guard current != provider else { return }
         provider = current
         clearRuntimeState(clearSelection: false)
         cachedEventsSnapshot = nil
-        didAttemptRestore = false
-        recomputeState()
-        Task { await restoreSessionIfNeeded() }
-    }
-
-    private func switchToOpenAccountIfChanged() {
-        let currentAccount = openAccount()
-        guard currentAccount != selectionAccount else { return }
-        clearRuntimeState(clearSelection: false)
-        selectionAccount = currentAccount
-        cachedEventsSnapshot = nil
-        selectedCalendarIDs = Self.loadSelectedCalendarIDs(from: userDefaults, account: selectionAccount)
         didAttemptRestore = false
         recomputeState()
         Task { await restoreSessionIfNeeded() }
@@ -510,7 +489,7 @@ final class GoogleCalendarStore: ObservableObject {
         }
         guard selectedCalendarIDs != filtered else { return }
         selectedCalendarIDs = filtered
-        Self.persistSelectedCalendarIDs(filtered, to: userDefaults, account: selectionAccount)
+        Self.persistSelectedCalendarIDs(filtered, to: userDefaults)
     }
 
     private func pruneSelectedCalendars() {
@@ -535,7 +514,7 @@ final class GoogleCalendarStore: ObservableObject {
     }
 
     private func eventsCacheURL() -> URL? {
-        eventsCacheDirectory?.appending(path: "\(selectionAccount.accountKey).json")
+        eventsCacheDirectory?.appending(path: "\(AppAccount.key).json")
     }
 
     /// Writes run in order off MainActor; `nil` removes the file. A lost write only costs the spinner on the next launch.
@@ -564,8 +543,8 @@ final class GoogleCalendarStore: ObservableObject {
         }.value
     }
 
-    private static func loadSelectedCalendarIDs(from userDefaults: UserDefaults, account: CodexRuntimeProvider) -> Set<String> {
-        let json = userDefaults.string(forKey: selectedCalendarIDsKey(for: account)) ?? userDefaults.string(forKey: selectedCalendarIDsKey)
+    private static func loadSelectedCalendarIDs(from userDefaults: UserDefaults) -> Set<String> {
+        let json = userDefaults.string(forKey: accountSelectedCalendarIDsKey) ?? userDefaults.string(forKey: selectedCalendarIDsKey)
         guard let json,
               let data = json.data(using: .utf8),
               let ids = try? JSONDecoder().decode([String].self, from: data)
@@ -575,13 +554,13 @@ final class GoogleCalendarStore: ObservableObject {
         return Set(ids)
     }
 
-    private static func persistSelectedCalendarIDs(_ ids: Set<String>, to userDefaults: UserDefaults, account: CodexRuntimeProvider) {
+    private static func persistSelectedCalendarIDs(_ ids: Set<String>, to userDefaults: UserDefaults) {
         let sorted = Array(ids).sorted()
         guard let data = try? JSONEncoder().encode(sorted),
               let json = String(data: data, encoding: .utf8)
         else {
             return
         }
-        userDefaults.set(json, forKey: Self.selectedCalendarIDsKey(for: account))
+        userDefaults.set(json, forKey: Self.accountSelectedCalendarIDsKey)
     }
 }

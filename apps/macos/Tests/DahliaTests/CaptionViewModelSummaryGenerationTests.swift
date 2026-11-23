@@ -955,7 +955,6 @@ import Synchronization
                 reasoningEffort: "high",
                 detailLevelInstruction: SummaryDetailLevel.concise.instruction,
                 languageDisplayName: "Japanese",
-                runtimeProvider: .local,
                 workspaceID: fixture.workspace.id,
                 workspacePreferences: fixture.workspace.generationSettings
             )
@@ -975,7 +974,6 @@ import Synchronization
             try await runner.waitForCallCount(1)
 
             #expect(runner.calls[0].settings.modelID == "source-model")
-            #expect(runner.calls[0].settings.runtimeProvider == sourceSettings.runtimeProvider)
             runner.complete(meetingID: fixture.first.id, title: "Source summary")
             #expect(await waitUntil { !viewModel.isSummaryGenerating(meetingId: fixture.first.id) })
         }

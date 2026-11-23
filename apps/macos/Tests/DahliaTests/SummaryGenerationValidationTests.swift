@@ -14,10 +14,8 @@ import Foundation
             let incomplete = #"""
             {"title":"Incomplete","sections":[{"heading":"","blocks":[{"type":"image","image_id":"unknown","content":{"text":"A chart"}}]}],"action_items":[{"title":"Send notes"}]}
             """#
-            let provider = CodexRuntimeContextStore.shared.provider
             let log = TestPiTransportLog()
             let pi = TestPiRuntime.generating(
-                provider: provider,
                 models: (["unrelated", "fallback"] + (primaryAvailable ? ["primary"] : [])).map { TestPiTransport.model(provider: "openai", id: $0) },
                 replyForModel: { model in model == "openai/primary" && !primaryValid ? incomplete : valid },
                 log: log
@@ -26,7 +24,7 @@ import Foundation
             preferences.local.fallbackModel = "openai/fallback"
             let settings = SummaryGenerationSettings(
                 modelID: "openai/primary", reasoningEffort: "medium", detailLevelInstruction: "Detailed",
-                languageDisplayName: "English", runtimeProvider: provider, workspacePreferences: preferences
+                languageDisplayName: "English", workspacePreferences: preferences
             )
 
             let result = try await SummaryService.generateSummary(

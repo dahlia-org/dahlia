@@ -6,20 +6,20 @@ actor PiPackageService {
     static let shared = PiPackageService()
     /// Posted on the main actor after an install or removal finishes.
     static let packagesDidChange = Notification.Name("DahliaPiPackagesDidChange")
-    private var busyAccounts: Set<CodexRuntimeProvider> = []
+    private var isBusy = false
     private let locator: PiAgentDirectoryLocator
 
     init(locator: PiAgentDirectoryLocator = .init()) {
         self.locator = locator
     }
 
-    func packages(for account: CodexRuntimeProvider) throws -> [String] {
-        try Self.packageSources(in: locator.agentURL(for: account).appending(path: "settings.json"))
+    func packages() throws -> [String] {
+        try Self.packageSources(in: locator.agentURL().appending(path: "settings.json"))
     }
 
     /// The chat's Auto review needs this plugin; its files are what the extension imports.
-    func isAutoReviewInstalled(for account: CodexRuntimeProvider) -> Bool {
-        guard let agentURL = try? locator.agentURL(for: account) else { return false }
+    func isAutoReviewInstalled() -> Bool {
+        guard let agentURL = try? locator.agentURL() else { return false }
         return Self.isAutoReviewInstalled(agentURL: agentURL)
     }
 
@@ -27,17 +27,17 @@ actor PiPackageService {
         FileManager.default.fileExists(atPath: AgentAutoReviewSettings.entryURL(agentURL: agentURL).path)
     }
 
-    func isWebAccessInstalled(for account: CodexRuntimeProvider) -> Bool {
-        guard let agentURL = try? locator.agentURL(for: account) else { return false }
+    func isWebAccessInstalled() -> Bool {
+        guard let agentURL = try? locator.agentURL() else { return false }
         return FileManager.default.fileExists(atPath: AgentWebAccessSettings.entryURL(agentURL: agentURL).path)
     }
 
-    func webAccessConfiguration(for account: CodexRuntimeProvider) throws -> AgentWebAccessSettings.Configuration {
-        try AgentWebAccessSettings.load(agentURL: locator.agentURL(for: account))
+    func webAccessConfiguration() throws -> AgentWebAccessSettings.Configuration {
+        try AgentWebAccessSettings.load(agentURL: locator.agentURL())
     }
 
-    func saveWebAccessConfiguration(_ configuration: AgentWebAccessSettings.Configuration, for account: CodexRuntimeProvider) throws {
-        try AgentWebAccessSettings.save(configuration, agentURL: locator.agentURL(for: account))
+    func saveWebAccessConfiguration(_ configuration: AgentWebAccessSettings.Configuration) throws {
+        try AgentWebAccessSettings.save(configuration, agentURL: locator.agentURL())
     }
 
     nonisolated static func packageSources(in url: URL) throws -> [String] {
@@ -64,14 +64,15 @@ actor PiPackageService {
         return value
     }
 
-    func change(_ input: String, installing: Bool, account: CodexRuntimeProvider) async throws {
+    func change(_ input: String, installing: Bool) async throws {
         let source = try installing ? Self.source(input) : input
         guard !source.isEmpty, !source.hasPrefix("-") else { throw PackageError.invalidSource }
-        guard busyAccounts.insert(account).inserted else { throw PackageError.busy }
-        defer { busyAccounts.remove(account) }
-        let directory = try locator.agentURL(for: account)
-        let executable = try PiBundle.executableURL(for: account)
-        let environment = try Self.environment(account: account, directory: directory, executable: executable, launch: .load(for: account))
+        guard !isBusy else { throw PackageError.busy }
+        isBusy = true
+        defer { isBusy = false }
+        let directory = try locator.agentURL()
+        let executable = try PiBundle.executableURL()
+        let environment = try Self.environment(directory: directory, executable: executable, launch: .load())
         try await Self.run(
             executable: executable,
             arguments: [installing ? "install" : "remove", source, "--no-approve"],
@@ -81,13 +82,13 @@ actor PiPackageService {
     }
 
     nonisolated static func environment(
-        account: CodexRuntimeProvider, directory: URL, executable: URL, launch: PiLaunchSettings
+        directory: URL, executable: URL, launch: PiLaunchSettings
     ) throws -> [String: String] {
         var environment = ProcessInfo.processInfo.environment.filter { key, _ in
             !key.hasSuffix("_API_KEY") && !key.hasSuffix("_AUTH_TOKEN") && !key.hasSuffix("_OAUTH_TOKEN") && !key.hasPrefix("PI_")
         }
         environment.merge(launch.environment {
-            KeychainService.load(key: PiLaunchSettings.secretKey(for: account, id: $0))
+            KeychainService.load(key: PiLaunchSettings.secretKey(id: $0))
         }) { $1 }
         environment["PATH"] = CommandLineToolLocator.searchPath(for: executable, environment: environment)
         environment["PI_CODING_AGENT_DIR"] = directory.path

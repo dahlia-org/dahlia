@@ -30,8 +30,8 @@
                 workingDirectory: PiWorkingDirectory(override: runtime.rootURL.appending(path: "work")),
                 agentLocator: PiAgentDirectoryLocator(applicationSupportURL: runtime.rootURL),
                 mcpExecutableURL: URL(filePath: "/usr/bin/true"),
-                mcpSettings: { _ in AgentMCPSettings() },
-                fileAccessSettings: { _ in PiFileAccessSettings() }
+                mcpSettings: { AgentMCPSettings() },
+                fileAccessSettings: { PiFileAccessSettings() }
             )
             return Fixture(runtime: runtime, service: service, store: store, transports: transports)
         }
@@ -94,15 +94,13 @@
             let target = try await fixture.service.startThread(model: nil, effort: "medium")
             _ = try await fixture.service.beginTurn(
                 threadID: caller.id, inputs: [.text("Coordinate")], model: nil, effort: "medium",
-                approvalMethod: .autoReview, expectedProvider: .local
-            )
+                approvalMethod: .autoReview)
             let callerSession = try #require(await fixture.service.sessions[caller.id])
             let lease = await fixture.service.acquireThreadLease(threadID: target.id)
             if mode == "queue" {
                 let initial = try await fixture.service.beginTurn(
                     threadID: target.id, inputs: [.text("Original user request")], model: nil, effort: "medium",
-                    approvalMethod: .autoReview, expectedProvider: .local
-                )
+                    approvalMethod: .autoReview)
                 await fixture.transports.transport(at: 1).emit(TestPiTransport.settled())
                 for try await _ in initial.events {}
             } else {
@@ -145,8 +143,7 @@
             for text in ["Answer A", "Answer B"] {
                 let handle = try await fixture.service.beginTurn(
                     threadID: target.id, inputs: [.text("Question")], model: nil,
-                    effort: "medium", approvalMethod: .ask, expectedProvider: .local
-                )
+                    effort: "medium", approvalMethod: .ask)
                 let transport = await fixture.transports.transport(at: 0)
                 await transport.emit(TestPiTransport.assistantEnd(text))
                 await transport.emit(TestPiTransport.settled())
@@ -178,8 +175,7 @@
             let lease = await fixture.service.acquireThreadLease(threadID: parent.id)
             let handle = try await fixture.service.beginTurn(
                 threadID: parent.id, inputs: [.text("Delegate")], model: nil,
-                effort: "medium", approvalMethod: .ask, expectedProvider: .local
-            )
+                effort: "medium", approvalMethod: .ask)
             let session = try #require(await fixture.service.sessions[parent.id])
             let result = try await fixture.service.threadTool("thread_start", payload: .object([
                 "input": .string("Research"), "client_request_id": .string("stop-child"),
@@ -230,8 +226,7 @@
             let parent = try await fixture.service.startThread(model: nil, effort: "medium")
             let handle = try await fixture.service.beginTurn(
                 threadID: parent.id, inputs: [.text("Delegate")], model: nil,
-                effort: "medium", approvalMethod: .ask, expectedProvider: .local
-            )
+                effort: "medium", approvalMethod: .ask)
             var targets: [String] = []
             for index in 0 ..< 2 {
                 let child = try await fixture.service.startThread(model: nil, effort: "medium")
@@ -261,8 +256,7 @@
             let target = try await fixture.service.startThread(model: nil, effort: "medium")
             _ = try await fixture.service.beginTurn(
                 threadID: parent.id, inputs: [.text("Delegate")], model: nil, effort: "medium",
-                approvalMethod: .autoReview, expectedProvider: .local
-            )
+                approvalMethod: .autoReview)
             let session = try #require(await fixture.service.sessions[parent.id])
             let turn = try #require(session.turn)
             let caller = try fixture.store.thread(id: parent.id, accountID: "local")
@@ -301,9 +295,7 @@
                 inputs: [.text("Delegate research")],
                 model: nil,
                 effort: "medium",
-                approvalMethod: .ask,
-                expectedProvider: .local
-            )
+                approvalMethod: .ask)
             let transport = await fixture.transports.transport(at: 0)
             let arguments: JSONValue = .object(["input": .string("Research"), "client_request_id": .string("one"), "title": .string("Child")])
             await transport.emit(TestPiTransport.bridgeRequest(id: "start-child", method: "thread_start", payload: arguments))
@@ -357,8 +349,7 @@
             let parent = try await fixture.service.startThread(model: nil, effort: "medium")
             let handle = try await fixture.service.beginTurn(
                 threadID: parent.id, inputs: [.text("Delegate and wait")], model: nil,
-                effort: "medium", approvalMethod: .ask, expectedProvider: .local
-            )
+                effort: "medium", approvalMethod: .ask)
             let session = try #require(await fixture.service.sessions[parent.id])
             let result = try await fixture.service.threadTool("thread_start", payload: .object([
                 "input": .string("Research"), "client_request_id": .string("wait-child"),
@@ -391,13 +382,11 @@
             let target = try await fixture.service.startThread(model: nil, effort: "medium")
             _ = try await fixture.service.beginTurn(
                 threadID: caller.id, inputs: [.text("Coordinate")], model: nil, effort: "medium",
-                approvalMethod: .autoReview, expectedProvider: .local
-            )
+                approvalMethod: .autoReview)
             let process = try #require(await fixture.service.sessions[caller.id]).processID
             let userTurn = try await fixture.service.beginTurn(
                 threadID: target.id, inputs: [.text("User request")], model: nil, effort: "medium",
-                approvalMethod: .autoReview, expectedProvider: .local
-            )
+                approvalMethod: .autoReview)
             func send(_ key: String, mode: String) async throws -> JSONValue {
                 try await fixture.service.threadTool("thread_send", payload: .object([
                     "thread_id": .string(target.id), "input": .string(key), "mode": .string(mode), "client_request_id": .string(key),
@@ -427,8 +416,7 @@
             let parent = try await fixture.service.startThread(model: nil, effort: "medium")
             _ = try await fixture.service.beginTurn(
                 threadID: parent.id, inputs: [.text("Delegate")], model: nil, effort: "medium",
-                approvalMethod: .ask, expectedProvider: .local
-            )
+                approvalMethod: .ask)
             let process = try #require(await fixture.service.sessions[parent.id]).processID
             let started = try await fixture.service.threadTool("thread_start", payload: .object([
                 "input": .string("Research"), "client_request_id": .string("child"),
@@ -461,8 +449,7 @@
             let other = try await fixture.service.startThread(model: nil, effort: "medium")
             _ = try await fixture.service.beginTurn(
                 threadID: caller.id, inputs: [.text("Coordinate")], model: nil, effort: "medium",
-                approvalMethod: .fullAccess, expectedProvider: .local
-            )
+                approvalMethod: .fullAccess)
             let process = try #require(await fixture.service.sessions[caller.id]).processID
             func send(to threadID: String) async throws -> JSONValue {
                 try await fixture.service.threadTool("thread_send", payload: .object([
@@ -507,8 +494,7 @@
             let parent = try await fixture.service.startThread(model: nil, effort: "medium")
             _ = try await fixture.service.beginTurn(
                 threadID: parent.id, inputs: [.text("Delegate")], model: nil, effort: "medium",
-                approvalMethod: .ask, expectedProvider: .local
-            )
+                approvalMethod: .ask)
             let process = try #require(await fixture.service.sessions[parent.id]).processID
             var children: [String] = []
             for key in ["a", "b"] {
@@ -595,9 +581,7 @@
                 inputs: [.text("Read")],
                 model: nil,
                 effort: "medium",
-                approvalMethod: .ask,
-                expectedProvider: .local
-            )
+                approvalMethod: .ask)
             let transport = await fixture.transports.transport(at: 0)
             await transport.emit(TestPiTransport.bridgeRequest(
                 id: "foreign",
@@ -627,9 +611,7 @@
                 inputs: [.text("Delegate")],
                 model: nil,
                 effort: "medium",
-                approvalMethod: .ask,
-                expectedProvider: .local
-            )
+                approvalMethod: .ask)
             var ids: [String] = []
             for index in 0 ..< 5 {
                 let child = try await fixture.service.startThread(model: nil, effort: "medium")
@@ -658,9 +640,7 @@
                 inputs: [.text("Manual")],
                 model: nil,
                 effort: "medium",
-                approvalMethod: .ask,
-                expectedProvider: .local
-            )
+                approvalMethod: .ask)
             #expect(try fixture.store.latestRun(threadID: manual.id)?.status == "running")
             let childID = ids[0]
             let childSession = try #require(await fixture.service.sessions[childID])

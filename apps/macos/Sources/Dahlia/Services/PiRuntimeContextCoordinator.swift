@@ -2,23 +2,23 @@ import DahliaRuntimeSupport
 import Foundation
 import GRDB
 
-actor CodexRuntimeContextCoordinator {
-    static let shared = CodexRuntimeContextCoordinator()
+actor PiRuntimeContextCoordinator {
+    static let shared = PiRuntimeContextCoordinator()
 
     private var repository: MeetingRepository?
     private let agentLocator: PiAgentDirectoryLocator
     private let databricksClient: DatabricksOAuthService
     private let service: PiRuntimeService
-    private let contextStore: CodexRuntimeContextStore
-    private var configuredProvider: CodexRuntimeProvider?
-    private var requestedProvider: CodexRuntimeProvider?
+    private let contextStore: PiRuntimeContextStore
     private var activationGeneration = 0
+    /// Whether this coordinator wrote the configuration the store reports.
+    private var hasConfigured = false
 
     init(
         agentLocator: PiAgentDirectoryLocator = PiAgentDirectoryLocator(),
         databricksClient: DatabricksOAuthService = .shared,
         service: PiRuntimeService = .shared,
-        contextStore: CodexRuntimeContextStore = .shared
+        contextStore: PiRuntimeContextStore = .shared
     ) {
         self.agentLocator = agentLocator
         self.databricksClient = databricksClient
@@ -30,24 +30,15 @@ actor CodexRuntimeContextCoordinator {
         repository = MeetingRepository(dbQueue: dbQueue)
     }
 
-    func activate(_: WorkspaceAISettingsSnapshot) async throws {
-        try await activate(provider: CodexRuntimeProvider.local)
-    }
-
-    func activate(provider: CodexRuntimeProvider) async throws {
-        guard !contextStore.isConfigured
-            || contextStore.provider != provider
-            || configuredProvider != provider
-            || requestedProvider != provider
-        else { return }
-
-        requestedProvider = provider
+    /// Writes Pi's configuration for the app's account once; later calls return at once.
+    func activate() async throws {
+        guard !contextStore.isConfigured || !hasConfigured else { return }
         activationGeneration += 1
         let generation = activationGeneration
-        contextStore.beginActivation(provider)
+        contextStore.beginActivation()
         do {
             try await service.reloadConfiguration(applyingContext: {
-                try await self.configure(provider: provider, generation: generation)
+                try await self.configure(generation: generation)
             }, interruptActiveOperations: true)
         } catch {
             if generation == activationGeneration { contextStore.activationFailed() }
@@ -55,32 +46,31 @@ actor CodexRuntimeContextCoordinator {
         }
     }
 
-    /// Writes the open account's providers again after a provider account was added or removed. Pi reads them when it
-    /// starts: each new process has them, and chats reopen with them as their turns end (`PiChatService`), so no running
-    /// work stops.
+    /// Writes the providers again after a provider account was added or removed. Pi reads them when it starts: each new
+    /// process has them, and chats reopen with them as their turns end (`PiChatService`), so no running work stops.
     func providerAccountsDidChange() async throws {
-        guard contextStore.isConfigured, let provider = configuredProvider else { return }
+        guard contextStore.isConfigured, hasConfigured else { return }
         activationGeneration += 1
         let generation = activationGeneration
         try await service.reloadConfiguration(applyingContext: {
-            try await self.configure(provider: provider, generation: generation)
+            try await self.configure(generation: generation)
         })
         await PiChatService.shared.providerAccountsDidChange()
     }
 
-    private func configure(provider: CodexRuntimeProvider, generation: Int) async throws {
+    private func configure(generation: Int) async throws {
         try Task.checkCancellation()
         guard generation == activationGeneration else { throw CancellationError() }
 
-        let agentURL = try agentLocator.agentURL(for: provider)
+        let agentURL = try agentLocator.agentURL()
         // Subscriptions use Pi's built-in catalog, and workspaces added in Agents settings keep their entries, so only
         // the provider accounts the app holds the credential for are written.
         var providers: [String: JSONValue] = [:]
-        for account in provider.providerAccounts {
-            try await providers.merge(piProviders(for: account, runtime: provider, agentURL: agentURL)) { $1 }
+        for account in ProviderAccountDirectory.accounts {
+            try await providers.merge(piProviders(for: account, agentURL: agentURL)) { $1 }
         }
         // A removed connection's provider goes, so Pi stops offering its models; a workspace added before keeps its own.
-        let kept = Set(provider.piBridgedProviderIDs).union(AgentMCPSettings.load(for: provider).providers.map(\.id))
+        let kept = Set(PiProviderConfiguration.bridgedProviderIDs).union(AgentMCPSettings.load().providers.map(\.id))
         try PiProviderConfiguration.updateProviders(agentURL: agentURL) { recorded in
             recorded = recorded.filter { id, _ in
                 kept.contains(id) || !(PiProviderConfiguration.isAddedWorkspace(id) || id == PiProviderConfiguration.legacyDatabricksProviderID
@@ -88,16 +78,15 @@ actor CodexRuntimeContextCoordinator {
             }
             recorded.merge(providers) { $1 }
         }
-        configuredProvider = provider
+        hasConfigured = true
         try Task.checkCancellation()
         guard generation == activationGeneration else { throw CancellationError() }
-        contextStore.apply(provider)
+        contextStore.apply()
     }
 
     /// One provider account's entries in `models.json`; empty keeps them as recorded.
     private func piProviders(
         for account: ProviderAccount,
-        runtime provider: CodexRuntimeProvider,
         agentURL: URL
     ) async throws -> [String: JSONValue] {
         switch account {
@@ -122,7 +111,7 @@ actor CodexRuntimeContextCoordinator {
                     providerID: providerID,
                     isProviderAccount: true
                 ),
-                choices: AgentModelSettings.choices(for: provider),
+                choices: AgentModelSettings.choices(),
                 workspaceURL: workspaceURL,
                 providerID: providerID
             )

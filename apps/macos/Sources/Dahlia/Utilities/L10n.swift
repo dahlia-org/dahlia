@@ -2836,10 +2836,6 @@ enum L10n { // swiftlint:disable:this type_body_length
         localized: "The selected AI account is not ready. Open Accounts and Workspaces in Settings and finish its configuration.",
         bundle: bundle
     ) }
-    static func codexChatProviderChanged(_ provider: String) -> String { String(
-        localized: "This chat uses \(provider). Start a new chat to use the current account.",
-        bundle: bundle
-    ) }
     static var codexNoModels: String { String(localized: "Pi returned no available models. Try again.", bundle: bundle) }
     static var fallbackModel: String { String(localized: "Fallback Model", bundle: bundle) }
     static var fallbackModelDescription: String { String(

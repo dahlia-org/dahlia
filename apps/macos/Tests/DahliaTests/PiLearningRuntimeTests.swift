@@ -210,9 +210,8 @@
         }
 
         @Test func reviewLaunchRechecksMemorySettingBeforeCreatingTheProcess() async throws {
-            let provider = CodexRuntimeProvider.local
-            let pi = TestPiRuntime(provider: provider) { _ in TestPiTransport() }
-            let key = AgentLearningSettings.memoryKey(provider.accountKey)
+            let pi = TestPiRuntime { _ in TestPiTransport() }
+            let key = AgentLearningSettings.memoryKey(AppAccount.key)
             UserDefaults.standard.set(false, forKey: key)
             defer {
                 UserDefaults.standard.removeObject(forKey: key)
@@ -220,9 +219,7 @@
             }
             await #expect(throws: (any Error).self) {
                 try await pi.service.connect(
-                    .init(mode: .chat, cwd: pi.rootURL, environment: ["DAHLIA_PI_MEMORY_ENABLED": "1"], profile: .review),
-                    provider: provider
-                )
+                    .init(mode: .chat, cwd: pi.rootURL, environment: ["DAHLIA_PI_MEMORY_ENABLED": "1"], profile: .review))
             }
             #expect(pi.launches.all.isEmpty)
             await pi.service.shutdown()
@@ -245,7 +242,7 @@
                 createdAt: .now
             )
             try await store.dbQueue.write { try review.insert($0) }
-            let authorize = PiChatService.reviewAuthorization(review, provider: .local, runtime: pi.service)
+            let authorize = PiChatService.reviewAuthorization(review, runtime: pi.service)
             try await store.dbQueue.read { try authorize($0) }
             try await store.dbQueue.write { try $0.execute(sql: "UPDATE agent_reviews SET status='cancelled' WHERE id=?", arguments: [review.id]) }
             let memory = AgentMemoryService(dbQueue: store.dbQueue)
@@ -277,9 +274,9 @@
             #expect(!FileManager.default.fileExists(atPath: root.appending(path: "sample").path))
             #expect(try memory.changes(account: "local").isEmpty)
             try await store.dbQueue.write { try $0.execute(sql: "UPDATE agent_reviews SET status='running' WHERE id=?", arguments: [review.id]) }
-            pi.contextStore.beginActivation(.local)
+            pi.contextStore.beginActivation()
             await #expect(throws: (any Error).self) { try await store.dbQueue.read { try authorize($0) } }
-            pi.contextStore.apply(.local)
+            pi.contextStore.apply()
             let cancelled = Task { () throws in
                 withUnsafeCurrentTask { $0?.cancel() }
                 try await store.dbQueue.read { try authorize($0) }
@@ -322,8 +319,8 @@
                 workingDirectory: PiWorkingDirectory(override: pi.rootURL.appending(path: "work")),
                 agentLocator: PiAgentDirectoryLocator(applicationSupportURL: pi.rootURL),
                 mcpExecutableURL: URL(filePath: "/usr/bin/true"),
-                mcpSettings: { _ in AgentMCPSettings() },
-                fileAccessSettings: { _ in .init() }
+                mcpSettings: { AgentMCPSettings() },
+                fileAccessSettings: { .init() }
             )
             await chat.scheduleRuns(accountID: "local")
             let attached = try #require(try await chat.attach(threadID: row.threadID))

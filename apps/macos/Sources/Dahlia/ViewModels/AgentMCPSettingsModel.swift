@@ -6,7 +6,6 @@ import Observation
 @MainActor
 @Observable
 final class AgentMCPSettingsModel {
-    let account: CodexRuntimeProvider
     private(set) var settings: AgentMCPSettings
     private(set) var signedInProviderIDs: Set<String> = []
     /// A Databricks account's own workspace, whose Unity AI Gateway serves its models too.
@@ -29,7 +28,6 @@ final class AgentMCPSettingsModel {
     private let signInWorkspace: @Sendable (String) async throws -> DatabricksConnection
 
     init(
-        account: CodexRuntimeProvider,
         service: PiRuntimeService = .shared,
         urlOpener: any CodexLoginURLOpening = WorkspaceCodexLoginURLOpener(),
         defaults: UserDefaults = .standard,
@@ -37,12 +35,11 @@ final class AgentMCPSettingsModel {
             try await DatabricksOAuthService.shared.signIn(workspaceURL: $0)
         }
     ) {
-        self.account = account
         self.service = service
         self.urlOpener = urlOpener
         self.defaults = defaults
         self.signInWorkspace = signInWorkspace
-        settings = AgentMCPSettings.load(for: account, defaults: defaults)
+        settings = AgentMCPSettings.load(defaults: defaults)
     }
 
     /// The workspaces MCP servers can be added from: the account's own first, then those signed in to for MCP.
@@ -57,7 +54,7 @@ final class AgentMCPSettingsModel {
 
     /// Lists the account's Databricks provider accounts, so their MCPs can be added too.
     func loadAccountProviders() {
-        let connections = account.providerAccounts.compactMap(\.databricksConnectionID)
+        let connections = ProviderAccountDirectory.accounts.compactMap(\.databricksConnectionID)
         accountProviders = ProviderAccountDirectory.databricksConnections()
             .filter { connections.contains($0.id) }
             .map { AgentMCPProvider(workspaceURL: $0.workspaceURL) }
@@ -73,7 +70,7 @@ final class AgentMCPSettingsModel {
 
     /// Reads which sign-ins Pi holds a credential for. A held credential can still fail to refresh; chat reports that.
     func refreshSignInState() async {
-        signedInProviderIDs = await (try? service.signedInProviderIDs(account: account)) ?? []
+        signedInProviderIDs = await (try? service.signedInProviderIDs()) ?? []
     }
 
     /// Adds a workspace as a provider account: the app signs in and holds its credential, like the account menu's
@@ -95,7 +92,7 @@ final class AgentMCPSettingsModel {
         signingInProviderID = provider.id
         serviceSignInStates[provider.id] = nil
         defer { signingInProviderID = nil }
-        try await service.signIn(provider, account: account) { url in
+        try await service.signIn(provider) { url in
             await self.openLoginURL(url)
         }
         await refreshSignInState()
@@ -107,7 +104,7 @@ final class AgentMCPSettingsModel {
 
     /// Opens the sign-in of the connection behind a service, such as GitHub, in the browser.
     func signInToService(_ service: String, of provider: AgentMCPProvider) async throws {
-        try await self.service.signInToService(service, of: provider, account: account) { url in
+        try await self.service.signInToService(service, of: provider) { url in
             await self.openLoginURL(url)
         }
         await refreshServices(of: provider)
@@ -117,7 +114,6 @@ final class AgentMCPSettingsModel {
     func services(of provider: AgentMCPProvider) async throws -> [AgentMCPService] {
         try await service.mcpServices(
             provider,
-            account: account,
             enabledServices: servers(of: provider).map(\.service).filter(AgentMCPService.requiresUserSignIn)
         )
     }
@@ -164,7 +160,7 @@ final class AgentMCPSettingsModel {
                         if service.metadataUnavailable != true { comments[service.name] = service.comment?.nilIfBlank }
                     },
                 ]) { $1 }
-                settings.save(for: account, defaults: defaults)
+                settings.save(defaults: defaults)
             } catch is CancellationError {
                 // Leaving the tab stops the listing and any queued follow-up; the last list stays.
                 return
@@ -185,7 +181,7 @@ final class AgentMCPSettingsModel {
         var manual = settings.manualServices ?? [:]
         manual[provider.id] = Array(Set((manual[provider.id] ?? []) + [service])).sorted()
         settings.manualServices = manual
-        settings.save(for: account, defaults: defaults)
+        settings.save(defaults: defaults)
     }
 
     /// Turns a service on with a name of its own (`github`, then `github_2`, ...), or off, removing its server.
@@ -209,7 +205,7 @@ final class AgentMCPSettingsModel {
             added.servers.append(AgentMCPServer(id: .v7(), name: name, providerID: provider.id, service: service))
         }
         settings = added
-        settings.save(for: account, defaults: defaults)
+        settings.save(defaults: defaults)
     }
 
     func remove(_ server: AgentMCPServer) {
@@ -217,7 +213,7 @@ final class AgentMCPSettingsModel {
         // The account's own workspace stays only while it has servers; its sign-in is the account's, so nothing signs out.
         let servers = settings.servers
         settings.providers.removeAll { provider in provider.isAccount && !servers.contains { $0.providerID == provider.id } }
-        settings.save(for: account, defaults: defaults)
+        settings.save(defaults: defaults)
     }
 
     /// Removes the workspace with its servers, then signs out so Pi deletes its credential. The removal does not wait
@@ -232,11 +228,11 @@ final class AgentMCPSettingsModel {
         settings.serviceComments?[provider.id] = nil
         settings.manualServices?[provider.id] = nil
         serviceSignInStates[provider.id] = nil
-        settings.save(for: account, defaults: defaults)
+        settings.save(defaults: defaults)
         // Its models leave models.json now, even if the sign-out below fails and its credential stays.
-        try? await service.applyGatewayModelChoices(for: account)
+        try? await service.applyGatewayModelChoices()
         do {
-            try await service.signOut(provider, account: account)
+            try await service.signOut(provider)
         } catch {
             errorMessage = error.localizedDescription
         }

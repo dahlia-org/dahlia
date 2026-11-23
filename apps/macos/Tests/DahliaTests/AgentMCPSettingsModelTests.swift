@@ -11,7 +11,6 @@ import os
     @MainActor
     @Suite(.providerAccounts([.init(id: accountConnectionID, workspaceURL: URL(string: "https://account.cloud.databricks.com")!)]))
     struct AgentMCPSettingsModelTests {
-        private static let account = CodexRuntimeProvider.local
 
         /// Pi answers `/databricks-login` with an authorization URL and `succeeds`, `/databricks-mcp-services` with
         /// `services` (or sign-in required when nil), and `/dahlia-logout` with a response.
@@ -24,7 +23,7 @@ import os
             ],
             commands: OSAllocatedUnfairLock<[String]>
         ) -> TestPiRuntime {
-            TestPiRuntime(provider: account) { _ in
+            TestPiRuntime { _ in
                 TestPiTransport { command in
                     guard let id = command["id"] else { return [] }
                     let message = command["message"]?.stringValue ?? ""
@@ -66,9 +65,8 @@ import os
             }
         ) throws -> (AgentMCPSettingsModel, UserDefaults) {
             let defaults = try #require(UserDefaults(suiteName: "AgentMCPSettingsModelTests.\(UUID())"))
-            settings.save(for: account, defaults: defaults)
-            let model = AgentMCPSettingsModel(
-                account: account, service: pi.service, urlOpener: urlOpener, defaults: defaults, signInWorkspace: signInWorkspace
+            settings.save(defaults: defaults)
+            let model = AgentMCPSettingsModel(service: pi.service, urlOpener: urlOpener, defaults: defaults, signInWorkspace: signInWorkspace
             )
             return (model, defaults)
         }
@@ -87,7 +85,7 @@ import os
             #expect(provider.id == "example.cloud.databricks.com" && provider.host == "example.cloud.databricks.com")
             #expect(signIns.withLock { $0 } == ["https://example.cloud.databricks.com"])
             #expect(commands.withLock { $0 }.isEmpty)
-            #expect(AgentMCPSettings.load(for: Self.account, defaults: defaults) == AgentMCPSettings())
+            #expect(AgentMCPSettings.load(defaults: defaults) == AgentMCPSettings())
             // The account's connection is a provider account already.
             await #expect(throws: AgentMCPSettingsError.self) {
                 _ = try await model.addWorkspace(workspaceURL: "https://account.cloud.databricks.com")
@@ -111,14 +109,14 @@ import os
             try model.addServers(["system.ai.github": "github", "system.ai.slack": "work_slack"], to: provider)
             #expect(model.servers(of: provider).map(\.name) == ["github", "work_slack"])
             #expect(model.servers(of: provider).map(\.service) == ["system.ai.github", "system.ai.slack"])
-            #expect(AgentMCPSettings.load(for: Self.account, defaults: defaults) == model.settings)
+            #expect(AgentMCPSettings.load(defaults: defaults) == model.settings)
             // A taken or invalid name saves nothing.
             #expect(throws: AgentMCPSettingsError.self) { try model.addServers(["system.ai.gmail": "github"], to: provider) }
             #expect(throws: AgentMCPSettingsError.self) { try model.addServers(["system.ai.gmail": "Mail-1"], to: provider) }
             #expect(model.settings.servers.count == 2)
 
             // Pi's auth.json holds the credential; Dahlia reads only which providers have one.
-            let auth = try PiAgentDirectoryLocator(applicationSupportURL: pi.rootURL).agentURL(for: Self.account).appending(path: "auth.json")
+            let auth = try PiAgentDirectoryLocator(applicationSupportURL: pi.rootURL).agentURL().appending(path: "auth.json")
             try Data(#"{"\#(provider.id)": {"type": "oauth", "access": "a", "refresh": "r", "expires": 1}}"#.utf8).write(to: auth)
             await model.refreshSignInState()
             #expect(model.signedInProviderIDs == [provider.id])
@@ -129,11 +127,11 @@ import os
             await model.remove(provider)
             #expect(commands.withLock { $0 }.last == "/dahlia-logout example.cloud.databricks.com")
             #expect(model.settings == AgentMCPSettings())
-            #expect(AgentMCPSettings.load(for: Self.account, defaults: defaults) == AgentMCPSettings())
+            #expect(AgentMCPSettings.load(defaults: defaults) == AgentMCPSettings())
             #expect(model.errorMessage == nil)
 
             // Signing out of the account removes the sign-ins Pi kept for it.
-            await pi.service.removeCredentials(of: Self.account)
+            await pi.service.removeCredentials()
             #expect(!FileManager.default.fileExists(atPath: auth.path))
         }
 
@@ -148,7 +146,7 @@ import os
             // The listing is kept, so a reopened model shows it before listing again.
             await model.refreshServices(of: account)
             #expect(model.listedServices(of: account) == ["system.ai.github", "system.ai.slack"])
-            #expect(AgentMCPSettings.load(for: Self.account, defaults: defaults).listedServices?["account.cloud.databricks.com"] == [
+            #expect(AgentMCPSettings.load(defaults: defaults).listedServices?["account.cloud.databricks.com"] == [
                 "system.ai.github",
                 "system.ai.slack",
             ])
@@ -162,7 +160,7 @@ import os
             // The account's own workspace leaves with its last server.
             #expect(!model.settings.providers.contains { $0.isAccount })
 
-            #expect(AgentMCPSettings.load(for: Self.account, defaults: defaults).servers.map(\.name) == ["github_2"])
+            #expect(AgentMCPSettings.load(defaults: defaults).servers.map(\.name) == ["github_2"])
             // A registered service stays listed even if the gateway stops offering it.
             #expect(model.listedServices(of: workspace) == ["system.ai.github"])
         }
@@ -175,11 +173,10 @@ import os
             await model.refreshServices(of: provider)
             #expect(model.comment(for: "system.ai.github", of: provider) == "Search repositories")
             #expect(model.comment(for: "system.ai.slack", of: provider) == nil)
-            #expect(AgentMCPSettings.load(for: Self.account, defaults: defaults)
+            #expect(AgentMCPSettings.load(defaults: defaults)
                 .serviceComments?[provider.id]?["system.ai.github"] == "Search repositories")
 
             let failing = AgentMCPSettingsModel(
-                account: Self.account,
                 service: Self.runtime(services: nil, commands: OSAllocatedUnfairLock(initialState: [])).service,
                 defaults: defaults
             )
@@ -191,7 +188,7 @@ import os
         @Test
         func failedIndividualMetadataKeepsCommentButSuccessfulEmptyReadClearsIt() async throws {
             let response = OSAllocatedUnfairLock(initialState: AgentMCPService(name: "main.default.notion", comment: "Search Notion pages"))
-            let pi = TestPiRuntime(provider: Self.account) { _ in
+            let pi = TestPiRuntime { _ in
                 TestPiTransport { _ in
                     guard let data = try? JSONEncoder().encode([response.withLock { $0 }]) else {
                         Issue.record("Could not encode the mock service response")
@@ -208,7 +205,7 @@ import os
             response.withLock { $0 = AgentMCPService(name: "main.default.notion", metadataUnavailable: true) }
             await model.refreshServices(of: provider)
             #expect(model.comment(for: "main.default.notion", of: provider) == "Search Notion pages")
-            #expect(AgentMCPSettings.load(for: Self.account, defaults: defaults)
+            #expect(AgentMCPSettings.load(defaults: defaults)
                 .serviceComments?[provider.id]?["main.default.notion"] == "Search Notion pages")
             response.withLock { $0 = AgentMCPService(name: "main.default.notion") }
             await model.refreshServices(of: provider)
@@ -219,7 +216,7 @@ import os
         func loginCompletionDuringListingCoalescesARequiredFollowUp() async throws {
             let first = TestPiTransport()
             let launches = OSAllocatedUnfairLock(initialState: 0)
-            let pi = TestPiRuntime(provider: Self.account) { _ in
+            let pi = TestPiRuntime { _ in
                 let index = launches.withLock { value in defer { value += 1 }
                     return value
                 }
@@ -258,7 +255,7 @@ import os
         func cancellationDropsQueuedRefreshAndAllowsRetry() async throws {
             let first = TestPiTransport()
             let launches = OSAllocatedUnfairLock(initialState: 0)
-            let pi = TestPiRuntime(provider: Self.account) { _ in
+            let pi = TestPiRuntime { _ in
                 let index = launches.withLock { value in defer { value += 1 }
                     return value
                 }
@@ -314,7 +311,7 @@ import os
               {"name":"system.ai.gmail","signInState":"unknown"}
             ]
             """#
-            let pi = TestPiRuntime(provider: Self.account) { _ in
+            let pi = TestPiRuntime { _ in
                 TestPiTransport { _ in
                     [TestPiTransport.notify(fail.withLock { $0 }
                             ? "databricks:mcp_services_failed unavailable"
@@ -332,7 +329,7 @@ import os
             #expect(model.signInState(for: "system.ai.gmail", of: provider) == .unknown)
             let other = try AgentMCPProvider(workspaceURL: #require(URL(string: "https://other.example.com")))
             #expect(model.signInState(for: "system.ai.github", of: other) == .unknown)
-            let reopened = AgentMCPSettingsModel(account: Self.account, service: pi.service, defaults: defaults)
+            let reopened = AgentMCPSettingsModel(service: pi.service, defaults: defaults)
             #expect(reopened.signInState(for: "system.ai.github", of: provider) == .unknown)
             fail.withLock { $0 = true }
             await model.refreshServices(of: provider)
@@ -363,7 +360,7 @@ import os
             try model.addService("other.default.notion", to: provider)
             try model.addService("system.ai.unlisted", to: provider)
             #expect(model.servers(of: provider).map(\.name) == ["notion", "notion_2", "unlisted"])
-            #expect(AgentMCPSettings.load(for: Self.account, defaults: defaults).servers == model.settings.servers)
+            #expect(AgentMCPSettings.load(defaults: defaults).servers == model.settings.servers)
             await model.refreshServices(of: provider)
             #expect(commands.withLock { $0 }.contains { $0.contains("--enabled main.default.notion,other.default.notion") })
             try model.setService("main.default.notion", enabled: false, of: provider)
@@ -373,7 +370,7 @@ import os
             #expect(model.settings.piServers["notion"] == nil)
             try model.setService("system.ai.unlisted", enabled: false, of: provider)
             await model.refreshServices(of: provider)
-            let reopened = AgentMCPSettingsModel(account: Self.account, service: pi.service, defaults: defaults)
+            let reopened = AgentMCPSettingsModel(service: pi.service, defaults: defaults)
             #expect(reopened.listedServices(of: provider).contains("system.ai.unlisted"))
             await model.remove(provider)
             #expect(model.settings.manualServices?[provider.id] == nil)
@@ -385,8 +382,8 @@ import os
             var settings = model.settings
             settings.servers.append(AgentMCPServer(id: .v7(), name: "lightpanda", providerID: nil, service: "lightpanda"))
             #expect(settings.piServers.isEmpty)
-            settings.save(for: Self.account, defaults: defaults)
-            #expect(AgentMCPSettings.load(for: Self.account, defaults: defaults).servers.isEmpty)
+            settings.save(defaults: defaults)
+            #expect(AgentMCPSettings.load(defaults: defaults).servers.isEmpty)
         }
 
         @Test
@@ -416,8 +413,8 @@ import os
             defer { defaults.removePersistentDomain(forName: migrationSuite) }
             var legacy = settings
             legacy.listedServices?["workspace.example.com"]?.append("main.default.notion")
-            legacy.save(for: Self.account, defaults: defaults)
-            let migrated = AgentMCPSettings.load(for: Self.account, defaults: defaults)
+            legacy.save(defaults: defaults)
+            let migrated = AgentMCPSettings.load(defaults: defaults)
             #expect(migrated.manualServices?["workspace.example.com"] == ["main.default.notion"])
         }
 
@@ -467,7 +464,7 @@ import os
             #expect(commands.withLock { $0 } == ["/databricks-mcp-services https://account.cloud.databricks.com --provider account.cloud.databricks.com"])
 
             try model.addServers(["system.ai.slack": "slack"], to: provider)
-            #expect(AgentMCPSettings.load(for: Self.account, defaults: defaults).piServers["slack"] == .object([
+            #expect(AgentMCPSettings.load(defaults: defaults).piServers["slack"] == .object([
                 "url": .string("https://account.cloud.databricks.com/ai-gateway/mcp-services/system.ai.slack"),
                 "exposure": .string("direct"),
                 "auth": .object(["provider": .string("account.cloud.databricks.com")]),
@@ -487,7 +484,7 @@ import os
             let provider = Self.legacyWorkspace
             try model.addServers(["system.ai.github": "github"], to: provider)
 
-            let agentURL = try PiAgentDirectoryLocator(applicationSupportURL: pi.rootURL).agentURL(for: Self.account)
+            let agentURL = try PiAgentDirectoryLocator(applicationSupportURL: pi.rootURL).agentURL()
             try PiProviderConfiguration.write([provider.id: .object(["models": .array([])])], agentURL: agentURL)
             let generation = PiRuntimeService.modelsGeneration.withLock { $0 }
             await model.remove(provider)
@@ -495,7 +492,7 @@ import os
             let written = try JSONDecoder().decode(JSONValue.self, from: Data(contentsOf: agentURL.appending(path: "models.json")))
             #expect(written.objectValue?["providers"]?.objectValue?[provider.id] == nil)
             #expect(model.settings.providers.isEmpty && model.settings.servers.isEmpty)
-            #expect(AgentMCPSettings.load(for: Self.account, defaults: defaults).providers.isEmpty)
+            #expect(AgentMCPSettings.load(defaults: defaults).providers.isEmpty)
             #expect(model.errorMessage != nil)
             // The removed workspace's models leave the pickers even though Pi could not sign out.
             #expect(PiRuntimeService.modelsGeneration.withLock { $0 } > generation)
@@ -505,7 +502,7 @@ import os
         @Test
         func piExitingWhileListingIsReportedNotTakenForACancel() async throws {
             let transport = TestPiTransport()
-            let pi = TestPiRuntime(provider: Self.account) { _ in transport }
+            let pi = TestPiRuntime { _ in transport }
             let (model, _) = try Self.model(pi)
             let provider = try AgentMCPProvider(workspaceURL: #require(URL(string: "https://example.cloud.databricks.com")))
 
@@ -540,7 +537,7 @@ import os
                 _ = try await model.addWorkspace(workspaceURL: "https://gateway")
             }
             #expect(model.settings == AgentMCPSettings())
-            #expect(AgentMCPSettings.load(for: Self.account, defaults: defaults) == AgentMCPSettings())
+            #expect(AgentMCPSettings.load(defaults: defaults) == AgentMCPSettings())
             #expect(!model.isBusy)
         }
     }

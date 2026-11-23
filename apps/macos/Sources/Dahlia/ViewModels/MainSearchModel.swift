@@ -295,22 +295,20 @@ final class MainSearchModel {
         }
         lastChatSearchError = nil
         guard let workspace = sidebarViewModel.currentWorkspace, let dbQueue = sidebarViewModel.dbQueue else { return }
-        let provider = CodexRuntimeProvider.local
         let offset = chatOffset
         isFetchingChats = true
         chatSearchTask = Task { [weak self] in
             do {
                 if let delay { try await Task.sleep(for: delay) }
                 let page = try await MeetingRepository.searchChatPage(
-                    accountID: provider.accountKey,
+                    accountID: AppAccount.key,
                     criteria: criteria,
                     offset: offset,
                     dbQueue: dbQueue
                 )
                 try Task.checkCancellation()
                 guard let self, self.chatGeneration == requestGeneration,
-                      sidebarViewModel.currentWorkspace?.id == workspace.id,
-                      CodexRuntimeProvider.local == provider else { return }
+                      sidebarViewModel.currentWorkspace?.id == workspace.id else { return }
                 // A Thread that moved between pages comes back in a later offset page; list it once.
                 let listed = Set(appending ? self.localChats.map(\.id) : [])
                 let added = page.threads.filter { !listed.contains($0.id) }

@@ -65,7 +65,7 @@ struct CodexChatApprovalMethodButton: View {
     }
 
     private func refreshAutoReview() async {
-        isAutoReviewInstalled = await PiPackageService.shared.isAutoReviewInstalled(for: session.runtimeProvider)
+        isAutoReviewInstalled = await PiPackageService.shared.isAutoReviewInstalled()
     }
 
     private var panelWidth: CGFloat {
