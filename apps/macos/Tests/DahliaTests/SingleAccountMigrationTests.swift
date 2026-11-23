@@ -34,10 +34,16 @@
                         id: .v7(), path: nil, name: "Local", createdAt: .now,
                         lastOpenedAt: lastOpenedIsDatabricks ? .distantPast : .now
                     ).insert(db)
-                    try WorkspaceRecord(
+                    let databricksWorkspace = WorkspaceRecord(
                         id: .v7(), path: nil, name: "Databricks", createdAt: .now,
-                        lastOpenedAt: lastOpenedIsDatabricks ? .now : .distantPast, databricksConnectionId: connectionID
-                    ).insert(db)
+                        lastOpenedAt: lastOpenedIsDatabricks ? .now : .distantPast
+                    )
+                    try databricksWorkspace.insert(db)
+                    // The app no longer reads this column; released databases still hold it.
+                    try db.execute(
+                        sql: "UPDATE workspaces SET databricksConnectionId = ? WHERE id = ?",
+                        arguments: [connectionID, databricksWorkspace.id]
+                    )
                     for (id, account) in [(databricksThread, key), (localThread, "local")] {
                         try ChatThreadRecord(
                             id: id, accountID: account, projectID: nil, parentThreadID: nil, title: id,
@@ -64,8 +70,8 @@
                 defaults.set(Data("inference".utf8), forKey: "accountInferenceSettings.databricks.\(key)")
                 let secretID = UUID()
                 PiLaunchSettings(variables: [.init(id: secretID, name: "TOKEN", isSecret: true)])
-                    .save(for: .databricks(connectionID: connectionID), defaults: defaults)
-                secrets[PiLaunchSettings.secretKey(for: .databricks(connectionID: connectionID), id: secretID)] = "secret"
+                    .save(for: .dahlia(connectionID: connectionID), defaults: defaults)
+                secrets[PiLaunchSettings.secretKey(for: .dahlia(connectionID: connectionID), id: secretID)] = "secret"
                 self.secretID = secretID
             }
 

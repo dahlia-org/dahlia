@@ -8,17 +8,13 @@ import Foundation
         @Test
         func accountAndWorkspaceScopesAreExclusiveAndMatchWorkspaceOwnership() {
             let serverID = UUID.v7()
-            let databricksID = UUID.v7()
             let local = workspace()
             var server = workspace()
             server.accountConnectionId = serverID
-            // Server ownership takes precedence over a legacy provider association.
-            server.databricksConnectionId = databricksID
-            var databricks = workspace()
-            databricks.databricksConnectionId = databricksID
-            let workspaces = [local, server, databricks]
+            // A workspace a released database linked to a Databricks connection belongs to the app's account (Local) now.
+            let workspaces = [local, server]
 
-            for (account, expected) in [(WorkspaceAccountChoice.local, local), (.dahlia(serverID), server), (.databricks(databricksID), databricks)] {
+            for (account, expected) in [(WorkspaceAccountChoice.local, local), (.dahlia(serverID), server)] {
                 #expect(MCPAccessScope.resolve(account: account, workspaceID: nil, workspaces: workspaces) == .account(account))
                 #expect(MCPAccessScope.resolve(account: account, workspaceID: expected.id, workspaces: workspaces) == .workspace(expected.id))
                 for other in workspaces where other.id != expected.id {

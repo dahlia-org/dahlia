@@ -7,8 +7,6 @@
         @Test
         func groupsByAccountIdentityAndKeepsCreationOrder() {
             let accountID = UUID.v7()
-            var gateway = workspace(createdAt: 1)
-            gateway.databricksConnectionId = accountID
             var server = workspace(createdAt: 2)
             server.accountConnectionId = accountID
             let local = workspace(createdAt: 3)
@@ -18,27 +16,27 @@
             var otherServer = workspace(createdAt: 4)
             otherServer.accountConnectionId = otherAccountID
 
-            let groups = WorkspaceSettingsAccountGroup.grouped([local, otherServer, server, gateway, earlierLocal])
+            let groups = WorkspaceSettingsAccountGroup.grouped([local, otherServer, server, earlierLocal])
 
-            #expect(groups.map(\.id) == [.local, .databricks(accountID), .dahlia(accountID), .dahlia(otherAccountID)])
-            #expect(groups.map { $0.workspaces.map(\.id) } == [[earlierLocal.id, local.id], [gateway.id], [server.id], [otherServer.id]])
+            #expect(groups.map(\.id) == [.local, .dahlia(accountID), .dahlia(otherAccountID)])
+            #expect(groups.map { $0.workspaces.map(\.id) } == [[earlierLocal.id, local.id], [server.id], [otherServer.id]])
             #expect(WorkspaceSettingsAccountGroup.grouped([]).isEmpty)
         }
 
         @Test
         func keepsEmptyCreationAccountsVisibleWithoutDuplicatingPopulatedGroups() {
-            let gatewayID = UUID.v7()
-            let emptyGatewayID = UUID.v7()
-            var gateway = workspace(createdAt: 0)
-            gateway.databricksConnectionId = gatewayID
+            let serverID = UUID.v7()
+            let emptyServerID = UUID.v7()
+            var server = workspace(createdAt: 0)
+            server.accountConnectionId = serverID
 
             let groups = WorkspaceSettingsAccountGroup.grouped(
-                [gateway],
-                including: [.local, .databricks(gatewayID), .databricks(emptyGatewayID), .local]
+                [server],
+                including: [.local, .dahlia(serverID), .dahlia(emptyServerID), .local]
             )
 
-            #expect(groups.map(\.id) == [.local, .databricks(gatewayID), .databricks(emptyGatewayID)])
-            #expect(groups.map { $0.workspaces.map(\.id) } == [[], [gateway.id], []])
+            #expect(groups.map(\.id) == [.local, .dahlia(serverID), .dahlia(emptyServerID)])
+            #expect(groups.map { $0.workspaces.map(\.id) } == [[], [server.id], []])
             #expect(WorkspaceSettingsAccountGroup.grouped([], including: [.local]).first?.id == .local)
         }
 
@@ -46,10 +44,10 @@
         func movingAnAccountRegroupsWithoutLosingTheWorkspace() {
             let local = workspace(createdAt: 0)
             var moved = workspace(createdAt: 1)
-            moved.databricksConnectionId = .v7()
+            moved.accountConnectionId = .v7()
             #expect(WorkspaceSettingsAccountGroup.grouped([local, moved]).count == 2)
 
-            moved.databricksConnectionId = nil
+            moved.accountConnectionId = nil
             let groups = WorkspaceSettingsAccountGroup.grouped([moved, local])
 
             #expect(groups.count == 1)

@@ -7,7 +7,7 @@
 
     @MainActor
     struct WorkspaceManagementModelTests {
-        @Test(arguments: ["local", "databricks", "admin", "editor", "viewer"])
+        @Test(arguments: ["local", "admin", "editor", "viewer"])
         func outputLanguageUpdatesOnlyTheTargetAndKeepsLatestSettings(account: String) async throws {
             let database = try AppDatabaseManager(path: ":memory:")
             let model = WorkspaceManagementModel()
@@ -16,9 +16,7 @@
                 id: .v7(), origin: "https://language.example.com", clientID: "desktop", createdAt: .now
             )
             var target = makeWorkspace(name: "Target", lastOpenedAt: .distantPast)
-            if account == "databricks" {
-                target.databricksConnectionId = connection.id
-            } else if account != "local" {
+            if account != "local" {
                 target.accountConnectionId = connection.id
                 target.syncConfirmedConnectionId = connection.id
                 target.syncRole = account
@@ -41,7 +39,7 @@
             try await database.dbQueue.write { try saved.update($0) }
 
             let updated = await model.setOutputLanguage(for: original, to: .en)
-            let canManage = ["local", "databricks", "admin"].contains(account)
+            let canManage = ["local", "admin"].contains(account)
             #expect((updated != nil) == canManage)
             let persisted = try #require(try await database.dbQueue.read { try WorkspaceRecord.fetchOne($0, key: original.id) })
             #expect(persisted.generationSettings.outputLanguage == (canManage ? .en : .ja))
@@ -118,7 +116,7 @@
             #expect(await settings.accountWorkspace()?.id == source.id)
             let saved = try await MeetingRepository(dbQueue: database.dbQueue).fetchAllWorkspacesAsync()
             #expect(saved.map(\.id) == [source.id])
-            #expect(saved.first?.databricksConnectionId == nil)
+            #expect(try await database.dbQueue.read { try UUID.fetchOne($0, sql: "SELECT databricksConnectionId FROM workspaces WHERE id = ?", arguments: [source.id]) } == nil)
         }
 
         @Test
@@ -134,7 +132,7 @@
             settings.configure(dbQueue: database.dbQueue)
 
             let created = try #require(await settings.accountWorkspace())
-            #expect(created.name == "Default" && created.databricksConnectionId == nil)
+            #expect(created.name == "Default" && created.accountConnectionId == nil)
             #expect(await settings.accountWorkspace()?.id == created.id)
         }
 
@@ -154,7 +152,7 @@
             let local = try #require(await model.createWorkspace(at: folder))
 
             #expect(await model.createWorkspace(at: folder)?.id == local.id)
-            #expect(try await database.dbQueue.read { try WorkspaceRecord.fetchOne($0, key: local.id)?.databricksConnectionId } == nil)
+            #expect(try await database.dbQueue.read { try UUID.fetchOne($0, sql: "SELECT databricksConnectionId FROM workspaces WHERE id = ?", arguments: [local.id]) } == nil)
         }
 
         @Test

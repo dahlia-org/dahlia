@@ -225,7 +225,7 @@ import Synchronization
             ]), threadID: thread.id, processID: process)
             let id = try #require(prepared.objectValue?["request_id"]?.stringValue)
             if state == "stopped" { await fixture.chat.abort(threadID: thread.id) }
-            if state == "accountChanged" { fixture.pi.contextStore.beginActivation(.databricks(connectionID: .v7())) }
+            if state == "accountChanged" { fixture.pi.contextStore.beginActivation(.dahlia(connectionID: .v7())) }
             for approved in [false, true] {
                 await #expect(throws: (any Error).self) {
                     try await fixture.chat.learningTool("cronjobCommit", payload: .object([
@@ -1244,10 +1244,10 @@ import Synchronization
             #expect(log.all.count == 2)
         }
 
-        @Test(arguments: [false, true])
+        @Test(.providerAccounts([.init(id: UUID(), workspaceURL: URL(string: "https://own.cloud.databricks.com")!)]), arguments: [false, true])
         func turnReopensTheThreadAfterItsPiProcessExits(legacyDirectory: Bool) async throws {
             let log = TestPiTransportLog()
-            let account = CodexRuntimeProvider.databricks(connectionID: UUID())
+            let account = CodexRuntimeProvider.local
             let pi = TestPiRuntime(provider: account) { options in
                 let transport = options.mode == .chat
                     ? TestPiTransport { command in
@@ -1257,7 +1257,7 @@ import Synchronization
                             && command["message"]?.stringValue?.hasPrefix("/") == false
                         return isUserPrompt ? [started, TestPiTransport.assistantEnd("again"), TestPiTransport.settled()] : [started]
                     }
-                    : TestPiTransport(reply: TestPiRuntime.modelsReply([TestPiTransport.model(provider: "databricks", id: "gpt-test")]))
+                    : TestPiTransport(reply: TestPiRuntime.modelsReply([TestPiTransport.model(provider: "own.cloud.databricks.com", id: "gpt-test")]))
                 if options.mode == .chat { log.append(transport) }
                 return transport
             }

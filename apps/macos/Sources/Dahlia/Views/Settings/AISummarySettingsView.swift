@@ -171,8 +171,7 @@ struct LocalSummarySettingsRows: View {
 
     private var modelCatalogContext: CodexRuntimeProvider {
         CodexRuntimeProvider(
-            accountConnectionID: workspaceSettings.accountConnectionID,
-            databricksConnectionID: workspaceSettings.databricksAccountConnectionID
+            accountConnectionID: workspaceSettings.accountConnectionID
         )
     }
 }

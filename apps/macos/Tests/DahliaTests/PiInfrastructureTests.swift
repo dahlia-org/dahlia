@@ -33,7 +33,7 @@ import Foundation
                     try Data("#!/bin/sh\n".utf8).write(to: url)
                     try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: url.path)
                 }
-                let accounts: [CodexRuntimeProvider] = [.local, .databricks(connectionID: UUID()), .dahlia(connectionID: UUID())]
+                let accounts: [CodexRuntimeProvider] = [.local, .dahlia(connectionID: UUID()), .dahlia(connectionID: UUID())]
                 for account in accounts {
                     PiLaunchSettings(variables: [.init(id: UUID(), name: "PATH", value: directory.path)])
                         .save(for: account, defaults: defaults)
@@ -243,7 +243,7 @@ import Foundation
         @Test
         func registeredMCPServersArePerAccountAndShareTheirWorkspaceSignIn() throws {
             let defaults = try #require(UserDefaults(suiteName: "PiInfrastructureTests.\(UUID())"))
-            let account = CodexRuntimeProvider.databricks(connectionID: UUID())
+            let account = CodexRuntimeProvider.dahlia(connectionID: UUID())
             let workspace = try AgentMCPProvider(workspaceURL: #require(URL(string: "https://example.cloud.databricks.com")))
             #expect(workspace.id == "example.cloud.databricks.com")
             var settings = AgentMCPSettings(providers: [workspace])
@@ -347,7 +347,7 @@ import Foundation
 
             let local = try locator.agentURL(for: .local)
             let account = try locator.agentURL(for: .dahlia(connectionID: connectionID))
-            let databricks = try locator.agentURL(for: .databricks(connectionID: databricksID))
+            let databricks = try locator.agentURL(for: .dahlia(connectionID: databricksID))
             let deviceID = try locator.deviceID()
 
             // The app's one account has one agent folder, named for neither Pi nor an account.
@@ -378,7 +378,7 @@ import Foundation
             let databricksID = UUID.v7()
 
             let local = try locator.sessionsURL(for: .local, workspaceID: workspaceID)
-            let databricks = try locator.sessionsURL(for: .databricks(connectionID: databricksID), workspaceID: workspaceID)
+            let databricks = try locator.sessionsURL(for: .dahlia(connectionID: databricksID), workspaceID: workspaceID)
 
             // The same workspace under another account starts with that account's own (empty) history.
             #expect(local == rootURL.appending(
@@ -403,7 +403,7 @@ import Foundation
             #expect(AgentModelSettings.isSubscriptionModelOn("anthropic/claude-sonnet-4-6", choices: saved))
             #expect(AgentModelSettings.isSubscriptionModelOn("anthropic/claude-haiku-5-5", choices: saved))
             #expect(!AgentModelSettings.isSubscriptionModelOn("openai/future-model", choices: saved))
-            #expect(AgentModelSettings.choices(for: .databricks(connectionID: .v7()), defaults: defaults).isEmpty)
+            #expect(AgentModelSettings.choices(for: .dahlia(connectionID: .v7()), defaults: defaults).isEmpty)
         }
 
         @Test
@@ -411,7 +411,7 @@ import Foundation
             let suite = "dahlia-agent-models-test-\(UUID().uuidString)"
             let defaults = try #require(UserDefaults(suiteName: suite))
             defer { defaults.removePersistentDomain(forName: suite) }
-            let account = CodexRuntimeProvider.databricks(connectionID: .v7())
+            let account = CodexRuntimeProvider.local
 
             AgentModelSettings.setModel("databricks/system.ai.gpt-6-luna", on: false, for: account, defaults: defaults)
             AgentModelSettings.setModel("dbc-1.cloud.databricks.com/system.ai.gpt-6-luna", on: true, for: account, defaults: defaults)
@@ -419,7 +419,7 @@ import Foundation
             #expect(AgentModelSettings.choices(for: account, defaults: defaults) == [
                 "databricks/system.ai.gpt-6-luna": false, "dbc-1.cloud.databricks.com/system.ai.gpt-6-luna": true,
             ])
-            #expect(AgentModelSettings.choices(for: .databricks(connectionID: .v7()), defaults: defaults).isEmpty)
+            #expect(AgentModelSettings.choices(for: .dahlia(connectionID: .v7()), defaults: defaults).isEmpty)
         }
 
         @Test

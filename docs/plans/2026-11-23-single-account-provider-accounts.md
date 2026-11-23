@@ -145,6 +145,16 @@ DB の `accountID` と UserDefaults の接尾辞には、当面 `local` を定�
 | サイドバーのアカウントメニュー | Local と Databricks アカウントを並べて切り替える | Dahlia account のサインイン状態だけを示す。Dahlia account のリリースまでは表示しない |
 | Databricks のサインイン | アカウントメニューとセットアップツアー | 設定の「プロバイダーアカウント」とセットアップツアー（任意の手順） |
 
+### 設定画面
+
+プロバイダーアカウントの管理は、設定の「機能」グループの「プロバイダー」ページに独立させる（2026-11-23 にユーザーが提案）。
+
+| ページ | 置くもの |
+| --- | --- |
+| プロバイダー | プロバイダーアカウントの一覧と管理: 追加、サインイン・再サインイン、名前の変更、サインアウト・削除、各アカウントが提供する capability の表示。並べるのは ChatGPT・Anthropic（Pi がサインインを持つ）、Databricks の接続、以前に追加した workspace（再サインインで接続になる）、Google |
+| エージェント → モデル | プロバイダーごとのモデルのオン・オフ。アカウントの操作は「プロバイダー」ページへ案内する |
+| カレンダー | 予定を読むプロバイダーの選択と、表示するカレンダー。macOS カレンダーは OS の権限なのでここに残す |
+
 ### 実行
 
 - Pi のプロセス、チャット、定期実行、自己学習、常時実行は、アカウントに 1 組だけ持つ。`currentProvider()` と開いている Workspace に依存する分岐を無くす。
@@ -181,6 +191,11 @@ DB の `accountID` と UserDefaults の接尾辞には、当面 `local` を定�
 | 1 | 実装した。`Models/ProviderAccount.swift` が capability の入口で、token の要求は Pi が送るプロバイダー ID から接続を引く。機能が接続を選ぶ箇所（Pi のプロバイダー ID、`models.json` の書き出し、Gateway の一覧、Omnigent、カレンダーの proxy、MCP の設定）を置き換えた。画面の分岐（アカウント名の表示、Workspace の所属）は段階 3 で画面ごと消すので残した。`accountKey` の導出は段階 4 で消す |
 | 2 | 実装した（未コミット）。`v67_providerAccounts` で `accounts` を `provider_accounts` に改名し `name` 列を足した。実行アカウントは常に Local で、Databricks の接続を Local のプロバイダーアカウントとして使う。起動時の移行（`Services/SingleAccountMigration.swift`）が、Databricks アカウントのデータを Local へ写し、すべての Workspace の `databricksConnectionId` を空にする。Pi のディレクトリは `agent` の 1 つにした。アカウントメニューの Databricks の一覧と切り替え、サインイン後の移管・作成、Workspace 設定の移管とアカウント別のグループ、「ローカルアカウントを非表示にする」を削除した。Databricks の接続のサインアウトは設定のプロバイダー一覧へ移した |
 | 3 | 未着手。残りは下の「段階 3 の残り」 |
+
+#### 段階 4 の進捗
+
+- 実装した（2026-11-23）: 実行アカウントの `.databricks` と `WorkspaceAccountChoice.databricks`、`WorkspaceRecord.databricksConnectionId` の参照、アカウントメニューの Databricks の分岐を削除した。`workspaces.databricksConnectionId` の列は、外部キーごと消すには表の作り直しが要るので DB に残し、起動時に空にする。外部の `dahlia-mcp --account` に Databricks の接続を指定すると、黙って空にせず失敗する。
+- 残り: 現行の Server 同期のコードと `accountConnectionId` の削除。旧ディレクトリと旧設定キーの削除（1 リリース後）。
 
 #### 段階 3 の残り
 

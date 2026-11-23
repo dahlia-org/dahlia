@@ -1126,7 +1126,7 @@ import Foundation
                 settings: settings
             )
             var otherAccountWorkspace = Self.testWorkspace()
-            otherAccountWorkspace.databricksConnectionId = .v7()
+            otherAccountWorkspace.accountConnectionId = .v7()
             settings.currentWorkspace = otherAccountWorkspace
 
             session.draft = "Do not send"

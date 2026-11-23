@@ -117,10 +117,7 @@ struct WorkspaceSettingsView: View {
     }
 
     private func accountName(for choice: WorkspaceAccountChoice) -> String {
-        choice.displayName(
-            connections: accountConnections,
-            databricksAccounts: WorkspaceAISettingsModel.shared.databricksConnections
-        )
+        choice.displayName(connections: accountConnections)
     }
 
     @ViewBuilder
@@ -128,11 +125,6 @@ struct WorkspaceSettingsView: View {
         switch choice {
         case .local:
             Image(systemName: "desktopcomputer")
-        case .databricks:
-            Image.databricksLogo
-                .resizable()
-                .scaledToFit()
-                .frame(width: DahliaTypography.baseSize, height: DahliaTypography.baseSize)
         case let .dahlia(id):
             Image(systemName: accountConnections.first(where: { $0.id == id })?.isCloud == true ? "cloud" : "server.rack")
         }
@@ -221,7 +213,6 @@ struct WorkspaceSettingsView: View {
             WorkspaceAccountMenu(
                 workspace: workspace,
                 connections: accountConnections,
-                databricksAccounts: [],
                 onSelect: { requestAccountChange(of: workspace, to: $0) }
             )
             // A recording keeps the account it started with until it is processed.
@@ -322,7 +313,7 @@ struct WorkspaceSettingsView: View {
 
     private func changeAccount(of workspace: WorkspaceRecord, to choice: WorkspaceAccountChoice) async {
         switch choice {
-        case .local, .databricks:
+        case .local:
             // Every workspace is the app's account's; only a Dahlia Server adopts one.
             break
         case let .dahlia(connectionID):

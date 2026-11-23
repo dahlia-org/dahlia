@@ -28,15 +28,6 @@ final class WorkspaceAISettingsModel {
     private(set) var databricksConnections: [DatabricksConnection] = []
     private(set) var pendingDatabricksSignOut: DatabricksConnection?
 
-    /// The Databricks account of the open workspace. It lists only its workspace's AI Gateway models; the Local Account
-    /// lists only the subscriptions'.
-    private(set) var databricksAccountConnectionID: UUID? {
-        didSet {
-            guard oldValue != databricksAccountConnectionID else { return }
-            NotificationCenter.default.post(name: PiRuntimeService.modelsDidChange, object: nil)
-        }
-    }
-
     /// The Databricks connection the app's account uses, the oldest, as `CodexRuntimeProvider.providerAccounts` does.
     var providerDatabricksConnectionID: UUID? {
         databricksConnections.first?.id
@@ -117,7 +108,6 @@ final class WorkspaceAISettingsModel {
         WorkspaceAISettingsSnapshot(
             workspaceID: workspaceID,
             accountConnectionID: accountConnectionID,
-            databricksConnectionID: databricksAccountConnectionID,
             localProvider: localProvider,
             databricksProfile: databricksProfile,
             generationSettings: workspaceID == self.workspaceID ? generationSettings : WorkspaceGenerationSettings(),
@@ -182,9 +172,6 @@ final class WorkspaceAISettingsModel {
         pendingDatabricksSignOut = nil
         do {
             try await databricksService.remove(connectionID: connectionID)
-            CodexRuntimeContextStore.shared.accountRemoved(.databricks(connectionID: connectionID))
-            await PiRuntimeService.shared.removeCredentials(of: .databricks(connectionID: connectionID))
-            setupDefaults.removeObject(forKey: AccountInferenceSettings.key(connectionID: nil, databricksConnectionID: connectionID))
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -222,13 +209,10 @@ final class WorkspaceAISettingsModel {
             try WorkspaceRecord.order(Column("lastOpenedAt").desc, Column("createdAt").desc).fetchAll(db)
         }
         for workspace in workspaces {
-            let key = AccountInferenceSettings.key(
-                connectionID: workspace.accountConnectionId, databricksConnectionID: workspace.databricksConnectionId
-            )
+            let key = AccountInferenceSettings.key(connectionID: workspace.accountConnectionId)
             guard setupDefaults.data(forKey: key) == nil else { continue }
             AccountInferenceSettings(workspace: workspace, defaults: setupDefaults).save(
                 connectionID: workspace.accountConnectionId,
-                databricksConnectionID: workspace.databricksConnectionId,
                 defaults: setupDefaults
             )
         }
@@ -276,7 +260,6 @@ final class WorkspaceAISettingsModel {
                 }), self.activationGeneration == generation, self.persistenceGeneration == savedGeneration,
                 self.workspaceID == workspaceID else { return }
                 let changedAccount = self.accountConnectionID != workspace.accountConnectionId
-                    || self.databricksAccountConnectionID != workspace.databricksConnectionId
                 self.apply(WorkspaceAISettingsSnapshot(
                     workspace: workspace,
                     localAccountSettings: self.localAccountSettings,
@@ -294,7 +277,6 @@ final class WorkspaceAISettingsModel {
         isApplying = true
         workspaceID = settings.workspaceID
         accountConnectionID = settings.accountConnectionID
-        databricksAccountConnectionID = settings.databricksConnectionID
         generationSettings = settings.generationSettings
         chatModelID = settings.chatModelID
         chatReasoningEffort = settings.chatReasoningEffort
@@ -303,7 +285,7 @@ final class WorkspaceAISettingsModel {
 
     private func saveAccountSettings(_ snapshot: WorkspaceAISettingsSnapshot) {
         AccountInferenceSettings(snapshot: snapshot).save(
-            connectionID: snapshot.accountConnectionID, databricksConnectionID: snapshot.databricksConnectionID, defaults: setupDefaults
+            connectionID: snapshot.accountConnectionID, defaults: setupDefaults
         )
     }
 

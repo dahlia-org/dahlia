@@ -72,7 +72,6 @@ extension CodexRuntimeProvider {
     var providerAccounts: [ProviderAccount] {
         switch self {
         case .local: ProviderAccountDirectory.databricksConnections().map { .databricks(connectionID: $0.id) }
-        case let .databricks(connectionID): [.databricks(connectionID: connectionID)]
         case let .dahlia(connectionID): [.dahlia(connectionID: connectionID)]
         }
     }

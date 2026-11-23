@@ -24,7 +24,7 @@ import SwiftUI
             )
             let host = NSHostingView(rootView: MCPSettingsView(
                 workspaces: [local, serverWorkspace], currentWorkspace: local,
-                accountConnections: [connection], databricksAccounts: [],
+                accountConnections: [connection],
                 helperURL: URL(filePath: "/Applications/Dahlia.app/Contents/Helpers/dahlia-mcp")
             ).background(Color(nsColor: .windowBackgroundColor)))
             host.sizingOptions = .intrinsicContentSize

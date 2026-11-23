@@ -8,11 +8,8 @@ struct MainSidebarAccountMenuButton: NSViewRepresentable {
     let connections: [DahliaAccountConnection]
     let currentConnectionID: UUID?
     let isLocalAccount: Bool
-    var databricksAccounts: [DatabricksConnection] = []
-    var currentDatabricksAccountID: UUID?
     let onOpenSettings: (SettingsCategory?) -> Void
     let onSelectAccount: (DahliaAccountConnection?) -> Void
-    var onSelectDatabricksAccount: (UUID) -> Void = { _ in }
     var onAddAccount: () -> Void = {}
     let onAccountAction: () -> Void
     var unprocessedRecordingCount = 0
@@ -24,7 +21,6 @@ struct MainSidebarAccountMenuButton: NSViewRepresentable {
             accountSelection: accountSelection,
             onOpenSettings: onOpenSettings,
             onSelectAccount: onSelectAccount,
-            onSelectDatabricksAccount: onSelectDatabricksAccount,
             onAddAccount: onAddAccount,
             onAccountAction: onAccountAction,
             unprocessedRecordingCount: unprocessedRecordingCount,
@@ -58,7 +54,6 @@ struct MainSidebarAccountMenuButton: NSViewRepresentable {
             accountSelection: accountSelection,
             onOpenSettings: onOpenSettings,
             onSelectAccount: onSelectAccount,
-            onSelectDatabricksAccount: onSelectDatabricksAccount,
             onAddAccount: onAddAccount,
             onAccountAction: onAccountAction,
             unprocessedRecordingCount: unprocessedRecordingCount,
@@ -74,15 +69,9 @@ struct MainSidebarAccountMenuButton: NSViewRepresentable {
     private func configure(_ button: MainSidebarAccountButton) {
         _ = dynamicTypeSize
         let currentConnection = connections.first { $0.id == currentConnectionID }
-        let databricks = currentDatabricksAccountID.map { id in
-            Self.databricksFooterLines(databricksAccounts.first { $0.id == id })
-        }
-        let accountTitle = databricks?.title
-            ?? (isLocalAccount ? L10n.localAccount : currentConnection?.displayName ?? L10n.dahliaNotSignedIn)
+        let accountTitle = isLocalAccount ? L10n.localAccount : currentConnection?.displayName ?? L10n.dahliaNotSignedIn
         let progress = currentConnectionID.flatMap { accountController.syncProgress[$0] }
-        let syncTitle: String? = if let databricks {
-            databricks.detail
-        } else if isLocalAccount {
+        let syncTitle: String? = if isLocalAccount {
             nil
         } else if accountController.syncProgressUnavailable {
             L10n.syncProgressUnavailable
@@ -101,12 +90,8 @@ struct MainSidebarAccountMenuButton: NSViewRepresentable {
                     .applying(.init(paletteColors: [state == .synced ? .systemGreen : .secondaryLabelColor, .secondaryLabelColor])))
             button.setIcon(icon, animated: progress?.isSyncing == true)
         } else {
-            let icon = if currentDatabricksAccountID != nil {
-                Self.sized(.databricksLogo, to: font.pointSize)
-            } else {
-                NSImage(systemSymbolName: isLocalAccount ? "person.2" : "icloud.slash", accessibilityDescription: nil)?
-                    .withSymbolConfiguration(.init(pointSize: font.pointSize, weight: .regular))
-            }
+            let icon = NSImage(systemSymbolName: isLocalAccount ? "person.2" : "icloud.slash", accessibilityDescription: nil)?
+                .withSymbolConfiguration(.init(pointSize: font.pointSize, weight: .regular))
             button.setIcon(icon, animated: false)
         }
         button.toolTip = syncTitle
@@ -114,24 +99,7 @@ struct MainSidebarAccountMenuButton: NSViewRepresentable {
     }
 
     private var accountSelection: MainSidebarAccountSelection {
-        MainSidebarAccountSelection(
-            connectionID: currentConnectionID,
-            isLocal: isLocalAccount,
-            databricksAccounts: databricksAccounts,
-            currentDatabricksID: currentDatabricksAccountID
-        )
-    }
-
-    /// A Databricks account's footer: Unity Gateway over the workspace's host.
-    static func databricksFooterLines(_ connection: DatabricksConnection?) -> (title: String, detail: String?) {
-        guard let connection else { return (L10n.databricks, nil) }
-        return (L10n.unityGateway, connection.hostName)
-    }
-
-    private static func sized(_ image: NSImage, to pointSize: CGFloat) -> NSImage {
-        let sized = image.copy() as? NSImage ?? image
-        sized.size = NSSize(width: pointSize, height: pointSize)
-        return sized
+        MainSidebarAccountSelection(connectionID: currentConnectionID, isLocal: isLocalAccount)
     }
 
     static func footerTitle(accountName: String, syncSummary: String? = nil) -> NSAttributedString {

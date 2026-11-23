@@ -24,8 +24,7 @@ struct SkillSettingsView: View {
 
     var body: some View {
         let account = CodexRuntimeProvider(
-            accountConnectionID: workspaceSettings.accountConnectionID,
-            databricksConnectionID: workspaceSettings.databricksAccountConnectionID
+            accountConnectionID: workspaceSettings.accountConnectionID
         )
         VStack(spacing: 0) {
             // In a grouped form's header, the tabs share the column of the settings title and the sections below.

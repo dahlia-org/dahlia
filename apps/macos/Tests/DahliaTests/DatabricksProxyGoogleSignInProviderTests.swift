@@ -6,9 +6,13 @@ import Synchronization
 #if canImport(Testing)
     import Testing
 
+    /// The Databricks connection the app's account uses for Google Calendar and Drive in these tests.
+    private let proxyConnectionID = UUID()
+
     @MainActor
+    @Suite(.providerAccounts([.init(id: proxyConnectionID, workspaceURL: URL(string: "https://example.cloud.databricks.com")!)]))
     struct DatabricksProxyGoogleSignInProviderTests {
-        private let connection = DatabricksConnection(id: UUID(), host: "https://example.cloud.databricks.com")
+        private let connection = DatabricksConnection(id: proxyConnectionID, host: "https://example.cloud.databricks.com")
 
         @Test
         func proxyBaseURLUsesAPI20Route() {
@@ -36,7 +40,7 @@ import Synchronization
                 sessionKind: .drive, direct: direct,
                 oauth: DatabricksOAuthService(storage: memory.storage) { _ in throw CancellationError() },
                 storage: memory.storage, driveClient: GoogleDriveBackupClient(urlSession: transport),
-                userDefaults: defaults, openAccount: { .databricks(connectionID: connection.id) }
+                userDefaults: defaults, openAccount: { .local }
             )
             let session = try await provider.restorePreviousSignIn()
             #expect(session.grantedScopes == GoogleOAuthScope.drive)
@@ -82,10 +86,10 @@ import Synchronization
             #expect(direct.disconnectCallCount == 1)
         }
 
-        /// The Local and Dahlia accounts sign in to Google directly even when a Databricks account exists on this Mac.
+        /// A Dahlia account signs in to Google directly even when a Databricks connection exists on this Mac.
         @Test
-        func otherAccountsUseDirectProviderBesideADatabricksConnection() async throws {
-            for account in [CodexRuntimeProvider.local, .dahlia(connectionID: UUID()), .databricks(connectionID: UUID())] {
+        func dahliaAccountUsesDirectProviderBesideADatabricksConnection() async throws {
+            for account in [CodexRuntimeProvider.dahlia(connectionID: UUID())] {
                 let direct = FakeDirectProvider(isConfigured: true, hasPreviousSignIn: true)
                 let provider = makeProvider(connection: connection, direct: direct, account: account)
 
@@ -218,7 +222,7 @@ import Synchronization
             let provider = DatabricksProxyGoogleSignInProvider(
                 direct: direct, oauth: service, storage: memory.storage,
                 apiClient: FakeAPIClient(result: .success([])), userDefaults: makeDefaults(),
-                openAccount: { [connection] in .databricks(connectionID: connection.id) }
+                openAccount: { .local }
             )
             _ = try await provider.restorePreviousSignIn()
             let (posts, continuation) = AsyncStream.makeStream(of: Void.self)
@@ -273,7 +277,7 @@ import Synchronization
             let provider = DatabricksProxyGoogleSignInProvider(
                 direct: FakeDirectProvider(), oauth: service, storage: memory.storage,
                 apiClient: FakeAPIClient(result: .success([])), userDefaults: makeDefaults(),
-                openAccount: { [connection] in .databricks(connectionID: connection.id) }
+                openAccount: { .local }
             )
 
             let error = await #expect(throws: GoogleSignInError.self) { try await provider.restorePreviousSignIn() }
@@ -326,7 +330,9 @@ import Synchronization
             let readded = DatabricksConnection(id: UUID(), host: connection.host)
             let provider = makeProvider(connection: readded, direct: FakeDirectProvider(), userDefaults: defaults)
 
-            #expect(await provider.hasPreviousSignIn)
+            // The re-added connection is the app account's connection, so the account must list it.
+            let readdedConnections = [ProviderAccountDirectory.Connection(id: readded.id, workspaceURL: URL(string: readded.host)!)]
+            #expect(await ProviderAccountDirectory.$connections.withValue(readdedConnections) { await provider.hasPreviousSignIn })
         }
 
         private static let primaryCalendar = CalendarListItem(id: "me@example.com", title: "me@example.com", colorHex: nil, isPrimary: true)
@@ -367,7 +373,7 @@ import Synchronization
             apiClient: FakeAPIClient = FakeAPIClient(result: .success([])),
             account: CodexRuntimeProvider? = nil
         ) -> DatabricksProxyGoogleSignInProvider {
-            let account = account ?? connection.map { .databricks(connectionID: $0.id) } ?? .local
+            let account = account ?? .local
             let memory = DatabricksTestStorage(connection: connection)
             if let connection {
                 memory.state.withLock { $0.credentials[connection.id] = Self.credential }

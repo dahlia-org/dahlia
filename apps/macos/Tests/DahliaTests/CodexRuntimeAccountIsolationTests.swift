@@ -46,8 +46,8 @@ struct CodexRuntimeAccountIsolationTests {
     func inactiveAccountWaitHandlesReturnCancellationAndRemoval(action: String) async {
         let store = CodexRuntimeContextStore()
         store.apply(.local)
-        // A summary recorded in a Databricks account waits until that account is open again.
-        let expected = CodexRuntimeProvider.databricks(connectionID: .v7())
+        // A summary recorded in a Dahlia account waits until that account is open again.
+        let expected = CodexRuntimeProvider.dahlia(connectionID: .v7())
         var started = false
         var finished = false
         var failure: (any Error)?
@@ -147,7 +147,7 @@ struct CodexRuntimeAccountIsolationTests {
     }
 
     @Test
-    func databricksAccountStopsRunningLocalPiAndWritesItsGateways() async throws {
+    func localAccountWritesTheDatabricksGatewaysAndStopsTheRunningPi() async throws {
         let connection = DatabricksConnection(id: UUID(), host: "https://dbc.example.com")
         let memory = DatabricksTestStorage(connection: connection)
         let databricksClient = DatabricksOAuthService(storage: memory.storage)
@@ -178,31 +178,19 @@ struct CodexRuntimeAccountIsolationTests {
         let summary = await log.transport(at: 1)
         _ = await summary.command("prompt")
 
-        let databricks = CodexRuntimeProvider.databricks(connectionID: connection.id)
-        try await coordinator.activate(provider: databricks)
+        // The app's one account uses every Databricks connection, so switching to it writes their gateways.
+        try await ProviderAccountDirectory.$connections.withValue([
+            .init(id: connection.id, workspaceURL: URL(string: connection.host)!),
+        ]) {
+            try await coordinator.activate(provider: .local)
+        }
 
         await #expect(throws: CancellationError.self) { try await generation.value }
         #expect(await summary.isClosed)
-        #expect(pi.contextStore.provider == databricks)
-        // The Databricks account's own Pi directory lists its gateways; the Local Account's lists none.
-        let models = try String(contentsOf: locator.agentURL(for: databricks).appending(path: "models.json"), encoding: .utf8)
+        #expect(pi.contextStore.provider == .local)
+        let models = try String(contentsOf: locator.agentURL(for: .local).appending(path: "models.json"), encoding: .utf8)
         #expect(models.contains("https:\\/\\/dbc.example.com\\/ai-gateway\\/anthropic") || models
             .contains("https://dbc.example.com/ai-gateway/anthropic"))
-
-        // The same account keeps the running configuration; the Local Account lists no gateways.
-        try await coordinator.activate(provider: databricks)
-        #expect(log.all.count == 2)
-        try await coordinator.activate(provider: .local)
-        let localModels = try String(contentsOf: locator.agentURL(for: .local).appending(path: "models.json"), encoding: .utf8)
-        #expect(localModels == #"{"providers":{}}"#)
-        #expect(pi.contextStore.provider == .local)
-        let unavailable = CodexRuntimeProvider.dahlia(connectionID: .v7())
-        await #expect(throws: AIConfigurationError.accountNotReady) {
-            try await coordinator.activate(provider: unavailable)
-        }
-        #expect(!pi.contextStore.isConfigured)
-        try await coordinator.activate(provider: .local)
-        #expect(pi.contextStore.isConfigured)
     }
 
     @Test

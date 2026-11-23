@@ -118,7 +118,7 @@ import Foundation
         @Test
         func accountScopeMatchesCLIAndJSONForEveryClientAndRuntime() throws {
             let id = UUID.v7()
-            for account in [WorkspaceAccountChoice.local, .dahlia(id), .databricks(id)] {
+            for account in [WorkspaceAccountChoice.local, .dahlia(id)] {
                 for profile in [DahliaRuntimeProfile.production, .development] {
                     for writeEnabled in [false, true] {
                         let commands = MCPRegistrationCommands(

@@ -11,7 +11,7 @@ import os
     @MainActor
     @Suite(.providerAccounts([.init(id: accountConnectionID, workspaceURL: URL(string: "https://account.cloud.databricks.com")!)]))
     struct AgentMCPSettingsModelTests {
-        private static let account = CodexRuntimeProvider.databricks(connectionID: accountConnectionID)
+        private static let account = CodexRuntimeProvider.local
 
         /// Pi answers `/databricks-login` with an authorization URL and `succeeds`, `/databricks-mcp-services` with
         /// `services` (or sign-in required when nil), and `/dahlia-logout` with a response.

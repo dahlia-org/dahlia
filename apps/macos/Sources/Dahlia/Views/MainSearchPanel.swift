@@ -154,9 +154,6 @@ struct MainSearchPanel: View {
         .onChange(of: sidebarViewModel.currentWorkspace?.accountConnectionId) {
             model.resetForWorkspaceChange(using: sidebarViewModel)
         }
-        .onChange(of: sidebarViewModel.currentWorkspace?.databricksConnectionId) {
-            model.resetForWorkspaceChange(using: sidebarViewModel)
-        }
         .onChange(of: model.inputText) {
             model.queryDidChange(using: sidebarViewModel)
         }

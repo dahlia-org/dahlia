@@ -81,15 +81,15 @@
         @Test
         func runtimeProviderKeepsEachAccountAndReadsCodexEraLocalProviders() throws {
             let id = UUID()
-            for provider in [CodexRuntimeProvider.local, .databricks(connectionID: id), .dahlia(connectionID: id)] {
+            for provider in [CodexRuntimeProvider.local, .dahlia(connectionID: id)] {
                 let data = try JSONEncoder().encode(provider)
                 #expect(try JSONDecoder().decode(CodexRuntimeProvider.self, from: data) == provider)
             }
-            // A Codex-era Databricks profile ran under the Local Account; the Databricks account is a new key.
+            // Codex-era Databricks profiles and Databricks-account keys ran under the Local Account, the app's one account now.
             let legacy = Data(#"{"databricks":{"profile":"DEFAULT"}}"#.utf8)
             #expect(try JSONDecoder().decode(CodexRuntimeProvider.self, from: legacy) == .local)
-            #expect(try String(decoding: JSONEncoder().encode(CodexRuntimeProvider.databricks(connectionID: id)), as: UTF8.self)
-                .contains("databricksWorkspace"))
+            let legacyWorkspace = Data(#"{"databricksWorkspace":{"connectionID":"\#(id.uuidString)"}}"#.utf8)
+            #expect(try JSONDecoder().decode(CodexRuntimeProvider.self, from: legacyWorkspace) == .local)
         }
 
         @Test

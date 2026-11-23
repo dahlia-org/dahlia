@@ -39,7 +39,8 @@
             #expect(!model.canContinue)
             model.isAccountSetupInProgress = false
             await model.advanceFromAccount { account in
-                #expect(account == .databricks(connectionID: connectionID))
+                // A Databricks connection is no account of its own: the app's one account runs it.
+                #expect(account == .local)
                 return true
             }
             #expect(model.currentStep == .workingLanguages)
@@ -48,13 +49,13 @@
 
         @Test
         func missingPiIsOfferedBeforeProvidersForEveryAccount() async {
-            for account in [CodexRuntimeProvider.local, .databricks(connectionID: .v7()), .dahlia(connectionID: .v7())] {
+            let dahliaID = UUID.v7()
+            // The Local Account with a Databricks connection selected runs the same Pi as without one, and skips model providers.
+            for (account, connectionID, databricks) in [
+                (CodexRuntimeProvider.local, nil, nil), (.local, nil, UUID.v7()), (.dahlia(connectionID: dahliaID), dahliaID, nil),
+            ] as [(CodexRuntimeProvider, UUID?, UUID?)] {
                 let model = SetupTourModel(mode: .initial, currentWorkspace: nil)
-                if case let .databricks(connectionID) = account {
-                    model.selectAccountConnection(nil, databricks: connectionID)
-                } else {
-                    model.selectAccountConnection(account.accountConnectionID)
-                }
+                model.selectAccountConnection(connectionID, databricks: databricks)
                 await model.advanceFromAccount { selected in
                     #expect(selected == account)
                     #expect(model.isCheckingPi)
@@ -65,7 +66,7 @@
                 #expect(model.visibleSteps.prefix(2) == [.account, .pi])
                 #expect(model.canContinue)
                 model.advance()
-                #expect(model.currentStep == (account == .local ? .modelProvider : .workingLanguages))
+                #expect(model.currentStep == (connectionID == nil && databricks == nil ? .modelProvider : .workingLanguages))
                 model.goBack()
                 #expect(model.currentStep == .pi)
             }
@@ -73,16 +74,13 @@
 
         @Test
         func availablePiSkipsInstallationForEveryAccount() async {
-            for account in [CodexRuntimeProvider.local, .databricks(connectionID: .v7()), .dahlia(connectionID: .v7())] {
+            let dahliaID = UUID.v7()
+            for (connectionID, databricks) in [(nil, nil), (nil, UUID.v7()), (dahliaID, nil)] as [(UUID?, UUID?)] {
                 let model = SetupTourModel(mode: .manual, currentWorkspace: nil)
-                if case let .databricks(connectionID) = account {
-                    model.selectAccountConnection(nil, databricks: connectionID)
-                } else {
-                    model.selectAccountConnection(account.accountConnectionID)
-                }
+                model.selectAccountConnection(connectionID, databricks: databricks)
                 await model.advanceFromAccount { _ in true }
                 #expect(!model.visibleSteps.contains(.pi))
-                #expect(model.currentStep == (account == .local ? .modelProvider : .workingLanguages))
+                #expect(model.currentStep == (connectionID == nil && databricks == nil ? .modelProvider : .workingLanguages))
             }
         }
 
@@ -408,13 +406,14 @@
         }
 
         @Test
-        func choosingADatabricksAccountDoesNotKeepTheLocalWorkspace() {
+        func choosingADatabricksConnectionKeepsTheLocalWorkspace() {
             let workspace = WorkspaceRecord(id: .v7(), path: nil, name: "Default", createdAt: .now, lastOpenedAt: .now)
             let model = SetupTourModel(mode: .manual, currentWorkspace: workspace)
 
+            // A Databricks connection is used by the app's one account, so the open Local workspace stays.
             model.selectAccountConnection(nil, databricks: .v7())
 
-            #expect(!model.keepsOriginalWorkspace)
+            #expect(model.keepsOriginalWorkspace)
         }
 
         @Test

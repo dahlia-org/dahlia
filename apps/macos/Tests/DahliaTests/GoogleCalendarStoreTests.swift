@@ -146,7 +146,7 @@ import Foundation
             case .signIn:
                 await store.signIn()
             case .accountSwitch:
-                account = .databricks(connectionID: UUID())
+                account = .dahlia(connectionID: UUID())
                 defaults.set("[]", forKey: GoogleCalendarStore.selectedCalendarIDsKey(for: account))
                 NotificationCenter.default.post(name: .calendarAccountDidChange, object: nil)
                 #expect(await pollUntil { store.state == .needsCalendarSelection })
@@ -735,7 +735,7 @@ import Foundation
         @Test
         func accountChangeLoadsTheNewAccountsSelectionAndRestoresItsRoute() async {
             let defaults = isolatedUserDefaults()
-            let databricks = CodexRuntimeProvider.databricks(connectionID: UUID())
+            let databricks = CodexRuntimeProvider.dahlia(connectionID: UUID())
             seedSelectedCalendars([primaryCalendar.id], defaults: defaults)
             defaults.set("[\"\(secondaryCalendar.id)\"]", forKey: GoogleCalendarStore.selectedCalendarIDsKey(for: databricks))
             var account = CodexRuntimeProvider.local
@@ -771,7 +771,7 @@ import Foundation
             let previousRestore = Task { await store.restoreSessionIfNeeded() }
             #expect(await pollUntil { signInProvider.restoreCallCount == 1 })
 
-            account = .databricks(connectionID: UUID())
+            account = .dahlia(connectionID: UUID())
             NotificationCenter.default.post(name: .calendarAccountDidChange, object: nil)
             #expect(await pollUntil { signInProvider.restoreCallCount == 2 })
             signInProvider.finishRestore()

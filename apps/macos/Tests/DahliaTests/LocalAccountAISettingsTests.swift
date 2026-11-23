@@ -38,10 +38,8 @@
             let suite = "DatabricksDefaults-\(UUID())"
             let defaults = try #require(UserDefaults(suiteName: suite))
             defer { defaults.removePersistentDomain(forName: suite) }
-            let databricks = WorkspaceRecord(
-                id: .v7(), path: nil, name: "Databricks", createdAt: .now, lastOpenedAt: .now, databricksConnectionId: .v7()
-            )
-            let account = AccountInferenceSettings(workspace: databricks, defaults: defaults)
+            let workspace = WorkspaceRecord(id: .v7(), path: nil, name: "Databricks", createdAt: .now, lastOpenedAt: .now)
+            let account = AccountInferenceSettings(workspace: workspace, defaults: defaults)
             // Image analysis saves no model: it prefers Haiku while Haiku is on, and another listed model once it is off.
             #expect(account.imageAnalysis.model == nil)
             let model = { (reference: String) in
@@ -72,11 +70,11 @@
                 supportedReasoningEfforts: [], defaultReasoningEffort: "low", inputModalities: ["text"]
             )
             #expect(CodexScreenshotAnalysisService.defaultModel(in: [textHaiku, opus]) == opus.model)
-            // With no listed default, the bare preference stays, not a Databricks model another account cannot have.
+            // With no listed default, the bare preference stays, not a gateway model another account cannot have.
             #expect(CodexScreenshotAnalysisService.defaultModel(in: []) == "gpt-6-luna")
 
             // A model the workspace already chose stays, and other accounts keep their defaults.
-            var chosen = databricks
+            var chosen = workspace
             chosen.generationSettings.local.model = "databricks/system.ai.claude-opus-5-5"
             #expect(AccountInferenceSettings(workspace: chosen, defaults: defaults).local.model == "databricks/system.ai.claude-opus-5-5")
             let local = WorkspaceRecord(id: .v7(), path: nil, name: "Local", createdAt: .now, lastOpenedAt: .now)
@@ -116,29 +114,27 @@
         }
 
         @Test
-        func databricksAccountFollowsTheOpenWorkspace() throws {
-            let suiteName = "DatabricksAccountTests-\(UUID())"
+        func serverAccountFollowsTheOpenWorkspace() throws {
+            let suiteName = "ServerAccountTests-\(UUID())"
             let defaults = try #require(UserDefaults(suiteName: suiteName))
             defer { defaults.removePersistentDomain(forName: suiteName) }
             let model = WorkspaceAISettingsModel(setupDefaults: defaults, activateRuntime: { _ in })
             let connectionID = UUID()
-            var databricks = makeWorkspace(openedAt: .now)
-            databricks.databricksConnectionId = connectionID
+            var server = makeWorkspace(openedAt: .now)
+            server.accountConnectionId = connectionID
 
-            model.activate(workspace: databricks)
-            #expect(model.databricksAccountConnectionID == connectionID)
+            model.activate(workspace: server)
+            #expect(model.accountConnectionID == connectionID)
             let snapshot = try #require(model.snapshot)
-            #expect(CodexRuntimeProvider(
-                accountConnectionID: snapshot.accountConnectionID, databricksConnectionID: snapshot.databricksConnectionID
-            ) == .databricks(connectionID: connectionID))
-            // Each account keeps its own model, so switching never carries a Databricks model to the Local Account.
-            model.summaryModelID = "databricks/system.ai.claude"
-            #expect(defaults.data(forKey: AccountInferenceSettings.key(connectionID: nil, databricksConnectionID: connectionID)) != nil)
+            #expect(CodexRuntimeProvider(accountConnectionID: snapshot.accountConnectionID) == .dahlia(connectionID: connectionID))
+            // Each account keeps its own model, so switching never carries a Server model to the Local Account.
+            model.summaryModelID = "dahlia/gpt-6-luna"
+            #expect(defaults.data(forKey: AccountInferenceSettings.key(connectionID: connectionID)) != nil)
 
             model.activate(workspace: makeWorkspace(openedAt: .now))
-            #expect(model.summaryModelID != "databricks/system.ai.claude")
-            model.activate(workspace: databricks)
-            #expect(model.summaryModelID == "databricks/system.ai.claude")
+            #expect(model.summaryModelID != "dahlia/gpt-6-luna")
+            model.activate(workspace: server)
+            #expect(model.summaryModelID == "dahlia/gpt-6-luna")
         }
 
         @Test

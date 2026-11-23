@@ -6,25 +6,18 @@
 
     @MainActor
     struct MainSidebarAccountMenuTests {
-        @Test(arguments: ["localOnly", "localWithDatabricks", "localWithServer", "databricks", "server"])
+        @Test(arguments: ["localOnly", "localWithServer", "server"])
         func addingAccountsAndBottomActionsFollowTheSelectedAccount(account: String) throws {
             let suite = "AccountMenuActions-\(UUID())"
             let defaults = try #require(UserDefaults(suiteName: suite))
             defer { defaults.removePersistentDomain(forName: suite) }
             let settings = AppSettings(generalDefaults: defaults)
             let server = makeConnection(origin: "https://server.example.com", isCloud: false)
-            let gateway = DatabricksConnection(id: .v7(), host: "https://one.example.com")
             let hasServer = account == "server" || account == "localWithServer"
-            let hasDatabricks = account == "databricks" || account == "localWithDatabricks"
             var actions: [String] = []
             let coordinator = MainSidebarAccountMenuCoordinator(
                 connections: hasServer ? [server] : [],
-                accountSelection: .init(
-                    connectionID: account == "server" ? server.id : nil,
-                    isLocal: account != "server",
-                    databricksAccounts: hasDatabricks ? [gateway] : [],
-                    currentDatabricksID: account == "databricks" ? gateway.id : nil
-                ),
+                accountSelection: .init(connectionID: account == "server" ? server.id : nil, isLocal: account != "server"),
                 onOpenSettings: { _ in Issue.record("Unexpected settings action") },
                 onSelectAccount: { _ in Issue.record("Unexpected account switch") },
                 onAddAccount: { actions.append("add") },
@@ -32,8 +25,8 @@
                 onShowUnprocessedRecordings: { actions.append("recordings") },
                 settings: settings
             )
-            #expect(coordinator.showsAddAccount == (hasServer || hasDatabricks))
-            let showsBottom = account == "localOnly" || account == "server" || account == "databricks"
+            #expect(coordinator.showsAddAccount == hasServer)
+            let showsBottom = account == "localOnly" || account == "server"
             #expect(coordinator.showsAccountAction == showsBottom)
             if coordinator.showsAddAccount {
                 for _ in 0 ..< coordinator.menuOffset {
@@ -55,32 +48,26 @@
             let defaults = try #require(UserDefaults(suiteName: suite))
             defer { defaults.removePersistentDomain(forName: suite) }
             let settings = AppSettings(generalDefaults: defaults)
-            let gateway = DatabricksConnection(id: .v7(), host: "https://one.example.com")
-            let current = DatabricksConnection(id: .v7(), host: "https://current.example.com")
+            // A Server account is open, so choosing the Local Account is a change.
+            let server = makeConnection(origin: "https://server.example.com", isCloud: false)
             var selections: [String] = []
             let coordinator = MainSidebarAccountMenuCoordinator(
-                connections: [],
-                accountSelection: MainSidebarAccountSelection(
-                    connectionID: nil, isLocal: true, databricksAccounts: [gateway, current], currentDatabricksID: current.id
-                ),
+                connections: [server],
+                accountSelection: MainSidebarAccountSelection(connectionID: server.id, isLocal: false),
                 onOpenSettings: { _ in selections.append("settings") },
                 onSelectAccount: { _ in selections.append("local") },
-                onSelectDatabricksAccount: { id in
-                    #expect(id == gateway.id)
-                    selections.append("databricks")
-                },
                 onAccountAction: {},
                 onShowUnprocessedRecordings: {},
                 settings: settings
             )
-            #expect(coordinator.menuOffset == 4)
+            #expect(coordinator.menuOffset == 3)
             func activate(row: Int) {
                 for _ in 0 ... row {
                     coordinator.moveSelection(1)
                 }
                 coordinator.activateSelection()
             }
-            activate(row: 0)
+            activate(row: 1)
             activate(row: coordinator.menuOffset + 2)
             #expect(selections == ["local", "settings"])
         }
@@ -517,79 +504,17 @@
         }
 
         @Test
-        func databricksFooterShowsUnityGatewayOverTheHostAndTheMenuNamesTheHost() {
-            var connection = DatabricksConnection(id: UUID(), host: "https://dbc-1.cloud.databricks.com")
-            #expect(MainSidebarAccountMenuButton.databricksFooterLines(connection) == (L10n.unityGateway, "dbc-1.cloud.databricks.com"))
-            #expect(L10n.unityGatewayHost(connection.hostName) == "Unity Gateway (dbc-1.cloud.databricks.com)")
-            // The email no longer shows in the footer; the workspace settings' account picker still names it.
-            connection.email = "me@example.com"
-            #expect(MainSidebarAccountMenuButton.databricksFooterLines(connection) == (L10n.unityGateway, "dbc-1.cloud.databricks.com"))
-            #expect(connection.accountLabel == "dbc-1 (me@example.com)")
-            #expect(MainSidebarAccountMenuButton.databricksFooterLines(nil) == (L10n.databricks, nil))
-        }
-
-        @Test
-        func localAndDatabricksAccountsListTheirOwnWorkspaces() {
-            var local = WorkspaceRecord(id: .v7(), path: nil, name: "Local", createdAt: .distantPast, lastOpenedAt: .now)
-            var databricks = WorkspaceRecord(
-                id: .v7(), path: nil, name: "Databricks", createdAt: .now, lastOpenedAt: .now, databricksConnectionId: .v7()
+        func localAndServerAccountsListTheirOwnWorkspaces() {
+            let serverID = UUID.v7()
+            let local = WorkspaceRecord(id: .v7(), path: nil, name: "Local", createdAt: .distantPast, lastOpenedAt: .now)
+            let server = WorkspaceRecord(
+                id: .v7(), path: nil, name: "Server", createdAt: .now, lastOpenedAt: .now, accountConnectionId: serverID
             )
-            #expect(MainSidebarFooterView.workspaces([databricks, local], linkedTo: nil) == [local])
-            let account = databricks.databricksConnectionId
-            #expect(MainSidebarFooterView.workspaces([databricks, local], linkedTo: nil, databricks: account) == [databricks])
-            #expect(MainSidebarFooterView.workspaces([databricks, local], linkedTo: nil, databricks: .v7()).isEmpty)
-            #expect(MainSidebarFooterView.workspaceToSelect(
-                from: [local, databricks], currentWorkspace: local, connectionID: nil, databricks: account
-            ) == databricks)
-            #expect(MainSidebarFooterView.workspaceToSelect(from: [local, databricks], currentWorkspace: local, connectionID: nil) == nil)
-
-            // The listed copy wins over an open workspace that has since moved to the Databricks account.
-            let staleOpen = local
-            local.databricksConnectionId = databricks.databricksConnectionId
-            databricks.databricksConnectionId = nil
-            #expect(MainSidebarFooterView.workspaceToSelect(
-                from: [local, databricks], currentWorkspace: staleOpen, connectionID: nil
-            ) == databricks)
-        }
-
-        @Test
-        func keyboardSwitchesBetweenTheLocalAndDatabricksAccounts() {
-            var selections: [String] = []
-            let first = DatabricksConnection(id: UUID(), host: "https://one.example.com")
-            let second = DatabricksConnection(id: UUID(), host: "https://two.example.com")
-            func coordinator(current: UUID?) -> MainSidebarAccountMenuCoordinator {
-                MainSidebarAccountMenuCoordinator(
-                    connections: [],
-                    accountSelection: MainSidebarAccountSelection(
-                        connectionID: nil, isLocal: true,
-                        databricksAccounts: [first, second], currentDatabricksID: current
-                    ),
-                    onOpenSettings: { _ in selections.append("settings") },
-                    onSelectAccount: { selections.append($0 == nil ? "local" : "server") },
-                    onSelectDatabricksAccount: { selections.append($0 == first.id ? "first" : "second") },
-                    onAccountAction: {},
-                    onShowUnprocessedRecordings: {}
-                )
-            }
-
-            /// Each activation closes the menu, so every selection starts again from the first row.
-            func activate(_ coordinator: MainSidebarAccountMenuCoordinator, row: Int) {
-                for _ in 0 ... row {
-                    coordinator.moveSelection(1)
-                }
-                coordinator.activateSelection()
-            }
-            let local = coordinator(current: nil)
-            activate(local, row: 0)
-            activate(local, row: 1)
-            activate(local, row: 2)
-            let databricks = coordinator(current: first.id)
-            activate(databricks, row: 0)
-            activate(databricks, row: 1)
-            activate(databricks, row: databricks.menuOffset + 2)
-
-            // Choosing the current account does nothing; the rows after the Databricks accounts keep their actions.
-            #expect(selections == ["first", "second", "local", "settings"])
+            #expect(MainSidebarFooterView.workspaces([server, local], linkedTo: nil) == [local])
+            #expect(MainSidebarFooterView.workspaces([server, local], linkedTo: serverID) == [server])
+            #expect(MainSidebarFooterView.workspaces([server, local], linkedTo: .v7()).isEmpty)
+            #expect(MainSidebarFooterView.workspaceToSelect(from: [local, server], currentWorkspace: local, connectionID: serverID) == server)
+            #expect(MainSidebarFooterView.workspaceToSelect(from: [local, server], currentWorkspace: local, connectionID: nil) == nil)
         }
 
         @Test
@@ -645,7 +570,7 @@
 
         }
 
-        @Test(arguments: ["local", "server", "databricks"])
+        @Test(arguments: ["local", "server"])
         func keyboardOpensUnprocessedRecordingsAndDismissesMenu(account: String) {
             let window = NSWindow(
                 contentRect: NSRect(x: 0, y: 0, width: 500, height: 500),
@@ -655,16 +580,13 @@
             let button = NSButton(frame: NSRect(x: 0, y: 0, width: 100, height: 30))
             window.contentView?.addSubview(button)
             let connections = account == "server" ? [makeConnection(origin: "https://server.example.com", isCloud: false)] : []
-            let databricksAccounts = account == "databricks" ? [DatabricksConnection(id: .v7(), host: "https://dbc.example.com")] : []
             var openedRecordings = 0
             var menuWasDismissed = false
             let coordinator = MainSidebarAccountMenuCoordinator(
                 connections: connections,
                 accountSelection: .init(
                     connectionID: connections.first?.id,
-                    isLocal: connections.isEmpty,
-                    databricksAccounts: databricksAccounts,
-                    currentDatabricksID: databricksAccounts.first?.id
+                    isLocal: connections.isEmpty
                 ),
                 onOpenSettings: { _ in Issue.record("Opened Settings instead of unprocessed recordings") },
                 onSelectAccount: { _ in Issue.record("Switched accounts instead of opening unprocessed recordings") },
@@ -692,7 +614,7 @@
             #expect(menuWasDismissed)
         }
 
-        @Test(arguments: ["local", "server", "databricks"])
+        @Test(arguments: ["local", "server"])
         func appearanceMenuSupportsKeyboardSelectionAndRestoresTheSavedChoice(account: String) throws {
             let suiteName = "MainSidebarAccountMenuTests-\(UUID().uuidString)"
             let defaults = try #require(UserDefaults(suiteName: suiteName))
@@ -715,12 +637,10 @@
             let button = NSButton(frame: NSRect(x: 0, y: 0, width: 100, height: 30))
             window.contentView?.addSubview(button)
             let connections = account == "server" ? [makeConnection(origin: "https://server.example.com", isCloud: false)] : []
-            let databricksAccounts = account == "databricks" ? [DatabricksConnection(id: .v7(), host: "https://dbc.example.com")] : []
             let coordinator = MainSidebarAccountMenuCoordinator(
                 connections: connections,
                 accountSelection: .init(
-                    connectionID: connections.first?.id, isLocal: connections.isEmpty,
-                    databricksAccounts: databricksAccounts, currentDatabricksID: databricksAccounts.first?.id
+                    connectionID: connections.first?.id, isLocal: connections.isEmpty
                 ),
                 onOpenSettings: { _ in Issue.record("Opened Settings") },
                 onSelectAccount: { _ in Issue.record("Switched accounts") },

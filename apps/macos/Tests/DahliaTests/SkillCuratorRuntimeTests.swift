@@ -15,7 +15,7 @@
         func consolidationRecordsTerminalOutcome(scenario: String) async throws {
             let script = events(scenario)
             let transports = TestPiTransportLog()
-            let provider = CodexRuntimeProvider.databricks(connectionID: .v7())
+            let provider = CodexRuntimeProvider.dahlia(connectionID: .v7())
             // pi-hermes-skills answers `/hermes-curator` through the bridge before Pi reports the command handled.
             let report: JSONValue = .object([
                 "counts": .object(["archived": .number(1), "markedStale": .number(0), "reactivated": .number(0)]),

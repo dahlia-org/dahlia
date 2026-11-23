@@ -85,7 +85,7 @@ import Foundation
         @Test
         func settingsAreLocalToEachAccountAndRemovalPersists() throws {
             let defaults = try #require(UserDefaults(suiteName: "PiFileAccessSettingsTests.\(UUID())"))
-            let other = CodexRuntimeProvider(accountConnectionID: .v7(), databricksConnectionID: nil)
+            let other = CodexRuntimeProvider(accountConnectionID: .v7())
             var settings = PiFileAccessSettings(grants: [.init(path: "/Users/test/.desk.toml", isDirectory: false, access: .readWrite)])
             #expect(PiFileAccessSettings.load(for: .local, defaults: defaults).grants.isEmpty)
             settings.save(for: .local, defaults: defaults)

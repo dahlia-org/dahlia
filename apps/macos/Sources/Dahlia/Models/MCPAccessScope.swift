@@ -10,7 +10,7 @@ enum MCPAccessScope: Equatable {
         switch self {
         case .all: []
         case .account(.local): ["--account", "local"]
-        case let .account(.dahlia(id)), let .account(.databricks(id)): ["--account", id.uuidString]
+        case let .account(.dahlia(id)): ["--account", id.uuidString]
         case let .workspace(id): ["--workspace-id", TypeID.encode(id, as: .workspace)]
         }
     }

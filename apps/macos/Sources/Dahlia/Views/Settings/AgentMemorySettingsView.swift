@@ -6,8 +6,7 @@ struct MemorySettingsView: View {
 
     var body: some View {
         let account = CodexRuntimeProvider(
-            accountConnectionID: workspaceSettings.accountConnectionID,
-            databricksConnectionID: workspaceSettings.databricksAccountConnectionID
+            accountConnectionID: workspaceSettings.accountConnectionID
         )
         AgentMemorySettingsView(account: account).id(account)
     }

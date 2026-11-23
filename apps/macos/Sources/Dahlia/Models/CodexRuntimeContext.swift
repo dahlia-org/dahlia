@@ -1,22 +1,21 @@
 import DahliaRuntimeSupport
 import Foundation
 
-/// The account whose Pi runtime runs AI work. The Local Account uses the OpenAI and Anthropic subscriptions; a
-/// Databricks account uses its workspace's AI Gateway; a Dahlia account uses its Server. Each has its own Pi directory.
+/// The account whose Pi runtime runs AI work: the app's one account (`local`), which uses the Pi subscriptions and
+/// every Databricks provider account, or a Dahlia Server account, which uses its Server and has its own Pi directory.
 enum CodexRuntimeProvider: Codable, Hashable, Sendable {
     case local
-    case databricks(connectionID: UUID)
     case dahlia(connectionID: UUID)
 
-    init(accountConnectionID: UUID?, databricksConnectionID: UUID? = nil) {
-        self = accountConnectionID.map(Self.dahlia) ?? databricksConnectionID.map(Self.databricks) ?? .local
+    init(accountConnectionID: UUID?) {
+        self = accountConnectionID.map(Self.dahlia) ?? .local
     }
 
     init(workspace: WorkspaceRecord?) {
-        self.init(accountConnectionID: workspace?.accountConnectionId, databricksConnectionID: workspace?.databricksConnectionId)
+        self.init(accountConnectionID: workspace?.accountConnectionId)
     }
 
-    /// The Dahlia account's connection; nil for the Local and Databricks accounts.
+    /// The Dahlia account's connection; nil for the app's account.
     var accountConnectionID: UUID? {
         guard case let .dahlia(connectionID) = self else { return nil }
         return connectionID
@@ -25,13 +24,12 @@ enum CodexRuntimeProvider: Codable, Hashable, Sendable {
     var displayName: String {
         switch self {
         case .local: L10n.localAccount
-        case .databricks: L10n.databricks
         case .dahlia: L10n.dahliaAccount
         }
     }
 
-    /// Recording processing persisted by Codex-era releases stores `chatGPTSubscription` or `databricks` (both now the
-    /// Local Account); a Databricks account is `databricksWorkspace`.
+    /// Recording processing persisted by earlier releases stores `chatGPTSubscription`, `databricks`, or a Databricks
+    /// account's `databricksWorkspace`; each is the app's account now.
     private enum CodingKeys: String, CodingKey {
         case local, dahlia, databricksWorkspace, chatGPTSubscription, databricks
     }
@@ -44,9 +42,8 @@ enum CodexRuntimeProvider: Codable, Hashable, Sendable {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         if let values = try? container.nestedContainer(keyedBy: AssociatedKeys.self, forKey: .dahlia) {
             self = try .dahlia(connectionID: values.decode(UUID.self, forKey: .connectionID))
-        } else if let values = try? container.nestedContainer(keyedBy: AssociatedKeys.self, forKey: .databricksWorkspace) {
-            self = try .databricks(connectionID: values.decode(UUID.self, forKey: .connectionID))
-        } else if container.contains(.local) || container.contains(.chatGPTSubscription) || container.contains(.databricks) {
+        } else if container.contains(.local) || container.contains(.chatGPTSubscription) || container.contains(.databricks)
+            || container.contains(.databricksWorkspace) {
             self = .local
         } else {
             throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath, debugDescription: "Unknown AI account"))
@@ -58,9 +55,6 @@ enum CodexRuntimeProvider: Codable, Hashable, Sendable {
         switch self {
         case .local:
             _ = container.nestedContainer(keyedBy: AssociatedKeys.self, forKey: .local)
-        case let .databricks(connectionID):
-            var values = container.nestedContainer(keyedBy: AssociatedKeys.self, forKey: .databricksWorkspace)
-            try values.encode(connectionID, forKey: .connectionID)
         case let .dahlia(connectionID):
             var values = container.nestedContainer(keyedBy: AssociatedKeys.self, forKey: .dahlia)
             try values.encode(connectionID, forKey: .connectionID)

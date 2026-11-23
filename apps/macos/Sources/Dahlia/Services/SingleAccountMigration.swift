@@ -55,10 +55,13 @@ struct SingleAccountMigration {
     /// The Databricks account of the workspace opened last, which is the account this Mac used.
     func sourceConnectionID() throws -> UUID? {
         if let saved = defaults.string(forKey: Self.sourceKey) { return UUID(uuidString: saved) }
-        let workspace = try dbQueue.read { db in
-            try WorkspaceRecord.order(Column("lastOpenedAt").desc, Column("id")).fetchOne(db)
+        // The column is read here only; the app no longer models it.
+        let row = try dbQueue.read { db in
+            try Row.fetchOne(db, sql: """
+            SELECT accountConnectionId, databricksConnectionId FROM workspaces ORDER BY lastOpenedAt DESC, id LIMIT 1
+            """)
         }
-        let source = workspace?.accountConnectionId == nil ? workspace?.databricksConnectionId : nil
+        let source: UUID? = (row?["accountConnectionId"] as UUID?) == nil ? row?["databricksConnectionId"] : nil
         defaults.set(source?.uuidString ?? "", forKey: Self.sourceKey)
         return source
     }
@@ -131,9 +134,9 @@ struct SingleAccountMigration {
     }
 
     private func copySecrets(from source: UUID) {
-        let databricks = CodexRuntimeProvider.databricks(connectionID: source)
-        for variable in PiLaunchSettings.load(for: databricks, defaults: defaults).variables where variable.isSecret {
-            guard let value = loadSecret(PiLaunchSettings.secretKey(for: databricks, id: variable.id)) else { continue }
+        let databricks = source.uuidString.lowercased()
+        for variable in PiLaunchSettings.load(accountKey: databricks, defaults: defaults).variables where variable.isSecret {
+            guard let value = loadSecret(PiLaunchSettings.secretKey(accountKey: databricks, id: variable.id)) else { continue }
             saveSecret(PiLaunchSettings.secretKey(for: .local, id: variable.id), value)
         }
     }

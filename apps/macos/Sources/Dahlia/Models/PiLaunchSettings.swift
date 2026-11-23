@@ -20,15 +20,28 @@ struct PiLaunchSettings: Codable, Equatable, Sendable {
     }
 
     static func defaultsKey(for account: CodexRuntimeProvider) -> String {
-        "piLaunch.\(account.accountKey)"
+        defaultsKey(accountKey: account.accountKey)
+    }
+
+    /// By the key of an account, including one that no longer exists, such as a Databricks account moved to the app's.
+    static func defaultsKey(accountKey: String) -> String {
+        "piLaunch.\(accountKey)"
     }
 
     static func secretKey(for account: CodexRuntimeProvider, id: UUID, profile: DahliaRuntimeProfile = DahliaApplicationSupport.profile()) -> String {
-        "piEnvironment.\(profile.rawValue).\(account.accountKey).\(id.uuidString.lowercased())"
+        secretKey(accountKey: account.accountKey, id: id, profile: profile)
+    }
+
+    static func secretKey(accountKey: String, id: UUID, profile: DahliaRuntimeProfile = DahliaApplicationSupport.profile()) -> String {
+        "piEnvironment.\(profile.rawValue).\(accountKey).\(id.uuidString.lowercased())"
     }
 
     static func load(for account: CodexRuntimeProvider, defaults: UserDefaults = .standard) -> Self {
-        defaults.data(forKey: defaultsKey(for: account)).flatMap { try? JSONDecoder().decode(Self.self, from: $0) } ?? Self()
+        load(accountKey: account.accountKey, defaults: defaults)
+    }
+
+    static func load(accountKey: String, defaults: UserDefaults = .standard) -> Self {
+        defaults.data(forKey: defaultsKey(accountKey: accountKey)).flatMap { try? JSONDecoder().decode(Self.self, from: $0) } ?? Self()
     }
 
     func save(for account: CodexRuntimeProvider, defaults: UserDefaults = .standard) {

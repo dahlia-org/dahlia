@@ -53,10 +53,7 @@ struct SettingsDetailView: View {
             if let workspace = workspaceManagementModel.workspaces.first(where: { $0.id == workspaceDetailsID }) {
                 WorkspaceSettingsDetailsView(
                     workspace: workspace,
-                    accountName: WorkspaceAccountChoice(workspace).displayName(
-                        connections: dahliaAccountController.connections,
-                        databricksAccounts: WorkspaceAISettingsModel.shared.databricksConnections
-                    ),
+                    accountName: WorkspaceAccountChoice(workspace).displayName(connections: dahliaAccountController.connections),
                     onClose: { workspaceDetailsID = nil }
                 )
             }
@@ -143,8 +140,7 @@ struct SettingsDetailView: View {
             MCPSettingsView(
                 workspaces: workspaceManagementModel.workspaces,
                 currentWorkspace: appSettings.currentWorkspace,
-                accountConnections: dahliaAccountController.connections,
-                databricksAccounts: WorkspaceAISettingsModel.shared.databricksConnections
+                accountConnections: dahliaAccountController.connections
             )
         case .calendar, .eventDisplay:
             CalendarSettingsView()

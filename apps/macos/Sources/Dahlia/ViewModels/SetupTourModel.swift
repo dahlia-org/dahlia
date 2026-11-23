@@ -32,7 +32,6 @@ final class SetupTourModel {
         self.mode = mode
         originalWorkspace = currentWorkspace
         selectedAccountConnectionID = currentWorkspace?.accountConnectionId
-        selectedDatabricksConnectionID = currentWorkspace?.databricksConnectionId
         isAccountSelectionConfirmed = currentWorkspace.map { workspace in
             guard let connectionID = workspace.accountConnectionId else { return true }
             return signedInAccountConnectionIDs.contains(connectionID)
@@ -96,8 +95,7 @@ final class SetupTourModel {
     ) async {
         guard currentStep == .account, canContinue else { return }
         let account = CodexRuntimeProvider(
-            accountConnectionID: selectedAccountConnectionID,
-            databricksConnectionID: selectedDatabricksConnectionID
+            accountConnectionID: selectedAccountConnectionID
         )
         let generation = accountSelectionGeneration
         isCheckingPi = true
@@ -148,7 +146,6 @@ final class SetupTourModel {
 
     func belongsToSelectedAccount(_ workspace: WorkspaceRecord) -> Bool {
         workspace.accountConnectionId == selectedAccountConnectionID
-            && workspace.databricksConnectionId == selectedDatabricksConnectionID
     }
 
     /// Choosing another account in the tour opens that account's workspace instead.

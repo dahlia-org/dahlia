@@ -7,7 +7,7 @@ import Synchronization
 
     @MainActor
     struct PiLaunchSettingsTests {
-        private static let account = CodexRuntimeProvider.databricks(connectionID: UUID())
+        private static let account = CodexRuntimeProvider.dahlia(connectionID: UUID())
 
         /// Secrets kept in memory instead of the Keychain.
         private final class MemorySecrets: Sendable {

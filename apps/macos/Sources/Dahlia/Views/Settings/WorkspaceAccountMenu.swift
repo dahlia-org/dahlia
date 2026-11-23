@@ -3,7 +3,6 @@ import SwiftUI
 struct WorkspaceAccountMenu: View {
     let workspace: WorkspaceRecord
     let connections: [DahliaAccountConnection]
-    let databricksAccounts: [DatabricksConnection]
     let onSelect: (WorkspaceAccountChoice) -> Void
 
     @ObservedObject private var settings = AppSettings.shared
@@ -11,9 +10,6 @@ struct WorkspaceAccountMenu: View {
     var body: some View {
         Menu(L10n.moveWorkspaceToAccount, systemImage: "arrow.right.arrow.left") {
             accountButton(.local)
-            ForEach(databricksAccounts) { account in
-                accountButton(.databricks(account.id))
-            }
             ForEach(connections) { connection in
                 accountButton(.dahlia(connection.id))
                     .disabled(!connection.isSignedIn || !connection.supportsWorkspaceSync)
@@ -25,7 +21,7 @@ struct WorkspaceAccountMenu: View {
         Button {
             onSelect(choice)
         } label: {
-            Text(choice.displayName(connections: connections, databricksAccounts: databricksAccounts))
+            Text(choice.displayName(connections: connections))
                 .font(.dahliaBody)
         }
         .disabled(choice == WorkspaceAccountChoice(workspace))

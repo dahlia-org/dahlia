@@ -515,7 +515,7 @@ import Foundation
             }
 
             var newWorkspace = Self.workspace(name: "New Background")
-            newWorkspace.databricksConnectionId = .v7()
+            newWorkspace.accountConnectionId = .v7()
             settings.currentWorkspace = newWorkspace
             coordinator.activateWorkspace(newWorkspace)
 
@@ -813,7 +813,7 @@ import Foundation
             let settings = AppSettings()
             let oldWorkspace = Self.workspace(name: "Old")
             var newWorkspace = Self.workspace(name: "New")
-            newWorkspace.databricksConnectionId = .v7()
+            newWorkspace.accountConnectionId = .v7()
             settings.currentWorkspace = oldWorkspace
             let coordinator = CodexChatCoordinator(service: service, settings: settings)
 
@@ -841,11 +841,11 @@ import Foundation
             #expect(coordinator.dockedSession.id == localSession)
 
             // History and models belong to the account, so the Local Account's session must not stay open.
-            workspace.databricksConnectionId = .v7()
+            workspace.accountConnectionId = .v7()
             settings.currentWorkspace = workspace
             coordinator.activateWorkspace(workspace)
             #expect(coordinator.dockedSession.id != localSession)
-            #expect(coordinator.dockedSession.accountID == workspace.databricksConnectionId?.uuidString.lowercased())
+            #expect(coordinator.dockedSession.accountID == workspace.accountConnectionId?.uuidString.lowercased())
             #expect(coordinator.history.isEmpty)
         }
 
@@ -865,7 +865,7 @@ import Foundation
             )
 
             // The meeting is still on screen, so no selection change would restore the context.
-            workspace.databricksConnectionId = .v7()
+            workspace.accountConnectionId = .v7()
             settings.currentWorkspace = workspace
             coordinator.activateWorkspace(workspace)
             coordinator.dockedSession.draft = "Question"

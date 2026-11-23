@@ -34,7 +34,7 @@ import Foundation
             var started = signIn.started.makeAsyncIterator()
             let load = Task { await model.refresh() }
             _ = await started.next()
-            owner = .databricks(connectionID: .v7())
+            owner = .dahlia(connectionID: .v7())
             model.resetForAccount()
             signIn.completeRestore()
             await load.value

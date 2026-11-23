@@ -219,8 +219,7 @@ struct SetupTourView: View {
 
     private var tourAccount: CodexRuntimeProvider {
         CodexRuntimeProvider(
-            accountConnectionID: model.selectedAccountConnectionID,
-            databricksConnectionID: model.selectedDatabricksConnectionID
+            accountConnectionID: model.selectedAccountConnectionID
         )
     }
 

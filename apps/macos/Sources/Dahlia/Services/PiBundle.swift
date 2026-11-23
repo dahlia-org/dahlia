@@ -163,7 +163,7 @@ extension CodexRuntimeProvider {
     nonisolated var accountKey: String {
         switch self {
         case .local: "local"
-        case let .databricks(connectionID), let .dahlia(connectionID): connectionID.uuidString.lowercased()
+        case let .dahlia(connectionID): connectionID.uuidString.lowercased()
         }
     }
 }

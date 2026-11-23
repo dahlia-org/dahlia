@@ -29,8 +29,7 @@ struct AgentSettingsView: View {
 
     var body: some View {
         let account = CodexRuntimeProvider(
-            accountConnectionID: workspaceSettings.accountConnectionID,
-            databricksConnectionID: workspaceSettings.databricksAccountConnectionID
+            accountConnectionID: workspaceSettings.accountConnectionID
         )
         AgentSettingsTabs(account: account)
             .id(account)
@@ -380,7 +379,7 @@ private struct AgentProviderSection<Models: View, SubscriptionModels: View>: Vie
     var body: some View {
         Section {
             switch account {
-            case .local, .databricks:
+            case .local:
                 // Each Databricks provider account signs out here; adding one is Add's or the account menu's sign-in.
                 ForEach(model.accountProviders) { provider in
                     gatewayRow(provider)

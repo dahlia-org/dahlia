@@ -45,7 +45,7 @@ import Foundation
             let suiteName = "CalendarEventFilterTests.\(UUID().uuidString)"
             let defaults = try #require(UserDefaults(suiteName: suiteName))
             defer { defaults.removePersistentDomain(forName: suiteName) }
-            let databricks = CodexRuntimeProvider.databricks(connectionID: UUID())
+            let databricks = CodexRuntimeProvider.dahlia(connectionID: UUID())
 
             #expect(AppSettings.enabledCalendarSources(for: .local, in: defaults) == CalendarSource.defaultEnabledSources)
             defaults.set("macOS", forKey: "calendarSource")

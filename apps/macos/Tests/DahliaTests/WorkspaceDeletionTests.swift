@@ -7,8 +7,8 @@
 
     @MainActor
     struct WorkspaceDeletionTests {
-        @Test(arguments: [false, true], [false, true])
-        func transferPreservesContentAndDisambiguatesNames(databricks: Bool, exportFolderExists: Bool) async throws {
+        @Test(arguments: [false, true])
+        func transferPreservesContentAndDisambiguatesNames(exportFolderExists: Bool) async throws {
             let database = try AppDatabaseManager(path: ":memory:")
             let account = DahliaAccountConnectionRecord(id: .v7(), origin: "https://gateway.example", clientID: "test", createdAt: .now)
             let source = WorkspaceRecord(
@@ -17,16 +17,14 @@
                     : FileManager.default.temporaryDirectory.appending(path: UUID.v7().uuidString).path,
                 name: "Source",
                 createdAt: .now,
-                lastOpenedAt: .now,
-                databricksConnectionId: databricks ? account.id : nil
+                lastOpenedAt: .now
             )
             let destination = WorkspaceRecord(
                 id: .v7(),
                 path: nil,
                 name: "Destination",
                 createdAt: .now,
-                lastOpenedAt: .now,
-                databricksConnectionId: databricks ? account.id : nil
+                lastOpenedAt: .now
             )
             let root = ProjectRecord(
                 id: .v7(),
@@ -342,7 +340,10 @@
             let account = DahliaAccountConnectionRecord(id: .v7(), origin: "https://example.com", clientID: "test", createdAt: .now)
             let source = WorkspaceRecord(id: .v7(), path: nil, name: "Source", createdAt: .now, lastOpenedAt: .now)
             var destination = WorkspaceRecord(id: .v7(), path: nil, name: "Destination", createdAt: .now, lastOpenedAt: .now)
-            if reason == "otherAccount" { destination.databricksConnectionId = account.id }
+            if reason == "otherAccount" {
+                destination.accountConnectionId = account.id
+                destination.organizationId = .v7()
+            }
             if reason == "server" {
                 destination.accountConnectionId = account.id
                 destination.organizationId = .v7()

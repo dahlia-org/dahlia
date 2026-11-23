@@ -143,7 +143,7 @@ final class WorkspaceManagementModel {
         let task = Task<WorkspaceRecord?, Never> { @MainActor in
             await self.loadWorkspaces()
             guard self.hasLoadedWorkspaces else { return nil }
-            if let existing = self.workspaces.first(where: { $0.accountConnectionId == nil && $0.databricksConnectionId == nil }) {
+            if let existing = self.workspaces.first(where: { $0.accountConnectionId == nil }) {
                 return existing
             }
             return await self.createWorkspace(named: Self.initialWorkspaceName)

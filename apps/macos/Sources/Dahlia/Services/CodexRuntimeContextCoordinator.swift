@@ -32,8 +32,7 @@ actor CodexRuntimeContextCoordinator {
 
     func activate(_ settings: WorkspaceAISettingsSnapshot) async throws {
         try await activate(provider: CodexRuntimeProvider(
-            accountConnectionID: settings.accountConnectionID,
-            databricksConnectionID: settings.databricksConnectionID
+            accountConnectionID: settings.accountConnectionID
         ))
     }
 

@@ -490,7 +490,8 @@
             try queue.write { db in
                 let workspace = try #require(try WorkspaceRecord.fetchOne(db, key: id))
                 #expect(workspace.name == "Preserved" && workspace.chatModelID == "model")
-                #expect(workspace.accountConnectionId == nil && workspace.databricksConnectionId == nil)
+                #expect(workspace.accountConnectionId == nil)
+                #expect(try UUID.fetchOne(db, sql: "SELECT databricksConnectionId FROM workspaces WHERE id = ?", arguments: [id]) == nil)
                 let connection = try #require(try DahliaAccountConnectionRecord.fetchOne(db, key: connectionID))
                 #expect(connection.origin == "https://server.example.com" && connection.kind == DahliaAccountConnectionRecord.dahliaKind)
                 try Self.expectNoReferenceToTheConnectionsTable(in: db)
@@ -499,9 +500,10 @@
                     DatabricksConnection(id: .v7(), host: "https://dbc-1.cloud.databricks.com"), createdAt: .now
                 )
                 try databricks.insert(db)
-                try WorkspaceRecord(
-                    id: .v7(), path: nil, name: "New", createdAt: .now, lastOpenedAt: .now, databricksConnectionId: databricks.id
-                ).insert(db)
+                try db.execute(
+                    sql: "INSERT INTO workspaces (id, name, createdAt, lastOpenedAt, databricksConnectionId) VALUES (?, 'New', ?, ?, ?)",
+                    arguments: [UUID.v7(), Date.now, Date.now, databricks.id]
+                )
                 #expect(try AppDatabaseManager.hasExpectedCurrentSchema(db))
             }
         }
@@ -566,7 +568,7 @@
                 let connection = try #require(try DahliaAccountConnectionRecord.fetchOne(db, key: databricks.id))
                 #expect(connection.origin == databricks.origin && connection.kind == DahliaAccountConnectionRecord.databricksKind)
                 #expect(connection.email == "me@example.com" && connection.name == nil)
-                #expect(try WorkspaceRecord.fetchOne(db, key: workspaceID)?.databricksConnectionId == databricks.id)
+                #expect(try UUID.fetchOne(db, sql: "SELECT databricksConnectionId FROM workspaces WHERE id = ?", arguments: [workspaceID]) == databricks.id)
                 // Every foreign key names the renamed table, so the reference still holds and still clears on delete.
                 #expect(try String.fetchAll(db, sql: #"SELECT name FROM sqlite_master WHERE sql LIKE '%REFERENCES "accounts"%'"#).isEmpty)
                 #expect(try Row.fetchAll(db, sql: "PRAGMA foreign_key_check").isEmpty)
@@ -575,7 +577,7 @@
                 try named.update(db)
                 #expect(try DahliaAccountConnectionRecord.fetchOne(db, key: databricks.id)?.name == "Work")
                 _ = try DahliaAccountConnectionRecord.deleteOne(db, key: databricks.id)
-                #expect(try WorkspaceRecord.fetchOne(db, key: workspaceID)?.databricksConnectionId == nil)
+                #expect(try UUID.fetchOne(db, sql: "SELECT databricksConnectionId FROM workspaces WHERE id = ?", arguments: [workspaceID]) == nil)
                 #expect(try AppDatabaseManager.hasExpectedCurrentSchema(db))
             }
         }

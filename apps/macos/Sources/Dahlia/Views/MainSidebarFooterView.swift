@@ -26,12 +26,8 @@ struct MainSidebarFooterView: View {
                 connections: signedInConnections,
                 currentConnectionID: connection?.id,
                 isLocalAccount: workspaceAISettings.isLocalAccount,
-                // Databricks connections are provider accounts in Settings, not accounts to switch to.
-                databricksAccounts: [],
-                currentDatabricksAccountID: nil,
                 onOpenSettings: showSettings,
                 onSelectAccount: selectAccount,
-                onSelectDatabricksAccount: { _ in },
                 onAddAccount: { mainWindowNavigation.openDahliaSignIn() },
                 onAccountAction: accountAction,
                 unprocessedRecordingCount: unprocessedRecordingCount,
@@ -142,13 +138,9 @@ struct MainSidebarFooterView: View {
         }
     }
 
-    static func workspaces(
-        _ workspaces: [WorkspaceRecord],
-        linkedTo connectionID: UUID?,
-        databricks: UUID? = nil
-    ) -> [WorkspaceRecord] {
+    static func workspaces(_ workspaces: [WorkspaceRecord], linkedTo connectionID: UUID?) -> [WorkspaceRecord] {
         workspaces
-            .filter { $0.accountConnectionId == connectionID && $0.databricksConnectionId == databricks }
+            .filter { $0.accountConnectionId == connectionID }
             .sorted {
                 ($0.createdAt, $0.id.uuidString) < ($1.createdAt, $1.id.uuidString)
             }
@@ -157,13 +149,11 @@ struct MainSidebarFooterView: View {
     static func workspaceToSelect(
         from workspaces: [WorkspaceRecord],
         currentWorkspace: WorkspaceRecord?,
-        connectionID: UUID?,
-        databricks: UUID? = nil
+        connectionID: UUID?
     ) -> WorkspaceRecord? {
         // The listed copy is current; the open workspace's copy may predate a move between accounts.
         let current = currentWorkspace.flatMap { open in workspaces.first { $0.id == open.id } } ?? currentWorkspace
-        guard current.map({ $0.accountConnectionId != connectionID || $0.databricksConnectionId != databricks }) ?? true
-        else { return nil }
-        return Self.workspaces(workspaces, linkedTo: connectionID, databricks: databricks).first
+        guard current.map({ $0.accountConnectionId != connectionID }) ?? true else { return nil }
+        return Self.workspaces(workspaces, linkedTo: connectionID).first
     }
 }

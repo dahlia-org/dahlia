@@ -30,23 +30,27 @@
         func eachRuntimeAccountMapsToTheProviderAccountsItsFeaturesUse() {
             let databricksID = UUID.v7()
             let dahliaID = UUID.v7()
-            let databricks = CodexRuntimeProvider.databricks(connectionID: databricksID)
+            let local = CodexRuntimeProvider.local
             let dahlia = CodexRuntimeProvider.dahlia(connectionID: dahliaID)
+            let connection = ProviderAccountDirectory.Connection(id: databricksID, workspaceURL: URL(string: "https://dbc.cloud.databricks.com")!)
 
-            #expect(ProviderAccountDirectory.$connections.withValue([]) { CodexRuntimeProvider.local.providerAccounts.isEmpty })
-            #expect(databricks.providerAccounts == [.databricks(connectionID: databricksID)])
-            #expect(dahlia.providerAccounts == [.dahlia(connectionID: dahliaID)])
-
-            for capability in [ProviderCapability.model, .mcp, .calendar] {
-                #expect(databricks.providerAccount(offering: capability) == .databricks(connectionID: databricksID))
+            #expect(ProviderAccountDirectory.$connections.withValue([]) { local.providerAccounts.isEmpty })
+            ProviderAccountDirectory.$connections.withValue([connection]) {
+                #expect(local.providerAccounts == [.databricks(connectionID: databricksID)])
+                for capability in [ProviderCapability.model, .mcp, .calendar] {
+                    #expect(local.providerAccount(offering: capability) == .databricks(connectionID: databricksID))
+                }
+                #expect(local.databricksConnectionID == databricksID)
+                // Storage and database are defined for later; nothing offers them yet.
+                for capability in [ProviderCapability.storage, .database] {
+                    #expect(local.providerAccount(offering: capability) == nil)
+                }
             }
+            #expect(dahlia.providerAccounts == [.dahlia(connectionID: dahliaID)])
             #expect(dahlia.providerAccount(offering: .model) == .dahlia(connectionID: dahliaID))
             #expect(dahlia.providerAccount(offering: .calendar) == nil)
-            #expect(databricks.databricksConnectionID == databricksID)
             #expect(dahlia.databricksConnectionID == nil)
-            // Storage and database are defined for later; nothing offers them yet.
             for capability in [ProviderCapability.storage, .database] {
-                #expect(databricks.providerAccount(offering: capability) == nil)
                 #expect(dahlia.providerAccount(offering: capability) == nil)
             }
         }

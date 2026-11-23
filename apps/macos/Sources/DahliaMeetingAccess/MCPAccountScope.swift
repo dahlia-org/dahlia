@@ -1,7 +1,8 @@
 import Foundation
 import GRDB
 
-/// Account IDs identify this Mac's account records, not a server user or organization.
+/// `local` is the app's account; an account ID is a Dahlia Server account on this Mac, not a server user or
+/// organization. A Databricks connection is a provider account, which owns no workspace, so it is no scope.
 public enum MCPAccountScope: Equatable, Sendable {
     case local
     case account(UUID)
@@ -18,16 +19,15 @@ public enum MCPAccountScope: Equatable, Sendable {
 
     func contains(_ row: Row) -> Bool {
         let server: UUID? = row["accountConnectionId"]
-        let databricks: UUID? = row["databricksConnectionId"]
         switch self {
-        case .local: return server == nil && databricks == nil
-        case let .account(id): return server == id || (server == nil && databricks == id)
+        case .local: return server == nil
+        case let .account(id): return server == id
         }
     }
 
     func validate(in db: Database) throws {
         if case let .account(id) = self,
-           try Bool.fetchOne(db, sql: "SELECT EXISTS(SELECT 1 FROM provider_accounts WHERE id = ?)", arguments: [id]) != true {
+           try Bool.fetchOne(db, sql: "SELECT EXISTS(SELECT 1 FROM provider_accounts WHERE id = ? AND kind = 'dahlia')", arguments: [id]) != true {
             throw Failure.accountNotFound
         }
     }
