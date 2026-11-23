@@ -116,14 +116,14 @@ import Synchronization
         func theChoiceFallsBackToTheAccountsConnectionWhenItIsGone() {
             let defaults = makeDefaults()
             let id = UUID.v7()
-            ProviderAccountDirectory.$connectionIDs.withValue([id]) {
+            ProviderAccountDirectory.$connections.withValue([.init(id: id, workspaceURL: URL(string: "https://dbc-1.cloud.databricks.com")!)]) {
                 #expect(GoogleCalendarProvider.current(account: .local, defaults: defaults) == .databricks(connectionID: id))
                 defaults.set("google", forKey: GoogleCalendarProvider.userDefaultsKey)
                 #expect(GoogleCalendarProvider.current(account: .local, defaults: defaults) == .google)
                 defaults.set(UUID.v7().uuidString, forKey: GoogleCalendarProvider.userDefaultsKey)
                 #expect(GoogleCalendarProvider.current(account: .local, defaults: defaults) == .databricks(connectionID: id))
             }
-            ProviderAccountDirectory.$connectionIDs.withValue([]) {
+            ProviderAccountDirectory.$connections.withValue([]) {
                 #expect(GoogleCalendarProvider.current(account: .local, defaults: defaults) == .google)
             }
         }

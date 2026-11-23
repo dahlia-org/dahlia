@@ -116,7 +116,8 @@
                 #expect(try DahliaAccountConnectionRecord.fetchOne(db, key: fixture.connectionID) != nil)
             }
             // The account used the Databricks account's settings, so they win; the old keys stay.
-            #expect(fixture.defaults.string(forKey: "agentMCPs.local") == "databricks")
+            // The MCP registrations then name the connection by its host, as Pi does now.
+            #expect(fixture.defaults.string(forKey: "agentMCPs.local") == "dbc-1.cloud.databricks.com")
             #expect(fixture.defaults.string(forKey: "agentMCPs.\(fixture.key)") == "databricks")
             #expect(fixture.defaults.data(forKey: "accountInferenceSettings.local") == Data("inference".utf8))
             #expect(fixture.secrets[PiLaunchSettings.secretKey(for: .local, id: fixture.secretID)] == "secret")
@@ -131,6 +132,41 @@
             // The old folders stay for a release.
             #expect(fixture.read("accounts/local/pi/skills/shared/SKILL.md") == "local skill")
             #expect(try fixture.locator.agentURL(for: .local) == fixture.locator.sharedAgentURL)
+        }
+
+        @Test
+        func savedModelsAndRegistrationsNameTheConnectionByItsHost() throws {
+            let fixture = try Fixture()
+            try fixture.database.dbQueue.write { db in
+                try db.execute(
+                    sql: "UPDATE chat_threads SET model = 'databricks/system.ai.claude-opus-5-5' WHERE id = ?",
+                    arguments: [fixture.databricksThread]
+                )
+                try db.execute(sql: "UPDATE chat_threads SET model = 'openai/gpt-6-luna' WHERE id = ?", arguments: [fixture.localThread])
+            }
+            fixture.defaults.set(["databricks/system.ai.glm-6": true, "openai/gpt-6-luna": false], forKey: "agentGatewayModels.\(fixture.key)")
+            let registrations: [String: Any] = [
+                "providers": [["id": "databricks", "workspaceURL": "https://dbc-1.cloud.databricks.com"]],
+                "listedServices": ["databricks": ["system.ai.github"]],
+            ]
+            try fixture.defaults.set(JSONSerialization.data(withJSONObject: registrations), forKey: "agentMCPs.\(fixture.key)")
+            try fixture.write(#"{"databricks":[{"name":"model-services/system.ai.glm-6"}]}"#, to: "accounts/\(fixture.key)/pi/gateway-models.json")
+
+            try fixture.run()
+
+            let host = "dbc-1.cloud.databricks.com"
+            let models = try fixture.database.dbQueue.read { db in
+                try Dictionary(uniqueKeysWithValues: ChatThreadRecord.fetchAll(db).map { ($0.id, $0.model) })
+            }
+            #expect(models[fixture.databricksThread] == "\(host)/system.ai.claude-opus-5-5")
+            #expect(models[fixture.localThread] == "openai/gpt-6-luna")
+            #expect(fixture.defaults.dictionary(forKey: "agentGatewayModels.local") as? [String: Bool]
+                == ["\(host)/system.ai.glm-6": true, "openai/gpt-6-luna": false])
+            let saved = try JSONSerialization.jsonObject(with: #require(fixture.defaults.data(forKey: "agentMCPs.local"))) as? [String: Any]
+            #expect((saved?["providers"] as? [[String: String]])?.first?["id"] == host)
+            #expect((saved?["listedServices"] as? [String: [String]])?[host] == ["system.ai.github"])
+            #expect(fixture.read("agent/gateway-models.json")?.contains(host) == true)
+            #expect(fixture.read("agent/gateway-models.json")?.contains("\"databricks\"") == false)
         }
 
         @Test
@@ -158,7 +194,7 @@
 
             #expect(try fixture.threadAccounts() == [fixture.databricksThread: "local", fixture.localThread: "local"])
             #expect(fixture.read("agent/skills/shared/SKILL.md") == "databricks skill")
-            #expect(fixture.defaults.string(forKey: "agentMCPs.local") == "databricks")
+            #expect(fixture.defaults.string(forKey: "agentMCPs.local") == "dbc-1.cloud.databricks.com")
         }
 
         @Test

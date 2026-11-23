@@ -184,8 +184,8 @@ DB の `accountID` と UserDefaults の接尾辞には、当面 `local` を定�
 
 #### 段階 3 の残り
 
-- Databricks の接続ごとのプロバイダー ID（ホスト名）と、保存済みの `databricks` の置き換え。それまでは最も古い接続だけを使う（`Models/ProviderAccount.swift` の shortcut）。
-- 追加 workspace の認証を Pi の `auth.json` から Keychain へ移す。
+- 実装した（2026-11-23）: Databricks の接続ごとのプロバイダー ID（ホスト名）。アカウントはすべての接続を同時に使う。保存済みの `databricks`（モデル指定、MCP の登録、Gateway のモデル一覧）は起動時に 1 回、移す元の接続のホスト名へ置き換える。
+- 実装した（2026-11-23）: 「プロバイダーを追加」はアプリ側のサインインで接続（プロバイダーアカウント）を作る。以前に追加した workspace は Pi のサインインのまま動き、同じホストの接続を追加するとアプリ側の認証が優先される。
 - Google を 1 つの認証を持つプロバイダーアカウントにする。
 - 設定の「プロバイダーアカウント」の一覧、表示名の編集、モデル・MCP の割り当て。
   カレンダーは実装した（2026-11-23）。設定のカレンダーでプロバイダー（macOS カレンダー、Google、Databricks の接続）を折り畳んで並べ、Google カレンダーは Google か Databricks の接続のどちらか一方から読む（`Models/GoogleCalendarProvider.swift`）。macOS カレンダーは OS の権限なので `provider_accounts` に置かない。

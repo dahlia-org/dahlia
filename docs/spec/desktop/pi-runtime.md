@@ -132,17 +132,15 @@ Pi の codemode（未有効）の script は Pi の process 内の QuickJS で�
 Local Account は OpenAI と Anthropic に別々にサインインでき、サインイン済みの両方のモデルをまとめて一覧に出す。サインインは
 「Dahlia AI」>「モデル」の「プロバイダー」で行う（セットアップツアーにも残す）。「プロバイダー」には、アカウント自身のサインインと、
 サインイン済みのサブスクリプション、追加した Databricks を並べ、それぞれに使い道（「モデル」「MCP」）のバッジを付ける（Databricks は両方）。サブスクリプションと
-Databricks は「プロバイダーを追加」のモーダルで選んで追加する（サブスクリプションは Local Account だけ）。設定のモーダルは窓全体に重ねる。Databricks アカウント（接続した workspace ごとに1つ）は
-自分の agent directory を持ち、実行アカウント `databricks(connectionID:)` として、その workspace の Gateway のモデルを一覧に出す。どのモデルを出すかは実行アカウントの provider ID で決まり（[アカウント](accounts.md#実行アカウントの-context)）、
-どのアカウントでも「プロバイダー」に追加した Databricks の workspace（ID がホスト名でドットを含む provider）のモデルも加わる。
+Databricks は「プロバイダーを追加」のモーダルで選んで追加する。設定のモーダルは窓全体に重ねる。追加はアプリ側のサインイン（アカウントメニューのサインインと同じ）で、接続は `provider_accounts` の行になり、Keychain が認証を持つ。アプリのアカウントは、Pi のサブスクリプションと、すべての接続の Gateway のモデルを一覧に出す。接続の provider ID はその workspace のホスト名（ドットを含む）である。
 表示名は Pi の名前に合わせる（`openai` は「OpenAI (ChatGPT subscription)」）。Dahlia account は自分の Server の provider だけを使う。
 
 | 表示名 | Pi provider | 認証 |
 | --- | --- | --- |
 | OpenAI (ChatGPT subscription) | `openai`（Sign in with ChatGPT、agent 名 `Dahlia`） | Pi の OAuth。端末 ID は Local agent directory |
 | Anthropic (Claude Pro/Max) | `anthropic` | Pi の OAuth |
-| Databricks | `databricks`（各モデルが Unity AI Gateway の経路を持つ: Claude は anthropic、GPT は codex、GLM・Kimi は mlflow、Gemini は gemini） | その Databricks アカウントの Desktop OAuth を bridge |
-| Unity Gateway (ホスト名) | 追加した workspace のホスト名（経路は `databricks` と同じ。モデル名にホスト名の先頭の部分を付ける） | Pi の OAuth（[Unity AI Gateway の MCP](#unity-ai-gateway-の-mcp) と同じ sign-in） |
+| Databricks | 接続の workspace のホスト名（各モデルが Unity AI Gateway の経路を持つ: Claude は anthropic、GPT は codex、GLM・Kimi は mlflow、Gemini は gemini）。接続ごとに別の provider になり、複数を同時に使える | `provider_accounts` の接続の Desktop OAuth を bridge |
+| Unity Gateway (ホスト名) | 接続がプロバイダーアカウントになる前に追加した workspace のホスト名（経路は Databricks と同じ。モデル名にホスト名の先頭の部分を付ける）。同じホストの接続を追加すると、その接続の bridge が優先される | Pi の OAuth（[Unity AI Gateway の MCP](#unity-ai-gateway-の-mcp)） |
 | Dahlia account | `dahlia`（Server の `/api/v1/responses`） | Dahlia token を bridge |
 
 Databricks のモデル一覧は Unity Catalog の `/api/2.1/unity-catalog/model-services?parent=schemas/system.ai` から作るので、
@@ -314,7 +312,7 @@ Codex の web search、`request_user_input` は Pi にないため提供しな�
 開いているアカウントに、「Dahlia AI」>「モデル」の「プロバイダー」で Databricks の workspace（sign-in）を追加し、「コネクタ」タブで
 その workspace の MCP server を登録する（2026-11-09 ユーザー承認）。「プロバイダー」には、アカウント自身のモデルのサインインも並べる。モデルの
 workspace と MCP の workspace が異なることが多いため、MCP 用の workspace はアカウントとは別にサインインする。Databricks アカウントでは、
-モデルと同じアカウント自身の workspace の MCP も選べ、その server は `auth.provider` にアカウントの bridged provider（`databricks`）を指定して
+モデルと同じプロバイダーアカウントの workspace の MCP も選べ、その server は `auth.provider` にその接続の bridged provider（ホスト名）を指定して
 アカウントの token を使う。一覧も `/databricks-mcp-services <URL> --provider databricks` でその token で取り、ここではサインインもサインアウトも
 しない。この workspace は最初の server と一緒に保存し、最後の server を外すと消す。登録は Local Account・Databricks
 アカウント・Dahlia account のどれでもでき、アカウントごとに app defaults（`agentMCPs.<local またはアカウント ID>`）に保存する。

@@ -6,6 +6,8 @@ import os
 #if canImport(Testing)
     import Testing
 
+    private let ownConnectionID = UUID()
+
     struct PiRuntimeServiceTests {
         @Test(arguments: [false, true])
         func subscriptionVisibilityDefaultsAndChoicesPreservePisCatalogAndSignIn(hasGateway: Bool) async throws {
@@ -516,11 +518,11 @@ import os
             #expect(saved?.first?.objectValue?["name"] == .string("model-services/system.ai.kimi-k3"))
         }
 
-        @Test
+        @Test(.providerAccounts([.init(id: ownConnectionID, workspaceURL: URL(string: "https://own.cloud.databricks.com")!)]))
         func modelListingsAndSwitchesNeverWaitForAGateway() async throws {
-            let account = CodexRuntimeProvider.databricks(connectionID: .v7())
+            let account = CodexRuntimeProvider.databricks(connectionID: ownConnectionID)
             let workspaceURL = try #require(URL(string: "https://own.cloud.databricks.com"))
-            let choices = ["databricks/system.ai.claude-opus-6": true]
+            let choices = ["own.cloud.databricks.com/system.ai.claude-opus-6": true]
             let pi = TestPiRuntime(provider: account, modelChoices: { _ in choices }) { _ in
                 // The gateway never answers its listing.
                 TestPiTransport { command in
@@ -528,7 +530,7 @@ import os
                     if command["type"]?.stringValue == "get_available_models" {
                         return [TestPiTransport.response(
                             id: id,
-                            data: .object(["models": .array([TestPiTransport.model(provider: "databricks", id: "system.ai.claude-haiku-5-5")])])
+                            data: .object(["models": .array([TestPiTransport.model(provider: "own.cloud.databricks.com", id: "system.ai.claude-haiku-5-5")])])
                         )]
                     }
                     return command["message"]?.stringValue?.hasPrefix("/databricks-model-services") == true ? [] : [TestPiTransport.response(id: id)]
@@ -538,9 +540,10 @@ import os
             let agentURL = try PiAgentDirectoryLocator(applicationSupportURL: pi.rootURL).agentURL(for: account)
             try PiProviderConfiguration.write(
                 PiProviderConfiguration.databricksProviders(
-                    PiProviderConfiguration.databricksModels(workspaceURL: workspaceURL),
+                    PiProviderConfiguration.databricksModels(workspaceURL: workspaceURL, providerID: "own.cloud.databricks.com", isProviderAccount: true),
                     choices: [:],
-                    workspaceURL: workspaceURL
+                    workspaceURL: workspaceURL,
+                    providerID: "own.cloud.databricks.com"
                 ),
                 agentURL: agentURL
             )
@@ -548,20 +551,20 @@ import os
             try PiProviderConfiguration.saveGatewayServices([.object([
                 "name": .string("model-services/system.ai.claude-opus-6"),
                 "supported_api_types": .array([.string("anthropic/v1/messages")]),
-            ])], providerID: "databricks", agentURL: agentURL)
+            ])], providerID: "own.cloud.databricks.com", agentURL: agentURL)
 
-            #expect(try await pi.service.models().map(\.model) == ["databricks/system.ai.claude-haiku-5-5"])
+            #expect(try await pi.service.models().map(\.model) == ["own.cloud.databricks.com/system.ai.claude-haiku-5-5"])
             try await pi.service.applyGatewayModelChoices(for: account)
             let data = try Data(contentsOf: agentURL.appending(path: "models.json"))
-            let own = try JSONDecoder().decode(JSONValue.self, from: data).objectValue?["providers"]?.objectValue?["databricks"]
+            let own = try JSONDecoder().decode(JSONValue.self, from: data).objectValue?["providers"]?.objectValue?["own.cloud.databricks.com"]
             #expect((own?.objectValue?["models"]?.arrayValue ?? []).compactMap { $0.objectValue?["id"]?.stringValue } == ["system.ai.claude-opus-6"])
             await pi.service.shutdown()
         }
 
-        @Test
+        @Test(.providerAccounts([.init(id: ownConnectionID, workspaceURL: URL(string: "https://own.cloud.databricks.com")!)]))
         func databricksAccountsOwnGatewayListsThroughPiWithItsBridgedSignIn() async throws {
-            let account = CodexRuntimeProvider.databricks(connectionID: .v7())
-            let own = try AgentMCPProvider.account(workspaceURL: #require(URL(string: "https://own.cloud.databricks.com")))
+            let account = CodexRuntimeProvider.databricks(connectionID: ownConnectionID)
+            let own = try AgentMCPProvider(workspaceURL: #require(URL(string: "https://own.cloud.databricks.com")))
             let listings = OSAllocatedUnfairLock(initialState: [String]())
             let pi = TestPiRuntime(provider: account) { _ in
                 TestPiTransport { command in
@@ -579,7 +582,7 @@ import os
             await #expect(throws: PiRuntimeError.notLoggedIn) {
                 try await pi.service.gatewayModels(for: account, provider: own, forceRefresh: true)
             }
-            #expect(listings.withLock { $0 } == ["/databricks-model-services https://own.cloud.databricks.com --provider databricks"])
+            #expect(listings.withLock { $0 } == ["/databricks-model-services https://own.cloud.databricks.com --provider own.cloud.databricks.com"])
         }
 
         @Test
@@ -632,10 +635,10 @@ import os
 
         @Test(arguments: [
             ("openai/gpt-test", true), ("anthropic/claude-test", true), ("dahlia/any", true),
-            ("databricks/system.ai.gpt-6-luna", true), ("databricks/system.ai.claude-opus-5-5", true),
-            ("databricks/system.ai.gemini-4-argon", true),
+            ("dbc-1.cloud.databricks.com/system.ai.gpt-6-luna", true), ("dbc-1.cloud.databricks.com/system.ai.claude-opus-5-5", true),
+            ("dbc-1.cloud.databricks.com/system.ai.gemini-4-argon", true),
             // Databricks's MLflow route serves these as OpenAI Responses without strict schema support.
-            ("databricks/system.ai.glm-5-3", false), ("databricks/system.ai.kimi-k3", false),
+            ("dbc-1.cloud.databricks.com/system.ai.glm-5-3", false), ("dbc-1.cloud.databricks.com/system.ai.kimi-k3", false),
             // A workspace added in Agents settings is named by its host.
             ("dbc-1.cloud.databricks.com/system.ai.claude-opus-5-5", true), ("dbc-1.cloud.databricks.com/system.ai.glm-5-3", false),
             ("other/system.ai.gpt-6-luna", false),

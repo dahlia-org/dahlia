@@ -101,7 +101,7 @@ private struct AgentSettingsTabs: View {
         }
         .task {
             await mcp.refreshSignInState()
-            await mcp.loadAccountProvider()
+            mcp.loadAccountProviders()
         }
         .onDisappear { navigation.dismissSettingsModal() }
     }
@@ -379,17 +379,9 @@ private struct AgentProviderSection<Models: View, SubscriptionModels: View>: Vie
         Section {
             switch account {
             case .local, .databricks:
-                // The Databricks connection signs out here; adding one is the account menu's sign-in.
-                // Until its workspace is known, the connection's provider shows without a host.
-                if account.databricksConnectionID == nil {
-                    EmptyView()
-                } else if let provider = model.accountProvider {
+                // Each Databricks provider account signs out here; adding one is Add's or the account menu's sign-in.
+                ForEach(model.accountProviders) { provider in
                     gatewayRow(provider)
-                } else {
-                    AgentProviderRow(title: L10n.databricksUnityGateway, icon: .databricksLogo, uses: [L10n.agentProviderModels, L10n.mcp]) {
-                        EmptyView()
-                    }
-                    .help(L10n.agentProviderAccountSignIn)
                 }
             case .dahlia:
                 AgentProviderRow(
@@ -499,7 +491,7 @@ private struct AgentProviderSection<Models: View, SubscriptionModels: View>: Vie
                         Button(L10n.delete, role: .destructive) { pendingRemoval = provider }
                     }
                     .disabled(model.isBusy)
-                } else if let connectionID = account.databricksConnectionID {
+                } else if let connectionID = ProviderAccountDirectory.databricksConnections().first(where: { $0.piProviderID == provider.id })?.id {
                     AgentProviderActions {
                         Button(L10n.signOut) { WorkspaceAISettingsModel.shared.requestDatabricksSignOut(connectionID: connectionID) }
                     }
@@ -620,10 +612,9 @@ private struct AgentModelSettingsView: View {
     @State private var loadingProviderIDs: Set<String> = []
     @State private var errors: [String: String] = [:]
 
-    /// Models on in the Databricks account's own gateway.
-    private var ownOnCount: Int {
-        let own = PiProviderConfiguration.databricksProviderIDs[0]
-        return (models[own] ?? []).count(where: { $0.isOn(shownChoices(own)) })
+    /// Models on in a provider account's gateway, which keeps at least one.
+    private func onCount(_ providerID: String) -> Int {
+        (models[providerID] ?? []).count(where: { $0.isOn(shownChoices(providerID)) })
     }
 
     /// The switches as `models.json` applies them: an own gateway that lost the model kept on shows its default on.
@@ -710,7 +701,7 @@ private struct AgentModelSettingsView: View {
                     .toggleStyle(.switch)
                     // A chat needs a model, so a Databricks account keeps one on in its own gateway:
                     // its other models come from workspaces that can be removed.
-                    .disabled(isOn && provider.isAccount && ownOnCount == 1)
+                    .disabled(isOn && provider.isAccount && onCount(provider.id) == 1)
             } label: {
                 HStack(spacing: 4) {
                     // A model turned off reads fainter.

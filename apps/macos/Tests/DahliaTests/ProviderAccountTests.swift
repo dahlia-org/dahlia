@@ -30,8 +30,7 @@
             let databricks = CodexRuntimeProvider.databricks(connectionID: databricksID)
             let dahlia = CodexRuntimeProvider.dahlia(connectionID: dahliaID)
 
-            #expect(CodexRuntimeProvider.local.providerAccounts.isEmpty)
-            #expect(CodexRuntimeProvider.local.databricksConnectionID == nil)
+            #expect(ProviderAccountDirectory.$connections.withValue([]) { CodexRuntimeProvider.local.providerAccounts.isEmpty })
             #expect(databricks.providerAccounts == [.databricks(connectionID: databricksID)])
             #expect(dahlia.providerAccounts == [.dahlia(connectionID: dahliaID)])
 
@@ -50,18 +49,25 @@
         }
 
         @Test
-        func bridgedPiProvidersComeFromTheProviderAccounts() {
-            let databricks = CodexRuntimeProvider.databricks(connectionID: .v7())
-            let dahlia = CodexRuntimeProvider.dahlia(connectionID: .v7())
-
-            #expect(CodexRuntimeProvider.local.piBridgedProviderIDs.isEmpty)
-            #expect(CodexRuntimeProvider.local.piProviderIDs == ["openai", "anthropic"])
-            #expect(databricks.piProviderIDs == ["databricks"])
-            #expect(databricks.piBridgedProviderIDs == ["databricks"])
-            #expect(dahlia.piProviderIDs == ["dahlia"])
-            #expect(databricks.providerAccount(piProviderID: "databricks") == databricks.providerAccounts.first)
-            #expect(databricks.providerAccount(piProviderID: "dahlia") == nil)
-            #expect(CodexRuntimeProvider.local.providerAccount(piProviderID: "openai") == nil)
+        func eachConnectionIsAProviderNamedByItsHostAndTheAccountUsesThemAll() {
+            let first = ProviderAccountDirectory.Connection(id: .v7(), workspaceURL: URL(string: "https://dbc-1.cloud.databricks.com")!)
+            let second = ProviderAccountDirectory.Connection(id: .v7(), workspaceURL: URL(string: "https://dbc-2.cloud.databricks.com:8443")!)
+            ProviderAccountDirectory.$connections.withValue([first, second]) {
+                let local = CodexRuntimeProvider.local
+                #expect(local.providerAccounts == [.databricks(connectionID: first.id), .databricks(connectionID: second.id)])
+                #expect(local.piBridgedProviderIDs == ["dbc-1.cloud.databricks.com", "dbc-2.cloud.databricks.com:8443"])
+                #expect(local.piProviderIDs == ["openai", "anthropic", "dbc-1.cloud.databricks.com", "dbc-2.cloud.databricks.com:8443"])
+                #expect(local.providerAccount(piProviderID: "dbc-2.cloud.databricks.com:8443") == .databricks(connectionID: second.id))
+                #expect(local.providerAccount(piProviderID: "openai") == nil)
+                #expect(PiProviderConfiguration.isOwnProvider("dbc-1.cloud.databricks.com"))
+                #expect(!PiProviderConfiguration.isOwnProvider("other.cloud.databricks.com"))
+                #expect(AgentMCPProvider(workspaceURL: first.workspaceURL).isAccount)
+            }
+            ProviderAccountDirectory.$connections.withValue([]) {
+                #expect(CodexRuntimeProvider.local.piBridgedProviderIDs.isEmpty)
+                #expect(CodexRuntimeProvider.local.piProviderIDs == ["openai", "anthropic"])
+                #expect(CodexRuntimeProvider.dahlia(connectionID: .v7()).piProviderIDs == ["dahlia"])
+            }
         }
     }
 #endif

@@ -594,7 +594,6 @@ import Foundation
                 PiProviderConfiguration.databricksProviders(models, choices: [:], workspaceURL: added.workspaceURL, providerID: added.id),
                 agentURL: rootURL
             )
-            #expect(PiProviderConfiguration.databricksWorkspaceURL(agentURL: rootURL) == own)
             let data = try Data(contentsOf: rootURL.appending(path: "models.json"))
             let providers = try #require(JSONDecoder().decode(JSONValue.self, from: data).objectValue?["providers"]?.objectValue)
             #expect(Set(providers.keys) == ["databricks", "dbc-1.cloud.databricks.com"])

@@ -13,6 +13,7 @@ struct SingleAccountMigration {
     /// The Databricks connection whose data moves (empty for none), decided once so a later run moves the same one.
     static let sourceKey = "singleAccountMigration.source"
     static let accountKey = CodexRuntimeProvider.local.accountKey
+    static let providerIDsKey = "singleAccountMigration.providerIDs"
 
     var dbQueue: any DatabaseWriter
     var locator: PiAgentDirectoryLocator
@@ -40,12 +41,15 @@ struct SingleAccountMigration {
                 copySettings(from: source)
                 copySecrets(from: source)
             }
+            // The copied settings name the legacy provider ID again, so it is renamed again.
+            defaults.removeObject(forKey: Self.providerIDsKey)
         }
         try dbQueue.write { db in
             if let source { try moveRows(from: source, in: db) }
             try db.execute(sql: "UPDATE workspaces SET databricksConnectionId = NULL WHERE databricksConnectionId IS NOT NULL")
         }
         defaults.set(true, forKey: Self.completedKey)
+        try renameLegacyProviderID(source: source)
     }
 
     /// The Databricks account of the workspace opened last, which is the account this Mac used.
@@ -132,6 +136,90 @@ struct SingleAccountMigration {
             guard let value = loadSecret(PiLaunchSettings.secretKey(for: databricks, id: variable.id)) else { continue }
             saveSecret(PiLaunchSettings.secretKey(for: .local, id: variable.id), value)
         }
+    }
+
+    // MARK: Provider IDs
+
+    /// Every saved `databricks` provider ID named the one connection the account used; it becomes that connection's
+    /// host, as Pi names every Databricks connection now. Once, after the rows and files moved.
+    private func renameLegacyProviderID(source: UUID?) throws {
+        guard !defaults.bool(forKey: Self.providerIDsKey) else { return }
+        let origin = try dbQueue.read { db in
+            try (source.flatMap { try DahliaAccountConnectionRecord.fetchOne(db, key: $0) }
+                ?? DahliaAccountConnectionRecord.databricksWorkspaces.order(Column("createdAt"), Column("id")).fetchOne(db))?.origin
+        }
+        if let host = origin.flatMap(URL.init(string:)).map(AgentMCPProvider.id(for:)) {
+            let legacy = PiProviderConfiguration.legacyDatabricksProviderID
+            try dbQueue.write { db in
+                for (table, column) in try Self.modelColumns(in: db) {
+                    let name = column.quotedDatabaseIdentifier
+                    // A model reference is the whole value, or a JSON string within the generation settings.
+                    try db.execute(
+                        sql: """
+                        UPDATE \(table.quotedDatabaseIdentifier) SET \(name) = CASE
+                            WHEN \(name) LIKE ? THEN ? || substr(\(name), ?)
+                            ELSE REPLACE(\(name), ?, ?) END
+                        WHERE \(name) LIKE ? OR \(name) LIKE ?
+                        """,
+                        arguments: [
+                            legacy + "/%", host, legacy.count + 1,
+                            "\"\(legacy)/", "\"\(host)/",
+                            legacy + "/%", "%\"\(legacy)/%",
+                        ]
+                    )
+                }
+            }
+            for (key, value) in defaults.dictionaryRepresentation() where key.hasSuffix("." + Self.accountKey) {
+                // The MCP registrations name the provider by ID alone.
+                let renamed = Self.rename(value, from: legacy, to: host, wholeIDs: key.hasPrefix("agentMCPs."))
+                if let renamed { defaults.set(renamed, forKey: key) }
+            }
+            let saved = locator.sharedAgentURL.appending(path: "gateway-models.json")
+            if let data = FileManager.default.contents(atPath: saved.path),
+               case var .object(services) = try JSONDecoder().decode(JSONValue.self, from: data),
+               let listed = services.removeValue(forKey: legacy) {
+                services[host] = services[host] ?? listed
+                try JSONEncoder().encode(JSONValue.object(services)).write(to: saved, options: .atomic)
+            }
+        }
+        defaults.set(true, forKey: Self.providerIDsKey)
+    }
+
+    private static func modelColumns(in db: Database) throws -> [(String, String)] {
+        try Row.fetchAll(db, sql: """
+        SELECT m.name AS tableName, p.name AS columnName FROM sqlite_master m JOIN pragma_table_info(m.name) p
+        WHERE m.type = 'table' AND p.name IN ('model', 'chatModelID', 'generationSettings')
+        """).map { ($0["tableName"], $0["columnName"]) }
+    }
+
+    /// The value with `legacy/` model references (and, with `wholeIDs`, the bare `legacy` ID) named by `host`; nil
+    /// when nothing changes. Values saved as JSON data are read and written as JSON.
+    static func rename(_ value: Any, from legacy: String, to host: String, wholeIDs: Bool) -> Any? {
+        func renamed(_ string: String) -> String {
+            if wholeIDs, string == legacy { return host }
+            return string.hasPrefix(legacy + "/") ? host + string.dropFirst(legacy.count) : string
+        }
+        func walk(_ value: Any) -> Any {
+            switch value {
+            case let string as String:
+                renamed(string)
+            case let dictionary as [String: Any]:
+                Dictionary(dictionary.map { (renamed($0.key), walk($0.value)) }, uniquingKeysWith: { first, _ in first })
+            case let array as [Any]:
+                array.map(walk)
+            default:
+                value
+            }
+        }
+        if let data = value as? Data {
+            guard let object = try? JSONSerialization.jsonObject(with: data, options: [.fragmentsAllowed]),
+                  let rewritten = try? JSONSerialization.data(withJSONObject: walk(object), options: [.fragmentsAllowed]),
+                  !NSDictionary(dictionary: ["v": object]).isEqual(to: ["v": walk(object)])
+            else { return nil }
+            return rewritten
+        }
+        let rewritten = walk(value)
+        return NSDictionary(dictionary: ["v": value]).isEqual(to: ["v": rewritten]) ? nil : rewritten
     }
 
     // MARK: Rows

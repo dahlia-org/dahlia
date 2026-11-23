@@ -10,7 +10,8 @@ final class AgentMCPSettingsModel {
     private(set) var settings: AgentMCPSettings
     private(set) var signedInProviderIDs: Set<String> = []
     /// A Databricks account's own workspace, whose Unity AI Gateway serves its models too.
-    private(set) var accountProvider: AgentMCPProvider?
+    /// The account's Databricks provider accounts, whose sign-ins the app holds.
+    private(set) var accountProviders: [AgentMCPProvider] = []
     /// The sign-in in progress, from adding a workspace or signing in again.
     private(set) var signingInProviderID: String?
     private(set) var removingProviderID: String?
@@ -25,29 +26,28 @@ final class AgentMCPSettingsModel {
     private let service: PiRuntimeService
     private let urlOpener: any CodexLoginURLOpening
     private let defaults: UserDefaults
-    private let accountWorkspaceURL: @Sendable (UUID) async throws -> URL
+    private let signInWorkspace: @Sendable (String) async throws -> DatabricksConnection
 
     init(
         account: CodexRuntimeProvider,
         service: PiRuntimeService = .shared,
         urlOpener: any CodexLoginURLOpening = WorkspaceCodexLoginURLOpener(),
         defaults: UserDefaults = .standard,
-        accountWorkspaceURL: @escaping @Sendable (UUID) async throws -> URL = { connectionID in
-            let databricks = DatabricksOAuthService.shared
-            return try await databricks.normalizedWorkspaceURL(databricks.connection(id: connectionID).host)
+        signInWorkspace: @escaping @Sendable (String) async throws -> DatabricksConnection = {
+            try await DatabricksOAuthService.shared.signIn(workspaceURL: $0)
         }
     ) {
         self.account = account
         self.service = service
         self.urlOpener = urlOpener
         self.defaults = defaults
-        self.accountWorkspaceURL = accountWorkspaceURL
+        self.signInWorkspace = signInWorkspace
         settings = AgentMCPSettings.load(for: account, defaults: defaults)
     }
 
     /// The workspaces MCP servers can be added from: the account's own first, then those signed in to for MCP.
     var selectableProviders: [AgentMCPProvider] {
-        (accountProvider.map { [$0] } ?? settings.providers.filter(\.isAccount)) + settings.providers.filter { !$0.isAccount }
+        accountProviders + settings.providers.filter { added in !added.isAccount && !accountProviders.contains { $0.id == added.id } }
     }
 
     /// The account's own workspace needs no sign-in here; it uses the account's.
@@ -55,11 +55,12 @@ final class AgentMCPSettingsModel {
         provider.isAccount || signedInProviderIDs.contains(provider.id)
     }
 
-    /// Finds a Databricks account's own workspace, so its MCPs can be added too.
-    func loadAccountProvider() async {
-        guard let connectionID = account.providerAccount(offering: .mcp)?.databricksConnectionID,
-              let url = try? await accountWorkspaceURL(connectionID) else { return }
-        accountProvider = .account(workspaceURL: url)
+    /// Lists the account's Databricks provider accounts, so their MCPs can be added too.
+    func loadAccountProviders() {
+        let connections = account.providerAccounts.compactMap(\.databricksConnectionID)
+        accountProviders = ProviderAccountDirectory.databricksConnections()
+            .filter { connections.contains($0.id) }
+            .map { AgentMCPProvider(workspaceURL: $0.workspaceURL) }
     }
 
     var isBusy: Bool {
@@ -75,26 +76,19 @@ final class AgentMCPSettingsModel {
         signedInProviderIDs = await (try? service.signedInProviderIDs(account: account)) ?? []
     }
 
-    /// Signs in to a new workspace and saves it. A workspace already registered signs in again; nothing is saved if
-    /// the sign-in fails. The account's own workspace uses the account's sign-in, so it is not added again.
+    /// Adds a workspace as a provider account: the app signs in and holds its credential, like the account menu's
+    /// sign-in. A workspace added before, whose sign-in Pi held, keeps its host, so its servers and models carry over.
     func addWorkspace(workspaceURL: String) async throws -> AgentMCPProvider {
         let url = try DatabricksOAuthService.shared.normalizedWorkspaceURL(workspaceURL)
-        // Chat tells a workspace's provider from Pi's own (`openai`, `databricks`) by the dot in its host.
+        // Chat tells a workspace's provider from Pi's own (`openai`, `anthropic`) by the dot in its host.
         guard url.host()?.contains(".") == true else { throw AIConfigurationError.invalidDatabricksWorkspaceURL }
-        // Read the account's workspace here, not from the tab's copy, which may not be loaded or may have failed.
-        if let connectionID = account.providerAccount(offering: .mcp)?.databricksConnectionID,
-           try await AgentMCPProvider.account(workspaceURL: accountWorkspaceURL(connectionID)).host == url.host() {
+        loadAccountProviders()
+        if accountProviders.contains(where: { $0.host == url.host() }) {
             throw AgentMCPSettingsError(message: L10n.mcpWorkspaceIsAccount)
         }
-        if let existing = settings.providers.first(where: { $0.workspaceURL == url && !$0.isAccount }) {
-            try await signIn(existing)
-            return existing
-        }
-        let provider = AgentMCPProvider(workspaceURL: url)
-        try await signIn(provider)
-        settings.providers.append(provider)
-        settings.save(for: account, defaults: defaults)
-        return provider
+        let connection = try await signInWorkspace(url.absoluteString)
+        loadAccountProviders()
+        return AgentMCPProvider(workspaceURL: URL(string: connection.host) ?? url)
     }
 
     func signIn(_ provider: AgentMCPProvider) async throws {

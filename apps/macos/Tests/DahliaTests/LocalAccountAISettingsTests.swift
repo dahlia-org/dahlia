@@ -34,7 +34,7 @@
         }
 
         @Test
-        func databricksAccountStartsWithItsGatewaysDefaultModel() throws {
+        func imageAnalysisPrefersTheGatewaysDefaultModel() throws {
             let suite = "DatabricksDefaults-\(UUID())"
             let defaults = try #require(UserDefaults(suiteName: suite))
             defer { defaults.removePersistentDomain(forName: suite) }
@@ -42,7 +42,6 @@
                 id: .v7(), path: nil, name: "Databricks", createdAt: .now, lastOpenedAt: .now, databricksConnectionId: .v7()
             )
             let account = AccountInferenceSettings(workspace: databricks, defaults: defaults)
-            #expect(account.local.model == "databricks/system.ai.claude-haiku-5-5")
             // Image analysis saves no model: it prefers Haiku while Haiku is on, and another listed model once it is off.
             #expect(account.imageAnalysis.model == nil)
             let model = { (reference: String) in

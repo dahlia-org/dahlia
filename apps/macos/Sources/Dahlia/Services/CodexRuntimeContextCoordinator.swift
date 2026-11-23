@@ -81,13 +81,13 @@ actor CodexRuntimeContextCoordinator {
         for account in provider.providerAccounts {
             try await providers.merge(piProviders(for: account, runtime: provider, agentURL: agentURL)) { $1 }
         }
-        // A removed connection's provider goes, so Pi stops offering its models.
-        let removed = Set(PiProviderConfiguration.databricksProviderIDs).subtracting(provider.piBridgedProviderIDs)
+        // A removed connection's provider goes, so Pi stops offering its models; a workspace added before keeps its own.
+        let kept = Set(provider.piBridgedProviderIDs).union(AgentMCPSettings.load(for: provider).providers.map(\.id))
         try PiProviderConfiguration.updateProviders(agentURL: agentURL) { recorded in
-            recorded.merge(providers) { $1 }
-            for id in removed {
-                recorded.removeValue(forKey: id)
+            recorded = recorded.filter { id, _ in
+                kept.contains(id) || !(PiProviderConfiguration.isAddedWorkspace(id) || id == PiProviderConfiguration.legacyDatabricksProviderID)
             }
+            recorded.merge(providers) { $1 }
         }
         configuredProvider = provider
         try Task.checkCancellation()
@@ -111,17 +111,21 @@ actor CodexRuntimeContextCoordinator {
                 ? [:]
                 : try PiProviderConfiguration.dahliaProvider(baseURL: baseURL, catalog: .object(["data": .array([])]))
         case let .databricks(connectionID):
-            // The routes are paths; this account's own Pi directory gets them on its workspace's host, with the models
-            // turned on in Agents settings, from the gateway's saved list (the bundled one before it first answers).
+            // The routes are paths; the connection's provider gets them on its workspace's host, with the models turned
+            // on in Agents settings, from the gateway's saved list (the bundled one before it first answers).
             let connection = try await databricksClient.connection(id: connectionID)
             let workspaceURL = try databricksClient.normalizedWorkspaceURL(connection.host)
+            let providerID = AgentMCPProvider.id(for: workspaceURL)
             return try PiProviderConfiguration.databricksProviders(
                 PiProviderConfiguration.databricksModels(
                     workspaceURL: workspaceURL,
-                    services: PiProviderConfiguration.gatewayServices(agentURL: agentURL)[account.piProviderID]
+                    services: PiProviderConfiguration.gatewayServices(agentURL: agentURL)[providerID],
+                    providerID: providerID,
+                    isProviderAccount: true
                 ),
                 choices: AgentModelSettings.choices(for: provider),
-                workspaceURL: workspaceURL
+                workspaceURL: workspaceURL,
+                providerID: providerID
             )
         }
     }

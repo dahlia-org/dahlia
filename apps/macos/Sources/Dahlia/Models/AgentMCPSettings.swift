@@ -28,12 +28,12 @@ struct AgentMCPServer: Codable, Hashable, Identifiable, Sendable {
     }
 }
 
-/// A Unity AI Gateway sign-in. Pi keeps its OAuth credential, with the workspace and client, in the account's
-/// `auth.json` under `id`; the extension registers the providers that `mcp.json` names. The account's own workspace,
-/// whose models the account uses, is one too: its servers take the account's bridged sign-in instead.
+/// A Unity AI Gateway, named by its workspace host. A Databricks connection in `provider_accounts` is one: the app
+/// holds its sign-in and bridges its token. A workspace added before every connection was a provider account is one
+/// too: Pi keeps its OAuth credential in `auth.json` under `id`, and the extension registers the providers that
+/// `mcp.json` names.
 struct AgentMCPProvider: Codable, Hashable, Identifiable, Sendable {
-    /// The workspace host (with its port, if any), as the extension names the provider, or the account's bridged
-    /// provider for the account's own workspace.
+    /// The workspace host (with its port, if any), as the extension names the provider.
     let id: String
     /// The workspace origin. Settings shows its host to tell providers apart.
     let workspaceURL: URL
@@ -45,22 +45,13 @@ struct AgentMCPProvider: Codable, Hashable, Identifiable, Sendable {
         self.workspaceURL = workspaceURL
     }
 
-    /// The Databricks account's own workspace. Dahlia holds its sign-in, so it never signs in or out here.
-    static func account(workspaceURL: URL) -> Self {
-        Self(id: PiProviderConfiguration.databricksProviderIDs[0], workspaceURL: workspaceURL)
-    }
-
-    private init(id: String, workspaceURL: URL) {
-        self.id = id
-        self.workspaceURL = workspaceURL
-    }
-
     var host: String {
         workspaceURL.host() ?? workspaceURL.absoluteString
     }
 
+    /// Whether it is a provider account: Dahlia holds its sign-in, so it never signs in or out through Pi.
     var isAccount: Bool {
-        id == PiProviderConfiguration.databricksProviderIDs[0]
+        ProviderAccountDirectory.databricksConnections().contains { $0.piProviderID == id }
     }
 
     static func id(for workspaceURL: URL) -> String {

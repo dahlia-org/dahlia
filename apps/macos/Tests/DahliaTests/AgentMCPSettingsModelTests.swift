@@ -6,9 +6,12 @@ import os
 #if canImport(Testing)
     import Testing
 
+    private let accountConnectionID = UUID()
+
     @MainActor
+    @Suite(.providerAccounts([.init(id: accountConnectionID, workspaceURL: URL(string: "https://account.cloud.databricks.com")!)]))
     struct AgentMCPSettingsModelTests {
-        private static let account = CodexRuntimeProvider.databricks(connectionID: UUID())
+        private static let account = CodexRuntimeProvider.databricks(connectionID: accountConnectionID)
 
         /// Pi answers `/databricks-login` with an authorization URL and `succeeds`, `/databricks-mcp-services` with
         /// `services` (or sign-in required when nil), and `/dahlia-logout` with a response.
@@ -50,33 +53,56 @@ import os
             }
         }
 
-        private static func model(_ pi: TestPiRuntime, urlOpener: TestCodexLoginURLOpener = TestCodexLoginURLOpener()) throws
-            -> (AgentMCPSettingsModel, UserDefaults) {
+        /// A workspace added before every Databricks connection was a provider account; Pi holds its sign-in.
+        private static let legacyWorkspace = AgentMCPProvider(workspaceURL: URL(string: "https://example.cloud.databricks.com")!)
+
+        private static func model(
+            _ pi: TestPiRuntime,
+            urlOpener: TestCodexLoginURLOpener = TestCodexLoginURLOpener(),
+            settings: AgentMCPSettings = AgentMCPSettings(),
+            signInWorkspace: @escaping @Sendable (String) async throws -> DatabricksConnection = { _ in
+                Issue.record("Unexpected sign-in")
+                throw CancellationError()
+            }
+        ) throws -> (AgentMCPSettingsModel, UserDefaults) {
             let defaults = try #require(UserDefaults(suiteName: "AgentMCPSettingsModelTests.\(UUID())"))
+            settings.save(for: account, defaults: defaults)
             let model = AgentMCPSettingsModel(
-                account: account, service: pi.service, urlOpener: urlOpener, defaults: defaults,
-                accountWorkspaceURL: { _ in URL(string: "https://account.cloud.databricks.com")! }
+                account: account, service: pi.service, urlOpener: urlOpener, defaults: defaults, signInWorkspace: signInWorkspace
             )
             return (model, defaults)
         }
 
         @Test
-        func aWorkspaceSignsInOnceAndItsChosenServicesShareTheSignIn() async throws {
+        func aWorkspaceIsAddedAsAProviderAccountThroughTheAppsSignIn() async throws {
             let commands = OSAllocatedUnfairLock<[String]>(initialState: [])
-            let pi = Self.runtime(commands: commands)
-            let urlOpener = TestCodexLoginURLOpener()
-            let (model, defaults) = try Self.model(pi, urlOpener: urlOpener)
+            let signIns = OSAllocatedUnfairLock<[String]>(initialState: [])
+            let (model, defaults) = try Self.model(Self.runtime(commands: commands)) { url in
+                signIns.withLock { $0.append(url) }
+                return DatabricksConnection(id: .v7(), host: url)
+            }
 
             let provider = try await model.addWorkspace(workspaceURL: "https://Example.cloud.databricks.com/")
-            // The ID follows the workspace URL; Settings shows its host.
-            #expect(provider.id == "example.cloud.databricks.com")
-            #expect(provider.host == "example.cloud.databricks.com")
-            #expect(commands.withLock { $0 } == ["/databricks-login https://example.cloud.databricks.com"])
-            #expect(urlOpener.openedURLs == [URL(string: "https://example.cloud.databricks.com/oidc/v1/authorize")])
-            #expect(pi.launches.all.allSatisfy { $0.mode == .control && $0.environment.isEmpty })
-            // Adding the same workspace again signs in again and keeps one provider.
-            #expect(try await model.addWorkspace(workspaceURL: "https://example.cloud.databricks.com") == provider)
-            #expect(commands.withLock { $0 }.count == 2)
+            // The ID follows the workspace URL; Settings shows its host. The app holds the sign-in, not Pi.
+            #expect(provider.id == "example.cloud.databricks.com" && provider.host == "example.cloud.databricks.com")
+            #expect(signIns.withLock { $0 } == ["https://example.cloud.databricks.com"])
+            #expect(commands.withLock { $0 }.isEmpty)
+            #expect(AgentMCPSettings.load(for: Self.account, defaults: defaults) == AgentMCPSettings())
+            // The account's connection is a provider account already.
+            await #expect(throws: AgentMCPSettingsError.self) {
+                _ = try await model.addWorkspace(workspaceURL: "https://account.cloud.databricks.com")
+            }
+            #expect(signIns.withLock { $0 }.count == 1)
+        }
+
+        @Test
+        func aWorkspaceAddedBeforeSharesItsPiSignInWithItsChosenServices() async throws {
+            let commands = OSAllocatedUnfairLock<[String]>(initialState: [])
+            let pi = Self.runtime(commands: commands)
+            let provider = Self.legacyWorkspace
+            var saved = AgentMCPSettings()
+            saved.providers = [provider]
+            let (model, defaults) = try Self.model(pi, settings: saved)
             #expect(model.settings.providers == [provider])
 
             // Pi lists the workspace's services with the sign-in it holds.
@@ -115,14 +141,14 @@ import os
         func servicesTurnOnAndOffWithNamesOfTheirOwnAndTheLastListStays() async throws {
             let commands = OSAllocatedUnfairLock<[String]>(initialState: [])
             let (model, defaults) = try Self.model(Self.runtime(commands: commands))
-            await model.loadAccountProvider()
-            let account = try #require(model.accountProvider)
+            model.loadAccountProviders()
+            let account = try #require(model.accountProviders.first)
             let workspace = try AgentMCPProvider(workspaceURL: #require(URL(string: "https://example.cloud.databricks.com")))
 
             // The listing is kept, so a reopened model shows it before listing again.
             await model.refreshServices(of: account)
             #expect(model.listedServices(of: account) == ["system.ai.github", "system.ai.slack"])
-            #expect(AgentMCPSettings.load(for: Self.account, defaults: defaults).listedServices?["databricks"] == [
+            #expect(AgentMCPSettings.load(for: Self.account, defaults: defaults).listedServices?["account.cloud.databricks.com"] == [
                 "system.ai.github",
                 "system.ai.slack",
             ])
@@ -144,8 +170,8 @@ import os
         @Test
         func commentsPersistAndFailedRefreshKeepsTheLastDescription() async throws {
             let (model, defaults) = try Self.model(Self.runtime(commands: OSAllocatedUnfairLock(initialState: [])))
-            await model.loadAccountProvider()
-            let provider = try #require(model.accountProvider)
+            model.loadAccountProviders()
+            let provider = try #require(model.accountProviders.first)
             await model.refreshServices(of: provider)
             #expect(model.comment(for: "system.ai.github", of: provider) == "Search repositories")
             #expect(model.comment(for: "system.ai.slack", of: provider) == nil)
@@ -175,8 +201,8 @@ import os
                 }
             }
             let (model, defaults) = try Self.model(pi)
-            await model.loadAccountProvider()
-            let provider = try #require(model.accountProvider)
+            model.loadAccountProviders()
+            let provider = try #require(model.accountProviders.first)
             try model.addService("main.default.notion", to: provider)
             await model.refreshServices(of: provider)
             response.withLock { $0 = AgentMCPService(name: "main.default.notion", metadataUnavailable: true) }
@@ -213,8 +239,8 @@ import os
                 }
             }
             let (model, _) = try Self.model(pi)
-            await model.loadAccountProvider()
-            let provider = try #require(model.accountProvider)
+            model.loadAccountProviders()
+            let provider = try #require(model.accountProviders.first)
             try model.setService("system.ai.github", enabled: true, of: provider)
             let listing = Task { await model.refreshServices(of: provider) }
             _ = await first.command { $0["message"]?.stringValue?.hasPrefix("/databricks-mcp-services") == true }
@@ -245,8 +271,8 @@ import os
                 }
             }
             let (model, _) = try Self.model(pi)
-            await model.loadAccountProvider()
-            let provider = try #require(model.accountProvider)
+            model.loadAccountProviders()
+            let provider = try #require(model.accountProviders.first)
             try model.setService("system.ai.github", enabled: true, of: provider)
             let listing = Task { await model.refreshServices(of: provider) }
             _ = await first.command { $0["message"]?.stringValue?.hasPrefix("/databricks-mcp-services") == true }
@@ -296,8 +322,8 @@ import os
                 }
             }
             let (model, defaults) = try Self.model(pi)
-            await model.loadAccountProvider()
-            let provider = try #require(model.accountProvider)
+            model.loadAccountProviders()
+            let provider = try #require(model.accountProviders.first)
             try model.setService("system.ai.github", enabled: true, of: provider)
             try model.setService("system.ai.slack", enabled: true, of: provider)
             await model.refreshServices(of: provider)
@@ -319,8 +345,8 @@ import os
             let commands = OSAllocatedUnfairLock(initialState: [String]())
             let pi = Self.runtime(commands: commands)
             let (model, defaults) = try Self.model(pi)
-            await model.loadAccountProvider()
-            let provider = try #require(model.accountProvider)
+            model.loadAccountProviders()
+            let provider = try #require(model.accountProviders.first)
             for invalid in [
                 "notion",
                 "default.notion",
@@ -432,19 +458,19 @@ import os
             await #expect(throws: AgentMCPSettingsError.self) {
                 _ = try await model.addWorkspace(workspaceURL: "https://account.cloud.databricks.com/ml/ai-gateway?o=1")
             }
-            await model.loadAccountProvider()
+            model.loadAccountProviders()
             let provider = try #require(model.selectableProviders.first)
-            #expect(provider.isAccount && provider.id == "databricks" && model.isSignedIn(provider))
+            #expect(provider.isAccount && provider.id == "account.cloud.databricks.com" && model.isSignedIn(provider))
             #expect(provider.workspaceURL == URL(string: "https://account.cloud.databricks.com"))
             // Listing takes the account's bridged sign-in; nothing signs in.
             _ = try await model.services(of: provider)
-            #expect(commands.withLock { $0 } == ["/databricks-mcp-services https://account.cloud.databricks.com --provider databricks"])
+            #expect(commands.withLock { $0 } == ["/databricks-mcp-services https://account.cloud.databricks.com --provider account.cloud.databricks.com"])
 
             try model.addServers(["system.ai.slack": "slack"], to: provider)
             #expect(AgentMCPSettings.load(for: Self.account, defaults: defaults).piServers["slack"] == .object([
                 "url": .string("https://account.cloud.databricks.com/ai-gateway/mcp-services/system.ai.slack"),
                 "exposure": .string("direct"),
-                "auth": .object(["provider": .string("databricks")]),
+                "auth": .object(["provider": .string("account.cloud.databricks.com")]),
             ]))
             // Its last server takes the workspace with it, and nothing signs out.
             try model.remove(#require(model.settings.servers.first))
@@ -455,8 +481,10 @@ import os
         @Test
         func aWorkspaceIsRemovedEvenWhenPiCannotSignOut() async throws {
             let pi = Self.runtime(logoutSucceeds: false, commands: OSAllocatedUnfairLock(initialState: []))
-            let (model, defaults) = try Self.model(pi)
-            let provider = try await model.addWorkspace(workspaceURL: "https://example.cloud.databricks.com")
+            var saved = AgentMCPSettings()
+            saved.providers = [Self.legacyWorkspace]
+            let (model, defaults) = try Self.model(pi, settings: saved)
+            let provider = Self.legacyWorkspace
             try model.addServers(["system.ai.github": "github"], to: provider)
 
             let agentURL = try PiAgentDirectoryLocator(applicationSupportURL: pi.rootURL).agentURL(for: Self.account)
@@ -500,10 +528,11 @@ import os
 
         @Test
         func aFailedSignInSavesNothing() async throws {
+            struct Refused: Error {}
             let pi = Self.runtime(succeeds: false, commands: OSAllocatedUnfairLock(initialState: []))
-            let (model, defaults) = try Self.model(pi)
+            let (model, defaults) = try Self.model(pi) { _ in throw Refused() }
 
-            await #expect(throws: PiRuntimeError.self) {
+            await #expect(throws: Refused.self) {
                 _ = try await model.addWorkspace(workspaceURL: "https://example.cloud.databricks.com")
             }
             // A host without a dot could not be told from Pi's own providers in chat, so it is refused before sign-in.

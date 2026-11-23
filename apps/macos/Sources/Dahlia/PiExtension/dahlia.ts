@@ -129,7 +129,7 @@ export default async function (pi: any) {
   }
 
   // Unity AI Gateway sign-ins serve chat's MCP servers and every process's models.
-  registerDatabricksProviders(pi);
+  registerDatabricksProviders(pi, bridgedProviders);
 
   pi.on("before_provider_request", (event: any, ctx: any) => {
     const enforce = strictSchemaPayload[ctx.model?.api];

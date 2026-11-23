@@ -310,11 +310,13 @@ actor PiRuntimeService {
         return nil
     }
 
-    /// The account's gateways: a Databricks account's own, then the workspaces added in Agents settings.
-    private func gateways(of account: CodexRuntimeProvider, agentURL: URL) -> [AgentMCPProvider] {
-        let own = account.providerAccount(offering: .model)?.databricksConnectionID == nil
-            ? URL?.none : PiProviderConfiguration.databricksWorkspaceURL(agentURL: agentURL)
-        return (own.map { [.account(workspaceURL: $0)] } ?? []) + gatewayWorkspaces(account)
+    /// The account's gateways: its Databricks provider accounts, then the workspaces added before those were.
+    private func gateways(of account: CodexRuntimeProvider, agentURL _: URL) -> [AgentMCPProvider] {
+        let connections = account.providerAccounts.compactMap(\.databricksConnectionID)
+        let own = ProviderAccountDirectory.databricksConnections()
+            .filter { connections.contains($0.id) }
+            .map { AgentMCPProvider(workspaceURL: $0.workspaceURL) }
+        return own + gatewayWorkspaces(account).filter { added in !own.contains { $0.id == added.id } }
     }
 
     /// Lists each signed-in gateway's models in Unity Catalog in the background, once per activation or sign-in, so new
@@ -370,7 +372,8 @@ actor PiRuntimeService {
         return try PiProviderConfiguration.databricksModels(
             workspaceURL: provider.workspaceURL,
             services: PiProviderConfiguration.gatewayServices(agentURL: agentURL)[provider.id],
-            providerID: provider.id
+            providerID: provider.id,
+            isProviderAccount: provider.isAccount
         )
     }
 
@@ -394,7 +397,8 @@ actor PiRuntimeService {
             let models = try PiProviderConfiguration.databricksModels(
                 workspaceURL: gateway.workspaceURL,
                 services: saved[gateway.id],
-                providerID: gateway.id
+                providerID: gateway.id,
+                isProviderAccount: gateway.isAccount
             )
             providers.merge(PiProviderConfiguration.databricksProviders(
                 models,
@@ -405,7 +409,9 @@ actor PiRuntimeService {
         }
         var changed = false
         try PiProviderConfiguration.updateProviders(agentURL: agentURL) { current in
-            let isGateway = { (id: String) in PiProviderConfiguration.isAddedWorkspace(id) || id == PiProviderConfiguration.databricksProviderIDs[0] }
+            let isGateway = { (id: String) in
+                PiProviderConfiguration.isAddedWorkspace(id) || id == PiProviderConfiguration.legacyDatabricksProviderID
+            }
             changed = current.filter { isGateway($0.key) } != providers
             current = current.filter { !isGateway($0.key) }.merging(providers) { $1 }
         }
@@ -427,8 +433,8 @@ actor PiRuntimeService {
             .compactMap(PiProviderConfiguration.codexModel)
         // The account's own providers come first, so every "first available model" fallback (summary, chat, image
         // analysis) stays on them rather than on another organization's gateway the user did not name.
-        let isAdded = { (model: CodexModel) in PiProviderConfiguration.isAddedWorkspace(model.model.prefix { $0 != "/" }) }
-        return models.filter { !isAdded($0) } + models.filter(isAdded)
+        let isOwn = { (model: CodexModel) in PiProviderConfiguration.isOwnProvider(model.model.prefix { $0 != "/" }) }
+        return models.filter(isOwn) + models.filter { !isOwn($0) }
     }
 
     // MARK: Subscription sign-in (Local Account only)
@@ -733,7 +739,7 @@ actor PiRuntimeService {
     /// Picks a model the user did not name: among the account's own providers whenever one fits, and only then among the
     /// workspaces added in Agents settings, which serve another organization's gateway.
     nonisolated static func ownProvidersFirst<Value>(_ models: [CodexModel], _ pick: ([CodexModel]) -> Value?) -> Value? {
-        pick(models.filter { !PiProviderConfiguration.isAddedWorkspace($0.model.prefix { $0 != "/" }) }) ?? pick(models)
+        pick(models.filter { PiProviderConfiguration.isOwnProvider($0.model.prefix { $0 != "/" }) }) ?? pick(models)
     }
 
     nonisolated static func resolvedModel(for request: CodexAppServerRequest, in models: [CodexModel]) throws -> CodexModel {
@@ -760,10 +766,10 @@ actor PiRuntimeService {
     /// Models whose API the extension can make enforce the schema (OpenAI Responses, Claude Messages, Gemini).
     nonisolated static func supportsStrictSchema(model: String) -> Bool {
         if ["openai/", "anthropic/", "dahlia/"].contains(where: { model.hasPrefix($0) }) { return true }
-        // A Unity AI Gateway (the account's own `databricks`, or a workspace added by host) also serves other models (GLM,
-        // Kimi) as OpenAI Responses on its MLflow route, which takes no strict schema.
+        // A Unity AI Gateway (named by its workspace host) also serves other models (GLM, Kimi) as OpenAI Responses on
+        // its MLflow route, which takes no strict schema.
         let parts = model.split(separator: "/", maxSplits: 1)
-        guard parts.count == 2, parts[0] == "databricks" || PiProviderConfiguration.isAddedWorkspace(parts[0]) else { return false }
+        guard parts.count == 2, PiProviderConfiguration.isAddedWorkspace(parts[0]) else { return false }
         return ["system.ai.gpt-", "system.ai.claude-", "system.ai.gemini-"].contains { parts[1].hasPrefix($0) }
     }
 

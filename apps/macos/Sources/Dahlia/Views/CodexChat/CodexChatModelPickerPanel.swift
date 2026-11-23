@@ -57,11 +57,7 @@ struct CodexChatModelPickerPanel: View {
     private func title(of providerID: String) -> String {
         if let subscription = PiSubscription(rawValue: providerID) { return subscription.displayName }
         if providerID == "dahlia" { return L10n.dahliaAccount }
-        guard providerID == PiProviderConfiguration.databricksProviderIDs[0] else { return L10n.unityGatewayHost(providerID) }
-        // The Databricks account's own gateway.
-        let settings = WorkspaceAISettingsModel.shared
-        let host = settings.databricksConnections.first { $0.id == settings.providerDatabricksConnectionID }?.hostName
-        return host.map(L10n.unityGatewayHost) ?? L10n.databricksUnityGateway
+        return L10n.unityGatewayHost(providerID)
     }
 
     /// The group already names the workspace, which a workspace's model names carry for flat lists.

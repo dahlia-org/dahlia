@@ -27,7 +27,8 @@ export type Credential = { type: "oauth"; access: string; refresh: string; expir
 const base64url = (bytes: Buffer) => bytes.toString("base64url");
 
 // Registers the sign-ins that mcp.json or models.json names. Pi's own provider IDs have no dot; a workspace host does.
-export function registerDatabricksProviders(pi: any) {
+// A host Dahlia bridges is a provider account whose token Dahlia holds, so it never becomes a Pi sign-in.
+export function registerDatabricksProviders(pi: any, bridged: string[] = []) {
   const directory = process.env.PI_CODING_AGENT_DIR ?? join(homedir(), ".pi", "agent");
   const read = (file: string) => {
     try {
@@ -39,7 +40,7 @@ export function registerDatabricksProviders(pi: any) {
   const ids = new Set([
     ...Object.values(read("mcp.json")?.mcpServers ?? {}).map((server: any) => server?.auth?.provider),
     ...Object.keys(read("models.json")?.providers ?? {}),
-  ].filter((id) => typeof id === "string" && id.includes(".")));
+  ].filter((id) => typeof id === "string" && id.includes(".") && !bridged.includes(id)));
   for (const id of ids) pi.registerProvider(provider(id));
 }
 

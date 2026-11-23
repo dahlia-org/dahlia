@@ -34,10 +34,13 @@ enum ProviderAccount: Hashable, Sendable {
         }
     }
 
-    /// The Pi provider ID whose requests carry this account's token.
+    /// The Pi provider ID whose requests carry this account's token: a Databricks connection's workspace host, as Pi
+    /// names any Unity AI Gateway, so several connections can serve at once.
     var piProviderID: String {
         switch self {
-        case .databricks: PiProviderConfiguration.databricksProviderIDs[0]
+        case let .databricks(connectionID):
+            ProviderAccountDirectory.databricksConnections().first { $0.id == connectionID }?.piProviderID
+                ?? PiProviderConfiguration.legacyDatabricksProviderID
         case .dahlia: "dahlia"
         }
     }
@@ -45,11 +48,20 @@ enum ProviderAccount: Hashable, Sendable {
 
 /// The Databricks connections in `provider_accounts`, oldest first, which the app's one account uses.
 enum ProviderAccountDirectory {
-    /// Replaces the connections for the current task, so tests never read the app database.
-    @TaskLocal static var connectionIDs: [UUID]?
+    struct Connection: Equatable, Sendable {
+        let id: UUID
+        let workspaceURL: URL
+        /// The workspace host, as Pi names the connection's provider.
+        var piProviderID: String { AgentMCPProvider.id(for: workspaceURL) }
+    }
 
-    static func databricksConnectionIDs() -> [UUID] {
-        connectionIDs ?? ((try? DatabricksOAuthStorage.local().loadConnections().map(\.id)) ?? [])
+    /// Replaces the connections for the current task, so tests never read the app database.
+    @TaskLocal static var connections: [Connection]?
+
+    static func databricksConnections() -> [Connection] {
+        connections ?? ((try? DatabricksOAuthStorage.local().loadConnections()) ?? []).compactMap { connection in
+            URL(string: connection.host).map { Connection(id: connection.id, workspaceURL: $0) }
+        }
     }
 }
 
@@ -59,9 +71,7 @@ extension CodexRuntimeProvider {
     /// account (Local) uses every Databricks connection.
     var providerAccounts: [ProviderAccount] {
         switch self {
-        // shortcut: only the oldest Databricks connection, while every one shares the Pi provider ID `databricks`;
-        // use them all once each has its own provider ID (its host).
-        case .local: ProviderAccountDirectory.databricksConnectionIDs().prefix(1).map { .databricks(connectionID: $0) }
+        case .local: ProviderAccountDirectory.databricksConnections().map { .databricks(connectionID: $0.id) }
         case let .databricks(connectionID): [.databricks(connectionID: connectionID)]
         case let .dahlia(connectionID): [.dahlia(connectionID: connectionID)]
         }
