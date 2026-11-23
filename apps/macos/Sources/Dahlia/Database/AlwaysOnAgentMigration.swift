@@ -22,7 +22,7 @@ enum AlwaysOnAgentMigration {
             id TEXT PRIMARY KEY NOT NULL, accountID TEXT NOT NULL, title TEXT NOT NULL, instructions TEXT NOT NULL,
             threadID TEXT REFERENCES chat_threads(id) ON DELETE SET NULL,
             status TEXT NOT NULL CHECK(status IN ('active','done','dismissed')),
-            servers TEXT NOT NULL DEFAULT '[]', createdAt DATETIME NOT NULL, updatedAt DATETIME NOT NULL
+            servers TEXT NOT NULL DEFAULT '[]', workServers TEXT NOT NULL DEFAULT '[]', createdAt DATETIME NOT NULL, updatedAt DATETIME NOT NULL
         );
         CREATE INDEX agent_tasks_account ON agent_tasks(accountID, status, updatedAt);
         CREATE TABLE agent_event_topics (

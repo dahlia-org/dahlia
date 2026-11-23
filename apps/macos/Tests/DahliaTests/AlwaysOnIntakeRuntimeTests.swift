@@ -13,6 +13,7 @@
             let service: PiChatService
             let db: any DatabaseWriter
             let source: String
+            let transports: TestPiTransportLog
         }
 
         private static let twoItems: JSONValue = .object(["items": .array([
@@ -22,7 +23,11 @@
 
         /// Like real Pi, the fake makes each bridge call in turn and settles only after Dahlia answered the last one.
         private func fixture(
-            calls: [(String, JSONValue)], ending: [JSONValue], service: String = "system.ai.gmail", registryChange: String? = nil, readSucceeded: Bool = true
+            calls: [(String, JSONValue)],
+            ending: [JSONValue],
+            service: String = "system.ai.gmail",
+            registryChange: String? = nil,
+            readSucceeded: Bool = true
         ) throws -> Fixture {
             let calls = readSucceeded ? [("intakeSeen", JSONValue.object(["ids": .array([])]))] + calls : calls
             let provider = CodexRuntimeProvider.databricks(connectionID: .v7())
@@ -35,9 +40,10 @@
                 settings.servers = [AgentMCPServer(id: .v7(), name: "gmail", providerID: gateway.id, service: service)]
             }
             if registryChange == "before" { registry.withLock { replaceRegistration(&$0) } }
+            let transports = TestPiTransportLog()
             let pi = TestPiRuntime(provider: provider) { _ in
                 if registryChange == "during" { registry.withLock { replaceRegistration(&$0) } }
-                return TestPiTransport { command in
+                let transport = TestPiTransport { command in
                     switch command["type"]?.stringValue {
                     case "extension_ui_response":
                         let answered = Int(command["id"]?.stringValue?.dropFirst() ?? "") ?? 0
@@ -54,6 +60,8 @@
                     default: return command["id"].map { [TestPiTransport.response(id: $0)] } ?? []
                     }
                 }
+                transports.append(transport)
+                return transport
             }
             let db = try AppDatabaseManager(path: ":memory:").dbQueue
             let source = UUID.v7().uuidString
@@ -68,7 +76,7 @@
                 runtime: pi.service, historyStore: ChatThreadStore(dbQueue: db),
                 agentLocator: PiAgentDirectoryLocator(applicationSupportURL: pi.rootURL), mcpSettings: { _ in registry.withLock { $0 } }
             )
-            return Fixture(pi: pi, service: chat, db: db, source: source)
+            return Fixture(pi: pi, service: chat, db: db, source: source, transports: transports)
         }
 
         private func drain(_ fixture: Fixture, at now: Date = .now) async {
@@ -165,6 +173,63 @@
             #expect(runs.count == PiChatService.intakeMismatchLimit + 1 && runs.allSatisfy { $0.status == "failed" })
             #expect(source.cursor == nil && source.lastIntakeAt == nil && source.gapDetectedAt == nil)
             #expect(events.count == 2)
+        }
+
+        private func page(_ cursor: String = "", next: String = "", key: String = "query", more: Bool = false) -> (String, JSONValue) {
+            ("intakeSeen", .object(["ids": .array([]), "pages": .array([.object([
+                "key": .string(key), "cursor": .string(cursor), "nextCursor": .string(next), "hasMore": .bool(more),
+            ])])]))
+        }
+
+        @Test(arguments: ["open", "complete", "unrelated", "missingCursor", "cycle", "orphan", "outOfOrder", "repeatedRoot"])
+        func everyObservedQueryMustReachItsLastPage(scenario: String) async throws {
+            var pages = [page(next: "p2", more: true)]
+            switch scenario {
+            case "complete": pages.append(page("p2"))
+            case "unrelated": pages.append(page(key: "other query"))
+            case "missingCursor": pages = [page(more: true)]
+            case "cycle": pages.append(page("p2", next: "p2", more: true))
+            case "orphan": pages = [page("p2")]
+            case "outOfOrder": pages.insert(page("p2"), at: 0)
+            case "repeatedRoot": pages.append(page())
+            default: break
+            }
+            let fixture = try fixture(
+                calls: pages + [("eventRecord", Self.twoItems)],
+                ending: [TestPiTransport.assistantEnd("Recorded every item on this page."), TestPiTransport.settled()]
+            )
+            defer { try? FileManager.default.removeItem(at: fixture.pi.rootURL) }
+            let complete = ["complete", "outOfOrder"].contains(scenario)
+            let start = Date.now
+            // Incomplete pagination must never use the record-mismatch escape after repeated attempts.
+            for attempt in 0 ... (complete ? 0 : PiChatService.intakeMismatchLimit) {
+                await drain(fixture, at: start.addingTimeInterval(Double(attempt) * 1200))
+            }
+            let (source, runs, events) = try await saved(fixture)
+            #expect((source.cursor != nil) == complete && source.gapDetectedAt == nil)
+            #expect(runs.count == (complete ? 1 : PiChatService.intakeMismatchLimit + 1))
+            #expect(runs
+                .allSatisfy {
+                    $0.status == (complete ? "completed" : "failed") && (complete || $0.report.contains("The Source read did not complete"))
+                })
+            #expect(events.count == 2)
+        }
+
+        @Test func aLateIntakeCompletionCannotRestoreDeletedAccountHistory() async throws {
+            let fixture = try fixture(calls: [], ending: [])
+            defer { try? FileManager.default.removeItem(at: fixture.pi.rootURL) }
+            await fixture.service.drainAlwaysOn()
+            let transport = await fixture.transports.transport(at: 0)
+            _ = await transport.command { $0["type"] == .string("extension_ui_response") && $0["id"] == .string("r1") }
+            let (source, runs, _) = try await saved(fixture)
+            #expect(runs.map(\.status) == ["running"])
+            let accountID = try #require(UUID(uuidString: source.accountID))
+            try await MeetingRepository(dbQueue: fixture.db).deleteDahliaAccountConnection(id: accountID)
+            await transport.emit(TestPiTransport.assistantEnd("Done."))
+            await transport.emit(TestPiTransport.settled())
+            await fixture.service.intakeTask?.value
+            #expect(try await fixture.db.read { try AgentSystemRunRecord.fetchCount($0) } == 0)
+            #expect(try await fixture.db.read { try AgentSourceRecord.fetchCount($0) } == 0)
         }
 
         /// Listed items left unrecorded, or a batch Dahlia refused, hold the position; the limit keeps intake from stalling.

@@ -79,6 +79,23 @@
             }
         }
 
+        @Test(arguments: [false, true])
+        func savingAStaleSettingsSnapshotPreservesRuntimeProgress(toggle: Bool) throws {
+            let (service, id) = try inbox()
+            var snapshot = try #require(try service.sources(account: account).first)
+            let createdAt = snapshot.createdAt
+            let now = Date(timeIntervalSince1970: 100_000)
+            #expect(try service.commitIntake(sourceID: id, account: account, cursor: "latest", seen: [], now: now))
+            try service.markGap(sourceID: id, account: account, now: now)
+            snapshot.name = "Updated"
+            snapshot.enabled = !toggle
+            snapshot.createdAt = .distantPast
+            try service.saveSource(snapshot)
+            let saved = try #require(try service.sources(account: account).first)
+            #expect(saved.name == "Updated" && saved.enabled == !toggle && saved.revision == 2)
+            #expect(saved.cursor == "latest" && saved.lastIntakeAt == now && saved.gapDetectedAt == now && saved.createdAt == createdAt)
+        }
+
         @Test func aSourceCannotReinterpretTheOriginOfItsExistingEvents() throws {
             let (service, id) = try inbox()
             try service.record([item("gmail-1")], caller: .intake(sourceID: id), account: account)
@@ -512,7 +529,8 @@
             let task = try service.createTask(
                 title: "Prepare", instructions: "Notes", eventIDs: events.map(\.id), servers: ["drive"], caller: .router, account: account
             )
-            #expect(task.servers == #"["drive","gmail"]"#)
+            #expect(task.servers == #"["gmail"]"#)
+            #expect(task.workServers == #"["drive"]"#)
         }
 
         @Test func onlyTheRouterMakesItemsAndRecentDismissalsBlockASuggestion() throws {

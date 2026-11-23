@@ -20,7 +20,7 @@
                 id: UUID.v7().uuidString, accountID: "local", title: "Read", instructions: "Read", threadID: nil,
                 status: "active", createdAt: .now, updatedAt: .now
             )
-            task.servers = String(decoding: try JSONEncoder().encode([id]), as: UTF8.self)
+            task.servers = try String(decoding: JSONEncoder().encode([id]), as: UTF8.self)
             #expect(PiChatService.workerServerNames(task, settings: original) == ["gmail"])
             var replacement = original
             let gateway = try AgentMCPProvider(workspaceURL: #require(URL(string: "https://replacement.example.com")))
@@ -34,6 +34,36 @@
             #expect(original.serverName(for: "gmail") == nil)
             replacement.servers = []
             #expect(PiChatService.workerServerNames(task, settings: replacement).isEmpty)
+        }
+
+        @Test(arguments: [false, true])
+        func workRevocationPreservesOnlyIndependentSourceGrants(sourceAlsoGrants: Bool) throws {
+            let settings = try settings()
+            let id = try #require(settings.connectionID(for: "gmail"))
+            var task = AgentTaskRecord(
+                id: UUID.v7().uuidString, accountID: "local", title: "Read", instructions: "Read", threadID: nil,
+                status: "active", createdAt: .now, updatedAt: .now
+            )
+            let grant = try String(decoding: JSONEncoder().encode([id]), as: UTF8.self)
+            task.workServers = grant
+            task.servers = sourceAlsoGrants ? grant : "[]"
+            #expect(PiChatService.workerServerNames(task, settings: settings, allowedWorkConnections: [id]) == ["gmail"])
+            #expect(PiChatService.workerServerNames(task, settings: settings).isEmpty == !sourceAlsoGrants)
+        }
+
+        @Test func acceptingAnOldSuggestionDoesNotRestoreRevokedWorkConsent() async throws {
+            let settings = try settings()
+            let id = try #require(settings.connectionID(for: "gmail"))
+            let task = try await Task.detached {
+                let service = try AgentInboxService(dbQueue: AppDatabaseManager(path: ":memory:").dbQueue)
+                let suggestion = try service.suggestTask(
+                    title: "Read", instructions: "Read", eventIDs: [], servers: [id], caller: .router, account: "local"
+                )
+                #expect(try service.answer(itemID: suggestion.id, revision: 1, answer: "Yes", account: "local"))
+                return try service.dbQueue.read { try #require(try AgentTaskRecord.fetchOne($0)) }
+            }.value
+            #expect(PiChatService.workerServerNames(task, settings: settings, allowedWorkConnections: [id]) == ["gmail"])
+            #expect(PiChatService.workerServerNames(task, settings: settings).isEmpty)
         }
 
         @Test func workServerOptInBelongsToTheRegistration() throws {

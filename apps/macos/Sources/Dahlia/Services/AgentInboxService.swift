@@ -128,6 +128,10 @@ struct AgentInboxService: Sendable {
                     throw Failure(message: "Create a new Source to use another server.")
                 }
                 source.revision = previous.revision + 1
+                source.cursor = previous.cursor
+                source.lastIntakeAt = previous.lastIntakeAt
+                source.gapDetectedAt = previous.gapDetectedAt
+                source.createdAt = previous.createdAt
             } else {
                 source.revision = 1
             }
@@ -416,7 +420,7 @@ struct AgentInboxService: Sendable {
             id: UUID.v7().uuidString, accountID: account, title: title, instructions: instructions, threadID: nil,
             status: "active", createdAt: now, updatedAt: now
         )
-        task.servers = try text(.array(servers.map(JSONValue.string)))
+        task.workServers = try text(.array(servers.map(JSONValue.string)))
         try task.insert(db)
         try assign(eventIDs, to: task.id, account: account, in: db)
         task.servers = try AgentTaskRecord.fetchOne(db, key: task.id)?.servers ?? task.servers

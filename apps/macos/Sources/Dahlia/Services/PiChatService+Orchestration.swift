@@ -103,7 +103,12 @@ extension PiChatService {
         if queued.origin == "task", let session = sessions[threadID] {
             try validateBotActivity(provider: session.provider)
             let settings = mcpSettings(session.provider)
-            guard session.workerConnections.allSatisfy({ settings.connectionID(for: $0.key) == $0.value }) else { throw CancellationError() }
+            guard let task = try inboxService().task(threadID: threadID, account: account) else { throw CancellationError() }
+            let allowed = Set(Self.workerServerNames(
+                task, settings: settings, allowedWorkConnections: Set(AgentBotSettings.workServers(for: session.provider))
+            ))
+            guard session.workerConnections.allSatisfy({ allowed.contains($0.key) && settings.connectionID(for: $0.key) == $0.value })
+            else { throw CancellationError() }
         }
         if queued.origin == "task", try !validateWorkerStart(queued, account: account) { throw CancellationError() }
     }

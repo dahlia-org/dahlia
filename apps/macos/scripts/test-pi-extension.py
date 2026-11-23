@@ -117,7 +117,9 @@ def http_mcp(authorizations):
             elif method == "tools/call":
                 # Gmail lists messages as JSON text; a thread listing has no threadId and is not a list of items.
                 items = msg["params"].get("arguments", {}).get("probe_items")
-                text = json.dumps({"items": items, "nextCursor": ""}) if items is not None else "GATEWAY_OK"
+                args = msg["params"].get("arguments", {})
+                text = json.dumps({"items": items, "nextCursor": args.get("probe_next_cursor", ""),
+                                   "has_more": args.get("probe_has_more", False)}) if items is not None else "GATEWAY_OK"
                 result = {"content": [{"type": "text", "text": text}]}
                 if msg["params"].get("arguments", {}).get("probe_error"):
                     result = {"isError": True, "content": [{"type": "text", "text": "Source page failed"}]}
@@ -1130,7 +1132,9 @@ def main():
 
     # A listing of messages tells Dahlia which items intake read; thread listings and other profiles do not.
     listing = {"probe_items": [{"id": "m1", "threadId": "t1"}, {"id": "m2", "threadId": "t1"}, {"id": "t9"}]}
-    for profile, expected in (("intake", [("intakeSeen", {"ids": ["m1", "m2"]})]), ("interactive", [])):
+    page_key = json.dumps(["mcp__gmail__search_messages", ""], separators=(",", ":"))
+    listed = {"ids": ["m1", "m2"], "pages": [{"key": page_key, "cursor": "", "nextCursor": "", "hasMore": False}]}
+    for profile, expected in (("intake", [("intakeSeen", listed)]), ("interactive", [])):
         _, results, bridge, _ = run(
             pi, "chat", [{"tool": "mcp__gmail__search_messages", "args": listing}, {"text": "done"}],
             ["--no-session", *CHAT_EXTENSIONS, "--tools", "event_record,mcp__gmail__*"],
@@ -1147,7 +1151,24 @@ def main():
         {"DAHLIA_PI_MCP_SERVERS": json.dumps(["gmail"]), "DAHLIA_PI_PROFILE": "intake"}, mcp_servers=mcp_servers, auth=auth,
         bridge_answers={"intakeReadFailed": True, "intakeSeen": True})
     assert [call for call in bridge if call[0] in ("intakeReadFailed", "intakeSeen")] == [
-        ("intakeReadFailed", {}), ("intakeSeen", {"ids": ["m1", "m2"]})], bridge
+        ("intakeReadFailed", {}), ("intakeSeen", listed)], bridge
+
+    # Preserve request/query identity and continuation evidence, including an empty terminal page.
+    page_args = [dict(listing, query="after:2026/11/20", probe_next_cursor="p2", probe_has_more=True),
+                 {"query": "other", "probe_items": []},
+                 {"query": "after:2026/11/20", "cursor": "p2", "probe_items": []}]
+    _, _, bridge, _ = run(
+        pi, "chat", [{"tool": "mcp__gmail__search_messages", "args": args} for args in page_args] + [{"text": "done"}],
+        ["--no-session", *CHAT_EXTENSIONS, "--tools", "event_record,mcp__gmail__*"],
+        {"DAHLIA_PI_MCP_SERVERS": json.dumps(["gmail"]), "DAHLIA_PI_PROFILE": "intake"}, mcp_servers=mcp_servers, auth=auth,
+        bridge_answers={"intakeSeen": True})
+    pages = [payload["pages"][0] for method, payload in bridge if method == "intakeSeen"]
+    key = json.dumps(["mcp__gmail__search_messages", "after:2026/11/20"], separators=(",", ":"))
+    assert pages == [
+        {"key": key, "cursor": "", "nextCursor": "p2", "hasMore": True},
+        {"key": json.dumps(["mcp__gmail__search_messages", "other"], separators=(",", ":")),
+         "cursor": "", "nextCursor": "", "hasMore": False},
+        {"key": key, "cursor": "p2", "nextCursor": "", "hasMore": False}], pages
 
     # An expired token is refreshed once with the stored refresh token, which Databricks may keep.
     authorizations.clear()

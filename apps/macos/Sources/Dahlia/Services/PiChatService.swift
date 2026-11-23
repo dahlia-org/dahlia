@@ -792,7 +792,7 @@ actor PiChatService: CodexChatServicing {
                 guard sessions[threadID]?.connection === session.connection else { return try await connection(threadID: threadID) }
                 if sessions[threadID]?
                     .turn != nil ||
-                    (session.providerGeneration == providerGeneration && session.profile != .scheduled && session
+                    (session.providerGeneration == providerGeneration && session.profile != .scheduled && session.profile != .worker && session
                         .fileAccess == fileAccessSettings() && session.profile
                         .rawValue == (scheduledRuns[threadID]?.profile ?? "interactive") && session.memoryEnabled == AgentLearningSettings
                         .memoryEnabled(AppAccount.key)) { return session.connection }
@@ -878,7 +878,7 @@ actor PiChatService: CodexChatServicing {
         let profile = PiExecutionProfile(rawValue: scheduledRuns[threadID]?.profile ?? "interactive") ?? .interactive
         // A Dahlia Bot Worker reads only its Task's servers; the secretary's Home thread is an ordinary chat with one more tool.
         let workerServers = try profile == .worker ? inboxService().task(threadID: threadID, account: provider.accountKey).map {
-            Self.workerServerNames($0, settings: mcp)
+            Self.workerServerNames($0, settings: mcp, allowedWorkConnections: Set(AgentBotSettings.workServers(for: provider)))
         } ?? [] : nil
         let isBotHome = profile == .interactive && AgentBotSettings.homeThread(for: provider) == threadID
         let serverNames = ["dahlia"] + (workerServers ?? mcpServers.keys.sorted())

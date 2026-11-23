@@ -93,7 +93,10 @@
                 call("item_create", ["kind": .string("report"), "title": .string("準備を始めました")]),
             ]])
             defer { cleanUp(fixture) }
-            UserDefaults.standard.set([try #require(fixture.settings.connectionID(for: "gmail")), "unregistered-drive"], forKey: AgentBotSettings.workServersKey(for: provider))
+            try UserDefaults.standard.set(
+                [#require(fixture.settings.connectionID(for: "gmail")), "unregistered-drive"],
+                forKey: AgentBotSettings.workServersKey(for: provider)
+            )
             UserDefaults.standard.set("A 社を最優先にする", forKey: AgentBotSettings.guidanceKey(for: provider))
 
             await fixture.service.drainAlwaysOn()
@@ -107,7 +110,7 @@
             #expect(prompt == PiChatService.routerSystemPrompt)
             // slack is registered but not allowed for work, and drive is allowed but not registered.
             let task = try #require(try await db.read { try AgentTaskRecord.fetchOne($0) })
-            let granted = try JSONDecoder().decode([String].self, from: Data(task.servers.utf8))
+            let granted = try JSONDecoder().decode([String].self, from: Data(task.workServers.utf8))
             #expect(task.title == "A 社の会議の準備" && granted == [fixture.settings.connectionID(for: "gmail")])
             #expect(try fixture.inbox.items(account: fixture.account).map(\.title) == ["準備を始めました"])
             #expect(try await runs(fixture, task: "router").map(\.status) == ["completed"])
@@ -122,7 +125,7 @@
         }
 
         /// A Worker is a queued run of its Task's read-only Thread, under the Home thread, with only its Task's servers.
-        @Test(arguments: ["report", "noReport", "error", "stop"])
+        @Test(arguments: ["report", "noReport", "error", "stop", "revokedWork"])
         func aWorkerRunsInItsTaskThreadAndAlwaysTellsTheRouter(scenario: String) async throws {
             // Each scenario has its own account: the Home thread is remembered per account in app defaults.
             let provider = CodexRuntimeProvider.databricks(connectionID: .v7())
@@ -133,20 +136,23 @@
             }
             defer {
                 try? FileManager.default.removeItem(at: pi.rootURL)
-                UserDefaults.standard.removeObject(forKey: AgentBotSettings.homeThreadKey(for: provider))
+                AgentBotSettings.remove(accountKey: provider.accountKey)
             }
             let gateway = try AgentMCPProvider(workspaceURL: #require(URL(string: "https://dbc-1.cloud.databricks.com")))
             let settings = AgentMCPSettings(providers: [gateway], servers: ["gmail", "slack"].map {
                 AgentMCPServer(id: .v7(), name: $0, providerID: gateway.id, service: "system.ai.\($0)")
             })
+            try UserDefaults.standard.set([#require(settings.connectionID(for: "gmail"))], forKey: AgentBotSettings.workServersKey(for: provider))
             let store = try ChatThreadStore(dbQueue: AppDatabaseManager(path: ":memory:").dbQueue)
             let inbox = AgentInboxService(dbQueue: store.dbQueue)
             let account = provider.accountKey
             try inbox.request("見積もりの質問に答えて", account: account)
             let event = try #require(try inbox.routerInput(account: account).events.first)
             let task = try inbox.createTask(
-                title: "見積もりの質問", instructions: "調べて答える", eventIDs: [event.id], servers: [try #require(settings.connectionID(for: "gmail"))], caller: .router, account: account
+                title: "見積もりの質問", instructions: "調べて答える", eventIDs: [event.id], servers: [#require(settings.connectionID(for: "gmail"))],
+                caller: .router, account: account
             )
+            if scenario == "revokedWork" { UserDefaults.standard.set([], forKey: AgentBotSettings.workServersKey(for: provider)) }
             let threadID = try #require(task.threadID)
             let chat = PiChatService(
                 runtime: pi.service, historyStore: store, workingDirectory: PiWorkingDirectory(override: pi.rootURL.appending(path: "work")),
@@ -178,8 +184,9 @@
             #expect(launch.profile == .worker && !launch.arguments.contains("--no-session"))
             let tools = try #require(launch.arguments.firstIndex(of: "--tools").map { launch.arguments[$0 + 1] }).split(separator: ",")
                 .map(String.init)
-            #expect(Set(tools) == Set(PiExecutionProfile.workerTools + ["mcp__dahlia__*", "mcp__gmail__*"]))
-            #expect(launch.environment["DAHLIA_PI_MCP_SERVERS"] == #"["dahlia","gmail"]"#)
+            let externalTools = scenario == "revokedWork" ? [] : ["mcp__gmail__*"]
+            #expect(Set(tools) == Set(PiExecutionProfile.workerTools + ["mcp__dahlia__*"] + externalTools))
+            #expect(launch.environment["DAHLIA_PI_MCP_SERVERS"] == (scenario == "revokedWork" ? #"["dahlia"]"# : #"["dahlia","gmail"]"#))
             #expect(launch.environment["DAHLIA_PI_MEMORY_ENABLED"] == "0")
             #expect(launch.arguments.contains(PiChatService.workerSystemPrompt))
             #expect(try await chat.loadThread(id: threadID).isReadOnly)
@@ -198,7 +205,7 @@
                 #expect(await pollUntil { await (try? events().map(\.status)) == ["processed", "unassigned"] })
                 let report = try #require(try await events().last)
                 #expect(report.kind == "result" && report.excerpt == "Q4 の価格表で答えられます" && report.payload.contains("返信の下書き"))
-            case "noReport":
+            case "noReport", "revokedWork":
                 #expect(await pollUntil { await (try? events().map(\.status)) == ["processed", "unassigned"] })
                 #expect(try await events().last?.kind == "result")
             case "stop":
@@ -238,13 +245,14 @@
             #expect(fixture.pi.launches.all.count { $0.profile == .router } == 2)
         }
 
-        @Test(arguments: ["pause", "finish", "connection"])
+        @Test(arguments: ["pause", "finish", "connection", "workRevoked"])
         func workerRevalidatesAfterPiPreparation(mode: String) async throws {
             let provider = CodexRuntimeProvider.databricks(connectionID: .v7())
             let gateway = try AgentMCPProvider(workspaceURL: #require(URL(string: "https://original.example.com")))
             let original = AgentMCPSettings(providers: [gateway], servers: [
                 AgentMCPServer(id: .v7(), name: "gmail", providerID: gateway.id, service: "system.ai.gmail"),
             ])
+            try UserDefaults.standard.set([#require(original.connectionID(for: "gmail"))], forKey: AgentBotSettings.workServersKey(for: provider))
             let registry = Mutex(original)
             let transport = TestPiTransport { command in
                 command["type"]?.stringValue == "set_thinking_level" ? [] : TestPiTransport.acknowledge(command)
@@ -262,7 +270,7 @@
             try inbox.request("Read", account: provider.accountKey)
             let event = try #require(try inbox.routerInput(account: provider.accountKey).events.first)
             let task = try inbox.createTask(
-                title: "Read", instructions: "Read", eventIDs: [event.id], servers: [try #require(original.connectionID(for: "gmail"))],
+                title: "Read", instructions: "Read", eventIDs: [event.id], servers: [#require(original.connectionID(for: "gmail"))],
                 caller: .router, account: provider.accountKey
             )
             let thread = try #require(task.threadID)
@@ -278,6 +286,8 @@
             let preparing = await transport.command("set_thinking_level")
             if mode == "pause" {
                 try inbox.setPaused(true, account: provider.accountKey)
+            } else if mode == "workRevoked" {
+                UserDefaults.standard.set([], forKey: AgentBotSettings.workServersKey(for: provider))
             } else if mode == "connection" {
                 registry.withLock { settings in
                     settings.servers = [AgentMCPServer(id: .v7(), name: "gmail", providerID: gateway.id, service: "system.ai.gmail")]
@@ -295,7 +305,7 @@
                 await chat.scheduleRuns(accountID: provider.accountKey)
                 #expect(try inbox.task(task.id, account: provider.accountKey)?.status == "active")
                 #expect(try await inbox.dbQueue.read { try AgentEventRecord.fetchOne($0, key: event.id)?.status } == "delivered")
-            } else if mode == "connection" {
+            } else if mode == "connection" || mode == "workRevoked" {
                 #expect(try store.run(id: id)?.status == "failed")
                 #expect(try await inbox.dbQueue.read { try AgentEventRecord.fetchOne($0, key: event.id)?.status } == "assigned")
             } else {
@@ -315,10 +325,10 @@
             let settings = AgentMCPSettings(providers: [gateway], servers: [
                 AgentMCPServer(id: .v7(), name: "gmail", providerID: gateway.id, service: "system.ai.gmail"),
             ])
-            let source = AgentSourceRecord(
+            let source = try AgentSourceRecord(
                 id: UUID.v7().uuidString, accountID: provider.accountKey, name: "Mail", server: "gmail", instructions: "Read", intervalMinutes: 5,
                 sieve: "candidate", allowedSenders: "[]", cursor: nil, enabled: true, gapDetectedAt: nil, lastIntakeAt: nil,
-                createdAt: .now, updatedAt: .now, connectionID: try #require(settings.connectionID(for: "gmail"))
+                createdAt: .now, updatedAt: .now, connectionID: #require(settings.connectionID(for: "gmail"))
             )
             let intake = change.hasPrefix("intake")
             if intake { try inbox.saveSource(source) } else { try inbox.request("Read", account: provider.accountKey) }
@@ -362,6 +372,28 @@
             let statuses = try await db.read { try String.fetchAll($0, sql: "SELECT status FROM agent_system_runs") }
             #expect(statuses == [duringTool && !intake ? "completed" : "interrupted"])
             #expect(try inbox.sources(account: provider.accountKey).first?.cursor == nil)
+        }
+
+        @Test func aLateRouterCompletionCannotRestoreDeletedAccountHistory() async throws {
+            let id = UUID.v7()
+            let provider = CodexRuntimeProvider.databricks(connectionID: id)
+            let db = try AppDatabaseManager(path: ":memory:").dbQueue
+            let transport = TestPiTransport()
+            let pi = TestPiRuntime(provider: provider) { _ in transport }
+            defer { try? FileManager.default.removeItem(at: pi.rootURL) }
+            let chat = PiChatService(
+                runtime: pi.service, historyStore: ChatThreadStore(dbQueue: db),
+                agentLocator: PiAgentDirectoryLocator(applicationSupportURL: pi.rootURL)
+            )
+            try AgentInboxService(dbQueue: db).request("Read", account: provider.accountKey)
+            await chat.drainAlwaysOn()
+            _ = await transport.command("prompt")
+            #expect(try await db.read { try AgentSystemRunRecord.fetchCount($0) } == 1)
+            try await MeetingRepository(dbQueue: db).deleteDahliaAccountConnection(id: id)
+            await transport.emit(TestPiTransport.assistantEnd("Done."))
+            await transport.emit(TestPiTransport.settled())
+            await chat.routerTask?.value
+            #expect(try await db.read { try AgentSystemRunRecord.fetchCount($0) } == 0)
         }
 
         @Test func workerReceivesTheOriginalSourceLocators() throws {

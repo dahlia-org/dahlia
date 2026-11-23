@@ -128,8 +128,12 @@ extension PiChatService {
         return AgentBotSettings.workServers(for: provider).compactMap { registered.serverName(for: $0) }.sorted()
     }
 
-    nonisolated static func workerServerNames(_ task: AgentTaskRecord, settings: AgentMCPSettings) -> [String] {
-        ((try? JSONDecoder().decode([String].self, from: Data(task.servers.utf8))) ?? []).compactMap { settings.serverName(for: $0) }
+    nonisolated static func workerServerNames(
+        _ task: AgentTaskRecord, settings: AgentMCPSettings, allowedWorkConnections: Set<String> = []
+    ) -> [String] {
+        let sources = (try? JSONDecoder().decode([String].self, from: Data(task.servers.utf8))) ?? []
+        let work = (try? JSONDecoder().decode([String].self, from: Data(task.workServers.utf8))) ?? []
+        return Set(sources + work.filter(allowedWorkConnections.contains)).compactMap { settings.serverName(for: $0) }.sorted()
     }
 
     /// The secretary's Home thread, made the first time the user opens it.
@@ -411,6 +415,6 @@ extension PiChatService {
         }
         run.finishedAt = .now
         let finished = run
-        try? await history().dbQueue.write { try finished.save($0) }
+        try? await history().dbQueue.write { try finished.update($0) }
     }
 }

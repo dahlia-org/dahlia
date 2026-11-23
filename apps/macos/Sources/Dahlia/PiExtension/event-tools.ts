@@ -29,6 +29,24 @@ export function listedItemIDs(content: any[]): string[] {
   });
 }
 
+// Page evidence comes from the tool result and its actual request, never from the model's completion text.
+function listedPages(event: any): any[] {
+  return (event.content ?? []).flatMap((part: any) => {
+    try {
+      const result = JSON.parse(part?.text ?? "");
+      if (!Array.isArray(result?.items) && result?.has_more === undefined && result?.nextCursor === undefined) return [];
+      return [{
+        key: JSON.stringify([event.toolName, event.input?.query ?? ""]),
+        cursor: typeof event.input?.cursor === "string" ? event.input.cursor : "",
+        nextCursor: typeof result.nextCursor === "string" ? result.nextCursor : "",
+        hasMore: result.has_more === true,
+      }];
+    } catch {
+      return [];
+    }
+  });
+}
+
 export function registerEventTools(pi: any, bridge: any) {
   // Dahlia moves the read position only once every listed item was recorded or ignored.
   pi.on("tool_result", async (event: any, ctx: any) => {
@@ -39,7 +57,8 @@ export function registerEventTools(pi: any, bridge: any) {
     }
     const ids = listedItemIDs(event.content ?? []);
     // An empty successful result still proves a read occurred; a model-only answer does not.
-    await bridge(ctx, "intakeSeen", { ids });
+    const pages = listedPages(event);
+    await bridge(ctx, "intakeSeen", { ids, ...(pages.length ? { pages } : {}) });
   });
   pi.registerTool({
     name: "event_record",

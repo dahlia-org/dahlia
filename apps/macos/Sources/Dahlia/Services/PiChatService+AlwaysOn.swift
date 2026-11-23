@@ -5,6 +5,29 @@ import Foundation
 /// Intake sees only that Source's read-only MCP tools and `event_record`. The Router and Workers are in
 /// `PiChatService+DahliaBot`.
 extension PiChatService {
+    struct IntakePageChain {
+        var continuations: [String: String] = [:]
+        var invalid = false
+
+        mutating func record(cursor: String, nextCursor: String, hasMore: Bool) {
+            if hasMore, nextCursor.isEmpty { invalid = true }
+            if let previous = continuations[cursor], previous != nextCursor { invalid = true }
+            continuations[cursor] = nextCursor
+        }
+
+        var isComplete: Bool {
+            guard !invalid else { return false }
+            var visited: Set<String> = []
+            var cursor = ""
+            while visited.insert(cursor).inserted {
+                guard let next = continuations[cursor] else { return false }
+                if next.isEmpty { return visited.count == continuations.count }
+                cursor = next
+            }
+            return false
+        }
+    }
+
     struct ActiveIntake {
         let sourceID: String
         let revision: Int
@@ -17,6 +40,7 @@ extension PiChatService {
         var readFailed = false
         var readSucceeded = false
         var seen: Set<String> = []
+        var pages: [String: IntakePageChain] = [:]
     }
 
     /// Rechecked after asynchronous preparation, immediately before autonomous work is published.
@@ -46,7 +70,7 @@ extension PiChatService {
     as a mail thread or a Slack thread), sender, subject, a short excerpt, url (the item's permalink), ref (the IDs \
     you would pass to the source's tools to read the item again), occurred_at (ISO 8601), and direct (true when it is \
     addressed to the user or mentions them). When a listed item has an id field, use it as external_id. Record in \
-    batches as you read, then stop.
+    batches as you read. Follow every continuation cursor with the same query, including empty final pages, then stop.
     """
 
     func inboxService() throws -> AgentInboxService {
@@ -161,7 +185,8 @@ extension PiChatService {
                 throw error
             }
             try validateBotActivity(provider: provider, source: source)
-            guard activeIntake?.readFailed == false, activeIntake?.readSucceeded == true
+            guard activeIntake?.readFailed == false, activeIntake?.readSucceeded == true,
+                  activeIntake?.pages.values.allSatisfy(\.isComplete) == true
             else { throw AgentInboxService.Failure(message: "The Source read did not complete. The read position was kept.") }
             let recorded = activeIntake?.recorded ?? 0
             let inbox = try inboxService()
@@ -192,7 +217,7 @@ extension PiChatService {
         }
         run.finishedAt = .now
         let finished = run
-        try? await history().dbQueue.write { try finished.save($0) }
+        try? await history().dbQueue.write { try finished.update($0) }
     }
 
     private func intakeTool(_ method: String, payload: JSONValue, source: AgentSourceRecord, provider: CodexRuntimeProvider) throws -> JSONValue {
@@ -208,6 +233,19 @@ extension PiChatService {
             activeIntake?.readSucceeded = true
             let ids = payload.objectValue?["ids"]?.arrayValue?.compactMap(\.stringValue) ?? []
             activeIntake?.seen.formUnion(ids.prefix(1000))
+            for page in payload.objectValue?["pages"]?.arrayValue ?? [] {
+                guard let fields = page.objectValue, let key = fields["key"]?.stringValue,
+                      let cursor = fields["cursor"]?.stringValue, let next = fields["nextCursor"]?.stringValue
+                else {
+                    activeIntake?.readFailed = true
+                    continue
+                }
+                activeIntake?.pages[key, default: IntakePageChain()].record(
+                    cursor: cursor,
+                    nextCursor: next,
+                    hasMore: fields["hasMore"] == .bool(true)
+                )
+            }
             return .bool(true)
         }
         do {

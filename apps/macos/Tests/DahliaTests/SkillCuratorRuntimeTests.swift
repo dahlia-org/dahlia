@@ -11,7 +11,7 @@
         // Every case uses the app's one account, whose curator setting lives in the shared defaults.
         @Test(.serialized, arguments: [
             "unauthorized", "errorAfterIntermediate", "messageAbort", "settledAbort", "emptyFinal", "success",
-            "budget", "noMessage", "eof", "consolidationOff", "drainDuringTransitions", "drainDuringConsolidation",
+            "budget", "noMessage", "eof", "consolidationOff", "drainDuringTransitions", "drainDuringConsolidation", "accountRemoved",
         ])
         func consolidationRecordsTerminalOutcome(scenario: String) async throws {
             let script = events(scenario)
@@ -35,7 +35,11 @@
                         }
                     case "prompt" where command["message"]?.stringValue == "/hermes-curator":
                         pendingCommand.withLock { $0 = id }
-                        return scenario == "drainDuringTransitions" ? [] : [TestPiTransport.bridgeRequest(id: "report", method: "curatorReport", payload: report)]
+                        return scenario == "drainDuringTransitions" ? [] : [TestPiTransport.bridgeRequest(
+                            id: "report",
+                            method: "curatorReport",
+                            payload: report
+                        )]
                     default:
                         return [TestPiTransport.response(id: id)] + (command["type"]?.stringValue == "prompt" ? script : [])
                     }
@@ -73,6 +77,13 @@
                 await service.drainLearningWork()
                 #expect(await transport.isClosed)
             }
+            if scenario == "accountRemoved" {
+                let transport = await transports.transport(at: 0)
+                _ = await transport.command { $0["type"]?.stringValue == "prompt" && $0["message"]?.stringValue != "/hermes-curator" }
+                try await MeetingRepository(dbQueue: db).deleteDahliaAccountConnection(id: #require(UUID(uuidString: account)))
+                await transport.emit(TestPiTransport.assistantEnd("Finished after removal."))
+                await transport.emit(TestPiTransport.settled())
+            }
             if scenario == "eof" {
                 let transport = await transports.transport(at: 0)
                 _ = await transport.command("prompt")
@@ -80,6 +91,11 @@
             }
             await run.value
             let saved = try await db.read { try AgentSystemRunRecord.fetchOne($0) }
+            if scenario == "accountRemoved" {
+                #expect(saved == nil)
+                #expect(await transports.allClosed())
+                return
+            }
             let record = try #require(saved)
             let completed = ["emptyFinal", "success", "consolidationOff", "drainDuringTransitions"].contains(scenario)
             let interrupted = ["messageAbort", "settledAbort", "drainDuringConsolidation"].contains(scenario)
@@ -87,7 +103,8 @@
             #expect(record.finishedAt != nil)
             #expect(record.report == (scenario == "success" ? "Final report" : ""))
             if completed { #expect(record.summary.hasPrefix(L10n.agentCuratorAutoSummary(archived: 1, stale: 0, reactivated: 0))) }
-            if ["consolidationOff", "drainDuringTransitions"].contains(scenario) { #expect(record.summary.hasSuffix(L10n.agentCuratorConsolidationOff)) }
+            if ["consolidationOff", "drainDuringTransitions"]
+                .contains(scenario) { #expect(record.summary.hasSuffix(L10n.agentCuratorConsolidationOff)) }
             if scenario == "unauthorized" || scenario == "errorAfterIntermediate" {
                 #expect(record.summary.contains(PiRuntimeError.notLoggedIn.localizedDescription))
             }
