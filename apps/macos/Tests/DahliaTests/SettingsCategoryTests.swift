@@ -9,7 +9,11 @@ import Foundation
     struct SettingsCategoryTests {
         @Test
         func accountAndWorkspacePreferencesHaveSeparateDestinations() {
-            #expect(SettingsGroup.features.categories == [.workspace, .meetings, .agents, .skills, .memory, .dahliaMCP, .calendar, .meetingLinks])
+            #expect(SettingsGroup.features.categories == [.workspace, .meetings, .providers, .agents, .skills, .memory, .dahliaMCP, .calendar, .meetingLinks])
+            // Provider accounts have their own page, found by the services they sign in to.
+            #expect(SettingsNavigation.visibleSelection(.providers) == .providers)
+            #expect(SettingsCategory.providers.matches("Google"))
+            #expect(SettingsCategory.providers.matches("Databricks"))
             // Memory has its own page; its review switch moved there from Dahlia AI.
             #expect(SettingsCategory.memory.matches(L10n.agentMemoryReviewEnabled))
             // Skill optimization and the unattended-run history are a tab of Skills.

@@ -644,6 +644,12 @@
 "Turn on the providers that supply upcoming events. Google Calendar comes from Google or from a Databricks connection, one at a time." = "Turn on the providers that supply upcoming events. Google Calendar comes from Google or from a Databricks connection, one at a time.";
 "Calendar Providers" = "Calendar Providers";
 "Rename Provider Account" = "Rename Provider Account";
+"Providers" = "Providers";
+"Sign in to the services Dahlia uses. Models, MCP servers, and calendars choose among these providers." = "Sign in to the services Dahlia uses. Models, MCP servers, and calendars choose among these providers.";
+"Added earlier · Sign in again" = "Added earlier · Sign in again";
+"Manage Providers…" = "Manage Providers…";
+"Google Drive" = "Google Drive";
+"Read through %@" = "Read through %@";
 "The name shows only in Dahlia. Leave it empty to show the workspace and email." = "The name shows only in Dahlia. Leave it empty to show the workspace and email.";
 "Google" = "Google";
 "Turn this provider on to connect it." = "Turn this provider on to connect it.";

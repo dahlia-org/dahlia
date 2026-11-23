@@ -2278,6 +2278,18 @@ enum L10n { // swiftlint:disable:this type_body_length
     ) }
     static var calendarProviders: String { String(localized: "Calendar Providers", bundle: bundle) }
     static var renameProviderAccount: String { String(localized: "Rename Provider Account", bundle: bundle) }
+    static var providerAccounts: String { String(localized: "Providers", bundle: bundle) }
+    static var providerAccountsDescription: String { String(
+        localized: "Sign in to the services Dahlia uses. Models, MCP servers, and calendars choose among these providers.",
+        bundle: bundle
+    ) }
+    static var providerAccountSignInToKeep: String { String(localized: "Added earlier · Sign in again", bundle: bundle) }
+    static var manageProviders: String { String(localized: "Manage Providers…", bundle: bundle) }
+    static var googleDrive: String { String(localized: "Google Drive", bundle: bundle) }
+    static func googleReadThrough(_ name: String) -> String {
+        String(format: String(localized: "Read through %@", bundle: bundle), name)
+    }
+
     static var renameProviderAccountDescription: String { String(
         localized: "The name shows only in Dahlia. Leave it empty to show the workspace and email.",
         bundle: bundle

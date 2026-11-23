@@ -644,6 +644,12 @@
 "Turn on the providers that supply upcoming events. Google Calendar comes from Google or from a Databricks connection, one at a time." = "予定を取得するプロバイダーをオンにします。Google カレンダーは、Google か Databricks の接続のどちらか一方から取得します。";
 "Calendar Providers" = "カレンダーのプロバイダー";
 "Rename Provider Account" = "プロバイダーアカウントの名前を変更";
+"Providers" = "プロバイダー";
+"Sign in to the services Dahlia uses. Models, MCP servers, and calendars choose among these providers." = "Dahlia が使うサービスにサインインします。モデル、MCP サーバー、カレンダーは、ここにあるプロバイダーから選びます。";
+"Added earlier · Sign in again" = "以前に追加 · サインインし直してください";
+"Manage Providers…" = "プロバイダーを管理…";
+"Google Drive" = "Google ドライブ";
+"Read through %@" = "%@ 経由で取得中";
 "The name shows only in Dahlia. Leave it empty to show the workspace and email." = "名前は Dahlia の表示にだけ使います。空にすると workspace とメールアドレスを表示します。";
 "Google" = "Google";
 "Turn this provider on to connect it." = "このプロバイダーをオンにすると接続できます。";

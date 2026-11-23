@@ -4,6 +4,7 @@ import Foundation
 enum SettingsCategory: String, CaseIterable, Identifiable {
     case accountsAndWorkspaces
     case accountPreferences
+    case providers
     case agents
     case skills
     case memory
@@ -44,6 +45,7 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
         switch self {
         case .accountsAndWorkspaces: L10n.serverConnections
         case .accountPreferences: L10n.accountPreferences
+        case .providers: L10n.providerAccounts
         case .agents: L10n.agents
         case .skills: L10n.agentSkills
         case .memory: L10n.agentMemory
@@ -79,6 +81,7 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
         switch self {
         case .accountsAndWorkspaces: "brain"
         case .accountPreferences: "text.badge.star"
+        case .providers: "person.badge.key"
         case .agents: "sparkles"
         case .skills: "book.closed"
         case .memory: "brain.head.profile"
@@ -141,6 +144,11 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
                 L10n.imageAnalysis,
                 L10n.imageAnalysisEnabled,
                 "AI",
+            ]
+        case .providers:
+            [
+                L10n.addProvider, L10n.renameProviderAccount, L10n.signInAgain, L10n.signOut,
+                "ChatGPT", "OpenAI", "Anthropic", "Claude", "Databricks", L10n.unityGateway, "Google", L10n.googleCalendar, L10n.googleDrive,
             ]
         case .agents:
             // The services Unity AI Gateway commonly offers; a workspace lists its own when a server is added.

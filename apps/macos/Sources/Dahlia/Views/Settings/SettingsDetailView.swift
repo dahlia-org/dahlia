@@ -118,6 +118,8 @@ struct SettingsDetailView: View {
             .onChange(of: workspaceManagementModel.workspaces.map { "\($0.id):\($0.accountConnectionId?.uuidString ?? "local")" }) {
                 Task { await dahliaAccountController.reload() }
             }
+        case .providers:
+            ProviderAccountsSettingsView()
         case .skills:
             SkillSettingsView()
         case .memory:

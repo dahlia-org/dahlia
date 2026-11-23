@@ -87,7 +87,9 @@ private struct AgentSettingsTabs: View {
                 .formStyle(.grouped)
                 .font(.dahliaBody)
             case .models:
-                AgentModelSettingsView(account: account, mcp: mcp, subscriptions: subscriptions, onAdd: presentProviderRegistration)
+                AgentModelSettingsView(account: account, mcp: mcp, subscriptions: subscriptions) {
+                    navigation.openSettings(category: .providers)
+                }
             case .packages:
                 AgentPackageSettingsView(model: packages)
             case .schedules:
@@ -103,13 +105,6 @@ private struct AgentSettingsTabs: View {
             mcp.loadAccountProviders()
         }
         .onDisappear { navigation.dismissSettingsModal() }
-    }
-
-    /// Modals cover the whole window, as the sign-in does.
-    private func presentProviderRegistration() {
-        navigation.presentSettingsModal(
-            AgentProviderRegistrationView(model: mcp, subscriptions: subscriptions, onClose: navigation.dismissSettingsModal)
-        )
     }
 
     private func presentMCPRegistration(_ provider: AgentMCPProvider) {
@@ -352,19 +347,16 @@ private struct AgentEnvironmentVariableRow: View {
 
 /// The providers the open account's agent can use, each with a badge for what it serves: the account's own sign-in,
 /// the subscriptions signed in to (Local Account), and the Databricks workspaces signed in to for MCP servers.
+/// The models each provider offers, to turn on or off. Signing in and out of a provider is on the Providers page.
 private struct AgentProviderSection<Models: View, SubscriptionModels: View>: View {
     let account: CodexRuntimeProvider
     let model: AgentMCPSettingsModel
     let subscriptions: [CodexAccountController]
-    let onAdd: () -> Void
+    let onManage: () -> Void
     let enabledCount: (AgentMCPProvider) -> Int?
     @ViewBuilder let modelsContent: (AgentMCPProvider) -> Models
     let subscriptionEnabledCount: (CodexAccountController) -> Int
     @ViewBuilder let subscriptionModelsContent: (CodexAccountController) -> SubscriptionModels
-    @State private var signInTask: Task<Void, Never>?
-    @State private var pendingRemoval: AgentMCPProvider?
-    @State private var pendingRename: DatabricksConnection?
-    @State private var proposedName = ""
     @State private var expandedProviderIDs: Set<String> = []
     @State private var hoveredProviderID: String?
 
@@ -372,15 +364,15 @@ private struct AgentProviderSection<Models: View, SubscriptionModels: View>: Vie
         subscriptions.filter { $0.accountStatus?.isAuthenticated == true }
     }
 
+    /// Workspaces added before every Databricks connection was a provider account, while Pi still holds their sign-in.
     private var workspaces: [AgentMCPProvider] {
-        model.settings.providers.filter { !$0.isAccount }
+        model.settings.providers.filter { !$0.isAccount && model.isSignedIn($0) }
     }
 
     var body: some View {
         Section {
             switch account {
             case .local:
-                // Each Databricks provider account signs out here; adding one is Add's or the account menu's sign-in.
                 ForEach(model.accountProviders) { provider in
                     gatewayRow(provider)
                 }
@@ -404,15 +396,6 @@ private struct AgentProviderSection<Models: View, SubscriptionModels: View>: Vie
                         uses: [L10n.agentProviderModels]
                     ) {
                         Text(L10n.agentEnabledCount(subscriptionEnabledCount(controller))).foregroundStyle(.secondary)
-                        if controller.isSigningOut {
-                            ProgressView().controlSize(.small)
-                        } else {
-                            Text(L10n.codexSignedIn).foregroundStyle(.secondary)
-                        }
-                        AgentProviderActions {
-                            Button(L10n.signOut) { Task { await controller.signOut() } }
-                        }
-                        .disabled(controller.isBusy)
                     }
                     .contentShape(.rect)
                     .background(Color.primary.opacity(hoveredProviderID == controller.subscription.rawValue ? 0.06 : 0))
@@ -424,54 +407,24 @@ private struct AgentProviderSection<Models: View, SubscriptionModels: View>: Vie
             ForEach(workspaces) { provider in
                 gatewayRow(provider)
             }
-            if account == .local, signedInSubscriptions.isEmpty, workspaces.isEmpty {
+            if account == .local, signedInSubscriptions.isEmpty, workspaces.isEmpty, model.accountProviders.isEmpty {
                 Text(L10n.agentProvidersEmpty).foregroundStyle(.secondary)
             }
-            ForEach(subscriptions.compactMap(\.errorMessage) + [model.errorMessage].compactMap(\.self), id: \.self) { message in
+            ForEach([model.errorMessage].compactMap(\.self), id: \.self) { message in
                 Label(message, systemImage: "exclamationmark.triangle.fill")
                     .foregroundStyle(.orange)
             }
         } header: {
             AgentSectionHeader(title: L10n.agentProviders) {
-                Button(L10n.addProvider, systemImage: "plus", action: onAdd)
-                    .disabled(model.isBusy)
+                Button(L10n.manageProviders, action: onManage)
             }
-        }
-        .confirmationDialog(
-            pendingRemoval.map { L10n.mcpRemoveWorkspace($0.host) } ?? "",
-            isPresented: Binding(get: { pendingRemoval != nil }, set: { if !$0 { pendingRemoval = nil } }),
-            titleVisibility: .visible
-        ) {
-            Button(L10n.delete, role: .destructive) {
-                guard let provider = pendingRemoval else { return }
-                pendingRemoval = nil
-                Task { await model.remove(provider) }
-            }
-            Button(L10n.cancel, role: .cancel) { pendingRemoval = nil }
-        } message: {
-            Text(L10n.mcpRemoveWorkspaceDescription)
-        }
-        .alert(
-            L10n.renameProviderAccount,
-            isPresented: Binding(get: { pendingRename != nil }, set: { if !$0 { pendingRename = nil } })
-        ) {
-            TextField(L10n.name, text: $proposedName)
-            Button(L10n.save) {
-                guard let connection = pendingRename else { return }
-                pendingRename = nil
-                let name = proposedName
-                Task { await WorkspaceAISettingsModel.shared.renameDatabricksConnection(connection.id, to: name) }
-            }
-            Button(L10n.cancel, role: .cancel) { pendingRename = nil }
-        } message: {
-            Text(L10n.renameProviderAccountDescription)
         }
         .task {
             for controller in subscriptions {
                 await controller.activate()
             }
         }
-        // A sign-in made elsewhere (setup tour or the add modal) updates the subscriptions too.
+        // A sign-in made on the Providers page or in the setup tour updates the subscriptions too.
         .onReceive(NotificationCenter.default.publisher(for: PiRuntimeService.modelsDidChange).receive(on: RunLoop.main)) { _ in
             Task {
                 for controller in subscriptions where !controller.isBusy {
@@ -479,10 +432,9 @@ private struct AgentProviderSection<Models: View, SubscriptionModels: View>: Vie
                 }
             }
         }
-        .onDisappear { signInTask?.cancel() }
     }
 
-    /// The provider account behind a gateway, which has a name and signs out here.
+    /// The provider account behind a gateway, whose name titles it.
     private func connection(of provider: AgentMCPProvider) -> DatabricksConnection? {
         WorkspaceAISettingsModel.shared.databricksConnections.first {
             URL(string: $0.host).map(AgentMCPProvider.id(for:)) == provider.id
@@ -494,38 +446,12 @@ private struct AgentProviderSection<Models: View, SubscriptionModels: View>: Vie
             modelsContent(provider)
         } label: {
             AgentProviderRow(
-                title: connection(of: provider)?.name ?? L10n.unityGatewayHost(provider.host),
+                title: connection(of: provider)?.displayName ?? L10n.unityGatewayHost(provider.host),
                 icon: .databricksLogo,
                 uses: [L10n.agentProviderModels, L10n.mcp]
             ) {
                 if let count = enabledCount(provider) {
                     Text(L10n.agentEnabledCount(count)).foregroundStyle(.secondary)
-                }
-                if !provider.isAccount {
-                    if model.signingInProviderID == provider.id, signInTask != nil {
-                        ProgressView().controlSize(.small)
-                        Button(L10n.cancelSignIn) { signInTask?.cancel() }
-                    } else if model.isSignedIn(provider) {
-                        Text(L10n.codexSignedIn).foregroundStyle(.secondary)
-                    } else {
-                        Button(L10n.dahliaSignIn) { signIn(provider) }
-                            .disabled(model.isBusy)
-                    }
-                    AgentProviderActions {
-                        if model.isSignedIn(provider) {
-                            Button(L10n.signInAgain) { signIn(provider) }
-                        }
-                        Button(L10n.delete, role: .destructive) { pendingRemoval = provider }
-                    }
-                    .disabled(model.isBusy)
-                } else if let connection = connection(of: provider) {
-                    AgentProviderActions {
-                        Button(L10n.rename) {
-                            proposedName = connection.name ?? ""
-                            pendingRename = connection
-                        }
-                        Button(L10n.signOut) { WorkspaceAISettingsModel.shared.requestDatabricksSignOut(connectionID: connection.id) }
-                    }
                 }
             }
             .contentShape(.rect)
@@ -541,20 +467,6 @@ private struct AgentProviderSection<Models: View, SubscriptionModels: View>: Vie
             expandedProviderIDs.contains(providerID)
         } set: { expanded in
             if expanded { expandedProviderIDs.insert(providerID) } else { expandedProviderIDs.remove(providerID) }
-        }
-    }
-
-    private func signIn(_ provider: AgentMCPProvider) {
-        model.errorMessage = nil
-        signInTask = Task {
-            do {
-                try await model.signIn(provider)
-            } catch is CancellationError {
-                // Cancelling closes Pi and its pending sign-in.
-            } catch {
-                model.errorMessage = error.localizedDescription
-            }
-            signInTask = nil
         }
     }
 }
@@ -635,7 +547,7 @@ private struct AgentModelSettingsView: View {
     let account: CodexRuntimeProvider
     let mcp: AgentMCPSettingsModel
     let subscriptions: [CodexAccountController]
-    let onAdd: () -> Void
+    let onManage: () -> Void
     private let service = PiRuntimeService.shared
     /// Each provider's models by provider ID, as last listed.
     @State private var models: [String: [PiProviderConfiguration.DatabricksModel]] = [:]
@@ -656,7 +568,7 @@ private struct AgentModelSettingsView: View {
     var body: some View {
         Form {
             AgentProviderSection(
-                account: account, model: mcp, subscriptions: subscriptions, onAdd: onAdd,
+                account: account, model: mcp, subscriptions: subscriptions, onManage: onManage,
                 enabledCount: { provider in
                     models[provider.id].map { $0.count(where: { $0.isOn(shownChoices(provider.id)) }) }
                 },

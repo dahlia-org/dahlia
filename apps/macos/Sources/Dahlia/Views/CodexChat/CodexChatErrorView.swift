@@ -17,7 +17,8 @@ struct CodexChatErrorView: View {
                 // shortcut: matches the page's name in the text; carry the error's kind here if a message names Agents
                 // for another reason.
                 if message == L10n.codexNotLoggedIn {
-                    Button(L10n.openAgentSettings) { mainWindowNavigation.openAgentSettings(tab: .models) }
+                    // No provider is signed in; the Providers page signs in to one.
+                    Button(L10n.manageProviders) { mainWindowNavigation.openSettings(category: .providers) }
                 } else if message.contains(L10n.agents) {
                     Button(L10n.openAgentSettings) { mainWindowNavigation.openSettings(category: .agents) }
                 } else {
