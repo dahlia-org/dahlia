@@ -21,7 +21,7 @@ struct DatabricksSignOutPresentation: ViewModifier {
 
                     VStack(alignment: .leading, spacing: 20) {
                         ProjectEditorSheetHeader(
-                            title: L10n.signOutDahliaConnection(connection.accountLabel),
+                            title: L10n.signOutDahliaConnection(connection.displayName),
                             isDisabled: false,
                             onClose: settings.cancelDatabricksSignOut
                         )

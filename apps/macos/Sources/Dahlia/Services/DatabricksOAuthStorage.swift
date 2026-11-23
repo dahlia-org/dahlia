@@ -14,6 +14,8 @@ struct DatabricksOAuthStorage: Sendable {
     /// Connected workspaces, oldest first.
     var loadConnections: @Sendable () throws -> [DatabricksConnection]
     var saveConnections: @Sendable ([DatabricksConnection]) throws -> Void
+    /// Names a connection, or clears its name with nil. Saving connections keeps the name.
+    var renameConnection: @Sendable (UUID, String?) throws -> Void = { _, _ in }
     var loadCredential: @Sendable (UUID) throws -> DatabricksOAuthCredential?
     var saveCredential: @Sendable (UUID, DatabricksOAuthCredential) throws -> Void
     var deleteCredential: @Sendable (UUID) throws -> Void
@@ -64,6 +66,13 @@ struct DatabricksOAuthStorage: Sendable {
                         record.name = stored?.name
                         try record.save(db)
                     }
+                }
+                cache.withLock { $0 = ConnectionCache(generation: $0.generation + 1) }
+            },
+            renameConnection: { id, name in
+                guard let dbQueue = database() else { throw DahliaCloudError.credentialStorageFailed }
+                try dbQueue.write { db in
+                    try db.execute(sql: "UPDATE provider_accounts SET name = ? WHERE id = ?", arguments: [name, id])
                 }
                 cache.withLock { $0 = ConnectionCache(generation: $0.generation + 1) }
             },
@@ -123,7 +132,7 @@ enum AccountsDatabase {
 
 extension DatabricksConnection {
     init(_ record: DahliaAccountConnectionRecord) {
-        self.init(id: record.id, host: record.origin, email: record.email, workspaceID: record.workspaceID)
+        self.init(id: record.id, host: record.origin, email: record.email, workspaceID: record.workspaceID, name: record.name)
     }
 }
 

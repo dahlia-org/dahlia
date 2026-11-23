@@ -11,9 +11,8 @@
             let storage = DatabricksOAuthStorage.local(database: { database.dbQueue })
             let connection = DatabricksConnection(id: .v7(), host: "https://dbc-1.cloud.databricks.com")
             try storage.saveConnections([connection])
-            try database.dbQueue.write { db in
-                try db.execute(sql: "UPDATE provider_accounts SET name = 'Work' WHERE id = ?", arguments: [connection.id])
-            }
+            try storage.renameConnection(connection.id, "Work")
+            #expect(try storage.loadConnections().first?.displayName == "Work")
 
             var signedInAgain = connection
             signedInAgain.email = "me@example.com"
@@ -21,6 +20,10 @@
 
             let record = try #require(try database.dbQueue.read { try DahliaAccountConnectionRecord.fetchOne($0, key: connection.id) })
             #expect(record.name == "Work" && record.email == "me@example.com")
+
+            // Clearing the name shows the workspace and email again.
+            try storage.renameConnection(connection.id, nil)
+            #expect(try storage.loadConnections().first?.displayName == "dbc-1 (me@example.com)")
         }
 
         @Test

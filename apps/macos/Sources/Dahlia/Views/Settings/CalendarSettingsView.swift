@@ -130,7 +130,7 @@ struct CalendarSettingsView: View {
                         let provider = GoogleCalendarProvider.databricks(connectionID: connection.id)
                         providerRow(
                             id: connection.id.uuidString,
-                            title: connection.accountLabel,
+                            title: connection.displayName,
                             icon: .databricksLogo,
                             isOn: googleProviderBinding(provider)
                         ) {

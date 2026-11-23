@@ -153,6 +153,12 @@ actor DatabricksOAuthService {
         return connection
     }
 
+    /// Names a connection for display; nil or blank clears the name.
+    func rename(connectionID: UUID, to name: String?) throws {
+        _ = try connection(id: connectionID)
+        try storage.renameConnection(connectionID, name?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfBlank)
+    }
+
     func remove(connectionID: UUID) throws {
         _ = try connection(id: connectionID)
         generations[connectionID] = UUID()

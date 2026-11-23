@@ -2277,6 +2277,11 @@ enum L10n { // swiftlint:disable:this type_body_length
         bundle: bundle
     ) }
     static var calendarProviders: String { String(localized: "Calendar Providers", bundle: bundle) }
+    static var renameProviderAccount: String { String(localized: "Rename Provider Account", bundle: bundle) }
+    static var renameProviderAccountDescription: String { String(
+        localized: "The name shows only in Dahlia. Leave it empty to show the workspace and email.",
+        bundle: bundle
+    ) }
     static var google: String { String(localized: "Google", bundle: bundle) }
     static var calendarProviderTurnOnToConnect: String { String(
         localized: "Turn this provider on to connect it.",

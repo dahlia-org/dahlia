@@ -156,6 +156,16 @@ final class WorkspaceAISettingsModel {
         }
     }
 
+    /// Names a Databricks connection; only its display changes, never its provider ID or sign-in.
+    func renameDatabricksConnection(_ connectionID: UUID, to name: String?) async {
+        do {
+            try await databricksService.rename(connectionID: connectionID, to: name)
+            await reloadDatabricksConnections()
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
     /// Asks to remove a Databricks connection, a provider account of the app's account.
     func requestDatabricksSignOut(connectionID: UUID) {
         pendingDatabricksSignOut = databricksConnections.first { $0.id == connectionID }

@@ -643,6 +643,8 @@
 "Calendar Sources" = "Calendar Sources";
 "Turn on the providers that supply upcoming events. Google Calendar comes from Google or from a Databricks connection, one at a time." = "Turn on the providers that supply upcoming events. Google Calendar comes from Google or from a Databricks connection, one at a time.";
 "Calendar Providers" = "Calendar Providers";
+"Rename Provider Account" = "Rename Provider Account";
+"The name shows only in Dahlia. Leave it empty to show the workspace and email." = "The name shows only in Dahlia. Leave it empty to show the workspace and email.";
 "Google" = "Google";
 "Turn this provider on to connect it." = "Turn this provider on to connect it.";
 "Events to Include" = "Events to Include";

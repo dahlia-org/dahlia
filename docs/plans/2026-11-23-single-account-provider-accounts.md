@@ -187,7 +187,7 @@ DB の `accountID` と UserDefaults の接尾辞には、当面 `local` を定�
 - 実装した（2026-11-23）: Databricks の接続ごとのプロバイダー ID（ホスト名）。アカウントはすべての接続を同時に使う。保存済みの `databricks`（モデル指定、MCP の登録、Gateway のモデル一覧）は起動時に 1 回、移す元の接続のホスト名へ置き換える。
 - 実装した（2026-11-23）: 「プロバイダーを追加」はアプリ側のサインインで接続（プロバイダーアカウント）を作る。以前に追加した workspace は Pi のサインインのまま動き、同じホストの接続を追加するとアプリ側の認証が優先される。
 - 実装した（2026-11-23）: Google のカレンダーと Drive は 1 つのサインインを共有し、Drive もカレンダーと同じ Google の選択に従う。用途ごとの以前のサインインは起動時に削除する。Google の `provider_accounts` の行は、プロバイダーアカウントの一覧を作るときに足す。
-- 設定の「プロバイダーアカウント」の一覧、表示名の編集、モデル・MCP の割り当て。
+- 実装した（2026-11-23）: 表示名の編集。設定のエージェントのプロバイダー一覧（接続ごとの行）で名前を変え、一覧・モデルの選択・カレンダー・サインアウトの確認に出す。モデルと MCP は、その一覧の接続ごとの行で選ぶ。
   カレンダーは実装した（2026-11-23）。設定のカレンダーでプロバイダー（macOS カレンダー、Google、Databricks の接続）を折り畳んで並べ、Google カレンダーは Google か Databricks の接続のどちらか一方から読む（`Models/GoogleCalendarProvider.swift`）。macOS カレンダーは OS の権限なので `provider_accounts` に置かない。
 - 接続の追加・削除で Pi を再起動しない。今は追加・削除で Pi のプロセスを閉じ直す（`CodexRuntimeContextCoordinator.providerAccountsDidChange` の shortcut）。
 - `dahlia-mcp` の `--account` を外す。今も `--account local` は Server 以外のすべての Workspace を対象にする（所属を空にしたため）。

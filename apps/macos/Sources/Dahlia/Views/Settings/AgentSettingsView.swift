@@ -364,6 +364,8 @@ private struct AgentProviderSection<Models: View, SubscriptionModels: View>: Vie
     @ViewBuilder let subscriptionModelsContent: (CodexAccountController) -> SubscriptionModels
     @State private var signInTask: Task<Void, Never>?
     @State private var pendingRemoval: AgentMCPProvider?
+    @State private var pendingRename: DatabricksConnection?
+    @State private var proposedName = ""
     @State private var expandedProviderIDs: Set<String> = []
     @State private var hoveredProviderID: String?
 
@@ -450,6 +452,21 @@ private struct AgentProviderSection<Models: View, SubscriptionModels: View>: Vie
         } message: {
             Text(L10n.mcpRemoveWorkspaceDescription)
         }
+        .alert(
+            L10n.renameProviderAccount,
+            isPresented: Binding(get: { pendingRename != nil }, set: { if !$0 { pendingRename = nil } })
+        ) {
+            TextField(L10n.name, text: $proposedName)
+            Button(L10n.save) {
+                guard let connection = pendingRename else { return }
+                pendingRename = nil
+                let name = proposedName
+                Task { await WorkspaceAISettingsModel.shared.renameDatabricksConnection(connection.id, to: name) }
+            }
+            Button(L10n.cancel, role: .cancel) { pendingRename = nil }
+        } message: {
+            Text(L10n.renameProviderAccountDescription)
+        }
         .task {
             for controller in subscriptions {
                 await controller.activate()
@@ -466,11 +483,22 @@ private struct AgentProviderSection<Models: View, SubscriptionModels: View>: Vie
         .onDisappear { signInTask?.cancel() }
     }
 
+    /// The provider account behind a gateway, which has a name and signs out here.
+    private func connection(of provider: AgentMCPProvider) -> DatabricksConnection? {
+        WorkspaceAISettingsModel.shared.databricksConnections.first {
+            URL(string: $0.host).map(AgentMCPProvider.id(for:)) == provider.id
+        }
+    }
+
     private func gatewayRow(_ provider: AgentMCPProvider) -> some View {
         DisclosureGroup(isExpanded: expansion(of: provider.id)) {
             modelsContent(provider)
         } label: {
-            AgentProviderRow(title: L10n.unityGatewayHost(provider.host), icon: .databricksLogo, uses: [L10n.agentProviderModels, L10n.mcp]) {
+            AgentProviderRow(
+                title: connection(of: provider)?.name ?? L10n.unityGatewayHost(provider.host),
+                icon: .databricksLogo,
+                uses: [L10n.agentProviderModels, L10n.mcp]
+            ) {
                 if let count = enabledCount(provider) {
                     Text(L10n.agentEnabledCount(count)).foregroundStyle(.secondary)
                 }
@@ -491,9 +519,13 @@ private struct AgentProviderSection<Models: View, SubscriptionModels: View>: Vie
                         Button(L10n.delete, role: .destructive) { pendingRemoval = provider }
                     }
                     .disabled(model.isBusy)
-                } else if let connectionID = ProviderAccountDirectory.databricksConnections().first(where: { $0.piProviderID == provider.id })?.id {
+                } else if let connection = connection(of: provider) {
                     AgentProviderActions {
-                        Button(L10n.signOut) { WorkspaceAISettingsModel.shared.requestDatabricksSignOut(connectionID: connectionID) }
+                        Button(L10n.rename) {
+                            proposedName = connection.name ?? ""
+                            pendingRename = connection
+                        }
+                        Button(L10n.signOut) { WorkspaceAISettingsModel.shared.requestDatabricksSignOut(connectionID: connection.id) }
                     }
                 }
             }

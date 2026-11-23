@@ -643,6 +643,8 @@
 "Calendar Sources" = "カレンダーソース";
 "Turn on the providers that supply upcoming events. Google Calendar comes from Google or from a Databricks connection, one at a time." = "予定を取得するプロバイダーをオンにします。Google カレンダーは、Google か Databricks の接続のどちらか一方から取得します。";
 "Calendar Providers" = "カレンダーのプロバイダー";
+"Rename Provider Account" = "プロバイダーアカウントの名前を変更";
+"The name shows only in Dahlia. Leave it empty to show the workspace and email." = "名前は Dahlia の表示にだけ使います。空にすると workspace とメールアドレスを表示します。";
 "Google" = "Google";
 "Turn this provider on to connect it." = "このプロバイダーをオンにすると接続できます。";
 "Events to Include" = "イベントを含める";
