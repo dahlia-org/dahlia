@@ -139,7 +139,7 @@ OS やストレージ自体の障害は現時点の保証対象外であり、�
 読み取りのように、失敗しても録音と文字起こしに影響しない一方向の境界を保つこと。内蔵 Pi の任意の model-provider
 transport は業務システム統合ではなく、既存の AI 付加機能の接続境界として扱う
 ([Gateway 境界](docs/spec/server/gateway.md#gateway-境界))。
-利用者が内容と接続先を確認した、アプリ起動中・選択中アカウントの読み取り専用の定期実行も認める。
+利用者が内容と接続先を確認した、アプリ起動中の読み取り専用の定期実行も認める（2026-11-24 ユーザー承認）。
 実行の範囲は [定期エージェントの仕様](docs/spec/desktop/scheduled-agent-scope.md) に従い、録音を待たせず、外部への書き込みや常駐処理は含めない。
 
 **誤読しやすい点**: 「連携しない」は「閉じる」ではない。Dahlia 側の統合実装を増やさない代わりに、外部から
@@ -160,10 +160,12 @@ Dahlia の scope 外であり、妨げない。
 **設計上の判断**:
 
 - 既定の文字起こしはリアルタイムもバッチも Apple Speech の `SpeechTranscriber` が on-device で行う。Desktopで開始した再文字起こしもMacで行う。Webから明示的に開始した保存済み録音の処理だけは、[承認済みの仕様](docs/spec/shared/account-scoped-desktop-inference.md)に従いServerで処理する。WhisperKit はMacのバッチ自動言語判定で言語を選ぶためだけに使い、文字起こし自体は行わない。
-- ローカルアカウントの会議データと端末固有ファイルはローカルの SQLite と file system だけで完結する。一方、ServerアカウントのWorkspace／ProjectはNotionやAsanaと同様にDesktopとWebが共有するServer canonical recordであり、Desktopからクラウドへ転送するコピーではない。SQLite は即時反映できるoffline working copyとし、
-  Workspace 名、Project の名前・説明・階層、meeting metadata、summary、transcript 原文、screenshot、OCR、AI caption を双方向同期する。翻訳文は同期しない。新規バッチ録音はLocalではCAFを設定期間だけ保持し、ServerではM4Aへ変換・保管する [音声保管契約](docs/spec/shared/recording-audio-archive.md) に従う
-  ([正本とアカウント境界](docs/spec/shared/sync.md#正本とアカウント境界), [同期対象とモデル](docs/spec/shared/sync.md#同期対象とモデル), [Transaction と競合](docs/spec/shared/sync.md#transaction-と競合))。Server WorkspaceはOrganizationが所有し、明示したuser / organization / teamのadmin・editor・viewer権限で共同利用する。Organization所属だけでは内容へのアクセスを与えない。信頼済みHeaderと確認済みGoogleメールはドメインごとの参加方式（招待のみ・承認制・自動参加）に従う。初回登録では一致するすべての自動参加組織へmemberとして参加し、既存ユーザーは本人操作で参加・申請する。共有メールドメインは対象外。Organizationの作成・削除はServer管理者に限定し、クラウド向けの明示設定時のみサインアップで通常Organizationを自動作成する。各Organizationへの参加時には本人用Workspaceを作成する
-  ([共有境界](docs/spec/server/sharing-and-administration.md#共有境界))。サインインだけではローカルWorkspaceをServerアカウントへ移さず、ユーザーがWorkspace単位で明示的に移行する。ServerアカウントのWorkspaceは常時同期し、サインアウト時はServer recordを残したままローカルworking copyを削除するかローカルアカウントへ移す。
+- Desktop の会議データと端末固有ファイルはローカルの SQLite と file system だけで完結する。Desktop は Dahlia Server と
+  同期しない。データの同期はプロバイダーアカウントのストレージやデータベースを使う方式を検討しており、方式は未定である
+  （2026-11-24 ユーザー承認）。新規バッチ録音は [音声保管契約](docs/spec/shared/recording-audio-archive.md) に従う。
+- Server と Web では、Server Workspace／Project は Server canonical record である
+  ([正本とアカウント境界](docs/spec/shared/sync.md#正本とアカウント境界))。Server WorkspaceはOrganizationが所有し、明示したuser / organization / teamのadmin・editor・viewer権限で共同利用する。Organization所属だけでは内容へのアクセスを与えない。信頼済みHeaderと確認済みGoogleメールはドメインごとの参加方式（招待のみ・承認制・自動参加）に従う。初回登録では一致するすべての自動参加組織へmemberとして参加し、既存ユーザーは本人操作で参加・申請する。共有メールドメインは対象外。Organizationの作成・削除はServer管理者に限定し、クラウド向けの明示設定時のみサインアップで通常Organizationを自動作成する。各Organizationへの参加時には本人用Workspaceを作成する
+  ([共有境界](docs/spec/server/sharing-and-administration.md#共有境界))。
 - Server の任意 Hybrid 検索は同期済み summary、OCR、AI caption と検索時の query 原文を設定済み embedding
   provider へ送信できる。Dahlia Memory の保存メモリー本文と保存チャットの本文も、その検索のために同じ provider へ送信できる
   ([検索のための送信範囲](docs/spec/server/dahlia-memory.md#検索のための送信範囲2026-11-03ユーザー承認済み))。Dahlia は query 原文を保存・ログ出力しない。
@@ -174,8 +176,8 @@ Dahlia の scope 外であり、妨げない。
 
 **許容する例外**: 疎結合な付加機能は外部依存を持ってよい。Google Calendar と EventKit の読み取り、Dahlia AI
 （内蔵 Pi と MCP）による Google Drive への書き出し、内蔵 Pi による要約生成、Sparkle の更新確認、Sentry の障害報告、TelemetryDeck の匿名利用計測、
-バッチ自動言語判定の初回モデル取得、Serverアカウントのcloud-backed working copyと明示的な権限による共同編集、Webから明示的に開始した保存済み録音のServer処理がこれにあたる。Serverアカウントの内蔵 Pi がそのDahlia Server Gatewayを使う場合も
-同じ境界に置き、いずれも中核の前提条件にしない。
+バッチ自動言語判定の初回モデル取得、Server と Web での明示的な権限による共同編集、Webから明示的に開始した保存済み録音のServer処理がこれにあたる。内蔵 Pi がプロバイダーアカウント（Databricks や Dahlia account の Gateway）を使う場合も
+同じ境界に置き、いずれも中核の前提条件にしない（2026-11-24 ユーザー承認）。
 
 **誤読しやすい点**: 「スタンドアローン」は「オフライン専用」ではない。外部機能を持つこと自体は否定せず、
 中核がそれに依存しないことを要求する。
