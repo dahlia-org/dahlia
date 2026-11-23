@@ -8,11 +8,6 @@ final class WorkspaceAISettingsModel {
     static let shared = WorkspaceAISettingsModel()
 
     private(set) var workspaceID: UUID?
-    var accountConnectionID: UUID? {
-        didSet {
-            scheduleRuntimeActivationIfChanged(oldValue, accountConnectionID)
-        }
-    }
 
     /// Provider selection belongs to the Local account on this Mac.
     var localProvider: AIAccountProvider {
@@ -74,7 +69,6 @@ final class WorkspaceAISettingsModel {
         self.setupDefaults = setupDefaults
         self.activateRuntime = activateRuntime
         self.databricksService = databricksService
-        accountConnectionID = nil
         let localSettings = LocalAccountAISettings(defaults: setupDefaults)
         let restoresSetupDraft = !setupDefaults.bool(forKey: LocalAccountAISettings.migrationKey)
             && SetupTourPresentationPolicy.hasSavedProgress(in: setupDefaults)
@@ -107,7 +101,6 @@ final class WorkspaceAISettingsModel {
     func snapshot(for workspaceID: UUID) -> WorkspaceAISettingsSnapshot {
         WorkspaceAISettingsSnapshot(
             workspaceID: workspaceID,
-            accountConnectionID: accountConnectionID,
             localProvider: localProvider,
             databricksProfile: databricksProfile,
             generationSettings: workspaceID == self.workspaceID ? generationSettings : WorkspaceGenerationSettings(),
@@ -120,8 +113,6 @@ final class WorkspaceAISettingsModel {
         AccountInferenceSettings(workspace: workspace, defaults: setupDefaults)
             .generationSettings(outputLanguage: workspace.generationSettings.outputLanguage)
     }
-
-    var isLocalAccount: Bool { accountConnectionID == nil }
 
     var localAccountSettings: LocalAccountAISettings {
         LocalAccountAISettings(provider: localProvider, databricksProfile: databricksProfile)
@@ -208,14 +199,9 @@ final class WorkspaceAISettingsModel {
         let workspaces = try await dbQueue.read { db in
             try WorkspaceRecord.order(Column("lastOpenedAt").desc, Column("createdAt").desc).fetchAll(db)
         }
-        for workspace in workspaces {
-            let key = AccountInferenceSettings.key(connectionID: workspace.accountConnectionId)
-            guard setupDefaults.data(forKey: key) == nil else { continue }
-            AccountInferenceSettings(workspace: workspace, defaults: setupDefaults).save(
-                connectionID: workspace.accountConnectionId,
-                defaults: setupDefaults
-            )
-        }
+        // The account's settings come from the workspace opened last.
+        guard setupDefaults.data(forKey: AccountInferenceSettings.key(connectionID: nil)) == nil, let workspace = workspaces.first else { return }
+        AccountInferenceSettings(workspace: workspace, defaults: setupDefaults).save(connectionID: nil, defaults: setupDefaults)
     }
 
     func activate(workspace: WorkspaceRecord) {
@@ -259,7 +245,6 @@ final class WorkspaceAISettingsModel {
                     try WorkspaceRecord.fetchOne(db, key: workspaceID)
                 }), self.activationGeneration == generation, self.persistenceGeneration == savedGeneration,
                 self.workspaceID == workspaceID else { return }
-                let changedAccount = self.accountConnectionID != workspace.accountConnectionId
                 self.apply(WorkspaceAISettingsSnapshot(
                     workspace: workspace,
                     localAccountSettings: self.localAccountSettings,
@@ -268,7 +253,6 @@ final class WorkspaceAISettingsModel {
                 if AppSettings.shared.currentWorkspace?.id == workspaceID {
                     AppSettings.shared.currentWorkspace = workspace
                 }
-                if changedAccount { self.scheduleRuntimeActivation() }
             }
         })
     }
@@ -276,7 +260,6 @@ final class WorkspaceAISettingsModel {
     private func apply(_ settings: WorkspaceAISettingsSnapshot) {
         isApplying = true
         workspaceID = settings.workspaceID
-        accountConnectionID = settings.accountConnectionID
         generationSettings = settings.generationSettings
         chatModelID = settings.chatModelID
         chatReasoningEffort = settings.chatReasoningEffort
@@ -284,9 +267,7 @@ final class WorkspaceAISettingsModel {
     }
 
     private func saveAccountSettings(_ snapshot: WorkspaceAISettingsSnapshot) {
-        AccountInferenceSettings(snapshot: snapshot).save(
-            connectionID: snapshot.accountConnectionID, defaults: setupDefaults
-        )
+        AccountInferenceSettings(snapshot: snapshot).save(connectionID: nil, defaults: setupDefaults)
     }
 
     private func persistIfChanged<T: Equatable>(_ oldValue: T, _ newValue: T, persistsWorkspace: Bool = false) {
@@ -342,13 +323,6 @@ final class WorkspaceAISettingsModel {
                 in: setupDefaults
             )
         }
-        if isLocalAccount {
-            scheduleRuntimeActivation()
-        }
-    }
-
-    private func scheduleRuntimeActivationIfChanged<T: Equatable>(_ oldValue: T, _ newValue: T) {
-        guard oldValue != newValue, !isApplying else { return }
         scheduleRuntimeActivation()
     }
 

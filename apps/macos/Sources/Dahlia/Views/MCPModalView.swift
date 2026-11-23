@@ -2,7 +2,6 @@ import SwiftUI
 
 struct MCPModalView: View {
     @Environment(\.dismiss) private var dismiss
-    @State private var accountController = DahliaCloudAccountController.shared
 
     let workspaces: [WorkspaceRecord]
     let currentWorkspace: WorkspaceRecord?
@@ -13,8 +12,7 @@ struct MCPModalView: View {
 
             MCPSettingsView(
                 workspaces: workspaces,
-                currentWorkspace: currentWorkspace,
-                accountConnections: accountController.connections
+                currentWorkspace: currentWorkspace
             )
             .frame(maxWidth: .infinity, maxHeight: .infinity)
 

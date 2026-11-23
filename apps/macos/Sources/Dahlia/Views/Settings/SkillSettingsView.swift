@@ -23,9 +23,7 @@ struct SkillSettingsView: View {
     @State private var tab = Tab.manage
 
     var body: some View {
-        let account = CodexRuntimeProvider(
-            accountConnectionID: workspaceSettings.accountConnectionID
-        )
+        let account = CodexRuntimeProvider.local
         VStack(spacing: 0) {
             // In a grouped form's header, the tabs share the column of the settings title and the sections below.
             Form {

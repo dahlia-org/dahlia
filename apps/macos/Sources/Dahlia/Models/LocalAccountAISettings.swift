@@ -67,7 +67,7 @@ struct AccountInferenceSettings: Codable, Equatable, Sendable {
     }
 
     init(workspace: WorkspaceRecord, defaults: UserDefaults = .standard) {
-        let key = Self.key(connectionID: workspace.accountConnectionId)
+        let key = Self.key(connectionID: nil)
         if let data = defaults.data(forKey: key), let saved = try? JSONDecoder().decode(Self.self, from: data) {
             self = saved
             return
@@ -80,10 +80,8 @@ struct AccountInferenceSettings: Codable, Equatable, Sendable {
         chatModelID = workspace.chatModelID
         chatReasoningEffort = workspace.chatReasoningEffort
         // Releases before per-account settings kept the Local Account's summary model in app defaults.
-        if workspace.accountConnectionId == nil {
-            local.model = defaults.string(forKey: LocalAccountAISettings.summaryModelKey) ?? local.model
-            local.reasoningEffort = defaults.string(forKey: LocalAccountAISettings.summaryReasoningEffortKey) ?? local.reasoningEffort
-        }
+        local.model = defaults.string(forKey: LocalAccountAISettings.summaryModelKey) ?? local.model
+        local.reasoningEffort = defaults.string(forKey: LocalAccountAISettings.summaryReasoningEffortKey) ?? local.reasoningEffort
     }
 
     init(snapshot: WorkspaceAISettingsSnapshot) {

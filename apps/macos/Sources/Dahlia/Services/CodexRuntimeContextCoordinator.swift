@@ -30,10 +30,8 @@ actor CodexRuntimeContextCoordinator {
         repository = MeetingRepository(dbQueue: dbQueue)
     }
 
-    func activate(_ settings: WorkspaceAISettingsSnapshot) async throws {
-        try await activate(provider: CodexRuntimeProvider(
-            accountConnectionID: settings.accountConnectionID
-        ))
+    func activate(_: WorkspaceAISettingsSnapshot) async throws {
+        try await activate(provider: CodexRuntimeProvider.local)
     }
 
     func activate(provider: CodexRuntimeProvider) async throws {

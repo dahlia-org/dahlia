@@ -22,7 +22,7 @@ final class BackupSettingsViewModel {
     private(set) var hasWorkInProgress = false
 
     func canOverwrite(workspaceId: UUID) -> Bool {
-        workspaces.contains { $0.id == workspaceId && $0.accountConnectionId == nil && $0.syncRole == nil && $0.syncConfirmedConnectionId == nil }
+        workspaces.contains { $0.id == workspaceId }
             && !allPreflightItems.contains { $0.workspaceId == workspaceId }
     }
 

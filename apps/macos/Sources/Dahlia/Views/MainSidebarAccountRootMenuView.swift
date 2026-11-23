@@ -11,7 +11,6 @@ struct MainSidebarAccountRootMenuView: View {
     let showsAccountAction: Bool
     let onShowAppearance: (CGFloat?) -> Void
     let onShowLanguages: (CGFloat?) -> Void
-    let onShowAccountDetails: (DahliaAccountConnection, CGFloat?) -> Void
     let onDismissSubmenu: () -> Void
     let onOpenSettings: (SettingsCategory?) -> Void
     let onSelectAccount: (DahliaAccountConnection?) -> Void
@@ -20,7 +19,6 @@ struct MainSidebarAccountRootMenuView: View {
     var unprocessedRecordingCount = 0
     let onShowUnprocessedRecordings: () -> Void
 
-    @State private var accountController = DahliaCloudAccountController.shared
     @State private var pendingHoverTask: Task<Void, Never>?
 
     var body: some View {
@@ -39,21 +37,15 @@ struct MainSidebarAccountRootMenuView: View {
             ForEach(connections.enumerated(), id: \.element.id) { index, connection in
                 MainSidebarAccountMenuRow(
                     title: connection.displayName,
-                    subtitle: accountController.syncProgress[connection.id]?.summary
-                        ?? (connection.isCloud ? L10n.dahliaCloud : L10n.dahliaServer),
-                    syncState: accountController.syncStates[connection.id] ?? .pending,
-                    isSyncing: accountController.syncProgress[connection.id]?.isSyncing == true,
+                    subtitle: connection.isCloud ? L10n.dahliaCloud : L10n.dahliaServer,
                     selectionState: connection.id == currentConnectionID,
-                    isEnabled: connection.workspaceCount > 0,
+                    // A Dahlia account owns no workspace; the row only shows that it is signed in.
+                    isEnabled: false,
                     isKeyboardHighlighted: navigation.activeMenu == .root && navigation.rootSelection == index,
                     showsHelp: false,
-                    onHoverStartAtY: { minY in
-                        hover(index: index, opensSubmenu: true) {
-                            onShowAccountDetails(connection, minY)
-                        }
-                    },
+                    onHoverStart: { hover(index: index, opensSubmenu: false, action: onDismissSubmenu) },
                     onHoverEnd: cancelPendingHover,
-                    action: { activate(index: index, action: { onSelectAccount(connection) }) }
+                    action: {}
                 )
             }
 

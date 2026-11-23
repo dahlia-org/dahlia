@@ -9,22 +9,10 @@ import SwiftUI
     struct MCPSettingsViewTests {
         @Test(arguments: [640.0, 900.0])
         func setupFitsSettingsWidth(width: Double) throws {
-            var serverWorkspace = WorkspaceRecord(id: .v7(), name: "Default", createdAt: .distantPast, lastOpenedAt: .distantPast)
-            let accountID = UUID.v7()
-            serverWorkspace.accountConnectionId = accountID
+            let other = WorkspaceRecord(id: .v7(), name: "Default", createdAt: .distantPast, lastOpenedAt: .distantPast)
             let local = WorkspaceRecord(id: .v7(), name: "Default", createdAt: .distantPast, lastOpenedAt: .distantPast)
-            let connection = DahliaAccountConnection(
-                record: DahliaAccountConnectionRecord(
-                    id: accountID,
-                    origin: "https://meetings.example.com",
-                    clientID: "test",
-                    createdAt: .distantPast
-                ),
-                account: nil, isCloud: false
-            )
             let host = NSHostingView(rootView: MCPSettingsView(
-                workspaces: [local, serverWorkspace], currentWorkspace: local,
-                accountConnections: [connection],
+                workspaces: [local, other], currentWorkspace: local,
                 helperURL: URL(filePath: "/Applications/Dahlia.app/Contents/Helpers/dahlia-mcp")
             ).background(Color(nsColor: .windowBackgroundColor)))
             host.sizingOptions = .intrinsicContentSize

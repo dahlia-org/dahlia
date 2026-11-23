@@ -10,7 +10,6 @@
         @Test(arguments: [false, true])
         func transferPreservesContentAndDisambiguatesNames(exportFolderExists: Bool) async throws {
             let database = try AppDatabaseManager(path: ":memory:")
-            let account = DahliaAccountConnectionRecord(id: .v7(), origin: "https://gateway.example", clientID: "test", createdAt: .now)
             let source = WorkspaceRecord(
                 id: .v7(),
                 path: exportFolderExists ? FileManager.default.temporaryDirectory.path
@@ -40,7 +39,6 @@
             let fileID = UUID.v7()
             let segmentID = UUID.v7()
             let contentIDs = try await database.dbQueue.write { db in
-                try account.insert(db)
                 try source.insert(db)
                 try destination.insert(db)
                 try root.insert(db)
@@ -334,22 +332,11 @@
             return (notesID, documentID, instructionID)
         }
 
-        @Test(arguments: ["same", "missing", "otherAccount", "server", "recording", "destinationRecording", "fence", "rollback"])
+        @Test(arguments: ["same", "missing", "recording", "destinationRecording", "rollback"])
         func invalidTransferPreservesSource(reason: String) async throws {
             let database = try AppDatabaseManager(path: ":memory:")
-            let account = DahliaAccountConnectionRecord(id: .v7(), origin: "https://example.com", clientID: "test", createdAt: .now)
             let source = WorkspaceRecord(id: .v7(), path: nil, name: "Source", createdAt: .now, lastOpenedAt: .now)
-            var destination = WorkspaceRecord(id: .v7(), path: nil, name: "Destination", createdAt: .now, lastOpenedAt: .now)
-            if reason == "otherAccount" {
-                destination.accountConnectionId = account.id
-                destination.organizationId = .v7()
-            }
-            if reason == "server" {
-                destination.accountConnectionId = account.id
-                destination.organizationId = .v7()
-                destination.syncRole = "admin"
-            }
-            let target = destination
+            let target = WorkspaceRecord(id: .v7(), path: nil, name: "Destination", createdAt: .now, lastOpenedAt: .now)
             let meeting = MeetingRecord(
                 id: .v7(),
                 workspaceId: reason == "destinationRecording" ? target.id : source.id,
@@ -358,7 +345,6 @@
                 updatedAt: .now
             )
             try await database.dbQueue.write { db in
-                try account.insert(db)
                 try source.insert(db)
                 if reason != "missing" { try target.insert(db) }
                 try meeting.insert(db)
@@ -372,7 +358,6 @@
                         updatedAt: .now
                     ).insert(db)
                 }
-                if reason == "fence" { _ = try WorkspaceTransferFence.create(workspaceIDs: [source.id], in: db) }
                 if reason == "rollback" {
                     try db
                         .execute(

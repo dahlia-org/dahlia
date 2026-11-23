@@ -1120,8 +1120,7 @@ actor PiChatService: CodexChatServicing {
               let rawID = payload.objectValue?["workspace_id"]?.stringValue else { throw BackupServiceError.invalidBackup }
         let workspaceID = try TypeID.decode(rawID, as: .workspace)
         let belongsToAccount = try await backupDBQueue.read { db in
-            guard let workspace = try WorkspaceRecord.fetchOne(db, key: workspaceID) else { return false }
-            return CodexRuntimeProvider(workspace: workspace) == provider
+            try WorkspaceRecord.exists(db, key: workspaceID) && CodexRuntimeProvider.local == provider
         }
         guard belongsToAccount else { throw BackupServiceError.invalidBackup }
         let generation = try await backupService.createGeneration(workspaceIds: [workspaceID])

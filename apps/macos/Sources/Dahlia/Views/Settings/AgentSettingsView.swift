@@ -28,9 +28,7 @@ struct AgentSettingsView: View {
     @State private var workspaceSettings = WorkspaceAISettingsModel.shared
 
     var body: some View {
-        let account = CodexRuntimeProvider(
-            accountConnectionID: workspaceSettings.accountConnectionID
-        )
+        let account = CodexRuntimeProvider.local
         AgentSettingsTabs(account: account)
             .id(account)
     }

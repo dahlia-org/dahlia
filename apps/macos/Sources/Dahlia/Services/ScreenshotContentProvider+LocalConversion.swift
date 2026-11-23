@@ -24,8 +24,8 @@ extension ScreenshotContentProvider {
     func convertLocalScreenshots(dbQueue: any DatabaseWriter) async throws {
         let ids = try await dbQueue.read { db in
             try UUID.fetchAll(db, sql: """
-            SELECT f.id FROM files f JOIN workspaces v ON v.id = f.workspace_id
-            WHERE v.accountConnectionId IS NULL AND f.remoteReference IS NULL
+            SELECT f.id FROM files f
+            WHERE f.remoteReference IS NULL
                 AND json_extract(f.metadata, '$.source') = 'screenshot'
                 AND EXISTS(SELECT 1 FROM meeting_attachments a WHERE a.fileId = f.id)
             ORDER BY f.id
@@ -43,8 +43,6 @@ extension ScreenshotContentProvider {
     }
 
     private func convertLocalScreenshot(id: UUID, dbQueue: any DatabaseWriter) async throws {
-        activeFileWork += 1
-        defer { activeFileWork -= 1 }
         guard let file = try await dbQueue.read({ try FileRecord.fetchOne($0, key: id) }) else { return }
         let original = try await fileContent(id: id, dbQueue: dbQueue, recordAccess: false)
         guard let size = ImageEncoder.pixelSize(of: original.data) else { throw ScreenshotContentError.integrityFailure }
@@ -72,8 +70,7 @@ extension ScreenshotContentProvider {
         do {
             moved = try await dbQueue.write { db -> Bool in
                 guard let current = try FileRecord.fetchOne(db, key: id), current.checksum == file.checksum,
-                      current.localReference == file.localReference, current.remoteReference == nil,
-                      try WorkspaceRecord.fetchOne(db, key: file.workspaceId)?.accountConnectionId == nil else { return false }
+                      current.localReference == file.localReference, current.remoteReference == nil else { return false }
                 var converted = current
                 converted.id = source.fileId
                 converted.size = Int64(data.count)

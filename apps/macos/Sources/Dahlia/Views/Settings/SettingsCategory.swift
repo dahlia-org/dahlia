@@ -36,7 +36,6 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
     case mcp
     case dahliaMCP
     case instructions
-    case betaFeatures
     case audioDiagnostics
 
     var id: String { rawValue }
@@ -72,7 +71,6 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
         case .mcp: L10n.mcp
         case .dahliaMCP: L10n.dahliaMCP
         case .instructions: L10n.instructions
-        case .betaFeatures: L10n.betaFeatures
         case .audioDiagnostics: L10n.diagnostics
         }
     }
@@ -108,7 +106,6 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
         case .mcp: "network"
         case .dahliaMCP: "point.3.connected.trianglepath.dotted"
         case .instructions: "list.bullet.clipboard"
-        case .betaFeatures: "testtube.2"
         case .audioDiagnostics: "stethoscope"
         }
     }
@@ -246,15 +243,11 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
                 + Self.accountPreferences.searchTerms + Self.macInference.searchTerms
         case .backups:
             [
-                L10n.screenshotCacheLimit,
                 L10n.backups,
                 L10n.workspace,
                 L10n.createBackup,
                 L10n.importBackup,
                 L10n.restoreBackup,
-                L10n.serverContentRetention,
-                L10n.serverContentRetentionDays,
-                L10n.forever,
                 L10n.batchAudioRetentionPeriod,
                 L10n.batchTranscriptionStallTimeout,
             ]

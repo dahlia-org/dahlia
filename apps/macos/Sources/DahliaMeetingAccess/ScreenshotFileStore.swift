@@ -4,7 +4,6 @@ import GRDB
 
 /// Immutable image files. The app decides which originals are safe to evict from durable sync state.
 public final class ScreenshotFileStore: Sendable {
-    public static let budgetDefaultsKey = "screenshotCacheGiB"
     public static var defaultDirectory: URL {
         DahliaApplicationSupport.currentDirectoryURL.appending(path: "FileStore", directoryHint: .isDirectory)
     }
@@ -140,44 +139,4 @@ public final class ScreenshotFileStore: Sendable {
         }
     }
 
-    public func trim(
-        budget: Int? = nil,
-        protecting keys: Set<String>,
-        limit: Int = 16,
-        now: Date = .now,
-        retentionDays: Int? = nil
-    ) throws {
-        guard !readOnly else { throw ScreenshotContentError.unavailable }
-        guard (retentionDays ?? ServerContentRetention.days()) > 0 else { return }
-        let budget = budget ?? Self.configuredBudget
-        try index.write { db in
-            let rows = try Row.fetchAll(db, sql: "SELECT key, byteCount, variant, accessedAt FROM images ORDER BY accessedAt")
-                .filter { !keys.contains($0["key"] as String) && !(($0["key"] as String).hasPrefix("local/")) }
-            var total = rows.reduce(0) { $0 + ($1["byteCount"] as Int) }
-            guard total > budget else { return }
-            var thumbnails = rows.filter { $0["variant"] as String == ScreenshotVariant.thumbnail.rawValue }
-                .reduce(0) { $0 + ($1["byteCount"] as Int) }
-            var removed = 0
-            for row in rows where total > budget * 4 / 5 && removed < limit {
-                guard ServerContentRetention.allowsEviction(
-                    lastUsedAt: Date(timeIntervalSince1970: row["accessedAt"]),
-                    now: now, days: retentionDays ?? ServerContentRetention.days()
-                ) else { continue }
-                let isThumbnail = row["variant"] as String == ScreenshotVariant.thumbnail.rawValue
-                if isThumbnail, thumbnails <= budget / 5 { continue }
-                let key: String = row["key"]
-                let file = directory.appending(path: key)
-                if FileManager.default.fileExists(atPath: file.path) { try FileManager.default.removeItem(at: file) }
-                try db.execute(sql: "DELETE FROM images WHERE key = ?", arguments: [key])
-                total -= row["byteCount"] as Int
-                if isThumbnail { thumbnails -= row["byteCount"] as Int }
-                removed += 1
-            }
-        }
-    }
-
-    private static var configuredBudget: Int {
-        let configured = UserDefaults.standard.integer(forKey: budgetDefaultsKey)
-        return ([1, 2, 5, 10].contains(configured) ? configured : 2) * 1024 * 1024 * 1024
-    }
 }

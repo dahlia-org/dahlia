@@ -13,7 +13,6 @@ final class SetupTourModel {
     private(set) var isCheckingPi = false
     private(set) var needsPiSetup = false
     private(set) var errorMessage: String?
-    private(set) var selectedAccountConnectionID: UUID?
     /// The Databricks account: local data listed under the connected Databricks workspace.
     private(set) var selectedDatabricksConnectionID: UUID?
     private(set) var isAccountSelectionConfirmed: Bool
@@ -26,30 +25,20 @@ final class SetupTourModel {
     init(
         mode: SetupTourMode,
         currentWorkspace: WorkspaceRecord?,
-        signedInAccountConnectionIDs: Set<UUID> = [],
         progressDefaults: UserDefaults? = nil
     ) {
         self.mode = mode
         originalWorkspace = currentWorkspace
-        selectedAccountConnectionID = currentWorkspace?.accountConnectionId
-        isAccountSelectionConfirmed = currentWorkspace.map { workspace in
-            guard let connectionID = workspace.accountConnectionId else { return true }
-            return signedInAccountConnectionIDs.contains(connectionID)
-        } ?? false
+        isAccountSelectionConfirmed = currentWorkspace != nil
         self.progressDefaults = progressDefaults
         currentStep = .account
 
         if mode == .initial, currentWorkspace == nil, let progressDefaults {
             let restoredStep = SetupTourPresentationPolicy.restoredStep(in: progressDefaults)
             needsPiSetup = restoredStep == .pi
-            let restoredConnectionID = SetupTourPresentationPolicy.restoredAccountConnectionID(in: progressDefaults)
+            // Databricks connections load after launch; one removed mid-tour fails at completion instead.
             let restoredAccountConfirmed = SetupTourPresentationPolicy.isAccountSelectionConfirmed(in: progressDefaults)
-                // Databricks connections load after launch; one removed mid-tour fails at completion instead.
-                && (restoredConnectionID.map(signedInAccountConnectionIDs.contains) ?? true)
-            selectedAccountConnectionID = restoredConnectionID
-            selectedDatabricksConnectionID = restoredConnectionID == nil
-                ? SetupTourPresentationPolicy.restoredDatabricksConnectionID(in: progressDefaults)
-                : nil
+            selectedDatabricksConnectionID = SetupTourPresentationPolicy.restoredDatabricksConnectionID(in: progressDefaults)
             isAccountSelectionConfirmed = restoredAccountConfirmed
             if restoredAccountConfirmed {
                 // An earlier release asked for model providers later, so its unfinished tour has not reached them yet.
@@ -82,8 +71,8 @@ final class SetupTourModel {
     var visibleSteps: [SetupTourStep] {
         SetupTourStep.allCases.filter {
             if $0 == .pi { return needsPiSetup }
-            // A Dahlia or Databricks account signs in during account selection and uses only its own models.
-            return (selectedAccountConnectionID == nil && selectedDatabricksConnectionID == nil) || $0 != .modelProvider
+            // A Databricks sign-in during account selection already provides models.
+            return selectedDatabricksConnectionID == nil || $0 != .modelProvider
         }
     }
 
@@ -94,9 +83,7 @@ final class SetupTourModel {
         }
     ) async {
         guard currentStep == .account, canContinue else { return }
-        let account = CodexRuntimeProvider(
-            accountConnectionID: selectedAccountConnectionID
-        )
+        let account = CodexRuntimeProvider.local
         let generation = accountSelectionGeneration
         isCheckingPi = true
         let available = await isPiAvailable(account)
@@ -106,17 +93,16 @@ final class SetupTourModel {
         advance()
     }
 
-    /// `databricks` chooses a connected Databricks workspace's account instead of the Local Account.
-    func selectAccountConnection(_ connectionID: UUID?, databricks: UUID? = nil) {
-        if connectionID != selectedAccountConnectionID || databricks != selectedDatabricksConnectionID {
+    /// `databricks` is the Databricks connection signed in during the tour, if any.
+    func selectAccount(databricks: UUID? = nil) {
+        if databricks != selectedDatabricksConnectionID {
             accountSelectionGeneration += 1
             preparationGeneration += 1
             preparationTask?.cancel()
             preparationTask = nil
             isPreparingWorkspace = false
         }
-        selectedAccountConnectionID = connectionID
-        selectedDatabricksConnectionID = connectionID == nil ? databricks : nil
+        selectedDatabricksConnectionID = databricks
         isAccountSelectionConfirmed = true
         errorMessage = nil
         persistProgress()
@@ -140,17 +126,11 @@ final class SetupTourModel {
         guard generation == preparationGeneration else { return nil }
         preparationTask = nil
         isPreparingWorkspace = false
-        guard let workspace, belongsToSelectedAccount(workspace) else { return nil }
         return workspace
     }
 
-    func belongsToSelectedAccount(_ workspace: WorkspaceRecord) -> Bool {
-        workspace.accountConnectionId == selectedAccountConnectionID
-    }
-
-    /// Choosing another account in the tour opens that account's workspace instead.
     var keepsOriginalWorkspace: Bool {
-        originalWorkspace.map(belongsToSelectedAccount) ?? false
+        originalWorkspace != nil
     }
 
     func advance() {
@@ -195,7 +175,6 @@ final class SetupTourModel {
         guard mode == .initial, let progressDefaults else { return }
         SetupTourPresentationPolicy.saveProgress(
             step: currentStep,
-            accountConnectionID: selectedAccountConnectionID,
             databricksConnectionID: selectedDatabricksConnectionID,
             isAccountSelectionConfirmed: isAccountSelectionConfirmed,
             in: progressDefaults

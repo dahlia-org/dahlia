@@ -44,7 +44,6 @@ import GRDB
                 try manager.dbQueue.read { db in
                     let meeting = try #require(try MeetingRecord.fetchOne(db, key: meetingID))
                     let workspace = try #require(try WorkspaceRecord.fetchOne(db, key: meeting.workspaceId))
-                    #expect(workspace.accountConnectionId == nil && workspace.organizationId == nil)
                     #expect(workspace.path == nil && !workspace.generationSettings.automaticProcessing)
                     #expect(workspace.id != existingWorkspaceID)
                     #expect(try MeetingRecord.fetchCount(db) == 2)

@@ -12,12 +12,6 @@ import GRDB
         @Test
         func portableWorkspaceUsesLocalGenerationAndPreservesPreferences() {
             var workspace = WorkspaceRecord(id: .v7(), path: "/tmp/workspace", name: "Remote", createdAt: .now, lastOpenedAt: .now)
-            workspace.accountConnectionId = .v7()
-            workspace.organizationId = .v7()
-            workspace.syncRole = "admin"
-            workspace.syncConfirmedConnectionId = workspace.accountConnectionId
-            workspace.syncPullCursor = "cursor"
-            workspace.syncLastCommittedCursor = "committed"
             workspace.generationSettings.processing.location = .remote
             workspace.generationSettings.processing.remote.summaryModel = "remote-model"
             workspace.generationSettings.outputLanguage = .en
@@ -27,8 +21,6 @@ import GRDB
             var expected = workspace.generationSettings
             expected.processing.location = .local
             #expect(portable.generationSettings == expected)
-            #expect(portable.accountConnectionId == nil && portable.organizationId == nil && portable.syncRole == nil)
-            #expect(portable.syncConfirmedConnectionId == nil && portable.syncPullCursor == nil && portable.syncLastCommittedCursor == nil)
             #expect(portable.path == nil)
         }
 
@@ -47,34 +39,12 @@ import GRDB
             }
             try seedRelationships(fixture)
             let other = WorkspaceRecord(id: .v7(), path: nil, name: "Other", createdAt: .now, lastOpenedAt: .now)
-            let connection = DahliaAccountConnectionRecord(id: .v7(), origin: "https://example.invalid", clientID: "test", createdAt: .now)
             try await fixture.database.dbQueue.write { db in
-                try connection.insert(db)
-                var synced = other
-                synced.accountConnectionId = connection.id
-                synced.organizationId = synced.accountConnectionId == nil ? nil : (synced.organizationId ?? .v7())
-                synced.syncRole = "admin"
-                synced.syncPullCursor = "keep-cursor"
-                try synced.insert(db)
-                try db.execute(
-                    sql: "INSERT INTO sync_transactions(id, workspace_id, connectionId, createdAt, availableAt) VALUES (?, ?, ?, ?, ?)",
-                    arguments: [UUID.v7(), other.id, connection.id, Date(), Date()]
-                )
+                try other.insert(db)
             }
             let service = BackupService(dbQueue: fixture.database.dbQueue, applicationSupportURL: fixture.testRootURL)
             let generation = try await service.createGeneration(workspaceIds: [fixture.meeting.workspaceId])
             try verifyExport(generation, fixture: fixture)
-            try await fixture.database.dbQueue.write { db in
-                if mode == .newWorkspace {
-                    try db.execute(
-                        sql: """
-                        UPDATE workspaces SET accountConnectionId = ?, organizationId = COALESCE(organizationId, id),
-                        syncConfirmedConnectionId = ?, syncRole = 'viewer', syncPullCursor = 'member-cursor' WHERE id = ?
-                        """,
-                        arguments: [connection.id, connection.id, fixture.meeting.workspaceId]
-                    )
-                }
-            }
             let databaseURL = fixture.testRootURL.appending(path: "live.sqlite")
             let live = try AppDatabaseManager(path: databaseURL.path, usesDatabasePool: true)
             try fixture.database.dbQueue.backup(to: live.dbQueue)
@@ -113,10 +83,7 @@ import GRDB
             try await result.dbQueue.read { db throws in
                 #expect(try WorkspaceRecord.fetchCount(db) == (mode == .overwrite ? 2 : 3))
                 #expect(try WorkspaceRecord.fetchOne(db, key: other.id)?.name == "Other changed after preparation")
-                #expect(try WorkspaceRecord.fetchOne(db, key: other.id)?.syncPullCursor == "keep-cursor")
-                #expect(try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM sync_transactions") == 1)
                 let workspace = try #require(try WorkspaceRecord.fetchOne(db, key: targetID))
-                #expect(workspace.accountConnectionId == nil)
                 #expect(workspace.generationSettings.processing.location == .local)
                 #expect(workspace.path == (mode == .overwrite ? fixture.workspaceURL.path : nil))
                 let meeting = try #require(try MeetingRecord.filter(Column("workspace_id") == targetID).fetchOne(db))
@@ -212,7 +179,7 @@ import GRDB
         }
 
         @Test
-        func rejectsSyncedOrMissingOverwriteTarget() async throws {
+        func rejectsMissingOverwriteTarget() async throws {
             let fixture = try BatchAudioTestFixture(name: "RestoreTarget")
             defer { fixture.removeFiles() }
             let service = BackupService(dbQueue: fixture.database.dbQueue, applicationSupportURL: fixture.testRootURL)
@@ -223,14 +190,6 @@ import GRDB
                 mode: .overwrite,
                 name: "Test"
             )
-            try await fixture.database.dbQueue.write { db in
-                try db.execute(sql: "UPDATE workspaces SET syncRole = 'admin'")
-            }
-            await #expect(throws: BackupServiceError.restoreTargetUnavailable) { try await service.prepareRestore(
-                from: generation,
-                requests: [request]
-            )
-            }
             _ = try await fixture.database.dbQueue.write { try WorkspaceRecord.deleteAll($0) }
             await #expect(throws: BackupServiceError.restoreTargetUnavailable) { try await service.prepareRestore(
                 from: generation,
@@ -282,9 +241,6 @@ import GRDB
             let metadata = try #require(model.generations.first?.metadata)
             #expect(model.canOverwrite(workspaceId: metadata.workspaces[0].id))
             #expect(!model.isBusy)
-            try await fixture.database.dbQueue.write { try $0.execute(sql: "UPDATE workspaces SET syncRole = 'admin'") }
-            await model.refresh()
-            #expect(!model.canOverwrite(workspaceId: metadata.workspaces[0].id))
             await model.importBackup(from: fixture.testRootURL.appending(path: "missing.sqlite"))
             #expect(model.errorMessage != nil)
             #expect(!model.isBusy)
@@ -342,10 +298,6 @@ import GRDB
                 #expect(try WorkspaceRecord.fetchCount(db) == 1)
                 let workspace = try #require(try WorkspaceRecord.fetchOne(db, key: fixture.meeting.workspaceId))
                 #expect(workspace.path == nil)
-                #expect(workspace.accountConnectionId == nil)
-                #expect(workspace.syncRole == nil)
-                #expect(workspace.syncConfirmedConnectionId == nil)
-                #expect(workspace.syncPullCursor == nil)
                 for table in ["provider_accounts", "sync_transactions", "sync_operations", "search_documents", "recording_audio_segments"] {
                     #expect(try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM \(table)") == 0)
                 }

@@ -6,7 +6,6 @@ import Security
 enum DocumentLimits {
     static let stateBytes = 8 * 1024 * 1024
     static let encodedUpdateBytes = ((stateBytes + 2) / 3) * 4
-    static let responseBytes = 32 * 1024 * 1024
 }
 
 struct DocumentBlock: Codable, Sendable, Equatable {

@@ -498,8 +498,6 @@
 
 /* Settings */
 "General" = "General";
-"Beta Features" = "Beta Features";
-"Turn on a beta feature to show its entry points in the Dahlia toolbar and menus. Beta features may change without notice." = "Turn on a beta feature to show its entry points in the Dahlia toolbar and menus. Beta features may change without notice.";
 "Permissions" = "Permissions";
 "Review the macOS permissions Dahlia uses. Each permission controls a different feature and can be changed at any time." = "Review the macOS permissions Dahlia uses. Each permission controls a different feature and can be changed at any time.";
 "Screen & System Audio Recording" = "Screen & System Audio Recording";
@@ -583,15 +581,8 @@
 "Dahlia credentials could not be saved securely." = "Dahlia credentials could not be saved securely.";
 "A Dahlia connection already exists for this server." = "A Dahlia connection already exists for this server.";
 "Sign in with the same Dahlia account, or add a new connection." = "Sign in with the same Dahlia account, or add a new connection.";
-"Resolve this connection's Server Workspaces before removing it." = "Resolve this connection's Server Workspaces before removing it.";
-"Choose what to do with this account's local Workspaces before signing out." = "Choose what to do with this account's local Workspaces before signing out.";
 "%lld Dahlia accounts" = "%lld Dahlia accounts";
-"Sign In Again" = "Sign In Again";
-"Sign-in required" = "Sign-in required";
 "Sign out of %@?" = "Sign out of %@?";
-"Move Workspaces to Local Account and Sign Out" = "Move Workspaces to Local Account and Sign Out";
-"Delete Local Workspaces and Sign Out" = "Delete Local Workspaces and Sign Out";
-"The Server Workspaces will remain unchanged. Moving keeps the working copies on this Mac; deleting removes them from this Mac." = "The Server Workspaces will remain unchanged. Moving keeps the working copies on this Mac; deleting removes them from this Mac.";
 "Move to Server" = "Move to Server";
 "Reconnect Server Workspace" = "Reconnect Server Workspace";
 "Keep in Local Account" = "Keep in Local Account";
@@ -1300,63 +1291,30 @@
 "Updated" = "Updated";
 "Ascending" = "Ascending";
 "Descending" = "Descending";
-"Conversation Analytics" = "Conversation Analytics";
-"BETA" = "BETA";
-"Analysis is waiting for transcription" = "Analysis is waiting for transcription";
-"Conversation analytics will be available after the transcript is synced." = "Conversation analytics will be available after the transcript is synced.";
-"Recording Audio Unavailable" = "Recording Audio Unavailable";
-"The Server does not have all recording audio required for this transcript version." = "The Server does not have all recording audio required for this transcript version.";
 "Conversation analytics will be available after recording and transcription finish." = "Conversation analytics will be available after recording and transcription finish.";
-"A confirmed microphone or system-audio transcript is required." = "A confirmed microphone or system-audio transcript is required.";
-"Could Not Load Conversation Analytics" = "Could Not Load Conversation Analytics";
-"You" = "You";
-"Other Side" = "Other Side";
-"Overlap" = "Overlap";
 "Your Speaking Pace" = "Your Speaking Pace";
-"Speaking Pace" = "Speaking Pace";
-"Speaking Pace Over Time" = "Speaking Pace Over Time";
-"Pace Series" = "Pace Series";
-"Elapsed Time" = "Elapsed Time";
-"No measurable speaking pace over time." = "No measurable speaking pace over time.";
-"Segments without measurable duration are excluded from the pace-over-time chart." = "Segments without measurable duration are excluded from the pace-over-time chart.";
 "Calculated in %@-minute windows using merged speech intervals." = "Calculated in %@-minute windows using merged speech intervals.";
 "From %@ to %@: %@ chars/min" = "From %@ to %@: %@ chars/min";
 "Your Speaking Share" = "Your Speaking Share";
 "Share of total source speaking time" = "Share of total source speaking time";
-"Conversation Occupancy" = "Conversation Occupancy";
 "Active speech within recording time" = "Active speech within recording time";
-"Overlap Rate" = "Overlap Rate";
 "Simultaneous speech within active speech" = "Simultaneous speech within active speech";
-"No comparable pace for the other side" = "No comparable pace for the other side";
 "Your speaking share is %@" = "Your speaking share is %@";
 "Other side: %@ chars/min · You: %@×" = "Other side: %@ chars/min · You: %@×";
 "%@ chars · %@ · %@ segments" = "%@ chars · %@ · %@ segments";
-"Speaking-Time Balance" = "Speaking-Time Balance";
 "You (Microphone)" = "You (Microphone)";
 "Other Side (System Audio)" = "Other Side (System Audio)";
-"Only one audio source has confirmed speech." = "Only one audio source has confirmed speech.";
 "Conversation Composition" = "Conversation Composition";
-"Conversation Flow" = "Conversation Flow";
 "Recording Time" = "Recording Time";
-"Active Speech" = "Active Speech";
 "Silence" = "Silence";
 "Non-overlapping Speech" = "Non-overlapping Speech";
-"Simultaneous Speech" = "Simultaneous Speech";
-"Source Details" = "Source Details";
 "Speaking Time" = "Speaking Time";
 "Characters" = "Characters";
 "Speech Segments" = "Speech Segments";
-"Overlap Count" = "Overlap Count";
-"Longest Monologue" = "Longest Monologue";
 "%@ · %@–%@" = "%@ · %@–%@";
-"chars/min" = "chars/min";
 "Transcript gaps up to %@ seconds are treated as continuous speech for the timeline, speaking time, ratios, and pace; short overlaps may include recognition timing differences." = "Transcript gaps up to %@ seconds are treated as continuous speech for the timeline, speaking time, ratios, and pace; short overlaps may include recognition timing differences.";
 "The longest monologue joins same-source gaps up to %@ seconds, even when the other side speaks in between." = "The longest monologue joins same-source gaps up to %@ seconds, even when the other side speaks in between.";
-"Dense timelines are condensed for display without changing calculated metrics." = "Dense timelines are condensed for display without changing calculated metrics.";
 "Some older transcript segments use an estimated timeline." = "Some older transcript segments use an estimated timeline.";
-"Speaking pace is approximate because some segments have no measurable duration." = "Speaking pace is approximate because some segments have no measurable duration.";
-"System audio may include multiple participants and audio from other apps." = "System audio may include multiple participants and audio from other apps.";
-"Characters per minute are not directly comparable across different languages or writing systems." = "Characters per minute are not directly comparable across different languages or writing systems.";
 "Voice Analysis Unavailable" = "Voice Analysis Unavailable";
 "Voice analysis is available for meetings transcribed from retained batch audio." = "Voice analysis is available for meetings transcribed from retained batch audio.";
 "There are not enough measured speech segments for reliable voice analysis." = "There are not enough measured speech segments for reliable voice analysis.";
@@ -1465,18 +1423,12 @@
 "Connect a calendar to see upcoming meetings in Dahlia. You can set this up later." = "Connect a calendar to see upcoming meetings in Dahlia. You can set this up later.";
 "setup.completionDescription" = "Review your choices, then start Dahlia.";
 "Setup Summary" = "Setup Summary";
-"Sync conflict" = "Sync conflict";
-"Use Server Version" = "Use Server Version";
-"Reapply Local Version" = "Reapply Local Version";
 "Choose Local Folder" = "Choose Local Folder";
 "No local export folder" = "No local export folder";
 "Set Local Export Folder" = "Set Local Export Folder";
 "Change Local Export Folder" = "Change Local Export Folder";
 "Remove Local Export Folder" = "Remove Local Export Folder";
 
-"Retrieving latest data…" = "Retrieving latest data…";
-"Waiting to retrieve latest data" = "Waiting to retrieve latest data";
-"Update Dahlia and the Server to resume sync" = "Update Dahlia and the Server to resume sync";
 
 /* Workspace backup */
 "Workspace Backup" = "Workspace Backup";
@@ -1497,14 +1449,7 @@
 "%@ (Source: %@): Restore failed — %@" = "%@ (Source: %@): Restore failed — %@";
 
 // Meeting working copy and synchronization
-"meetingSync.local" = "Saved on this device";
-"meetingSync.pending" = "Saved on device · Workspace sync pending";
-"meetingSync.synced" = "Synced";
-"meetingSync.authorization" = "Saved on device · Sign in to sync";
-"meetingSync.validation" = "Saved on device · Sync needs attention";
 
-"screenshot.cache.limit" = "Cloud image cache limit";
-"screenshot.cache.description" = "Synced images are downloaded as needed. Older cached images are removed when the limit is exceeded, subject to the Server data retention period in General settings. The retention period takes priority over this limit. Local account images, unsent images, and backups are excluded.";
 
 "Only workspaces in the Local Account can be backed up." = "Only workspaces in the Local Account can be backed up.";
 
@@ -1517,29 +1462,16 @@
 "text.content.empty" = "No text";
 "text.content.deleted" = "Text deleted";
 "text.content.searchLocal" = "Searching metadata and saved text on this device, including tags and calendar";
-"text.content.searchLoading" = "Showing device results. Searching the whole server…";
 "text.content.searchComplete" = "Searched the whole server plus device tags, calendar and unsent changes";
 "text.content.searchFailed" = "Server search is incomplete. Showing device results only.";
 "text.content.searchMore" = "More server matches are available. Load more to continue searching.";
-"text.content.serverMatch" = "Server";
 
 // Server account language settings
 "account.settings.imageLanguages" = "Image analysis languages";
 "account.settings.description" = "Shared across devices using this account. The output language applies to summaries and image captions. Recording and transcription language settings are unchanged.";
 "account.settings.notLoaded" = "Account settings have not been loaded.";
-"account.settings.unavailable" = "Settings cannot be changed while the server is unavailable. Recording remains available.";
-"Recording Audio Saved" = "Recording audio saved";
-"Recording Audio Save Pending" = "Recording audio save pending";
-"Recording Audio Save Failed" = "Recording audio could not be saved";
 
-"search.server.ranked" = "Results ranked by the server";
-"search.server.top" = "Showing up to 100 results per type. Refine your search to find more.";
-"search.server.localFallback" = "Server search is unavailable. Showing results stored on this device.";
-"search.server.pending" = "Unsynced meetings on this device";
-"search.server.pendingImages" = "Unsynced screenshots on this device";
-"search.server.pendingUnavailable" = "Showing server results. Unsynced data on this device could not be searched.";
 
-"search.server.pendingProjects" = "Unsynced projects on this device";
 "search.server.kind" = "Result type";
 "search.server.allKinds" = "All types";
 "serverSummaryMethod" = "Summary method";
@@ -1547,7 +1479,6 @@
 "serverSummaryAudio" = "Audio and images";
 "serverSummaryTranscript" = "Transcript and images";
 
-"serverSummaryDescription" = "Generate on the server, even after closing the app. Detail is shared across summary sources. Export separately after generation.";
 "settings.processing.title" = "Transcription and Summary";
 "settings.processing.account" = "Applies to";
 "settings.processing.scope" = "Saved in";
@@ -1562,25 +1493,19 @@
 "settings.processing.thisMac" = "This Mac";
 "settings.processing.thisMacDescription" = "Applies only to this Mac. Switching accounts does not change these settings.";
 
-"serverSummaryUnavailable" = "Summary generation is unavailable on this server.";
 "transcription.initial" = "Initial Transcription";
 "transcription.retranscription" = "Retranscription";
 "transcription.retranscription.appleSpeech" = "Apple Speech (per-segment language detection)";
-"transcription.retranscription.gemini" = "Server Gemini (automatic language detection)";
 "transcription.retranscription.localDescription" = "Uses retained CAF recordings on this Mac and detects the language of each segment automatically.";
-"transcription.retranscription.serverDescription" = "Uses uploaded M4A recordings. Gemini detects languages and retranscribes without language settings or local fallback.";
 "transcription.retranscription.keepsSummary" = "Retranscription replaces only the transcript and leaves the existing summary unchanged.";
 "transcription.retranscription.checkFailed" = "Could not check Server retranscription support.";
 "transcription.retranscription.unsupported" = "This Server does not support Gemini retranscription.";
 "Local CAF Recording Retention" = "Local Workspace CAF Recording Retention";
 "Local Workspace CAF recordings become eligible for deletion this long after both recording and transcription finish. Failed, unfinished, or active retranscription audio is kept. Server M4A storage is not affected." = "Local Workspace CAF recordings become eligible for deletion this long after both recording and transcription finish. Failed, unfinished, or active retranscription audio is kept. Server M4A storage is not affected.";
 
-"serverSummarySyncPending" = "Sync has not finished. Check sync status and retry.";
 
 "serverSummaryFailed" = "Server summary generation failed. Your existing summary was preserved. You can retry.";
 
-"serverSummaryInputChanged" = "Inputs changed during generation. Retry after transcript and image processing finishes.";
-"serverSummaryModelListFailed" = "Could not load models. Try again.";
 "serverSummaryChooseModel" = "Select an available model";
 "serverSummaryNoModels" = "No models available";
 "serverSummaryReloadModels" = "Reload models";
@@ -1589,7 +1514,6 @@
 
 "transcript.fullTranscriptionUnavailable" = "The transcript uses a different model. Full retranscription requires all original audio and a model that can process saved audio.";
 
-"meetingSync.relocationPaused" = "Sync is paused while destination access or unsynced changes need attention. Local data is retained.";
 "liveTranscriptDraft" = "Create a first draft with live transcription";
 "liveTranscriptDraftSectionTitle" = "Transcript First Draft";
 "automaticRecordingProcessing" = "Process automatically after recording";
@@ -1626,8 +1550,6 @@
 "Some data could not be restored. You can continue with the available data and review the result in Backup settings." = "Some data could not be restored. You can continue with the available data and review the result in Backup settings.";
 "Quit Dahlia" = "Quit Dahlia";
 
-"Waiting for initial sync" = "Waiting for initial sync";
-"Server meetings will appear after sync. An internet connection and sign-in are required." = "Server meetings will appear after sync. An internet connection and sign-in are required.";
 "mcp.allWorkspaces" = "All added workspaces";
 
 "Connect a Databricks workspace." = "Connect a Databricks workspace.";
@@ -1645,69 +1567,9 @@
 "Sign out before connecting to another Databricks workspace." = "Sign out before connecting to another Databricks workspace.";
 
 // Sync progress
-"sync.progress" = "Sync Progress";
-"sync.preparing" = "Preparing";
-"sync.text" = "Syncing meeting contents";
-"sync.transferringAttachments" = "Transferring attachments";
-"sync.fetching" = "Fetching changes";
-"sync.retrying" = "Waiting to retry";
-"sync.attention" = "Needs attention";
 "sync.serverError" = "Server error";
-"sync.meetingContents" = "Meeting contents remaining";
-"sync.files" = "Files remaining";
-"sync.attachments" = "Attachment links remaining";
-"sync.otherChanges" = "Other changes remaining";
-"sync.remainingFormat" = "%ld remaining";
-"sync.unavailable" = "Sync progress is unavailable";
-"sync.recoveryBusy" = "Another account operation is in progress. Try again when it finishes.";
-"sync.syncing" = "Syncing";
-"sync.synced" = "Synced";
-"sync.nextRetry" = "Next retry";
-"sync.retryBackoffDescription" = "Transport failures retry automatically after a backoff of up to 300 seconds.";
-"sync.errorCode" = "Error code";
-"sync.httpStatus" = "HTTP status";
-"sync.targetRecord" = "Affected record";
-"sync.permissionRequired" = "Server permission required";
-"sync.retryAfterPermission" = "Retry after access is restored";
-"sync.discardFollowing" = "Discard Affected Changes";
-"sync.openServer" = "Open on Server";
-"sync.checkServer" = "Check on Server";
-"sync.openServerFailed" = "Could not open the Server in a browser.";
-"sync.discoveryFailed" = "Could Not Fetch Workspaces";
-"sync.pullFailed" = "Could Not Fetch Server Changes";
-"sync.localValidationFailed" = "Local changes are inconsistent";
-"sync.recordingArchiveFailure" = "Could not save the recording archive for “%@”";
-"sync.recordingArchiveAskEditor" = "Ask a Workspace admin or editor to retry.";
-"sync.useServerConfirmation" = "Use the Server version of “%@”?";
-"sync.discardConfirmation" = "Discard the affected changes and their dependents in “%@”?";
-"sync.discardImpact" = "This discards %1$ld transactions, %2$ld operations, and %3$ld records. It releases %4$ld local bodies across %5$ld meetings.";
-"sync.discardWarning" = "Unsent text, images, and original recordings that do not exist on the Server may not be recoverable.";
-"sync.record.meeting" = "Meeting";
-"sync.record.file" = "File";
-"sync.record.attachment" = "Attachment";
-"sync.record.recording" = "Recording";
-"sync.record.event" = "Event";
 
-"Finish recording and pending sync, then choose a writable Server Workspace." = "Finish recording and pending sync, then choose a writable Server Workspace.";
-"The Workspace changed during preparation. Your data is preserved. Try again." = "The Workspace changed during preparation. Your data is preserved. Try again.";
-"Some IDs already exist on the Server. No local data was moved." = "Some IDs already exist on the Server. No local data was moved.";
-"Import destination" = "Import destination";
-"Existing Server Workspace" = "Existing Server Workspace";
-"New Server Workspace" = "New Server Workspace";
-"Organization" = "Organization";
-"Select a Server Workspace" = "Select a Server Workspace";
-"Select an Organization" = "Select an Organization";
-"Reload destinations" = "Reload destinations";
-"Checking the import destination…" = "Checking the import destination…";
-"Preparing screenshots…" = "Preparing screenshots…";
-"Creating a backup…" = "Creating a backup…";
-"Checking against the Server…" = "Checking against the Server…";
-"Finishing the import…" = "Finishing the import…";
-"A backup is saved before importing. Existing Workspace settings stay unchanged. The original Local Workspace remains available." = "A backup is saved before importing. Existing Workspace settings stay unchanged. The original Local Workspace remains available.";
-"Import" = "Import";
 
-"Workspace Admin" = "Admin";
-"Workspace Editor" = "Editor";
 
 "setup.preparingWorkspace" = "Preparing your workspace…";
 "setup.workspaceUnavailable" = "Your workspace is not ready yet. Check your connection and retry.";
@@ -1723,51 +1585,32 @@
 "recovery.recording" = "Recovered Recording";
 
 "documentSavedLocally" = "Saved on this Mac";
-"documentSynced" = "Synced";
 "documentSaving" = "Saving…";
-"documentSyncFailed" = "Not synced. Your edits remain on this Mac.";
 "documentSaveFailed" = "Could not save. Keep this view open and copy your edits.";
 "documentPrivateLegacy" = "Legacy Notes on this Mac (not shared)";
 
-"documentPublishTitle" = "Publish Notes from this Mac";
-"documentPublishAudience" = "The Notes listed below will be visible to every member of this Workspace, including viewers, on Desktop and Web. Private copies remain on this Mac.";
-"documentPublishConflict" = "These meetings already have shared Notes. Their private copies were retained.";
-"documentMigrationPrivate" = "Notes remain private on this Mac. After the move, publish them explicitly from Workspace settings to share them or include them in Server summaries.";
 "document.recovery.title" = "Preserved deleted paragraphs";
 "document.recovery.empty" = "There are no deleted paragraphs to restore.";
 "document.restore" = "Insert as new paragraphs";
-"document.editing" = "Editing: ";
 "document.keepLocal" = "Unsynced edits or private notes remain. Move this workspace to the Local Account to keep them.";
 "document.privateRecoverySaved" = "Your input was saved in a recovery copy on this Mac, available in Workspace settings.";
 
-"Reconnect to existing meetings" = "Reconnect to existing meetings";
 
 "Use the Server version. Local data missing from the Server is kept in the backup and is not uploaded. Private Notes stay on this Mac." = "Use the Server version. Local data missing from the Server is kept in the backup and is not uploaded. Private Notes stay on this Mac.";
 
-"The local Workspace %@ is the same Workspace as %@ on the Server. After reconnecting, it appears under the Server name." = "The local Workspace %@ is the same Workspace as %@ on the Server. After reconnecting, it appears under the Server name.";
 
-"sync.payloadGuidance" = "Sync data could not be read. Check that the app and Server are up to date, then retry. You can fetch the current Server state when no edits are pending and recording has stopped. If the problem persists, copy the diagnostics and share them with your administrator.";
-"sync.snapshotPendingChanges" = "There are unsent edits, an active recording, or concurrent changes. Your data is retained. Wait for uploads and recording to finish, then fetch again.";
-"sync.copyDiagnostics" = "Copy sync diagnostics";
-"sync.fetchSnapshot" = "Fetch from Server";
 
-"Local recordings from reconnection" = "Local recordings from reconnection";
 "documentUnsupportedSchema" = "This older Notes format is not supported. Your data remains on this device.";
 "documentTooLarge" = "This edit exceeds the Notes limit. Reduce the content or synchronize before retrying.";
 
 "documentHistoryPrevious" = "Previous";
 "documentHistoryNext" = "Next";
 "documentHistoryFullText" = "Show full text";
-"server.content.retention" = "Local Retention of Server Data";
-"server.content.retention.days" = "Retention (days)";
-"server.content.retention.description" = "Retention defaults to Forever to prevent older data from being automatically removed after connecting to Server. Keep Server data created, edited, viewed, or first downloaded on this Mac for at least this period. Applies to text, Documents, and downloaded images across all Server accounts. After the period, unused data may be removed in the background when storage limits are exceeded, then downloaded again when needed. Forever prevents automatic removal. Storage limits may be exceeded to honor the retention period. Recording audio is managed separately.";
 
 "processing.dataUnreadable" = "Some recording processing states could not be read. Other recordings will still be restored.";
 "processing.retryOnMac" = "This previous server operation cannot be resumed. Run it again on this Mac.";
 "processing.downloadingArchive" = "Downloading recording audio…";
 
-"sync.discardFile" = "Discard File Sync Changes";
-"sync.discardFileConfirmation" = "Discard sync changes for this file and its links in “%@”?";
 
 "account.settings.imageAnalysis" = "Image analysis";
 "account.settings.imageAnalysisEnabled" = "Enable image analysis";
@@ -2015,7 +1858,6 @@
 "Choose the workspace to use with this account." = "Choose the workspace to use with this account.";
 "New workspace (Default)" = "New workspace (Default)";
 
-"Move to Account" = "Move to Another Account";
 "Local Export Folder" = "Local Export Folder";
 
 "Fallback Model" = "Fallback Model";
@@ -2095,7 +1937,6 @@
 
 "Select chat project" = "Select chat project";
 
-"Review Private Notes…" = "Review Private Notes…";
 "Workspace Content" = "Workspace Content";
 "Move content to another workspace" = "Move content to another workspace";
 "Delete content permanently" = "Delete content permanently";

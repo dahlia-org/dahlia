@@ -248,7 +248,7 @@ struct ContentView: View {
                 screenshots: { viewModel.screenshotStore.records },
                 summaryScreenshotIDs: { viewModel.currentSummaryDocument?.orderedScreenshotIds ?? [] },
                 onDownload: viewModel.downloadScreenshot,
-                ocrStateProvider: { id, refresh in await viewModel.screenshotOCRState(id: id, refresh: refresh) }
+                ocrStateProvider: { id, _ in await viewModel.screenshotOCRState(id: id) }
             )
             .projectModalPresentation(
                 editorRequest: $projectEditorRequest,
@@ -615,17 +615,12 @@ private extension ContentView {
             MainDetailHeader(
                 reservesChatControl: !chatCoordinator.isDockedVisible,
                 leadingInset: isSidebarVisible ? 0 : MainWorkspaceHeader.controlsWidth,
-                syncState: headerMeetingTitle != nil ? viewModel.meetingSyncState : nil,
-                textContentState: headerMeetingTitle != nil ? viewModel.textContentState : nil,
-                retryTextContent: viewModel.retryTextContent,
                 notesEditorModel: headerNotesEditorModel,
                 onShowNotesHistory: { isNotesHistoryPresented = true }
             ) {
                 MainNavigationBreadcrumbs(
                     workspace: workspace,
-                    workspaces: workspaceManagementModel.workspaces.filter {
-                        $0.belongsToSameAccount(as: workspaceManagementModel.workspaces.first { $0.id == workspace.id } ?? workspace)
-                    },
+                    workspaces: workspaceManagementModel.workspaces,
                     projects: sidebarViewModel.projectItemsByID,
                     projectID: headerProjectID,
                     meetingTitle: headerMeetingTitle,

@@ -117,8 +117,7 @@ import Foundation
 
         @Test
         func accountScopeMatchesCLIAndJSONForEveryClientAndRuntime() throws {
-            let id = UUID.v7()
-            for account in [WorkspaceAccountChoice.local, .dahlia(id)] {
+            for account in [WorkspaceAccountChoice.local] {
                 for profile in [DahliaRuntimeProfile.production, .development] {
                     for writeEnabled in [false, true] {
                         let commands = MCPRegistrationCommands(
@@ -126,7 +125,7 @@ import Foundation
                             scope: .account(account),
                             runtimeProfile: profile
                         )
-                        let value = account == .local ? "local" : id.uuidString
+                        let value = "local"
                         for client in [MCPClient.codex, .claude] {
                             let command = try #require(commands.registrationCommand(for: client, writeEnabled: writeEnabled))
                             #expect(command.contains(" --account '\(value)'"))
@@ -140,7 +139,7 @@ import Foundation
                         let server = try #require(sample.mcpServers["dahlia"])
                         let helperArgs = profile == .development ? Array(server.args.dropFirst(2)) : server.args
                         let parsed = try MCPCommandLineOptions(arguments: helperArgs)
-                        #expect(parsed.accountScope == (account == .local ? .local : .account(id)))
+                        #expect(parsed.accountScope == .local)
                         #expect(parsed.workspaceID == nil)
                         #expect(parsed.allowsWrites == writeEnabled)
                     }

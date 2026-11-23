@@ -156,22 +156,10 @@ actor TranscriptPersistenceWriter {
                 for record in records {
                     try record.insert(db)
                 }
-                if !records.isEmpty, let workspaceId = try UUID.fetchOne(
-                    db,
-                    sql: "SELECT workspace_id FROM meetings WHERE id = ?",
-                    arguments: [meetingId]
-                ) {
+                if !records.isEmpty, try MeetingRecord.exists(db, key: meetingId) {
                     guard let transcript = try TranscriptRecord.fetchOne(db, key: meetingId),
                           transcript.sessionId == recordingSessionId else { throw TextContentError.changed }
-                    let info = try transcript.info
-                    guard info.endedAt == nil else { throw TextContentError.changed }
-                    let patch = try TranscriptRecord.mutation(meetingId: meetingId, info: info, mode: "append")
-                    try SyncTransactionRecorder.record(
-                        workspaceId: workspaceId,
-                        operations: [patch],
-                        transcriptSegments: [patch.id: records.map(SyncTranscriptPatchSegment.init)],
-                        in: db
-                    )
+                    guard try transcript.info.endedAt == nil else { throw TextContentError.changed }
                 }
                 for (id, translatedText) in translationUpdates {
                     try TranscriptSegmentRecord.updateTranslatedText(

@@ -35,8 +35,6 @@ extension SyncAPIClient {
             } catch {
                 let underlying = (error as? ClientError)?.underlyingError ?? error
                 if let failure = underlying as? SyncHTTPError, failure.status == 401, attempt == 0 { continue }
-                if let clientError = error as? ClientError,
-                   let failure = SyncPayloadFailure(operation: clientError.operationID, error: underlying) { throw failure }
                 throw underlying
             }
         }
@@ -159,4 +157,29 @@ struct SyncAPIDateTranscoder: DateTranscoder {
         if let date = try? fractional.decode(value) { return date }
         return try whole.decode(value)
     }
+}
+
+/// The JSON form of values stored in SQLite and exchanged with a Dahlia Server: ISO 8601 dates and sorted keys.
+enum SyncJSON {
+    static let encoder: JSONEncoder = {
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        encoder.outputFormatting = [.sortedKeys]
+        return encoder
+    }()
+
+    static let decoder: JSONDecoder = {
+        let decoder = JSONDecoder()
+        // Shared formatters: creating one per date dominated decoding large transcript snapshots.
+        let transcoder = SyncAPIDateTranscoder()
+        decoder.dateDecodingStrategy = .custom { decoder in
+            let value = try decoder.singleValueContainer().decode(String.self)
+            if let date = try? transcoder.decode(value) { return date }
+            throw try DecodingError.dataCorruptedError(
+                in: decoder.singleValueContainer(),
+                debugDescription: "Invalid ISO-8601 date"
+            )
+        }
+        return decoder
+    }()
 }

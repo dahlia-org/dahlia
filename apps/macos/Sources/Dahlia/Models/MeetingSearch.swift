@@ -2,7 +2,6 @@ import Foundation
 
 struct MeetingSearchCriteria: Equatable, Hashable, Sendable {
     var text: String
-    var pendingOnly = false
     var projectIDs: Set<UUID>
     var tagIDs: Set<Int64>
     var startDate: Date?
@@ -29,7 +28,6 @@ struct MeetingSearchCriteria: Equatable, Hashable, Sendable {
     var identity: String {
         let components = [
             text,
-            String(pendingOnly),
             projectIDs.map(\.uuidString).sorted().joined(separator: ","),
             tagIDs.sorted().map(String.init).joined(separator: ","),
             startDate.map { String($0.timeIntervalSince1970) } ?? "",
@@ -90,7 +88,6 @@ struct MeetingSearchMatchContext: Equatable, Hashable, Sendable {
         case title
         case description
         case summary
-        case server
         case calendar
         case tag
         case project

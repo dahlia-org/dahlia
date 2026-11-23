@@ -499,33 +499,6 @@ import Foundation
         }
 
         @Test
-        func accountSwitchStopsGeneratingSession() async {
-            let service = TestCodexChatService(mode: .block)
-            let settings = AppSettings()
-            settings.currentWorkspace = Self.workspace(name: "Old Background")
-            let coordinator = CodexChatCoordinator(service: service, settings: settings)
-            let backgroundSession = coordinator.dockedSession
-
-            backgroundSession.draft = "Old workspace question"
-            backgroundSession.sendDraft()
-            await waitUntil {
-                await MainActor.run {
-                    backgroundSession.isGenerating && backgroundSession.activeTurnID != nil
-                }
-            }
-
-            var newWorkspace = Self.workspace(name: "New Background")
-            newWorkspace.accountConnectionId = .v7()
-            settings.currentWorkspace = newWorkspace
-            coordinator.activateWorkspace(newWorkspace)
-
-            await waitUntil { await MainActor.run { !backgroundSession.isGenerating } }
-            await waitUntil { await service.interruptCount == 1 }
-            #expect(coordinator.session(for: backgroundSession.id) == nil)
-            #expect(await service.interruptCount == 1)
-        }
-
-        @Test
         func poppingOutDockedChatHidesSidebarAndCreatesReplacementSession() {
             let coordinator = CodexChatCoordinator(service: CoordinatorTestCodexChatService())
             let previousID = coordinator.dockedSessionID
@@ -805,75 +778,6 @@ import Foundation
             await coordinator.refreshHistory()
             #expect(coordinator.historyError == nil)
             #expect(coordinator.history.map(\.id) == ["history-thread"])
-        }
-
-        @Test
-        func accountSwitchDiscardsDelayedHistoryFromPreviousAccount() async {
-            let service = DelayedHistoryCodexChatService()
-            let settings = AppSettings()
-            let oldWorkspace = Self.workspace(name: "Old")
-            var newWorkspace = Self.workspace(name: "New")
-            newWorkspace.accountConnectionId = .v7()
-            settings.currentWorkspace = oldWorkspace
-            let coordinator = CodexChatCoordinator(service: service, settings: settings)
-
-            let oldRefresh = Task { await coordinator.refreshHistory() }
-            await waitUntil { await service.hasBlockedRequest }
-            settings.currentWorkspace = newWorkspace
-            coordinator.activateWorkspace(newWorkspace)
-            await coordinator.refreshHistory()
-            await service.releaseBlockedRequest()
-            await oldRefresh.value
-
-            #expect(coordinator.history.map(\.id) == ["history"])
-        }
-
-        @Test
-        func movingTheOpenWorkspaceToAnotherAccountReopensItsChat() {
-            let settings = AppSettings()
-            var workspace = Self.workspace(name: "Moved")
-            settings.currentWorkspace = workspace
-            let coordinator = CodexChatCoordinator(service: CoordinatorTestCodexChatService(), settings: settings)
-            coordinator.activateWorkspace(workspace)
-            let localSession = coordinator.dockedSession.id
-
-            coordinator.activateWorkspace(workspace)
-            #expect(coordinator.dockedSession.id == localSession)
-
-            // History and models belong to the account, so the Local Account's session must not stay open.
-            workspace.accountConnectionId = .v7()
-            settings.currentWorkspace = workspace
-            coordinator.activateWorkspace(workspace)
-            #expect(coordinator.dockedSession.id != localSession)
-            #expect(coordinator.dockedSession.accountID == workspace.accountConnectionId?.uuidString.lowercased())
-            #expect(coordinator.history.isEmpty)
-        }
-
-        @Test
-        func movingTheOpenWorkspaceToAnotherAccountKeepsTheSelectedMeetingInContext() async {
-            let service = CoordinatorTestCodexChatService()
-            let settings = AppSettings()
-            var workspace = Self.workspace(name: "Moved Context")
-            settings.currentWorkspace = workspace
-            let coordinator = CodexChatCoordinator(service: service, settings: settings)
-            coordinator.activateWorkspace(workspace)
-            coordinator.updateCurrentContext(
-                workspaceID: workspace.id,
-                meetingID: nil,
-                draftMeeting: DraftMeeting(id: UUID.v7(), title: "Still selected"),
-                dbQueue: nil
-            )
-
-            // The meeting is still on screen, so no selection change would restore the context.
-            workspace.accountConnectionId = .v7()
-            settings.currentWorkspace = workspace
-            coordinator.activateWorkspace(workspace)
-            coordinator.dockedSession.draft = "Question"
-            coordinator.dockedSession.sendDraft()
-            await waitUntil { await MainActor.run { !coordinator.dockedSession.isGenerating } }
-
-            let contexts = await service.sentTextBlocks.map { CodexChatPromptCodec.decodeTextBlocks($0).context }
-            #expect(contexts.map { $0?.meetingName } == ["Still selected"])
         }
 
         @Test

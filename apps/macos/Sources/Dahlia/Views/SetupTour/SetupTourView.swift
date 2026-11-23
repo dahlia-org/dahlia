@@ -12,7 +12,7 @@ struct SetupTourView: View {
 
     private let workspaceManagementModel: WorkspaceManagementModel
     private let canComplete: () -> Bool
-    private let onComplete: (WorkspaceRecord, UUID?) async -> Bool
+    private let onComplete: (WorkspaceRecord) async -> Bool
     private let stepReferenceHeight: CGFloat = 476
 
     init(
@@ -21,7 +21,7 @@ struct SetupTourView: View {
         workspaceManagementModel: WorkspaceManagementModel,
         accountController: DahliaCloudAccountController,
         canComplete: @escaping () -> Bool,
-        onComplete: @escaping (WorkspaceRecord, UUID?) async -> Bool
+        onComplete: @escaping (WorkspaceRecord) async -> Bool
     ) {
         self.workspaceManagementModel = workspaceManagementModel
         self.canComplete = canComplete
@@ -31,7 +31,6 @@ struct SetupTourView: View {
         _model = State(initialValue: SetupTourModel(
             mode: mode,
             currentWorkspace: initialWorkspace,
-            signedInAccountConnectionIDs: Set(accountController.connections.filter(\.isSignedIn).map(\.id)),
             progressDefaults: .standard
         ))
     }
@@ -150,7 +149,7 @@ struct SetupTourView: View {
             )
         }
         .task(id: model.isAccountSelectionConfirmed
-            ? model.selectedAccountConnectionID?.uuidString ?? model.selectedDatabricksConnectionID.map { "databricks.\($0)" } ?? "local"
+            ? model.selectedDatabricksConnectionID.map { "databricks.\($0)" } ?? "local"
             : nil) {
                 guard model.mode == .initial, model.isAccountSelectionConfirmed else { return }
                 _ = await prepareInitialWorkspace()
@@ -217,19 +216,15 @@ struct SetupTourView: View {
         }
     }
 
-    private var tourAccount: CodexRuntimeProvider {
-        CodexRuntimeProvider(
-            accountConnectionID: model.selectedAccountConnectionID
-        )
-    }
+    private var tourAccount: CodexRuntimeProvider { .local }
 
     private func continueWithLocalAccount() {
-        model.selectAccountConnection(nil)
+        model.selectAccount()
         advanceFromAccount()
     }
 
     private func continueWithDatabricks(_ connectionID: UUID) {
-        model.selectAccountConnection(nil, databricks: connectionID)
+        model.selectAccount(databricks: connectionID)
         advanceFromAccount()
     }
 
@@ -256,15 +251,11 @@ struct SetupTourView: View {
     }
 
     private func prepareInitialWorkspace() async -> WorkspaceRecord? {
-        let connectionID = model.selectedAccountConnectionID
         if model.selectedDatabricksConnectionID != nil {
             return await model.prepareInitialWorkspace { await WorkspaceAISettingsModel.shared.accountWorkspace() }
         }
         return await model.prepareInitialWorkspace {
-            let workspace = await workspaceManagementModel.resolveInitialWorkspace(accountConnectionID: connectionID) {
-                guard let syncWorker = accountController.syncWorker else { throw DahliaCloudError.notConfigured }
-                try await syncWorker.discoverCloudWorkspaces()
-            }
+            let workspace = await workspaceManagementModel.resolveInitialWorkspace()
             if workspace == nil { workspaceManagementModel.isShowingError = false }
             return workspace
         }
@@ -298,7 +289,7 @@ struct SetupTourView: View {
                 )
                 return
             }
-            guard await onComplete(workspace, model.selectedAccountConnectionID) else {
+            guard await onComplete(workspace) else {
                 model.finishCompletion(errorMessage: L10n.workspaceOperationFailed)
                 return
             }
@@ -311,9 +302,6 @@ struct SetupTourView: View {
     }
 
     private var selectedAccountTitle: String {
-        if let connectionID = model.selectedAccountConnectionID {
-            return accountController.connections.first { $0.id == connectionID }?.displayName ?? L10n.dahliaAccount
-        }
         if let databricksID = model.selectedDatabricksConnectionID {
             return WorkspaceAISettingsModel.shared.databricksConnections.first { $0.id == databricksID }
                 .map { L10n.unityGatewayHost($0.hostName) } ?? L10n.databricks
@@ -323,9 +311,7 @@ struct SetupTourView: View {
 
     @ViewBuilder
     private var selectedAccountIcon: some View {
-        if model.selectedAccountConnectionID != nil {
-            Image(systemName: "person.crop.circle")
-        } else if model.selectedDatabricksConnectionID != nil {
+        if model.selectedDatabricksConnectionID != nil {
             Image.databricksLogo.resizable().scaledToFit().frame(width: 16, height: 16)
         } else {
             Image(systemName: "person.2")

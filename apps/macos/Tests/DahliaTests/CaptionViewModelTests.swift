@@ -118,51 +118,6 @@ import os
         }
 
         @Test
-        func rejectedEmptyMeetingDoesNotReplaceTheVisibleMeeting() throws {
-            let viewModel = CaptionViewModel()
-            let database = try AppDatabaseManager(path: ":memory:")
-            let workspaceID = UUID.v7()
-            let connectionID = UUID.v7()
-            let connection = DahliaAccountConnectionRecord(
-                id: connectionID,
-                origin: "https://server.example.com",
-                clientID: "desktop-client",
-                createdAt: .now
-            )
-            var workspace = WorkspaceRecord(
-                id: workspaceID,
-                path: nil,
-                name: "Shared Workspace",
-                createdAt: .now,
-                lastOpenedAt: .now
-            )
-            workspace.accountConnectionId = connectionID
-            if workspace.syncRole == nil { workspace.syncRole = "admin" }
-            if workspace.organizationId == nil { workspace.organizationId = .v7() }
-            workspace.syncConfirmedConnectionId = connectionID
-            workspace.syncRole = "viewer"
-            try database.dbQueue.write { db in
-                try connection.insert(db)
-                try workspace.insert(db)
-            }
-            let visibleMeetingID = UUID.v7()
-            viewModel.currentMeetingId = visibleMeetingID
-
-            let createdMeetingID = viewModel.createEmptyMeeting(
-                dbQueue: database.dbQueue,
-                projectURL: nil,
-                workspaceId: workspaceID,
-                projectId: nil,
-                workspaceURL: nil
-            )
-
-            #expect(createdMeetingID == nil)
-            #expect(viewModel.currentMeetingId == visibleMeetingID)
-            #expect(viewModel.errorMessage != nil)
-            #expect(try database.dbQueue.read(MeetingRecord.fetchCount) == 0)
-        }
-
-        @Test
         func systemDefaultMicrophoneSelectionResolvesCurrentDefaultDevice() async {
             let inputProvider = MutableMicrophoneInputProvider(
                 defaultDeviceID: AudioDeviceID(202),
@@ -403,69 +358,6 @@ import os
 
             viewModel.store.clear()
             #expect(!viewModel.currentMeetingHasTranscriptSegments)
-        }
-
-        @Test
-        func conversationAnalyticsWaitsWhileCurrentMeetingFinalizes() {
-            let viewModel = CaptionViewModel()
-            let meetingId = UUID()
-            viewModel.currentMeetingId = meetingId
-            viewModel.isFinalizingRecording = true
-
-            #expect(viewModel.recordingMeetingId == meetingId)
-            #expect(viewModel.isCurrentMeetingConversationAnalysisPending)
-
-            viewModel.isFinalizingRecording = false
-            #expect(!viewModel.isCurrentMeetingConversationAnalysisPending)
-        }
-
-        @Test
-        func conversationAnalyticsWaitsForBatchTranscriptionWithExistingTranscript() async {
-            let viewModel = CaptionViewModel()
-            let meetingId = UUID()
-            let sessionId = UUID()
-            viewModel.currentMeetingId = meetingId
-            viewModel.store.loadSegments([
-                TranscriptSegment(
-                    startTime: .now,
-                    text: "existing transcript",
-                    isConfirmed: true,
-                    audioSource: "mic"
-                ),
-            ])
-
-            await viewModel.handleBatchTranscriptionUpdate(
-                BatchTranscriptionUpdate(
-                    meetingId: meetingId,
-                    state: .running(sessionId: sessionId)
-                )
-            )
-
-            #expect(viewModel.currentMeetingHasTranscriptSegments)
-            #expect(viewModel.isCurrentMeetingConversationAnalysisPending)
-        }
-
-        @Test
-        func conversationAnalyticsWaitsOnlyForTheMeetingWithFailedPersistence() {
-            let currentMeetingId = UUID()
-            let otherMeetingId = UUID()
-
-            #expect(CaptionViewModel.conversationAnalysisIsPending(
-                currentMeetingId: currentMeetingId,
-                recordingMeetingId: nil,
-                isListening: false,
-                isFinalizingRecording: false,
-                isBatchTranscriptionPending: false,
-                failedPersistenceMeetingId: currentMeetingId
-            ))
-            #expect(!CaptionViewModel.conversationAnalysisIsPending(
-                currentMeetingId: otherMeetingId,
-                recordingMeetingId: currentMeetingId,
-                isListening: false,
-                isFinalizingRecording: false,
-                isBatchTranscriptionPending: false,
-                failedPersistenceMeetingId: currentMeetingId
-            ))
         }
 
         @Test

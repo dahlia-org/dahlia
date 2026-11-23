@@ -190,8 +190,7 @@ enum WorkspaceBackupTransfer {
     static func portableWorkspace(_ workspace: WorkspaceRecord) -> WorkspaceRecord {
         var result = workspace
         result.path = nil
-        result.moveToLocalAccount()
-        result.syncRecoveryState = nil
+        result.generationSettings.processing.location = .local
         result.databricksProfile = ""
         return result
     }
@@ -245,10 +244,7 @@ enum WorkspaceBackupTransfer {
     }
 
     static func validateLocalTarget(id: UUID, in db: Database) throws -> WorkspaceRecord {
-        guard let workspace = try WorkspaceRecord.fetchOne(db, key: id),
-              workspace.accountConnectionId == nil, workspace.syncRole == nil,
-              workspace.syncConfirmedConnectionId == nil,
-              try Bool.fetchOne(db, sql: "SELECT EXISTS(SELECT 1 FROM sync_transactions WHERE workspace_id = ?)", arguments: [id]) == false else {
+        guard let workspace = try WorkspaceRecord.fetchOne(db, key: id) else {
             throw BackupServiceError.restoreTargetUnavailable
         }
         return workspace

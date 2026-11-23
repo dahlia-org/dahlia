@@ -100,33 +100,6 @@ import Foundation
         }
 
         @Test
-        func accountSwitchDuringContextResolutionCancelsBeforeSending() async {
-            let service = TestCodexChatService(mode: .complete)
-            let settings = AppSettings()
-            settings.currentWorkspace = Self.testWorkspace()
-            let contextProvider = DelayedCodexChatContextProvider()
-            let session = Self.session(
-                backendThreadID: "existing-thread",
-                service: service,
-                settings: settings,
-                contextProvider: contextProvider
-            )
-            session.draft = "Stay in old workspace"
-
-            session.sendDraft()
-            await waitUntil { contextProvider.isWaiting }
-            var otherAccountWorkspace = Self.testWorkspace()
-            otherAccountWorkspace.accountConnectionId = .v7()
-            settings.currentWorkspace = otherAccountWorkspace
-            contextProvider.resume()
-            await waitUntil { !session.isGenerating }
-
-            #expect(session.draft == "Stay in old workspace")
-            #expect(session.messages.isEmpty)
-            #expect(await service.sentTextBlocks.isEmpty)
-        }
-
-        @Test
         func approvalChangeDuringContextResolutionAppliesAfterSubmittedTurn() async {
             let service = TestCodexChatService(mode: .complete)
             let settings = AppSettings()

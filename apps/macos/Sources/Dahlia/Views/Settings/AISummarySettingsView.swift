@@ -170,8 +170,6 @@ struct LocalSummarySettingsRows: View {
     }
 
     private var modelCatalogContext: CodexRuntimeProvider {
-        CodexRuntimeProvider(
-            accountConnectionID: workspaceSettings.accountConnectionID
-        )
+        CodexRuntimeProvider.local
     }
 }

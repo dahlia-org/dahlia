@@ -2,7 +2,6 @@ import Foundation
 
 struct WorkspaceAISettingsSnapshot: Equatable, Sendable {
     let workspaceID: UUID
-    var accountConnectionID: UUID?
     var localProvider: AIAccountProvider
     var databricksProfile: String
     var generationSettings: WorkspaceGenerationSettings
@@ -21,7 +20,6 @@ extension WorkspaceAISettingsSnapshot {
     init(workspace: WorkspaceRecord, localAccountSettings: LocalAccountAISettings, defaults: UserDefaults = .standard) {
         let account = AccountInferenceSettings(workspace: workspace, defaults: defaults)
         workspaceID = workspace.id
-        accountConnectionID = workspace.accountConnectionId
         localProvider = localAccountSettings.provider
         databricksProfile = localAccountSettings.databricksProfile
         generationSettings = account.generationSettings(outputLanguage: workspace.generationSettings.outputLanguage)

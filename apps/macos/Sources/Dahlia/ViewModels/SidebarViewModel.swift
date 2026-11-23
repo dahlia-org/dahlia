@@ -15,7 +15,7 @@ final class SidebarViewModel {
     nonisolated static let maximumVisibleMeetings = 500
 
     var canEditCurrentWorkspace: Bool {
-        currentWorkspace?.allowsCanonicalEdits == true
+        currentWorkspace != nil
     }
 
     // MARK: - Observed State

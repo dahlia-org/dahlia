@@ -6,17 +6,8 @@ import GRDB
 extension MeetingContentProvider {
     func resolve(_ request: TextBrokerRequest, workspaceId: UUID, dbQueue: any DatabaseWriter) async throws -> Data {
         let store = MeetingAccessStore(database: dbQueue, workspaceID: workspaceId)
-        if request.operation == .search {
-            guard let query = request.query, let kind = request.kind else { throw TextContentError.unavailable }
-            return try await JSONEncoder().encode(search(
-                workspaceId: workspaceId,
-                query: query,
-                kind: kind,
-                cursor: request.cursor,
-                limit: request.limit,
-                dbQueue: dbQueue
-            ))
-        }
+        // Searching a Dahlia Server's copy is gone with Desktop sync; the helper searches this Mac's index itself.
+        guard request.operation != .search else { throw TextContentError.unavailable }
         guard let meetingId = request.meetingId,
               try await dbQueue.read({ db in
                   try Bool
@@ -32,8 +23,6 @@ extension MeetingContentProvider {
             if entity == .file {
                 guard let fileId = request.fileId else { throw TextContentError.unavailable }
                 try await ScreenshotContentProvider.shared.touch(fileId: fileId, meetingId: meetingId, workspaceId: workspaceId, dbQueue: dbQueue)
-            } else {
-                try await touch(entity: entity, id: meetingId, dbQueue: dbQueue)
             }
             return Data("{}".utf8)
         }

@@ -218,19 +218,8 @@ final class MeetingPersistenceService {
         let recordingStartedAt = recordingSession.startedAt
         try? await dbQueue.write { db in
             if createsMeeting {
-                guard let meeting = try MeetingRecord.fetchOne(db, key: meetingId) else { return }
-                try SyncTransactionRecorder.record(
-                    workspaceId: meeting.workspaceId,
-                    operations: [SyncOperationDraft(entity: .meeting, action: .delete, entityId: meetingId)],
-                    in: db
-                )
                 _ = try MeetingRecord.deleteOne(db, key: meetingId)
             } else {
-                let deletedSegmentIds = try UUID.fetchAll(
-                    db,
-                    sql: "SELECT id FROM transcript_segments WHERE sessionId = ? ORDER BY id",
-                    arguments: [sessionId]
-                )
                 _ = try TranscriptSegmentRecord
                     .filter(Column("sessionId") == sessionId)
                     .deleteAll(db)
@@ -252,23 +241,8 @@ final class MeetingPersistenceService {
                         arguments: [meetingId, recordingStartedAt]
                     )
                 }
-                guard let meeting = try MeetingRecord.fetchOne(db, key: meetingId) else { return }
-                var operations: [SyncOperationDraft] = []
-                try TranscriptRecord.finishLive(
-                    meetingId: meetingId,
-                    sessionId: sessionId,
-                    at: Date(),
-                    deletions: deletedSegmentIds,
-                    in: db
-                )
-                if resetsRecordingStartOnCancel {
-                    try operations.append(SyncInitialSnapshotBuilder.meetingOperation(meeting, action: .update, in: db))
-                }
-                try SyncTransactionRecorder.record(
-                    workspaceId: meeting.workspaceId,
-                    operations: operations,
-                    in: db
-                )
+                guard try MeetingRecord.exists(db, key: meetingId) else { return }
+                try TranscriptRecord.finishLive(meetingId: meetingId, sessionId: sessionId, at: Date(), in: db)
             }
         }
     }
@@ -341,11 +315,6 @@ private enum MeetingPersistenceStarter {
                 calendarEventRecurrenceId: calendarEventKey?.recurrenceId
             )
             try meeting.insert(db)
-            try SyncTransactionRecorder.record(
-                workspaceId: request.workspaceId,
-                operations: [SyncInitialSnapshotBuilder.meetingOperation(meeting, action: .create, in: db)],
-                in: db
-            )
             let recordingSession = makeRecordingSession(
                 id: request.recordingSessionId,
                 meetingId: request.meetingId,
@@ -355,7 +324,6 @@ private enum MeetingPersistenceStarter {
             )
             try recordingSession.insert(db)
             try TranscriptRecord.beginLive(recordingSession, liveDraft: request.liveDraft, in: db)
-            try RecordingArchiveRecord.enqueue(recordingSession, in: db)
             let projectName = try projectId.flatMap { id in
                 try ProjectRecord.fetchResolved(id: id, in: db)?.path
             }
@@ -404,11 +372,6 @@ private enum MeetingPersistenceStarter {
             if var meetingToUpdate = meeting, meetingToUpdate.recordingStartedAt == nil {
                 meetingToUpdate.recordingStartedAt = resolvedRecordingStartTime
                 try meetingToUpdate.update(db)
-                try SyncTransactionRecorder.record(
-                    workspaceId: meetingToUpdate.workspaceId,
-                    operations: [SyncInitialSnapshotBuilder.meetingOperation(meetingToUpdate, action: .update, in: db)],
-                    in: db
-                )
             }
 
             let recordingSession = makeRecordingSession(
@@ -424,7 +387,6 @@ private enum MeetingPersistenceStarter {
             )
             try recordingSession.insert(db)
             try TranscriptRecord.beginLive(recordingSession, liveDraft: request.liveDraft, in: db)
-            try RecordingArchiveRecord.enqueue(recordingSession, in: db)
             return AppendResult(
                 recordingSession: recordingSession,
                 existingSegmentIds: Set(segments.map { $0["id"] as UUID }),

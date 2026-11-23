@@ -68,9 +68,8 @@ import SwiftUI
             let suite = "AgentChatInstructionsTests.\(UUID.v7())"
             let defaults = try #require(UserDefaults(suiteName: suite))
             defer { defaults.removePersistentDomain(forName: suite) }
-            var workspace = WorkspaceRecord(id: .v7(), path: nil, name: "Test", createdAt: .now, lastOpenedAt: .now)
-            workspace.accountConnectionId = .v7()
-            let account = CodexRuntimeProvider(workspace: workspace)
+            let workspace = WorkspaceRecord(id: .v7(), path: nil, name: "Test", createdAt: .now, lastOpenedAt: .now)
+            let account = CodexRuntimeProvider.local
             defaults.set("Focus on decisions", forKey: AgentChatInstructions.defaultsKey(for: account))
             let disabled = SummaryGenerationSettings.current(workspace: workspace, defaults: defaults)
             #expect(disabled.customInstructions == nil)

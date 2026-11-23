@@ -4,11 +4,8 @@ struct WorkspaceSettingsView: View {
     let appDatabase: AppDatabaseManager?
     var model: WorkspaceManagementModel
     let currentWorkspace: WorkspaceRecord?
-    let accountConnections: [DahliaAccountConnection]
-    let canSwitchWorkspace: Bool
     let onShowDetails: (UUID) -> Void
     let onRequestDeletion: (WorkspaceRecord) -> Void
-    let onShowDocumentPublication: (WorkspaceRecord) -> Void
     let onUpdateWorkspace: (WorkspaceRecord) -> Void
 
     @ObservedObject private var settings = AppSettings.shared
@@ -16,7 +13,6 @@ struct WorkspaceSettingsView: View {
     @State private var isShowingFolderPicker = false
     @State private var isShowingCreateAlert = false
     @State private var isShowingRenameAlert = false
-    @State private var accountUpdateTask: Task<Void, Never>?
     @State private var pendingRename: WorkspaceRecord?
     @State private var pendingExportFolderWorkspace: WorkspaceRecord?
     @State private var proposedName = ""
@@ -29,14 +25,12 @@ struct WorkspaceSettingsView: View {
         .font(.dahliaBody)
         .disabled(
             model.isRemovingWorkspace || model.isRenamingWorkspace
-                || model.updatingWorkspaceAccountID != nil || accountUpdateTask != nil
         )
         .overlay {
             if model.isRemovingWorkspace {
                 ProgressView(L10n.removingWorkspace)
             }
         }
-        .onDisappear { accountUpdateTask?.cancel() }
         .task(id: appDatabase != nil) {
             await model.configure(appDatabase: appDatabase)
         }
@@ -72,61 +66,37 @@ struct WorkspaceSettingsView: View {
             Section { ProgressView(L10n.loadingWorkspaces) }
         }
 
-        ForEach(WorkspaceSettingsAccountGroup.grouped(
-            model.workspaces,
-            // Databricks connections are provider accounts; no workspace belongs to one.
-            including: [.local]
-        )) { group in
-            Section {
-                ForEach(group.workspaces) { workspace in
-                    workspaceRow(workspace)
+        Section {
+            ForEach(model.workspaces.sorted { ($0.createdAt, $0.id.uuidString) < ($1.createdAt, $1.id.uuidString) }) { workspace in
+                workspaceRow(workspace)
+            }
+            if model.workspaces.isEmpty {
+                Text(L10n.noWorkspaces)
+                    .foregroundStyle(DahliaDesign.secondaryTextColor)
+            }
+        } header: {
+            HStack(spacing: 8) {
+                Image(systemName: "desktopcomputer")
+                    .accessibilityHidden(true)
+                Text(L10n.localAccount)
+                    .font(.dahliaSectionHeader)
+                Button {
+                    showCreateAlert()
+                } label: {
+                    Label(L10n.addWorkspace, systemImage: "plus")
+                        .labelStyle(.iconOnly)
+                        .padding(4)
+                        .contentShape(.rect)
                 }
-                if group.workspaces.isEmpty {
-                    Text(L10n.noWorkspaces)
-                        .foregroundStyle(DahliaDesign.secondaryTextColor)
-                }
-            } header: {
-                HStack(spacing: 8) {
-                    accountIcon(for: group.id)
-                        .accessibilityHidden(true)
-                    Text(accountName(for: group.id))
-                        .font(.dahliaSectionHeader)
-                    if case .dahlia = group.id {
-                        EmptyView()
-                    } else {
-                        Button {
-                            showCreateAlert(for: group.id)
-                        } label: {
-                            Label(L10n.addWorkspace, systemImage: "plus")
-                                .labelStyle(.iconOnly)
-                                .padding(4)
-                                .contentShape(.rect)
-                        }
-                        .buttonStyle(WorkspaceSettingsButtonStyle())
-                        .help(L10n.addWorkspace)
-                    }
-                    Spacer(minLength: 0)
-                }
+                .buttonStyle(WorkspaceSettingsButtonStyle())
+                .help(L10n.addWorkspace)
+                Spacer(minLength: 0)
             }
         }
         if !model.workspaces.isEmpty {
             Section {} footer: {
                 Text(L10n.settingsOutputLanguageDescription)
             }
-        }
-    }
-
-    private func accountName(for choice: WorkspaceAccountChoice) -> String {
-        choice.displayName(connections: accountConnections)
-    }
-
-    @ViewBuilder
-    private func accountIcon(for choice: WorkspaceAccountChoice) -> some View {
-        switch choice {
-        case .local:
-            Image(systemName: "desktopcomputer")
-        case let .dahlia(id):
-            Image(systemName: accountConnections.first(where: { $0.id == id })?.isCloud == true ? "cloud" : "server.rack")
         }
     }
 
@@ -156,26 +126,11 @@ struct WorkspaceSettingsView: View {
             Spacer(minLength: 12)
 
             HStack {
-                if workspace.syncRecoveryState == "updateRequired" {
-                    Label(L10n.workspaceSyncUpdateRequired, systemImage: "exclamationmark.triangle")
-                        .font(.dahliaSecondary).foregroundStyle(.orange)
-                } else if model.blockedSyncWorkspaceIDs.contains(workspace.id) {
-                    Image(systemName: "exclamationmark.triangle.fill")
-                        .foregroundStyle(.orange)
-                        .help(L10n.workspaceSyncConflict)
-                        .accessibilityLabel(L10n.workspaceSyncConflict)
-                } else if workspace.syncRecoveryState != nil {
-                    Label(
-                        workspace.syncRecoveryState == "recovering" ? L10n.workspaceSyncRecovering : L10n.workspaceSyncRecoveryPending,
-                        systemImage: "arrow.triangle.2.circlepath"
-                    )
-                    .font(.dahliaSecondary).foregroundStyle(.secondary)
-                }
                 Picker(L10n.summaryOutputLanguage, selection: outputLanguageBinding(for: workspace)) {
                     ForEach(SummaryLanguage.allCases) { Text($0.displayName).font(.dahliaBody).tag($0) }
                 }
                 .labelsHidden()
-                .disabled(!workspace.allowsWorkspaceManagement || model.isUpdatingOutputLanguage)
+                .disabled(model.isUpdatingOutputLanguage)
                 workspaceActions(for: workspace)
             }
             .padding(.trailing, 8)
@@ -196,27 +151,16 @@ struct WorkspaceSettingsView: View {
         )
     }
 
-    private func showCreateAlert(for account: WorkspaceAccountChoice) {
-        guard account == .local else { return }
+    private func showCreateAlert() {
         proposedName = ""
         isShowingCreateAlert = true
     }
 
     private func workspaceActions(for workspace: WorkspaceRecord) -> some View {
         Menu(L10n.actions, systemImage: "ellipsis.circle") {
-            if workspace.allowsWorkspaceManagement {
-                Button(L10n.rename, systemImage: "pencil", action: { requestRename(workspace) })
-            }
+            Button(L10n.rename, systemImage: "pencil", action: { requestRename(workspace) })
 
             Divider()
-
-            WorkspaceAccountMenu(
-                workspace: workspace,
-                connections: accountConnections,
-                onSelect: { requestAccountChange(of: workspace, to: $0) }
-            )
-            // A recording keeps the account it started with until it is processed.
-            .disabled(workspace.accountConnectionId != nil || !canSwitchWorkspace)
 
             Menu(L10n.localExportFolder, systemImage: "folder") {
                 Button(workspace.path == nil ? L10n.setLocalExportFolder : L10n.changeLocalExportFolder, systemImage: "folder") {
@@ -234,12 +178,10 @@ struct WorkspaceSettingsView: View {
                 }
             }
 
-            Button(L10n.reviewPrivateDocuments, systemImage: "doc.text") { onShowDocumentPublication(workspace) }
-
             Divider()
             Button(L10n.workspaceDetails, systemImage: "info.circle") { onShowDetails(workspace.id) }
 
-            if workspace.id != currentWorkspace?.id, workspace.accountConnectionId == nil {
+            if workspace.id != currentWorkspace?.id {
                 Button(L10n.removeWorkspace, systemImage: "trash", role: .destructive) {
                     onRequestDeletion(workspace)
                 }
@@ -281,7 +223,6 @@ struct WorkspaceSettingsView: View {
     }
 
     private func requestRename(_ workspace: WorkspaceRecord) {
-        guard workspace.allowsWorkspaceManagement else { return }
         pendingRename = workspace
         proposedName = workspace.name
         isShowingRenameAlert = true
@@ -303,23 +244,4 @@ struct WorkspaceSettingsView: View {
         proposedName = ""
     }
 
-    private func requestAccountChange(of workspace: WorkspaceRecord, to choice: WorkspaceAccountChoice) {
-        guard accountUpdateTask == nil else { return }
-        accountUpdateTask = Task {
-            await changeAccount(of: workspace, to: choice)
-            accountUpdateTask = nil
-        }
-    }
-
-    private func changeAccount(of workspace: WorkspaceRecord, to choice: WorkspaceAccountChoice) async {
-        switch choice {
-        case .local:
-            // Every workspace is the app's account's; only a Dahlia Server adopts one.
-            break
-        case let .dahlia(connectionID):
-            if let connection = accountConnections.first(where: { $0.id == connectionID }) {
-                await model.requestServerAdoption(for: workspace, connection: connection)
-            }
-        }
-    }
 }

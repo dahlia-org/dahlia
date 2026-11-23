@@ -12,7 +12,6 @@ struct BatchTranscriptionOptionsForm: View {
     let projects: [FlatProjectRow]
     @Binding var selectedProjectId: UUID?
     var processingMethod: RecordingProcessingMethod?
-    let usesServerSummary: Bool
     let isRetranscription: Bool
 
     var body: some View {
@@ -21,11 +20,9 @@ struct BatchTranscriptionOptionsForm: View {
                 Section {
                     LabeledContent(
                         L10n.processingMethod,
-                        value: usesServerSummary ? L10n.retranscriptionGemini : L10n.retranscriptionAppleSpeech
+                        value: L10n.retranscriptionAppleSpeech
                     )
-                    Text(usesServerSummary
-                        ? L10n.serverRetranscriptionPolicyDescription
-                        : L10n.localRetranscriptionPolicyDescription)
+                    Text(L10n.localRetranscriptionPolicyDescription)
                         .foregroundStyle(.secondary)
                     Text(L10n.retranscriptionKeepsSummary)
                         .foregroundStyle(.secondary)
@@ -86,8 +83,7 @@ struct BatchTranscriptionOptionsForm: View {
                     SummaryGenerationOptionsControls(
                         detailLevel: $summaryDetailLevel,
                         exportsToWorkspace: $exportBatchSummaryToWorkspace,
-                        isEnabled: processingMethod != nil || generateSummaryAfterBatchTranscription,
-                        usesServerSummary: usesServerSummary
+                        isEnabled: processingMethod != nil || generateSummaryAfterBatchTranscription
                     )
                 } header: {
                     Text(L10n.summaryAndExport)

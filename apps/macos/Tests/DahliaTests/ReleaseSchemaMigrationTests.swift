@@ -72,7 +72,7 @@
             try queue.read { db in
                 let workspace = try #require(try WorkspaceRecord.fetchOne(db, key: id))
                 #expect(workspace.name == "Preserved")
-                #expect(workspace.personalUserId == nil)
+                #expect(try UUID.fetchOne(db, sql: "SELECT personalUserId FROM workspaces WHERE id = ?", arguments: [id]) == nil)
             }
         }
 
@@ -326,11 +326,15 @@
             try queue.read { db in
                 let workspace = try #require(try WorkspaceRecord.fetchOne(db, key: workspaceID))
                 #expect(workspace.path == "/tmp/released-workspace" && workspace.summaryModelID == "saved-model")
-                #expect(workspace.accountConnectionId == nil && workspace.organizationId == nil && workspace.syncRole == nil && workspace
-                    .syncConfirmedConnectionId == nil)
+                let sync = try #require(try Row.fetchOne(db, sql: """
+                SELECT accountConnectionId, organizationId, syncRole, syncConfirmedConnectionId, syncPullErrorJSON
+                FROM workspaces WHERE id = ?
+                """, arguments: [workspaceID]))
+                #expect(sync["accountConnectionId"] as UUID? == nil && sync["organizationId"] as UUID? == nil)
+                #expect(sync["syncRole"] as String? == nil && sync["syncConfirmedConnectionId"] as UUID? == nil)
                 let connection = try #require(try DahliaAccountConnectionRecord.fetchOne(db, key: connectionID))
                 #expect(connection.kind == DahliaAccountConnectionRecord.dahliaKind)
-                #expect(workspace.syncPullErrorJSON == nil)
+                #expect(sync["syncPullErrorJSON"] as String? == nil)
                 #expect(try Int.fetchOne(db, sql: "SELECT syncMutationGeneration FROM workspaces WHERE id = ?", arguments: [workspaceID]) == 0)
                 #expect(try Int.fetchOne(db, sql: "SELECT syncMeetingEventsVersion FROM workspaces WHERE id = ?", arguments: [workspaceID]) == 0)
                 let segment = try #require(try fetchTranscriptContent(id: segmentID, in: db))
@@ -490,7 +494,7 @@
             try queue.write { db in
                 let workspace = try #require(try WorkspaceRecord.fetchOne(db, key: id))
                 #expect(workspace.name == "Preserved" && workspace.chatModelID == "model")
-                #expect(workspace.accountConnectionId == nil)
+                #expect(try UUID.fetchOne(db, sql: "SELECT accountConnectionId FROM workspaces WHERE id = ?", arguments: [id]) == nil)
                 #expect(try UUID.fetchOne(db, sql: "SELECT databricksConnectionId FROM workspaces WHERE id = ?", arguments: [id]) == nil)
                 let connection = try #require(try DahliaAccountConnectionRecord.fetchOne(db, key: connectionID))
                 #expect(connection.origin == "https://server.example.com" && connection.kind == DahliaAccountConnectionRecord.dahliaKind)
@@ -594,10 +598,7 @@
                 id: .v7(), origin: "https://server.example.com", clientID: "desktop", createdAt: .now
             )
             let local = WorkspaceRecord(id: .v7(), path: nil, name: "Local", createdAt: .now, lastOpenedAt: .now)
-            let server = WorkspaceRecord(
-                id: .v7(), path: nil, name: "Server", createdAt: .now, lastOpenedAt: .now,
-                accountConnectionId: connection.id, organizationId: .v7(), syncRole: "admin"
-            )
+            let server = WorkspaceRecord(id: .v7(), path: nil, name: "Server", createdAt: .now, lastOpenedAt: .now)
             let localMeeting = MeetingRecord(
                 id: .v7(), workspaceId: local.id, projectId: nil, name: "Local", description: "", createdAt: .now, updatedAt: .now
             )
@@ -622,6 +623,10 @@
                 )
                 try local.insertIntoLegacySchema(db)
                 try server.insertIntoLegacySchema(db)
+                try db.execute(
+                    sql: "UPDATE workspaces SET accountConnectionId = ?, organizationId = ?, syncRole = 'admin' WHERE id = ?",
+                    arguments: [connection.id, UUID.v7(), server.id]
+                )
                 try localMeeting.insert(db)
                 try serverMeeting.insert(db)
                 for shot in [localShot, serverShot, dirtyCaptionShot] {

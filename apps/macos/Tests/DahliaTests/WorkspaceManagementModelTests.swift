@@ -7,25 +7,15 @@
 
     @MainActor
     struct WorkspaceManagementModelTests {
-        @Test(arguments: ["local", "admin", "editor", "viewer"])
-        func outputLanguageUpdatesOnlyTheTargetAndKeepsLatestSettings(account: String) async throws {
+        @Test
+        func outputLanguageUpdatesOnlyTheTargetAndKeepsLatestSettings() async throws {
             let database = try AppDatabaseManager(path: ":memory:")
             let model = WorkspaceManagementModel()
             await model.configure(appDatabase: database)
-            let connection = DahliaAccountConnectionRecord(
-                id: .v7(), origin: "https://language.example.com", clientID: "desktop", createdAt: .now
-            )
-            var target = makeWorkspace(name: "Target", lastOpenedAt: .distantPast)
-            if account != "local" {
-                target.accountConnectionId = connection.id
-                target.syncConfirmedConnectionId = connection.id
-                target.syncRole = account
-                target.organizationId = .v7()
-            }
+            let target = makeWorkspace(name: "Target", lastOpenedAt: .distantPast)
             let original = target
             let other = makeWorkspace(name: "Open workspace", lastOpenedAt: .now)
             try await database.dbQueue.write { db in
-                try connection.insert(db)
                 try original.insert(db)
                 try other.insert(db)
             }
@@ -39,58 +29,16 @@
             try await database.dbQueue.write { try saved.update($0) }
 
             let updated = await model.setOutputLanguage(for: original, to: .en)
-            let canManage = ["local", "admin"].contains(account)
-            #expect((updated != nil) == canManage)
+            #expect(updated != nil)
             let persisted = try #require(try await database.dbQueue.read { try WorkspaceRecord.fetchOne($0, key: original.id) })
-            #expect(persisted.generationSettings.outputLanguage == (canManage ? .en : .ja))
+            #expect(persisted.generationSettings.outputLanguage == .en)
             #expect(persisted.name == "Latest name")
             #expect(persisted.generationSettings.local.model == "latest-model")
             #expect(persisted.lastOpenedAt == .distantPast)
             #expect(try await database.dbQueue.read { try WorkspaceRecord.fetchOne($0, key: other.id) } == untouched)
-            #expect(try await database.dbQueue
-                .read { try Int.fetchOne($0, sql: "SELECT COUNT(*) FROM sync_transactions") } == (account == "admin" ? 1 : 0))
-            #expect(model.isShowingError == !canManage)
+            #expect(!model.isShowingError)
             #expect(!model.isUpdatingOutputLanguage)
-            if canManage {
-                #expect(model.workspaces.first { $0.id == original.id }?.generationSettings.outputLanguage == .en)
-                _ = await model.setOutputLanguage(for: original, to: .en)
-                #expect(try await database.dbQueue
-                    .read { try Int.fetchOne($0, sql: "SELECT COUNT(*) FROM sync_transactions") } == (account == "admin" ? 1 : 0))
-            }
-        }
-
-        @Test(arguments: ["admin", "editor"])
-        func initialServerSetupSkipsRetainedUnconfirmedWorkspaces(role: String) async throws {
-            let database = try AppDatabaseManager(path: ":memory:")
-            let model = WorkspaceManagementModel(organizationFetcher: { _ in [] })
-            await model.configure(appDatabase: database)
-            let connection = DahliaAccountConnectionRecord(
-                id: .v7(), origin: "https://setup.example.com", clientID: "desktop", createdAt: .now
-            )
-            try await database.dbQueue.write { try connection.insert($0) }
-            let missing = CloudWorkspaceRecord(
-                workspaceId: .v7(), connectionId: connection.id, organizationId: .v7(),
-                name: "Personal", createdAt: .distantPast, revision: 1, role: role
-            )
-            _ = try await MeetingRepository.registerDiscoveredCloudWorkspaces([missing], connection: connection, dbQueue: database.dbQueue)
-            #expect(try await RemoteChangeApplier.reconcileMissingWorkspace(
-                workspaceId: missing.workspaceId, expectedConnectionId: connection.id, dbQueue: database.dbQueue
-            ))
-
-            #expect(await model.resolveInitialWorkspace(accountConnectionID: connection.id) {} == nil)
-            let retained = try #require(model.workspaces.first)
-            #expect(retained.accountConnectionId == connection.id)
-            #expect(retained.syncConfirmedConnectionId == nil)
-
-            let available = CloudWorkspaceRecord(
-                workspaceId: .v7(), connectionId: connection.id, organizationId: .v7(),
-                name: "Available", createdAt: .now, revision: 1, role: "viewer"
-            )
-            let selected = await model.resolveInitialWorkspace(accountConnectionID: connection.id) {
-                _ = try await MeetingRepository.registerDiscoveredCloudWorkspaces([available], connection: connection, dbQueue: database.dbQueue)
-            }
-            #expect(selected?.id == available.workspaceId)
-            #expect(model.workspaces.count == 2)
+            #expect(model.workspaces.first { $0.id == original.id }?.generationSettings.outputLanguage == .en)
         }
 
         @Test
@@ -132,7 +80,7 @@
             settings.configure(dbQueue: database.dbQueue)
 
             let created = try #require(await settings.accountWorkspace())
-            #expect(created.name == "Default" && created.accountConnectionId == nil)
+            #expect(created.name == "Default")
             #expect(await settings.accountWorkspace()?.id == created.id)
         }
 
@@ -160,17 +108,16 @@
             let database = try AppDatabaseManager(path: ":memory:")
             let model = WorkspaceManagementModel()
             await model.configure(appDatabase: database)
-            async let first = model.resolveInitialWorkspace(accountConnectionID: nil) { Issue.record("Local must not discover") }
-            async let second = model.resolveInitialWorkspace(accountConnectionID: nil) { Issue.record("Local must not discover") }
+            async let first = model.resolveInitialWorkspace()
+            async let second = model.resolveInitialWorkspace()
             let (firstResult, secondResult) = await (first, second)
             let workspace = try #require(firstResult)
             #expect(secondResult?.id == workspace.id)
             #expect(workspace.name == "Default")
             #expect(workspace.path == nil)
-            #expect(workspace.accountConnectionId == nil)
             let relaunched = WorkspaceManagementModel()
             await relaunched.configure(appDatabase: database)
-            #expect(await relaunched.resolveInitialWorkspace(accountConnectionID: nil) {}?.id == workspace.id)
+            #expect(await relaunched.resolveInitialWorkspace()?.id == workspace.id)
             #expect(relaunched.workspaces.count == 1)
         }
 
@@ -180,48 +127,8 @@
             let model = WorkspaceManagementModel()
             await model.configure(appDatabase: database)
             let existing = try #require(await model.createWorkspace(named: "My Notes"))
-            #expect(await model.resolveInitialWorkspace(accountConnectionID: nil) {}?.id == existing.id)
+            #expect(await model.resolveInitialWorkspace()?.id == existing.id)
             #expect(model.workspaces.map(\.name) == ["My Notes"])
-        }
-
-        @Test
-        func initialServerSetupWaitsForDiscoveryAndNeverCreatesLocalWorkspace() async throws {
-            let database = try AppDatabaseManager(path: ":memory:")
-            let personalOrganizationID = UUID.v7()
-            let model = WorkspaceManagementModel(organizationFetcher: { _ in
-                [.init(id: personalOrganizationID.uuidString, name: "Personal", slug: "personal")]
-            })
-            await model.configure(appDatabase: database)
-            let connection = DahliaAccountConnectionRecord(
-                id: .v7(), origin: "https://setup.example.com", clientID: "desktop", createdAt: .now
-            )
-            try await database.dbQueue.write { try connection.insert($0) }
-            #expect(await model.resolveInitialWorkspace(accountConnectionID: connection.id) {} == nil)
-            #expect(await model.resolveInitialWorkspace(accountConnectionID: connection.id) { throw URLError(.notConnectedToInternet) } == nil)
-            #expect(model.workspaces.isEmpty)
-            let personal = CloudWorkspaceRecord(
-                workspaceId: .v7(), connectionId: connection.id, organizationId: personalOrganizationID, personalUserId: .v7(),
-                name: "Personal", createdAt: .now, revision: 1, role: "admin"
-            )
-            var shared = personal
-            shared.workspaceId = .v7()
-            shared.personalUserId = nil
-            shared.name = "Personal"
-            shared.organizationId = .v7()
-            shared.createdAt = .distantPast
-            let discovered = [shared, personal]
-            let selected = await model.resolveInitialWorkspace(accountConnectionID: connection.id) {
-                _ = try await MeetingRepository.registerDiscoveredCloudWorkspaces(discovered, connection: connection, dbQueue: database.dbQueue)
-            }
-            #expect(selected?.id == personal.workspaceId)
-            _ = try await MeetingRepository(dbQueue: database.dbQueue).updateWorkspaceName(id: personal.workspaceId, name: "Renamed")
-            #expect(await model.resolveInitialWorkspace(accountConnectionID: connection.id) {}?.id == personal.workspaceId)
-            #expect(model.workspaces.count == 2)
-            #expect(model.workspaces.allSatisfy { $0.accountConnectionId == connection.id })
-            let unavailableDirectory = WorkspaceManagementModel(organizationFetcher: { _ in throw URLError(.notConnectedToInternet) })
-            await unavailableDirectory.configure(appDatabase: database)
-            #expect(await unavailableDirectory.resolveInitialWorkspace(accountConnectionID: connection.id) {}?.id == personal.workspaceId)
-            #expect(await model.resolveInitialWorkspace(accountConnectionID: .v7()) {} == nil)
         }
 
         @Test
@@ -315,13 +222,11 @@
             let rootURL = temporaryDirectoryURL()
             let selectedURL = rootURL.appending(path: "Selected", directoryHint: .isDirectory)
             defer { try? FileManager.default.removeItem(at: rootURL) }
-            let workspace = try #require(await model.createWorkspace(at: selectedURL))
+            _ = try #require(await model.createWorkspace(at: selectedURL))
             let storedWorkspace = try #require(MeetingRepository(dbQueue: database.dbQueue).fetchAllWorkspaces().first)
 
-            #expect(workspace.accountConnectionId == nil)
             #expect(storedWorkspace.localProvider == .chatGPTSubscription)
             #expect(storedWorkspace.databricksProfile.isEmpty)
-            #expect(storedWorkspace.accountConnectionId == nil)
         }
 
         @Test
@@ -439,18 +344,6 @@
         }
 
         @Test
-        func loadingWorkspacesDoesNotRequireNetworkDiscovery() async throws {
-            let database = try AppDatabaseManager(path: ":memory:")
-            let model = WorkspaceManagementModel { _ in
-                Issue.record("Listing local working copies must not fetch from the network")
-                throw URLError(.notConnectedToInternet)
-            }
-            await model.configure(appDatabase: database)
-            #expect(model.hasLoadedWorkspaces)
-            #expect(model.workspaces.isEmpty)
-        }
-
-        @Test
         func registeringTheSameFolderReturnsTheExistingWorkspace() async throws {
             let database = try AppDatabaseManager(path: ":memory:")
             let model = WorkspaceManagementModel()
@@ -523,37 +416,6 @@
         }
 
         @Test
-        func preservesAnAutomaticallyAvailableMemberWorkspace() async throws {
-            let database = try AppDatabaseManager(path: ":memory:")
-            let repository = MeetingRepository(dbQueue: database.dbQueue)
-            let model = WorkspaceManagementModel()
-            await model.configure(appDatabase: database)
-            let connection = DahliaAccountConnectionRecord(
-                id: .v7(), origin: "https://server.example.com", clientID: "desktop-client", createdAt: .now
-            )
-            var workspace = makeWorkspace(name: "Shared", lastOpenedAt: .distantPast)
-            workspace.accountConnectionId = connection.id
-            if workspace.syncRole == nil { workspace.syncRole = "admin" }
-            if workspace.organizationId == nil { workspace.organizationId = .v7() }
-            workspace.syncConfirmedConnectionId = connection.id
-            workspace.syncRole = "viewer"
-            let workspaceID = workspace.id
-            try await repository.insertDahliaAccountConnection(connection)
-            try await repository.insertCloudWorkspaceAsync(workspace, revision: 1)
-            #expect(try await database.dbQueue.read { db in
-                try Int.fetchOne(db, sql: "SELECT count(*) FROM sync_entity_state WHERE workspace_id = ?", arguments: [workspaceID])
-            } == 1)
-
-            let didRemove = await model.removeWorkspace(workspace, currentWorkspaceId: nil)
-
-            #expect(!didRemove)
-            #expect(try repository.fetchAllWorkspaces().map(\.id) == [workspaceID])
-            #expect(try await database.dbQueue.read { db in
-                try Int.fetchOne(db, sql: "SELECT count(*) FROM sync_entity_state WHERE workspace_id = ?", arguments: [workspaceID])
-            } == 1)
-        }
-
-        @Test
         func renamesAWorkspaceAndPersistsTheTrimmedName() async throws {
             let database = try AppDatabaseManager(path: ":memory:")
             let model = WorkspaceManagementModel()
@@ -568,341 +430,6 @@
             #expect(renamedWorkspace.name == "Customer Interviews")
             #expect(model.workspaces.first?.name == "Customer Interviews")
             #expect(try MeetingRepository(dbQueue: database.dbQueue).fetchAllWorkspaces().first?.name == "Customer Interviews")
-        }
-
-        @Test
-        func doesNotRenameAnImportedMemberWorkspace() async throws {
-            let database = try AppDatabaseManager(path: ":memory:")
-            let repository = MeetingRepository(dbQueue: database.dbQueue)
-            let connection = DahliaAccountConnectionRecord(
-                id: .v7(), origin: "https://server.example.com", clientID: "desktop-client", createdAt: .now
-            )
-            var workspace = makeWorkspace(name: "Shared", lastOpenedAt: .now)
-            workspace.accountConnectionId = connection.id
-            if workspace.syncRole == nil { workspace.syncRole = "admin" }
-            if workspace.organizationId == nil { workspace.organizationId = .v7() }
-            workspace.syncConfirmedConnectionId = connection.id
-            workspace.syncRole = "viewer"
-            try await repository.insertDahliaAccountConnection(connection)
-            try await repository.insertCloudWorkspaceAsync(workspace, revision: 1)
-            let model = WorkspaceManagementModel()
-            await model.configure(appDatabase: database)
-
-            let renamed = await model.renameWorkspace(workspace, to: "Rejected")
-
-            #expect(renamed == nil)
-            #expect(try repository.fetchAllWorkspaces().first?.name == "Shared")
-        }
-
-        @Test
-        func serverAdoptionWaitsForConfirmation() async throws {
-            let database = try AppDatabaseManager(path: ":memory:")
-            let repository = MeetingRepository(dbQueue: database.dbQueue)
-            let connection = DahliaAccountConnectionRecord(
-                id: .v7(),
-                origin: "https://server.example.com",
-                clientID: "desktop-client",
-                createdAt: .now
-            )
-            let workspace = makeWorkspace(name: "Local", lastOpenedAt: .now)
-            try await repository.insertDahliaAccountConnection(connection)
-            try repository.insertWorkspace(workspace)
-            let model = WorkspaceManagementModel(
-                cloudWorkspaceFetcher: { _ in [] },
-                organizationFetcher: { _ in [] }
-            )
-            await model.configure(appDatabase: database)
-            let account = DahliaAccountConnection(
-                record: connection,
-                account: DahliaCloudAccount(id: "user", name: "User", email: nil),
-                isCloud: false,
-                grantedScopes: ["all-apis"]
-            )
-            await model.requestServerAdoption(for: workspace, connection: account)
-            #expect(model.pendingServerAdoption?.serverWorkspaces.isEmpty == true)
-            #expect(try repository.fetchAllWorkspaces().first?.accountConnectionId == nil)
-            model.cancelServerAdoption()
-            #expect(model.pendingServerAdoption == nil)
-            #expect(try repository.fetchAllWorkspaces().first?.accountConnectionId == nil)
-        }
-
-        @Test(arguments: ["workspaces", "organizations", "failure"], [false, true])
-        func cancelledServerDiscoveryDoesNotPublishAModalOrError(stage: String, hasRepository: Bool) async throws {
-            let database = try AppDatabaseManager(path: ":memory:")
-            let connection = DahliaAccountConnectionRecord(
-                id: .v7(), origin: "https://cancel.example.com", clientID: "desktop", createdAt: .now
-            )
-            let workspace = makeWorkspace(name: "Local", lastOpenedAt: .distantPast)
-            try await database.dbQueue.write { db in
-                try connection.insert(db)
-                try workspace.insert(db)
-            }
-            var shouldCancel = true
-            let model = WorkspaceManagementModel(
-                cloudWorkspaceFetcher: { _ in
-                    if shouldCancel, stage != "organizations" {
-                        withUnsafeCurrentTask { $0?.cancel() }
-                        if stage == "failure" { throw URLError(.cancelled) }
-                    }
-                    return []
-                },
-                organizationFetcher: { _ in
-                    if shouldCancel, stage == "organizations" {
-                        withUnsafeCurrentTask { $0?.cancel() }
-                    }
-                    return []
-                }
-            )
-            await model.configure(appDatabase: hasRepository ? database : nil)
-            let account = DahliaAccountConnection(
-                record: connection, account: DahliaCloudAccount(id: "user", name: "User", email: nil),
-                isCloud: false, grantedScopes: ["all-apis"]
-            )
-
-            await Task { await model.requestServerAdoption(for: workspace, connection: account) }.value
-
-            #expect(model.pendingServerAdoption == nil)
-            #expect(!model.isShowingError)
-            #expect(model.updatingWorkspaceAccountID == nil)
-            shouldCancel = false
-            await model.requestServerAdoption(for: workspace, connection: account)
-            #expect(model.pendingServerAdoption?.workspace.id == workspace.id)
-        }
-
-        @Test(arguments: [false, true])
-        func adoptionDiscoveryRefreshesTheListWithoutDuplicatingLocalIdentity(sameIdentity: Bool) async throws {
-            let database = try AppDatabaseManager(path: ":memory:")
-            let repository = MeetingRepository(dbQueue: database.dbQueue)
-            let connection = DahliaAccountConnectionRecord(
-                id: .v7(),
-                origin: "https://server.example.com",
-                clientID: "desktop-client",
-                createdAt: .now
-            )
-            let workspace = makeWorkspace(name: "Obsidian", lastOpenedAt: .now)
-            try await repository.insertDahliaAccountConnection(connection)
-            try repository.insertWorkspace(workspace)
-            let remote = CloudWorkspaceRecord(
-                workspaceId: sameIdentity ? workspace.id : .v7(),
-                connectionId: connection.id,
-                organizationId: .v7(),
-                name: "Test",
-                createdAt: .now,
-                revision: 1,
-                role: "admin"
-            )
-            let model = WorkspaceManagementModel(cloudWorkspaceFetcher: { _ in [remote] }, organizationFetcher: { _ in [] })
-            await model.configure(appDatabase: database)
-            let account = DahliaAccountConnection(
-                record: connection,
-                account: DahliaCloudAccount(id: "user", name: "User", email: nil),
-                isCloud: false,
-                grantedScopes: ["all-apis"]
-            )
-            await model.requestServerAdoption(for: workspace, connection: account)
-            #expect(model.pendingServerAdoption?.serverWorkspaces.first?.name == "Test")
-            #expect(model.workspaces.count == (sameIdentity ? 1 : 2))
-            #expect(model.workspaces.first(where: { $0.id == workspace.id })?.name == "Obsidian")
-            #expect(model.workspaces.first(where: { $0.id == workspace.id })?.accountConnectionId == nil)
-            if !sameIdentity {
-                #expect(model.workspaces.first(where: { $0.id == remote.workspaceId })?.name == "Test")
-            }
-        }
-
-        @Test(arguments: ["viewer"])
-        func reconnectingSameIDRequiresWritePermission(role: String) async throws {
-            let database = try AppDatabaseManager(path: ":memory:")
-            let repository = MeetingRepository(dbQueue: database.dbQueue)
-            let workspace = makeWorkspace(name: "Local", lastOpenedAt: .now)
-            try repository.insertWorkspace(workspace)
-            let remote = CloudWorkspaceRecord(
-                workspaceId: workspace.id,
-                connectionId: .v7(),
-                organizationId: .v7(),
-                name: "Server",
-                createdAt: .now,
-                revision: 1,
-                role: role
-            )
-            let transferFence = try await database.dbQueue.write {
-                try WorkspaceTransferFence.create(workspaceIDs: [workspace.id], in: $0)
-            }
-            await #expect(throws: LocalWorkspaceImportError.self) {
-                try await repository.importIntoEmptyServerWorkspace(
-                    id: workspace.id,
-                    connectionID: remote.connectionId,
-                    serverWorkspace: remote,
-                    transferFence: transferFence
-                )
-            }
-            #expect(try repository.fetchAllWorkspaces().first?.accountConnectionId == nil)
-        }
-
-        @Test
-        func adoptingSameIDUsesTheServerWorkspaceName() async throws {
-            let database = try AppDatabaseManager(path: ":memory:")
-            let repository = MeetingRepository(dbQueue: database.dbQueue)
-            let connection = DahliaAccountConnectionRecord(
-                id: .v7(), origin: "https://server.example.com", clientID: "desktop-client", createdAt: .now
-            )
-            let workspace = makeWorkspace(name: "Local", lastOpenedAt: .now)
-            let remote = CloudWorkspaceRecord(
-                workspaceId: workspace.id,
-                connectionId: connection.id,
-                organizationId: .v7(),
-                name: "Team Notes",
-                createdAt: .now,
-                revision: 1,
-                role: "admin"
-            )
-            try await repository.insertDahliaAccountConnection(connection)
-            try repository.insertWorkspace(workspace)
-            let transferFence = try await database.dbQueue.write {
-                try WorkspaceTransferFence.create(workspaceIDs: [workspace.id], in: $0)
-            }
-            try await database.dbQueue.write {
-                try $0.execute(sql: "UPDATE workspaces SET lastOpenedAt = lastOpenedAt WHERE id = ?", arguments: [workspace.id])
-            }
-
-            let adopted = try await repository.importIntoEmptyServerWorkspace(
-                id: workspace.id,
-                connectionID: connection.id,
-                serverWorkspace: remote,
-                transferFence: transferFence,
-                screenshotContent: ScreenshotContentProvider()
-            )
-
-            #expect(adopted?.name == "Team Notes")
-            #expect(try repository.fetchAllWorkspaces().first?.name == "Team Notes")
-        }
-
-        @Test
-        func adoptingSameIDRejectsAConcurrentLocalMutation() async throws {
-            let database = try AppDatabaseManager(path: ":memory:")
-            let repository = MeetingRepository(dbQueue: database.dbQueue)
-            let connection = DahliaAccountConnectionRecord(
-                id: .v7(), origin: "https://server.example.com", clientID: "desktop-client", createdAt: .now
-            )
-            let workspace = makeWorkspace(name: "Local", lastOpenedAt: .now)
-            let remote = CloudWorkspaceRecord(
-                workspaceId: workspace.id,
-                connectionId: connection.id,
-                organizationId: .v7(),
-                name: "Server",
-                createdAt: .now,
-                revision: 1,
-                role: "admin"
-            )
-            try await repository.insertDahliaAccountConnection(connection)
-            try repository.insertWorkspace(workspace)
-            let transferFence = try await database.dbQueue.write {
-                try WorkspaceTransferFence.create(workspaceIDs: [workspace.id], in: $0)
-            }
-            _ = try await repository.updateWorkspaceName(id: workspace.id, name: "Changed")
-            #expect(try await database.dbQueue.read {
-                try Int.fetchOne($0, sql: "SELECT syncMutationGeneration FROM workspaces WHERE id = ?", arguments: [workspace.id])
-            } == 0)
-
-            await #expect(throws: LocalWorkspaceImportError.self) {
-                try await repository.importIntoEmptyServerWorkspace(
-                    id: workspace.id,
-                    connectionID: connection.id,
-                    serverWorkspace: remote,
-                    transferFence: transferFence,
-                    screenshotContent: ScreenshotContentProvider()
-                )
-            }
-            #expect(try repository.fetchAllWorkspaces().first?.accountConnectionId == nil)
-        }
-
-        @Test
-        func newWorkspaceAdoptionRejectsABlankName() async throws {
-            let database = try AppDatabaseManager(path: ":memory:")
-            let repository = MeetingRepository(dbQueue: database.dbQueue)
-            let connection = DahliaAccountConnectionRecord(
-                id: .v7(), origin: "https://server.example.com", clientID: "desktop-client", createdAt: .now
-            )
-            let organizationID = UUID.v7()
-            let workspace = makeWorkspace(name: "Local", lastOpenedAt: .now)
-            var organizationFetchCount = 0
-            try await repository.insertDahliaAccountConnection(connection)
-            try repository.insertWorkspace(workspace)
-            let model = WorkspaceManagementModel(
-                cloudWorkspaceFetcher: { _ in [] },
-                organizationFetcher: { _ in
-                    organizationFetchCount += 1
-                    return [.init(id: organizationID.uuidString.lowercased(), name: "Team", slug: "team")]
-                }
-            )
-            await model.configure(appDatabase: database)
-            let account = DahliaAccountConnection(
-                record: connection,
-                account: DahliaCloudAccount(id: "user", name: "User", email: nil),
-                isCloud: false,
-                grantedScopes: ["all-apis"]
-            )
-            await model.requestServerAdoption(for: workspace, connection: account)
-            let pending = try #require(model.pendingServerAdoption)
-            #expect(organizationFetchCount == 1)
-            organizationFetchCount = 0
-
-            let adopted = await model.confirmServerAdoption(
-                pending,
-                destinationId: nil,
-                organizationId: organizationID,
-                workspaceName: "  \n  "
-            )
-
-            #expect(adopted == nil)
-            #expect(organizationFetchCount == 0)
-            #expect(try repository.fetchAllWorkspaces().first?.name == "Local")
-            #expect(try await database.dbQueue.read { try Int.fetchOne($0, sql: "SELECT count(*) FROM sync_transactions") } == 0)
-        }
-
-        @Test
-        func adoptionPreservesTheLocalWorkspaceWhenAccessWasRevokedBeforeConfirmation() async throws {
-            let database = try AppDatabaseManager(path: ":memory:")
-            let repository = MeetingRepository(dbQueue: database.dbQueue)
-            let connection = DahliaAccountConnectionRecord(
-                id: .v7(),
-                origin: "https://server.example.com",
-                clientID: "desktop-client",
-                createdAt: .now
-            )
-            let workspace = makeWorkspace(name: "Local", lastOpenedAt: .now)
-            let remote = CloudWorkspaceRecord(
-                workspaceId: .v7(),
-                connectionId: connection.id,
-                organizationId: .v7(),
-                name: "Server",
-                createdAt: .now,
-                revision: 7,
-                role: "editor"
-            )
-            var responses = [[remote], []]
-            try await repository.insertDahliaAccountConnection(connection)
-            try repository.insertWorkspace(workspace)
-            let model = WorkspaceManagementModel(
-                cloudWorkspaceFetcher: { _ in responses.removeFirst() },
-                organizationFetcher: { _ in [] }
-            )
-            await model.configure(appDatabase: database)
-            let account = DahliaAccountConnection(
-                record: connection,
-                account: DahliaCloudAccount(id: "user", name: "User", email: nil),
-                isCloud: false,
-                grantedScopes: ["all-apis"]
-            )
-            await model.requestServerAdoption(for: workspace, connection: account)
-            let pending = try #require(model.pendingServerAdoption)
-            #expect(await model.confirmServerAdoption(
-                pending,
-                destinationId: remote.workspaceId,
-                organizationId: nil,
-                workspaceName: nil
-            ) == nil)
-            #expect(model.errorMessage == L10n.workspaceImportUnavailable)
-            #expect(try repository.fetchAllWorkspaces().first(where: { $0.id == workspace.id })?.accountConnectionId == nil)
         }
 
         @Test

@@ -6,30 +6,11 @@ struct DahliaAccountConnection: Identifiable, Equatable, Sendable {
     let record: DahliaAccountConnectionRecord
     let account: DahliaCloudAccount?
     let isCloud: Bool
-    let workspaceCount: Int
-    let grantedScopes: Set<String>
-
-    init(
-        record: DahliaAccountConnectionRecord,
-        account: DahliaCloudAccount?,
-        isCloud: Bool,
-        workspaceCount: Int = 0,
-        grantedScopes: Set<String> = []
-    ) {
-        self.record = record
-        self.account = account
-        self.isCloud = isCloud
-        self.workspaceCount = workspaceCount
-        self.grantedScopes = grantedScopes
-    }
 
     var id: UUID { record.id }
     var origin: String { record.origin }
     var isSignedIn: Bool { account != nil }
     var displayName: String { account?.displayName ?? origin }
-    var supportsWorkspaceSync: Bool {
-        grantedScopes.contains("all-apis")
-    }
 }
 
 @MainActor
@@ -46,21 +27,14 @@ final class DahliaCloudAccountController {
 
     static let shared = DahliaCloudAccountController()
 
-    private(set) var syncProgress: [UUID: AccountSyncProgress] = [:]
-    private(set) var syncProgressUnavailable = false
-    var syncStates: [UUID: MeetingSyncState] { syncProgress.mapValues(\.state) }
-    @ObservationIgnored private var syncProgressTask: Task<Void, Never>?
-
     private(set) var connections: [DahliaAccountConnection] = []
     private(set) var errorMessage: String?
-    private(set) var pendingSignOutConnection: DahliaAccountConnection?
     private var activeOperation: AccountOperation?
 
     let defaultConfiguration: DahliaCloudConfiguration?
     private let serviceFactory: ServiceFactory
     private let agentLocator: PiAgentDirectoryLocator
     private var services: [UUID: DahliaCloudService] = [:]
-    @ObservationIgnored weak var syncWorker: SyncWorker?
     private var repository: MeetingRepository?
     private weak var appDatabase: AppDatabaseManager?
     @ObservationIgnored private var accountTask: Task<Void, Never>?
@@ -109,129 +83,10 @@ final class DahliaCloudAccountController {
 
     func configure(appDatabase: AppDatabaseManager?) async {
         guard self.appDatabase !== appDatabase else { return }
-        syncProgressTask?.cancel()
-        syncProgress = [:]
-        syncProgressUnavailable = false
         self.appDatabase = appDatabase
-        if let appDatabase {
-            observeSyncProgress(appDatabase)
-        }
         repository = appDatabase.map { MeetingRepository(dbQueue: $0.dbQueue) }
         services.removeAll()
         await reload()
-    }
-
-    private func observeSyncProgress(_ appDatabase: AppDatabaseManager) {
-        let queue = appDatabase.dbQueue
-        syncProgressTask = Task { [weak self, weak appDatabase] in
-            do {
-                let (changes, continuation) = AsyncThrowingStream<Void, Error>.makeStream(bufferingPolicy: .bufferingNewest(1))
-                // Registration and reads stay off MainActor; writes only yield a coalesced invalidation.
-                let observation = try await queue.write { _ in
-                    DatabaseRegionObservation(
-                        tracking: WorkspaceRecord.all(),
-                        DahliaAccountConnectionRecord.dahliaServers,
-                        Table<Row>("sync_transactions"),
-                        Table<Row>("sync_operations"),
-                        Table<Row>("sync_content_state"),
-                        Table<Row>("recording_archives")
-                    )
-                    .start(in: queue, onError: { continuation.finish(throwing: $0) }, onChange: { _ in continuation.yield(()) })
-                }
-                defer { observation.cancel()
-                    continuation.finish()
-                }
-                continuation.yield(())
-                for try await _ in changes {
-                    let progress = try await queue.read { try MeetingRepository.fetchSyncProgress(in: $0) }
-                    guard !Task.isCancelled, let self, let appDatabase, self.appDatabase === appDatabase else { return }
-                    if syncProgress != progress { syncProgress = progress }
-                    syncProgressUnavailable = false
-                    try await Task.sleep(for: .seconds(1))
-                }
-            } catch is CancellationError {
-                return
-            } catch {
-                guard !Task.isCancelled, let self, let appDatabase, self.appDatabase === appDatabase else { return }
-                syncProgressUnavailable = true
-                syncProgress = [:]
-            }
-        }
-    }
-
-    func retryDiscovery(connectionID: UUID) async throws {
-        guard let syncWorker else { throw DahliaCloudError.notConfigured }
-        try await syncWorker.retryDiscovery(connectionId: connectionID)
-        await syncWorker.drain()
-    }
-
-    func retryPull(workspaceID: UUID, connectionID: UUID) async throws {
-        guard let syncWorker else { throw DahliaCloudError.notConfigured }
-        try await syncWorker.retryPull(workspaceId: workspaceID, connectionId: connectionID)
-        await syncWorker.drain()
-    }
-
-    func retrySnapshot(workspaceID: UUID, connectionID: UUID) async throws {
-        guard let syncWorker else { throw DahliaCloudError.notConfigured }
-        try await syncWorker.retrySnapshot(workspaceId: workspaceID, connectionId: connectionID)
-    }
-
-    func acceptServerSyncVersion(
-        workspaceID: UUID,
-        expectedLastTransactionID: UUID,
-        expectedHasConfirmedWorkspace: Bool
-    ) async throws {
-        guard let repository else { throw DahliaCloudError.notConfigured }
-        try await repository.acceptServerSyncVersion(
-            workspaceId: workspaceID,
-            expectedLastTransactionId: expectedLastTransactionID,
-            expectedHasConfirmedWorkspace: expectedHasConfirmedWorkspace
-        )
-        await syncWorker?.drain()
-    }
-
-    func reapplyLocalSyncVersion(workspaceID: UUID) async throws {
-        guard let repository else { throw DahliaCloudError.notConfigured }
-        try await repository.reapplyLocalSyncVersion(workspaceId: workspaceID)
-        await syncWorker?.drain()
-    }
-
-    func retryInvalidSyncTransaction(workspaceID: UUID) async throws {
-        guard let repository else { throw DahliaCloudError.notConfigured }
-        try await repository.retryInvalidSyncTransaction(workspaceId: workspaceID)
-        await syncWorker?.drain()
-    }
-
-    func discardInvalidSyncTransaction(
-        workspaceID: UUID,
-        expectedLastTransactionID: UUID,
-        expectedHasConfirmedWorkspace: Bool
-    ) async throws {
-        guard let repository else { throw DahliaCloudError.notConfigured }
-        try await repository.discardInvalidSyncTransaction(
-            workspaceId: workspaceID,
-            expectedLastTransactionId: expectedLastTransactionID,
-            expectedHasConfirmedWorkspace: expectedHasConfirmedWorkspace
-        )
-        await syncWorker?.drain()
-    }
-
-    func discardFileSyncChanges(workspaceID: UUID, fileID: UUID, expectedLastTransactionID: UUID) async throws {
-        guard let repository else { throw DahliaCloudError.notConfigured }
-        try await repository.discardFileSyncChanges(workspaceId: workspaceID, fileId: fileID, expectedLastTransactionId: expectedLastTransactionID)
-        await syncWorker?.drain()
-    }
-
-    func retryAuthorizationSync(connectionID: UUID) async throws {
-        guard let repository else { throw DahliaCloudError.notConfigured }
-        try await repository.retryAuthorizationSync(connectionId: connectionID)
-        await syncWorker?.drain()
-    }
-
-    func retryRecordingArchive(meetingID: UUID) async throws {
-        guard let repository else { throw DahliaCloudError.notConfigured }
-        try await repository.retryRecordingArchives(meetingId: meetingID)
-        await syncWorker?.drain()
     }
 
     func reload() async {
@@ -241,7 +96,6 @@ final class DahliaCloudAccountController {
         }
         do {
             let records = try await repository.fetchDahliaAccountConnections()
-            let workspaceCounts = try await repository.workspaceCountsByAccountConnectionID()
             var loadedConnections: [DahliaAccountConnection] = []
             for record in records {
                 let service = try service(for: record)
@@ -250,9 +104,7 @@ final class DahliaCloudAccountController {
                 loadedConnections.append(DahliaAccountConnection(
                     record: record,
                     account: credential?.account,
-                    isCloud: isCloudOrigin(record.origin),
-                    workspaceCount: workspaceCounts[record.id, default: 0],
-                    grantedScopes: credential?.grantedScopes ?? []
+                    isCloud: isCloudOrigin(record.origin)
                 ))
             }
             connections = loadedConnections
@@ -295,40 +147,12 @@ final class DahliaCloudAccountController {
         return task
     }
 
-    func requestSignOut(connectionID: UUID) {
-        guard !isBusy else { return }
-        guard let connection = connections.first(where: { $0.id == connectionID }) else { return }
-        if connection.workspaceCount > 0 {
-            pendingSignOutConnection = connection
-        } else {
-            _ = startSignOut(connectionID: connectionID)
-        }
-    }
-
     @discardableResult
-    func confirmSignOut(disposition: DahliaAccountWorkspaceDisposition) -> Task<Void, Never>? {
-        guard let connection = pendingSignOutConnection else { return nil }
-        pendingSignOutConnection = nil
-        return startSignOut(connectionID: connection.id, workspaceDisposition: disposition)
-    }
-
-    func cancelSignOut() {
-        pendingSignOutConnection = nil
-    }
-
-    @discardableResult
-    func startSignOut(
-        connectionID: UUID,
-        workspaceDisposition: DahliaAccountWorkspaceDisposition? = nil
-    ) -> Task<Void, Never>? {
+    func startSignOut(connectionID: UUID) -> Task<Void, Never>? {
         guard let generation = beginOperation(.signingOut(connectionID)) else { return nil }
         let task = Task { [weak self] in
             guard let self else { return }
-            await signOut(
-                connectionID: connectionID,
-                workspaceDisposition: workspaceDisposition,
-                generation: generation
-            )
+            await signOut(connectionID: connectionID, generation: generation)
         }
         accountTask = task
         return task
@@ -483,9 +307,6 @@ final class DahliaCloudAccountController {
                 throw error
             }
             guard isCurrentOperation(generation) else { return }
-            try await repository?.retryAuthorizationSync(connectionId: connectionID)
-            await syncWorker?.drain()
-            try await reloadCodexAuthenticationIfActive(connectionID)
             await reload()
             guard !Task.isCancelled, isCurrentOperation(generation) else { return }
             completedSignInConnectionID = connectionID
@@ -497,37 +318,19 @@ final class DahliaCloudAccountController {
         }
     }
 
-    private func signOut(
-        connectionID: UUID,
-        workspaceDisposition: DahliaAccountWorkspaceDisposition?,
-        generation: Int
-    ) async {
+    private func signOut(connectionID: UUID, generation: Int) async {
         defer { finishOperation(generation) }
         do {
             guard let connection = connections.first(where: { $0.id == connectionID }) else { return }
-            await syncWorker?.suspendCloudWorkspaceDiscovery(connectionID: connectionID)
-            defer { Task { await syncWorker?.resumeCloudWorkspaceDiscovery(connectionID: connectionID) } }
-            let workspaces = try await repository?.fetchAllWorkspacesAsync() ?? []
-            if workspaces.contains(where: { $0.accountConnectionId == connectionID }) {
-                guard let workspaceDisposition, let repository else {
-                    throw DahliaAccountConnectionError.workspaceDispositionRequired
-                }
-                try await repository.resolveWorkspacesForSignOut(
-                    connectionID: connectionID,
-                    disposition: workspaceDisposition
-                )
-            }
             do {
                 try await service(for: connection.record).signOut()
             } catch {
                 guard isCurrentOperation(generation) else { return }
-                _ = await refreshAfterSignOut(connectionID: connectionID)
+                await refreshAfterSignOut()
                 throw error
             }
             guard isCurrentOperation(generation) else { return }
-            if let refreshError = await refreshAfterSignOut(connectionID: connectionID) {
-                throw refreshError
-            }
+            await refreshAfterSignOut()
         } catch is CancellationError {
             guard isCurrentOperation(generation) else { return }
             return
@@ -538,17 +341,9 @@ final class DahliaCloudAccountController {
         }
     }
 
-    private func refreshAfterSignOut(connectionID: UUID) async -> Error? {
-        await Task { @MainActor in
-            var refreshError: Error?
-            do {
-                try await reloadCodexAuthenticationIfActive(connectionID)
-            } catch {
-                refreshError = error
-            }
-            await reload()
-            return refreshError
-        }.value
+    /// Runs even when the sign-out task is cancelled, so the connection list shows the signed-out state.
+    private func refreshAfterSignOut() async {
+        await Task { @MainActor in await reload() }.value
     }
 
     private func remove(connectionID: UUID, generation: Int) async {
@@ -558,15 +353,6 @@ final class DahliaCloudAccountController {
                   !connection.isSignedIn,
                   let repository
             else { return }
-            if try await repository.connectionHasPendingServerDeletion(id: connectionID) {
-                throw DahliaAccountConnectionError.pendingServerDeletion
-            }
-            if WorkspaceAISettingsModel.shared.accountConnectionID == connectionID {
-                WorkspaceAISettingsModel.shared.accountConnectionID = nil
-                guard await WorkspaceAISettingsModel.shared.waitForRuntimeContext() else {
-                    throw AIConfigurationError.accountNotReady
-                }
-            }
             try await service(for: connection.record).deleteLocalCredential()
             await Task.detached { GoogleSignInAdapter.deleteRetiredCredentials(scopes: [.dahlia(connectionID)]) }.value
             try await repository.deleteDahliaAccountConnection(id: connectionID)
@@ -591,11 +377,6 @@ final class DahliaCloudAccountController {
         let service = serviceFactory(record.id, configuration)
         services[record.id] = service
         return service
-    }
-
-    private func reloadCodexAuthenticationIfActive(_ connectionID: UUID) async throws {
-        guard WorkspaceAISettingsModel.shared.accountConnectionID == connectionID else { return }
-        try await PiRuntimeService.shared.reloadConfiguration()
     }
 
     private func configuration(for record: DahliaAccountConnectionRecord) -> DahliaCloudConfiguration? {

@@ -5,7 +5,6 @@ import Foundation
 import GRDB
 
 enum BackupServiceError: LocalizedError, Equatable {
-    case localWorkspacesOnly
     case unresolvedAudio(Int)
     case invalidBackup
     case incompatibleFormat(Int)
@@ -17,8 +16,6 @@ enum BackupServiceError: LocalizedError, Equatable {
 
     var errorDescription: String? {
         switch self {
-        case .localWorkspacesOnly:
-            L10n.backupLocalWorkspacesOnly
         case let .unresolvedAudio(count):
             L10n.resolveUnprocessedRecordings(count)
         case .invalidBackup:
@@ -212,9 +209,7 @@ actor BackupService {
 
     func listWorkspaces() throws -> [WorkspaceRecord] {
         try dbQueue.read {
-            try WorkspaceRecord
-                .filter(Column("accountConnectionId") == nil && Column("syncRole") == nil && Column("syncConfirmedConnectionId") == nil)
-                .order(Column("name")).fetchAll($0)
+            try WorkspaceRecord.order(Column("name")).fetchAll($0)
         }
     }
 
@@ -283,9 +278,6 @@ actor BackupService {
                         arguments: [workspaceId]
                     ) else {
                         throw BackupServiceError.invalidBackup
-                    }
-                    guard workspace.accountConnectionId == nil, workspace.syncRole == nil, workspace.syncConfirmedConnectionId == nil else {
-                        throw BackupServiceError.localWorkspacesOnly
                     }
                     let unresolved = try Self.unresolvedAudioCount(in: db, workspaceId: workspaceId, schema: "backup_source.")
                     guard unresolved == 0 else { throw BackupServiceError.unresolvedAudio(unresolved) }

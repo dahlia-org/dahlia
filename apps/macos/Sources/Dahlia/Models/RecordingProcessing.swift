@@ -37,8 +37,6 @@ struct RecordingProcessing: Codable, Sendable {
 
     var error: String?
     var failedStage: Stage?
-    var serverRequest: ServerSummaryService.Request?
-    var retryOf: String?
     var summaryExpectation: SummaryGenerationExpectation?
     var generatedSummary: SummaryService.GeneratedSummary?
     var summaryApplied: Bool?
@@ -47,31 +45,16 @@ struct RecordingProcessing: Codable, Sendable {
 
     var usesServerSummary: Bool? {
         if let summaryMode { return summaryMode == .remote }
-        if serverRequest != nil || method != .transcript { return true }
+        if method != .transcript { return true }
         return nil
     }
 
-    mutating func prepareRetry(serverJob: ServerSummaryService.Job?, forceNewServerJob: Bool = false) {
-        if forceNewServerJob || serverRequest == nil || serverJob?.isRetryable == true {
-            id = .v7()
-            summaryExpectation?.jobID = id
-            retryOf = serverJob?.isRetryable == true ? serverJob?.id : nil
-            if let body = serverRequest {
-                serverRequest = .init(
-                    id: id.uuidString.lowercased(), input: body.input, model: body.model,
-                    detailLevel: body.detailLevel, summaryLanguage: body.summaryLanguage,
-                    reasoningEffort: body.reasoningEffort, preferences: body.preferences
-                )
-            }
-        }
+    /// Starts again with a new identity, so a late result of the attempt being retried is ignored.
+    mutating func prepareRetry() {
+        id = .v7()
+        summaryExpectation?.jobID = id
         stage = method == .transcript ? .transcribing : .uploading
         error = nil
-    }
-
-    /// Reuses an accepted Server retranscription job, while giving terminal jobs a
-    /// retry identity and an unavailable job a fresh start identity.
-    mutating func prepareRetranscriptionRetry(serverJob: ServerSummaryService.Job?) {
-        prepareRetry(serverJob: serverJob, forceNewServerJob: serverJob == nil)
     }
 
     static func load(sessionID: UUID, in db: Database) throws -> Self? {

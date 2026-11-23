@@ -18,9 +18,6 @@ struct SetupCompletionStepView: View {
                         identifiers: settings.enabledLanguageIdentifiers
                     )
                 )
-                if model.selectedAccountConnectionID != nil {
-                    LabeledContent(L10n.dahliaAccount, value: L10n.connected)
-                }
             } header: {
                 Text(L10n.setupSummary)
                     .font(.dahliaSectionHeader)

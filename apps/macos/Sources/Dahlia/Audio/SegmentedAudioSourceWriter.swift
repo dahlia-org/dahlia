@@ -306,8 +306,6 @@ actor SegmentedAudioSourceWriter {
         if let previous {
             try await sealAndEnqueueFinalization(previous)
         }
-        // Queue diagnostics after required metadata writes so they cannot gate the next chunk.
-        store.recordRotation(segmentId: next.record.id)
     }
 
     private func createPhysicalSegment(sessionOffsetSeconds: TimeInterval) async throws -> PhysicalSegment {

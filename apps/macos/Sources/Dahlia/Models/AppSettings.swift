@@ -123,7 +123,6 @@ final class AppSettings: ObservableObject {
     nonisolated static let batchAudioRetentionPeriodUserDefaultsKey = "batchAudioRetentionPeriodDays"
     private nonisolated static let legacyRetainAudioAfterBatchTranscriptionUserDefaultsKey =
         "retainAudioAfterBatchTranscription"
-    nonisolated static let conversationAnalyticsBetaEnabledUserDefaultsKey = "conversationAnalyticsBetaEnabled"
     nonisolated static let automaticMeetingEndRecordingStopUserDefaultsKey = "automaticMeetingEndRecordingStopEnabled"
     nonisolated static let meetingSearchRankingWeightsUserDefaultsKey = "meetingSearchRankingWeights"
     nonisolated static let meetingSearchJudgmentsUserDefaultsKey = "meetingSearchBenchmarkJudgmentsV2"
@@ -133,7 +132,6 @@ final class AppSettings: ObservableObject {
     nonisolated static let zoomMeetingLinkOpenTargetUserDefaultsKey = "zoomMeetingLinkOpenTarget"
     nonisolated static let teamsMeetingLinkOpenTargetUserDefaultsKey = "teamsMeetingLinkOpenTarget"
     nonisolated static let slackMeetingLinkOpenTargetUserDefaultsKey = "slackMeetingLinkOpenTarget"
-    nonisolated static let defaultConversationAnalyticsBetaEnabled = false
     fileprivate nonisolated static let defaultAutomaticScreenshotIntervalSeconds = 20
     fileprivate nonisolated static let defaultAutomaticScreenshotChangeThresholdPercent = 5
 
@@ -179,11 +177,6 @@ final class AppSettings: ObservableObject {
         }
     }
 
-    // MARK: - ベータ機能
-
-    @AppStorage(AppSettings.conversationAnalyticsBetaEnabledUserDefaultsKey)
-    var isConversationAnalyticsBetaEnabled = AppSettings.defaultConversationAnalyticsBetaEnabled
-
     // MARK: - 外観
 
     @AppStorage(AppAppearance.userDefaultsKey) private var appAppearanceRawValue = AppAppearance.system.rawValue
@@ -220,16 +213,6 @@ final class AppSettings: ObservableObject {
         BatchTranscriptionStallTimeout.defaultValue.rawValue
     @AppStorage(AppSettings.batchAudioRetentionPeriodUserDefaultsKey) private var batchAudioRetentionPeriodRawValue =
         BatchAudioRetentionPeriod.defaultValue.rawValue
-    @AppStorage(ServerContentRetention.defaultsKey) private var storedServerContentRetentionDays = ServerContentRetention.defaultDays
-
-    var serverContentRetentionDays: Int {
-        get { storedServerContentRetentionDays >= 0 ? storedServerContentRetentionDays : ServerContentRetention.defaultDays }
-        set {
-            objectWillChange.send()
-            storedServerContentRetentionDays = newValue >= 0 ? newValue : ServerContentRetention.defaultDays
-        }
-    }
-
     @AppStorage(AppSettings.generateSummaryAfterBatchTranscriptionUserDefaultsKey) var generateSummaryAfterBatchTranscription = false
     @AppStorage(AppSettings.exportBatchSummaryToWorkspaceUserDefaultsKey) var exportBatchSummaryToWorkspace = true
     @AppStorage(AppSettings.liveSubtitleTranslationEnabledKey) var liveSubtitleTranslationEnabled = true
@@ -359,8 +342,8 @@ final class AppSettings: ObservableObject {
     }
 
     private func switchMeetingSettingsToCurrentAccount() {
-        guard !holdsMeetingSettings, let currentWorkspace else { return }
-        Self.switchMeetingSettings(to: CodexRuntimeProvider(workspace: currentWorkspace), in: meetingSettingsDefaults)
+        guard !holdsMeetingSettings, currentWorkspace != nil else { return }
+        Self.switchMeetingSettings(to: CodexRuntimeProvider.local, in: meetingSettingsDefaults)
     }
 
     nonisolated static func meetingSettingsUserDefaultsKey(for accountKey: String) -> String {
@@ -520,18 +503,18 @@ final class AppSettings: ObservableObject {
     @Published var currentWorkspace: WorkspaceRecord? {
         didSet {
             switchMeetingSettingsToCurrentAccount()
-            postCalendarAccountChange(from: setupTourAccount ?? CodexRuntimeProvider(workspace: oldValue))
+            postCalendarAccountChange(from: setupTourAccount ?? CodexRuntimeProvider.local)
         }
     }
 
     /// The account the setup tour is setting up. Its calendar step applies to that account before its workspace opens.
     @Published var setupTourAccount: CodexRuntimeProvider? {
-        didSet { postCalendarAccountChange(from: oldValue ?? CodexRuntimeProvider(workspace: currentWorkspace)) }
+        didSet { postCalendarAccountChange(from: oldValue ?? CodexRuntimeProvider.local) }
     }
 
     /// The account whose calendar sources and Google Calendar route apply: the open one, or the one being set up.
     var calendarAccount: CodexRuntimeProvider {
-        setupTourAccount ?? CodexRuntimeProvider(workspace: currentWorkspace)
+        setupTourAccount ?? CodexRuntimeProvider.local
     }
 
     private func postCalendarAccountChange(from previous: CodexRuntimeProvider) {

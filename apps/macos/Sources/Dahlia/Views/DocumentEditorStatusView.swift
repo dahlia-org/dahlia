@@ -21,14 +21,6 @@ struct DocumentEditorStatusView: View {
         .popover(isPresented: $showsDetails) {
             VStack(alignment: .leading, spacing: 8) {
                 Text(title).textSelection(.enabled)
-                if !model.people.isEmpty {
-                    Text(L10n.documentEditing + model.people.joined(separator: ", "))
-                }
-                if model.canRetrySynchronization {
-                    Button(L10n.retry) {
-                        Task { await model.retryVisibleDocument() }
-                    }
-                }
             }
             .font(.dahliaBody)
             .padding()

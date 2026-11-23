@@ -70,64 +70,6 @@ import GRDB
             }
         }
 
-        @Test(arguments: [false, true])
-        func movingServerWorkspaceLocalRetainsCurrentBeforeNextEdit(hasPriorHistory: Bool) async throws {
-            let queue = try AppDatabaseManager(path: ":memory:").dbQueue
-            let connection = DahliaAccountConnectionRecord(id: .v7(), origin: "https://example.test", clientID: "test", createdAt: .now)
-            let meetingID = try seed(queue, connection: connection)
-            try await queue.write { db in
-                let meeting = try #require(try MeetingRecord.fetchOne(db, key: meetingID))
-                var workspace = try #require(try WorkspaceRecord.fetchOne(db, key: meeting.workspaceId))
-                if hasPriorHistory {
-                    workspace.moveToLocalAccount()
-                    try workspace.update(db)
-                    try SummaryContent(
-                        meetingId: meetingID,
-                        title: "Prior local",
-                        document: document("Prior local", model: nil).databaseJSONString(),
-                        createdAt: .now
-                    ).save(db)
-                    workspace.accountConnectionId = connection.id
-                    workspace.organizationId = .v7()
-                    try workspace.update(db)
-                }
-                try SummaryContent(
-                    meetingId: meetingID,
-                    title: "Server current",
-                    document: document("Server current", model: "server-model").databaseJSONString(),
-                    createdAt: .now
-                ).save(db)
-                try db.inSavepoint {
-                    var candidate = workspace
-                    candidate.moveToLocalAccount()
-                    try candidate.update(db)
-                    return .rollback
-                }
-                #expect(try SummaryVersionRecord.filter(Column("meetingId") == meetingID).fetchCount(db) == (hasPriorHistory ? 1 : 0))
-                workspace.moveToLocalAccount()
-                try workspace.update(db)
-                let versions = try SummaryVersionRecord.filter(Column("meetingId") == meetingID).order(Column("version")).fetchAll(db)
-                #expect(versions.map(\.title) == (hasPriorHistory ? ["Prior local", "Server current"] : ["Server current"]))
-                // Repeating the transition without a Server edit must not duplicate the snapshot.
-                workspace.accountConnectionId = connection.id
-                workspace.organizationId = .v7()
-                try workspace.update(db)
-                workspace.moveToLocalAccount()
-                try workspace.update(db)
-                try SummaryContent(
-                    meetingId: meetingID,
-                    title: "Local edit",
-                    document: document("Local edit", model: nil).databaseJSONString(),
-                    createdAt: .now
-                ).save(db)
-            }
-            let service = SummaryHistoryService()
-            let page = try await service.page(meetingID: meetingID, dbQueue: queue)
-            #expect(page.items.map(\.title) == (hasPriorHistory ? ["Local edit", "Server current", "Prior local"] : ["Local edit", "Server current"]))
-            let captured = try await service.document(meetingID: meetingID, version: hasPriorHistory ? 2 : 1, dbQueue: queue)
-            #expect(captured.metadata?.request.model == "server-model")
-        }
-
         @Test
         func paginationAndRollbackKeepDurableHistory() async throws {
             let manager = try AppDatabaseManager(path: ":memory:")
@@ -156,47 +98,6 @@ import GRDB
             #expect(first.items.map(\.version) == Array((4 ... 23).reversed()))
             #expect(next.items.map(\.version) == [3, 2, 1])
             #expect(next.nextCursor == nil)
-        }
-
-        @Test
-        func serverHistoryUsesAuthenticatedAPIAndDoesNotReplaceLatest() async throws {
-            let manager = try AppDatabaseManager(path: ":memory:")
-            let queue = manager.dbQueue
-            let origin = "https://\(UUID.v7().uuidString).example.test"
-            let connectionID = UUID.v7()
-            let meetingID = try seed(queue, connection: .init(id: connectionID, origin: origin, clientID: "test", createdAt: .now))
-            let oldDocument = try document("Server old", model: "server-model").databaseJSONString()
-            let latest = try document("Current", model: nil).databaseJSONString()
-            try await queue.write { db in
-                try SummaryContent(meetingId: meetingID, title: "Current", document: latest, createdAt: .now).save(db)
-                #expect(try Int.fetchOne(db, sql: "SELECT count(*) FROM summary_versions") == 0)
-            }
-            let record: [String: Any] = [
-                "id": UUID.v7().uuidString, "meetingId": meetingID.uuidString, "version": 3, "title": "Server old",
-                "createdAt": "2026-11-01T12:00:00.000Z", "savedAt": "2026-11-01T12:00:00.000Z", "document": oldDocument,
-                "metadata": NSNull(),
-            ]
-            let page = try JSONSerialization.data(withJSONObject: ["items": [record], "nextCursor": "3"])
-            let body = try JSONSerialization.data(withJSONObject: record)
-            ImageURLProtocol.register(origin: origin) { request in
-                #expect(request.value(forHTTPHeaderField: "Authorization") == "Bearer test-token")
-                #expect(request.url!.path.hasPrefix("/api/v1/meetings/\(meetingID.uuidString.lowercased())/summaries"))
-                if request.url!.path.hasSuffix("/3") { return (200, [:], body) }
-                #expect(URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?.queryItems?
-                    .contains(.init(name: "cursor", value: "4")) == true)
-                return (200, [:], page)
-            }
-            defer { ImageURLProtocol.remove(origin: origin) }
-            let config = URLSessionConfiguration.ephemeral
-            config.protocolClasses = [ImageURLProtocol.self]
-            let session = URLSession(configuration: config)
-            defer { session.invalidateAndCancel() }
-            let service = SummaryHistoryService(client: SyncAPIClient(session: session, tokenProvider: { _, _ in "test-token" }))
-            let versions = try await service.page(meetingID: meetingID, dbQueue: queue, before: "4")
-            #expect(versions.items.map(\.version) == [3])
-            #expect(versions.nextCursor == "3")
-            #expect(try await service.document(meetingID: meetingID, version: 3, dbQueue: queue).metadata?.request.model == "server-model")
-            #expect(try await queue.read { try SummaryContent.fetchOne($0, key: meetingID)?.document } == latest)
         }
 
         @Test
@@ -324,27 +225,6 @@ import GRDB
             #expect(try await queue.read { try SummaryContent.fetchOne($0, key: meetingID) } == nil)
         }
 
-        @Test
-        func promotionDoesNotWriteServerAccounts() async throws {
-            let queue = try AppDatabaseManager(path: ":memory:").dbQueue
-            let origin = "https://\(UUID.v7().uuidString).example.test"
-            let connectionID = UUID.v7()
-            let meetingID = try seed(queue, connection: .init(id: connectionID, origin: origin, clientID: "test", createdAt: .now))
-            let latestJSON = try document("Latest", model: "latest").databaseJSONString()
-            try await queue.write { db in
-                try SummaryContent(meetingId: meetingID, title: "Latest", document: latestJSON, createdAt: .now).save(db)
-            }
-            let service = SummaryHistoryService()
-            await #expect(throws: TextContentError.changed) {
-                try await service.promote(meetingID: meetingID, version: 1, dbQueue: queue)
-            }
-            try await queue.read { db throws in
-                #expect(try SummaryContent.fetchOne(db, key: meetingID)?.document == latestJSON)
-                #expect(try Int.fetchOne(db, sql: "SELECT count(*) FROM sync_operations") == 0)
-                #expect(try Int.fetchOne(db, sql: "SELECT count(*) FROM summary_versions") == 0)
-            }
-        }
-
         private nonisolated func document(_ title: String, model: String?) -> SummaryDocument {
             SummaryDocument(title: title, sections: [], metadata: model.map {
                 SummaryMetadata(
@@ -357,13 +237,9 @@ import GRDB
             })
         }
 
-        private func seed(_ queue: any DatabaseWriter, connection: DahliaAccountConnectionRecord? = nil) throws -> UUID {
+        private func seed(_ queue: any DatabaseWriter) throws -> UUID {
             try queue.write { db in
-                if let connection { try connection.insert(db) }
-                var workspace = WorkspaceRecord(id: .v7(), path: nil, name: "History", createdAt: .now, lastOpenedAt: .now)
-                workspace.accountConnectionId = connection?.id
-                workspace.organizationId = connection == nil ? nil : .v7()
-                workspace.syncRole = connection == nil ? nil : "admin"
+                let workspace = WorkspaceRecord(id: .v7(), path: nil, name: "History", createdAt: .now, lastOpenedAt: .now)
                 try workspace.insert(db)
                 let meeting = MeetingRecord(id: .v7(), workspaceId: workspace.id, projectId: nil, name: "History", createdAt: .now, updatedAt: .now)
                 try meeting.insert(db)

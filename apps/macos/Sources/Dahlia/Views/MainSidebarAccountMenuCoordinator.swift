@@ -108,9 +108,6 @@ final class MainSidebarAccountMenuCoordinator: NSObject {
                 showsAccountAction: showsAccountAction,
                 onShowAppearance: { [weak self] in self?.presentAppearanceMenu(anchorMinY: $0) },
                 onShowLanguages: { [weak self] in self?.presentLanguageMenu(anchorMinY: $0) },
-                onShowAccountDetails: { [weak self] connection, minY in
-                    self?.presentAccountDetails(connection, anchorMinY: minY)
-                },
                 onDismissSubmenu: { [weak self] in self?.closeSubmenu() },
                 onOpenSettings: { [weak self] in self?.openSettings(category: $0) },
                 onSelectAccount: { [weak self] in self?.selectAccount($0) },
@@ -125,13 +122,6 @@ final class MainSidebarAccountMenuCoordinator: NSObject {
         attach(panel, to: button.window)
         mainPanel = panel
         startMonitoring()
-    }
-
-    private func presentAccountDetails(_ connection: DahliaAccountConnection, anchorMinY: CGFloat? = nil) {
-        let content = MainSidebarAccountMenuPanel(width: 320) {
-            SyncProgressView(connection: connection, navigation: navigation, openURL: openURL)
-        }
-        presentSubmenu(content, menu: .accountDetails, anchorMinY: anchorMinY)
     }
 
     private func presentLanguageMenu(anchorMinY: CGFloat? = nil) {
@@ -169,7 +159,7 @@ final class MainSidebarAccountMenuCoordinator: NSObject {
         positionSubmenu(panel, relativeTo: mainPanel, anchorMinY: anchorMinY)
         attach(panel, to: button?.window)
         submenuPanel = panel
-        announce(menu == .accountDetails ? L10n.syncProgress : menu == .appearance ? L10n.appearance : L10n.language)
+        announce(menu == .appearance ? L10n.appearance : L10n.language)
     }
 
     private func makePanel(content: some View) -> NSPanel {
@@ -348,21 +338,6 @@ extension MainSidebarAccountMenuCoordinator {
             return event
         }
 
-        if navigation.activeMenu == .accountDetails {
-            switch event.keyCode {
-            case 53:
-                dismissMenu()
-            case 123:
-                closeSubmenu()
-            case 36, 76:
-                openSelectedAccountOnServer()
-            case 49 where !event.modifierFlags.contains(.shift):
-                openSelectedAccountOnServer()
-            default:
-                scrollAccountDetails(event)
-            }
-            return nil
-        }
         switch event.keyCode {
         case 53:
             dismissMenu()
@@ -386,44 +361,6 @@ extension MainSidebarAccountMenuCoordinator {
         return nil
     }
 
-    /// These non-key panels must route scrolling explicitly instead of returning keys to the parent window.
-    private func scrollAccountDetails(_ event: NSEvent) {
-        func findScrollView(in view: NSView) -> NSScrollView? {
-            (view as? NSScrollView) ?? view.subviews.lazy.compactMap { findScrollView(in: $0) }.first
-        }
-        guard let content = submenuPanel?.contentView, let scroll = findScrollView(in: content) else { return }
-        let clip = scroll.contentView
-        var bounds = clip.bounds
-        let direction: CGFloat = clip.isFlipped ? 1 : -1
-        let page = max(scroll.verticalLineScroll, bounds.height - scroll.verticalPageScroll)
-        switch event.keyCode {
-        case 125: bounds.origin.y += direction * scroll.verticalLineScroll
-        case 126: bounds.origin.y -= direction * scroll.verticalLineScroll
-        case 121: bounds.origin.y += direction * page
-        case 116: bounds.origin.y -= direction * page
-        case 115: bounds.origin.y = clip.isFlipped ? clip.documentRect.minY : clip.documentRect.maxY
-        case 119: bounds.origin.y = clip.isFlipped ? clip.documentRect.maxY : clip.documentRect.minY
-        case 49:
-            bounds.origin.y += direction * page * (event.modifierFlags.contains(.shift) ? -1 : 1)
-        default: return
-        }
-        clip.scroll(to: clip.constrainBoundsRect(bounds).origin)
-        scroll.reflectScrolledClipView(clip)
-    }
-
-    private func openSelectedAccountOnServer() {
-        guard let selection = navigation.rootSelection,
-              connections.indices.contains(selection),
-              let url = SyncServerLink.url(origin: connections[selection].origin) else { return }
-        let presentationID = navigation.accountDetailPresentationID
-        guard openURL(url) else {
-            navigation.publishAccountDetailError(L10n.syncOpenServerFailed, for: presentationID)
-            announce(L10n.syncOpenServerFailed)
-            return
-        }
-        navigation.publishAccountDetailError(nil, for: presentationID)
-    }
-
     func handleTypeAhead(_ event: NSEvent) {
         guard navigation.activeMenu != .root,
               let input = event.charactersIgnoringModifiers,
@@ -445,7 +382,7 @@ extension MainSidebarAccountMenuCoordinator {
         let titles: [String]
         let isEnabled: (Int) -> Bool
         switch navigation.activeMenu {
-        case .root, .accountDetails:
+        case .root:
             return false
         case .appearance:
             let appearances = AppAppearance.allCases
@@ -491,8 +428,6 @@ extension MainSidebarAccountMenuCoordinator {
                 count: menuOffset + (showsAccountAction ? 5 : 4),
                 isEnabled: isRootIndexEnabled
             )
-        case .accountDetails:
-            return
         case .appearance:
             let appearances = AppAppearance.allCases
             navigation.submenuSelection = MainSidebarAccountMenuNavigationState.nextEnabledIndex(
@@ -516,7 +451,6 @@ extension MainSidebarAccountMenuCoordinator {
 
     func openSelectedSubmenu() {
         guard navigation.activeMenu == .root, let selection = navigation.rootSelection else { return }
-        if connections.indices.contains(selection) { presentAccountDetails(connections[selection]) }
         if selection == menuOffset { presentLanguageMenu() }
         if selection == menuOffset + 1 { presentAppearanceMenu() }
     }
@@ -526,17 +460,13 @@ extension MainSidebarAccountMenuCoordinator {
         case .root: activateRootSelection()
         case .languages: activateLanguageSelection()
         case .appearance: activateAppearanceSelection()
-        case .accountDetails: break
         }
     }
 
     func activateRootSelection() {
         guard let selection = navigation.rootSelection else { return }
-        if connections.indices.contains(selection) {
-            guard connections[selection].workspaceCount > 0 else { return }
-            selectAccount(connections[selection])
-            return
-        }
+        // A Dahlia account owns no workspace, so its row shows that it is signed in and opens nothing.
+        if connections.indices.contains(selection) { return }
         if selection == connections.count {
             // Choosing the Local Account opens its `Default` workspace when it has none.
             selectAccount(nil)
@@ -590,8 +520,6 @@ extension MainSidebarAccountMenuCoordinator {
             title = navigation.submenuSelection.flatMap {
                 AppAppearance.allCases.indices.contains($0) ? AppAppearance.allCases[$0].displayName : nil
             }
-        case .accountDetails:
-            title = L10n.syncProgress
         case .languages:
             title = navigation.submenuSelection.flatMap {
                 AppLanguage.allCases.indices.contains($0) ? AppLanguage.allCases[$0].displayName : nil
@@ -623,8 +551,7 @@ extension MainSidebarAccountMenuCoordinator {
     var menuOffset: Int { connections.count + 1 + (showsAddAccount ? 1 : 0) }
 
     private func isRootIndexEnabled(_ index: Int) -> Bool {
-        if connections.indices.contains(index) { return connections[index].workspaceCount > 0 }
-        return true
+        !connections.indices.contains(index)
     }
 
 }

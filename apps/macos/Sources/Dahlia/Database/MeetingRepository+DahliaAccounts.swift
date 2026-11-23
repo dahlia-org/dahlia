@@ -24,9 +24,6 @@ extension MeetingRepository {
 
     nonisolated func deleteDahliaAccountConnection(id: UUID) async throws {
         try await dbQueue.write { db in
-            guard try !Self.connectionHasPendingServerDeletion(id: id, in: db) else {
-                throw DahliaAccountConnectionError.pendingServerDeletion
-            }
             _ = try DahliaAccountConnectionRecord.deleteOne(db, key: id)
             // Deleting the account removes its chats with its agent directory; sign-out keeps both.
             try db.execute(sql: "DELETE FROM chat_threads WHERE accountID = ?", arguments: [id.uuidString.lowercased()])
@@ -34,34 +31,4 @@ extension MeetingRepository {
         }
     }
 
-    nonisolated func connectionHasPendingServerDeletion(id: UUID) async throws -> Bool {
-        try await dbQueue.read { db in
-            try Self.connectionHasPendingServerDeletion(id: id, in: db)
-        }
-    }
-
-    private nonisolated static func connectionHasPendingServerDeletion(id: UUID, in db: Database) throws -> Bool {
-        try Bool.fetchOne(
-            db,
-            sql: """
-            SELECT EXISTS (SELECT 1 FROM workspaces WHERE accountConnectionId = ?)
-                OR EXISTS (SELECT 1 FROM sync_transactions WHERE connectionId = ?)
-            """,
-            arguments: [id, id]
-        ) ?? false
-    }
-}
-
-enum DahliaAccountConnectionError: LocalizedError {
-    case pendingServerDeletion
-    case workspaceDispositionRequired
-
-    var errorDescription: String? {
-        switch self {
-        case .pendingServerDeletion:
-            L10n.dahliaAccountPendingServerDeletion
-        case .workspaceDispositionRequired:
-            L10n.dahliaAccountWorkspaceDispositionRequired
-        }
-    }
 }

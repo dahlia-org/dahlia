@@ -34,13 +34,11 @@ enum SetupTourPresentationPolicy {
 
     static func saveProgress(
         step: SetupTourStep,
-        accountConnectionID: UUID? = nil,
         databricksConnectionID: UUID? = nil,
         isAccountSelectionConfirmed: Bool = false,
         in defaults: UserDefaults = .standard
     ) {
         defaults.set(step.rawValue, forKey: progressStepUserDefaultsKey)
-        defaults.set(accountConnectionID?.uuidString, forKey: accountConnectionIDUserDefaultsKey)
         defaults.set(databricksConnectionID?.uuidString, forKey: databricksConnectionIDUserDefaultsKey)
         defaults.set(isAccountSelectionConfirmed, forKey: accountSelectionConfirmedUserDefaultsKey)
         defaults.set(true, forKey: modelProviderFirstUserDefaultsKey)
@@ -49,10 +47,6 @@ enum SetupTourPresentationPolicy {
     /// Progress saved by v0.29.0 or earlier, which asked for model providers after permissions.
     static func hasProgressBeforeModelProviderMoved(in defaults: UserDefaults = .standard) -> Bool {
         hasSavedProgress(in: defaults) && defaults.object(forKey: modelProviderFirstUserDefaultsKey) == nil
-    }
-
-    static func restoredAccountConnectionID(in defaults: UserDefaults = .standard) -> UUID? {
-        defaults.string(forKey: accountConnectionIDUserDefaultsKey).flatMap(UUID.init(uuidString:))
     }
 
     static func restoredDatabricksConnectionID(in defaults: UserDefaults = .standard) -> UUID? {

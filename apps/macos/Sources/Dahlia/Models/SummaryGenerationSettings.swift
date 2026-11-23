@@ -7,12 +7,9 @@ struct SummaryGenerationSettings: Codable, Equatable, Sendable {
     let detailLevelInstruction: String
     let languageDisplayName: String
     let runtimeProvider: CodexRuntimeProvider
-    var accountConnectionID: UUID?
     var workspaceID: UUID?
     var workspacePreferences: WorkspaceGenerationSettings?
     var customInstructions: String?
-
-    var sourceAccountConnectionID: UUID? { accountConnectionID }
 
     @MainActor
     static func current(
@@ -29,11 +26,10 @@ struct SummaryGenerationSettings: Codable, Equatable, Sendable {
             reasoningEffort: preferences.local.reasoningEffort,
             detailLevelInstruction: (detailLevel ?? preferences.summary.detailLevel).instruction,
             languageDisplayName: preferences.outputLanguage.displayName,
-            runtimeProvider: CodexRuntimeProvider(workspace: workspace),
-            accountConnectionID: workspace?.accountConnectionId,
+            runtimeProvider: CodexRuntimeProvider.local,
             workspaceID: workspace?.id,
             workspacePreferences: preferences,
-            customInstructions: AgentChatInstructions.loadForSummary(for: CodexRuntimeProvider(workspace: workspace), defaults: defaults)
+            customInstructions: AgentChatInstructions.loadForSummary(for: CodexRuntimeProvider.local, defaults: defaults)
         )
     }
 
@@ -42,13 +38,12 @@ struct SummaryGenerationSettings: Codable, Equatable, Sendable {
         return Self(
             modelID: modelID, reasoningEffort: reasoningEffort,
             detailLevelInstruction: detailLevel.instruction, languageDisplayName: languageDisplayName,
-            runtimeProvider: runtimeProvider, accountConnectionID: accountConnectionID,
+            runtimeProvider: runtimeProvider,
             workspaceID: workspaceID, workspacePreferences: workspacePreferences, customInstructions: customInstructions
         )
     }
 
     func applying(workspace: WorkspaceRecord? = nil, options: SummaryGenerationOptions) -> Self {
-        let connectionID = workspace.map(\.accountConnectionId) ?? sourceAccountConnectionID
         let preferences = options.applying(
             to: workspacePreferences ?? workspace
                 .map { AccountInferenceSettings(workspace: $0).generationSettings(outputLanguage: $0.generationSettings.outputLanguage) } ??
@@ -59,7 +54,7 @@ struct SummaryGenerationSettings: Codable, Equatable, Sendable {
             modelID: preferences.local.model, reasoningEffort: preferences.local.reasoningEffort,
             detailLevelInstruction: preferences.summary.detailLevel.instruction,
             languageDisplayName: preferences.outputLanguage.displayName,
-            runtimeProvider: runtimeProvider, accountConnectionID: connectionID,
+            runtimeProvider: runtimeProvider,
             workspaceID: workspace?.id ?? workspaceID, workspacePreferences: preferences, customInstructions: customInstructions
         )
     }

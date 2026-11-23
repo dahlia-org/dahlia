@@ -151,9 +151,6 @@ struct MainSearchPanel: View {
             isSearchFocused = true
             model.catalogDidChange(using: sidebarViewModel)
         }
-        .onChange(of: sidebarViewModel.currentWorkspace?.accountConnectionId) {
-            model.resetForWorkspaceChange(using: sidebarViewModel)
-        }
         .onChange(of: model.inputText) {
             model.queryDidChange(using: sidebarViewModel)
         }
@@ -185,13 +182,8 @@ struct MainSearchPanel: View {
     @ViewBuilder
     private var searchContent: some View {
         if let coverage = model.searchCoverage {
-            HStack {
-                Text(coverage).font(.dahliaSecondary).foregroundStyle(.secondary)
-                if model.serverSearchFailed {
-                    Button(L10n.retry) { model.retryServerSearch(using: sidebarViewModel) }
-                        .buttonStyle(.borderless)
-                }
-            }.padding(.horizontal, 12).padding(.vertical, 6)
+            Text(coverage).font(.dahliaSecondary).foregroundStyle(.secondary)
+                .padding(.horizontal, 12).padding(.vertical, 6)
         }
         if let errorMessage = model.errorMessage, !model.hasResults, !model.isLoadingChats {
             ContentUnavailableView(
@@ -293,40 +285,6 @@ struct MainSearchPanel: View {
                 }
             }
 
-            if !model.pendingProjects.isEmpty {
-                sectionHeader(L10n.serverSearchPendingProjects)
-                ForEach(model.pendingProjects) { project in
-                    MainSearchResultRow(
-                        title: project.projectName,
-                        leadingProjectAppearance: appearanceForProject(project.id),
-                        isSelected: model.selectedResultID == .project(project.id),
-                        action: { onOpenProject(project.id) }
-                    )
-                    .id(MainSearchResultID.project(project.id))
-                }
-            }
-            if !model.pendingMeetings.isEmpty {
-                sectionHeader(L10n.serverSearchPending)
-                ForEach(model.pendingMeetings) { meeting in
-                    meetingRow(meeting, index: 9)
-                }
-            }
-            if !model.pendingScreenshots.isEmpty {
-                sectionHeader(L10n.serverSearchPendingImages)
-                ScreenshotSearchResultsGrid(
-                    results: model.pendingScreenshots,
-                    selectedResultID: model.selectedResultID,
-                    hasMore: false,
-                    isLoading: false,
-                    imageAvailabilityProvider: { id, hash in
-                        await model.screenshotIsAvailable(id: id, contentHash: hash, using: sidebarViewModel)
-                    },
-                    imageDataProvider: { id in await model.screenshotImageData(id: id, using: sidebarViewModel) },
-                    onOpen: onOpenScreenshot,
-                    onLoadMore: {}
-                )
-            }
-
             if model.isLoading {
                 ProgressView()
                     .frame(maxWidth: .infinity)
@@ -369,7 +327,7 @@ struct MainSearchPanel: View {
         switch model.selectedResultID {
         case let .meeting(id): onOpenMeeting(id)
         case let .screenshot(id):
-            if let screenshot = (model.screenshots + model.pendingScreenshots).first(where: { $0.id == id }) {
+            if let screenshot = model.screenshots.first(where: { $0.id == id }) {
                 onOpenScreenshot(screenshot)
             }
         case let .project(id): onOpenProject(id)

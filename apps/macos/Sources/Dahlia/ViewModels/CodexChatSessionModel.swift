@@ -170,7 +170,7 @@ final class CodexChatSessionModel: Identifiable {
         self.id = id
         let resolvedWorkspaceID = settings.currentWorkspace?.id
         let usesWorkspaceSettings = workspaceSettings.workspaceID == resolvedWorkspaceID
-        self.accountID = accountID ?? CodexRuntimeProvider(workspace: settings.currentWorkspace).accountKey
+        self.accountID = accountID ?? CodexRuntimeProvider.local.accountKey
         self.backendThreadID = backendThreadID
         self.title = title
         self.messages = messages

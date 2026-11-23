@@ -104,7 +104,6 @@ import Synchronization
             })
             #expect(remote.stage == .failed)
             #expect(remote.error == L10n.legacyProcessingRetryOnMac)
-            #expect(remote.serverRequest?.model == "gemini")
             #expect(try await fixture.database.dbQueue.read { db in
                 try RecordingSessionRecord.fetchOne(db, key: invalidID)?.processingJSON
             } == "invalid-json")
@@ -141,7 +140,7 @@ import Synchronization
             if confirmsTranscription {
                 saved.stage = .transcribing
             } else {
-                saved.prepareRetry(serverJob: nil)
+                saved.prepareRetry()
             }
             #expect(saved.failureDismissed == nil)
             saved.stage = .failed
@@ -370,19 +369,11 @@ import Synchronization
             let sessionID = try fixture.insertRecordingSession(for: fixture.first, offset: 0)
             let options = SummaryGenerationOptions(exportOptions: .init(exportsToWorkspace: false))
             let id = UUID.v7()
-            // A saved Server request retains its ID on result-sync retry. Use the local runner to gate cleanup.
             let processing = RecordingProcessing(
                 id: id, automatic: true, liveDraft: false, localeIdentifier: "en_US", method: .transcript,
                 options: options, generationSettings: .current(), workspaceSettings: nil,
                 summaryMode: .local,
-                sessionIDs: [sessionID], stage: .transcribing,
-                serverRequest: .init(
-                    id: id.uuidString.lowercased(),
-                    input: .init(type: "transcript", version: "1"),
-                    model: "gpt-5.4",
-                    detailLevel: "high",
-                    summaryLanguage: "en"
-                )
+                sessionIDs: [sessionID], stage: .transcribing
             )
             try await fixture.database.dbQueue.write { db in try processing.save(sessionID: sessionID, in: db) }
             viewModel.registerPendingBatchSummaryForTesting(
@@ -1430,7 +1421,6 @@ import Synchronization
 
             await destination.select(destination.first, in: viewModel, note: "destination")
             let confirmation = try #require(viewModel.pendingBatchTranscriptionConfirmation)
-            #expect(!confirmation.usesServerSummary)
             try await original.database.dbQueue.write { db in
                 var workspace = try #require(try WorkspaceRecord.fetchOne(db, key: original.workspace.id))
                 workspace.generationSettings.processing.location = .local

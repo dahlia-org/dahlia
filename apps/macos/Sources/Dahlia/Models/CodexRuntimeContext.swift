@@ -7,14 +7,6 @@ enum CodexRuntimeProvider: Codable, Hashable, Sendable {
     case local
     case dahlia(connectionID: UUID)
 
-    init(accountConnectionID: UUID?) {
-        self = accountConnectionID.map(Self.dahlia) ?? .local
-    }
-
-    init(workspace: WorkspaceRecord?) {
-        self.init(accountConnectionID: workspace?.accountConnectionId)
-    }
-
     /// The Dahlia account's connection; nil for the app's account.
     var accountConnectionID: UUID? {
         guard case let .dahlia(connectionID) = self else { return nil }

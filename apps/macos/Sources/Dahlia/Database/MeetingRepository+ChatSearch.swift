@@ -13,7 +13,7 @@ extension MeetingRepository {
     ) async throws -> (threads: [CodexChatThreadSummary], hasMore: Bool) {
         try await withSearchDeadline {
             try await dbQueue.read { db in
-                guard criteria.tagIDs.isEmpty, !criteria.pendingOnly else { return ([], false) }
+                guard criteria.tagIDs.isEmpty else { return ([], false) }
                 var conditions = ["t.accountID = ?"]
                 var arguments: StatementArguments = [accountID]
                 var source = "chat_threads t"

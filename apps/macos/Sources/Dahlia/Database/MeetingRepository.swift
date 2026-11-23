@@ -3,11 +3,6 @@ import DahliaRuntimeSupport
 import Foundation
 import GRDB
 
-enum DahliaAccountWorkspaceDisposition: Equatable, Sendable {
-    case deleteLocalCopies
-    case moveToLocalAccount
-}
-
 /// ミーティング・セグメント・プロジェクト・ワークスペースの DB クエリを集約するリポジトリ。
 @MainActor
 // Query methods share one MainActor-isolated database boundary.
@@ -66,7 +61,7 @@ final class MeetingRepository {
 
     nonisolated func fetchLatestLocalAccountWorkspace() async throws -> WorkspaceRecord? {
         try await dbQueue.read { db in
-            try WorkspaceRecord.filter(Column("accountConnectionId") == nil)
+            try WorkspaceRecord
                 .order(Column("lastOpenedAt").desc, Column("id"))
                 .fetchOne(db)
         }
@@ -110,84 +105,13 @@ final class MeetingRepository {
         }
     }
 
-    nonisolated func insertCloudWorkspaceAsync(_ workspace: WorkspaceRecord, revision: Int) async throws {
-        try await dbQueue.write { db in
-            try workspace.insert(db)
-            try db.execute(
-                sql: """
-                INSERT INTO sync_entity_state(workspace_id, entity, entityId, confirmedRevision)
-                VALUES (?, 'workspace', ?, ?)
-                """,
-                arguments: [workspace.id, workspace.id, revision]
-            )
-        }
-    }
-
-    /// Discovery creates a working copy, never a local upload or an implicit account transfer.
-    nonisolated static func registerDiscoveredCloudWorkspaces(
-        _ cloudWorkspaces: [CloudWorkspaceRecord],
-        connection: DahliaAccountConnectionRecord,
-        dbQueue: any DatabaseWriter
-    ) async throws -> Bool {
-        try await dbQueue.write { db in
-            try registerDiscoveredCloudWorkspaces(cloudWorkspaces, connection: connection, in: db)
-        }
-    }
-
-    nonisolated static func registerDiscoveredCloudWorkspaces(
-        _ cloudWorkspaces: [CloudWorkspaceRecord],
-        connection: DahliaAccountConnectionRecord,
-        in db: Database
-    ) throws -> Bool {
-        try Task.checkCancellation()
-        guard let current = try DahliaAccountConnectionRecord.fetchOne(db, key: connection.id),
-              current.origin == connection.origin, current.clientID == connection.clientID else { return false }
-        var changed = false
-        for cloud in cloudWorkspaces where cloud.connectionId == connection.id {
-            if var existing = try WorkspaceRecord.fetchOne(db, key: cloud.workspaceId) {
-                guard existing.accountConnectionId == connection.id,
-                      existing.syncConfirmedConnectionId == connection.id else { continue }
-                guard existing.organizationId == cloud.organizationId else { throw SyncTransactionQueueError.invalidReceipt }
-                guard existing.syncRole != cloud.role || existing.personalUserId != cloud.personalUserId else { continue }
-                existing.syncRole = cloud.role
-                existing.personalUserId = cloud.personalUserId
-                try existing.update(db)
-                changed = true
-                continue
-            }
-            var workspace = WorkspaceRecord(
-                id: cloud.workspaceId, path: nil, icon: cloud.icon, color: cloud.color,
-                name: cloud.name, createdAt: cloud.createdAt, lastOpenedAt: .distantPast
-            )
-            workspace.accountConnectionId = connection.id
-            workspace.syncConfirmedConnectionId = connection.id
-            workspace.syncRole = cloud.role
-            workspace.organizationId = cloud.organizationId
-            workspace.personalUserId = cloud.personalUserId
-            workspace.generationSettings = cloud.generationSettings
-            try workspace.insert(db)
-            try db.execute(
-                sql: "INSERT INTO sync_entity_state(workspace_id, entity, entityId, confirmedRevision) VALUES (?, 'workspace', ?, ?)",
-                arguments: [workspace.id, workspace.id, cloud.revision]
-            )
-            changed = true
-        }
-        return changed
-    }
-
     /// ワークスペースの表示名を更新する。
     nonisolated func updateWorkspaceName(id: UUID, name: String, appearance: ProjectAppearance? = nil) async throws -> WorkspaceRecord? {
         try await dbQueue.write { db in
             guard var workspace = try WorkspaceRecord.fetchOne(db, key: id) else { return nil }
-            guard workspace.allowsWorkspaceManagement else { throw SyncTransactionQueueError.readOnlyWorkspace }
             workspace.name = name
             if let appearance { workspace.appearance = appearance }
             try workspace.update(db)
-            try SyncTransactionRecorder.record(
-                workspaceId: id,
-                operations: [SyncInitialSnapshotBuilder.workspaceOperation(workspace, action: .update)],
-                in: db
-            )
             return workspace
         }
     }
@@ -215,7 +139,6 @@ final class MeetingRepository {
     nonisolated func accountWorkspace(creating created: WorkspaceRecord) async throws -> WorkspaceRecord {
         try await dbQueue.write { db in
             if let existing = try WorkspaceRecord
-                .filter(Column("accountConnectionId") == nil)
                 .order(Column("createdAt"), Column("id"))
                 .fetchOne(db) {
                 return existing
@@ -228,15 +151,9 @@ final class MeetingRepository {
     nonisolated func updateWorkspaceOutputLanguage(id: UUID, language: SummaryLanguage) async throws -> WorkspaceRecord? {
         try await dbQueue.write { db in
             guard var workspace = try WorkspaceRecord.fetchOne(db, key: id) else { return nil }
-            guard workspace.allowsWorkspaceManagement else { throw SyncTransactionQueueError.readOnlyWorkspace }
             guard workspace.generationSettings.outputLanguage != language else { return workspace }
             workspace.generationSettings.outputLanguage = language
             try workspace.update(db)
-            try SyncTransactionRecorder.record(
-                workspaceId: id,
-                operations: [SyncInitialSnapshotBuilder.workspaceOperation(workspace, action: .update)],
-                in: db
-            )
             return workspace
         }
     }
@@ -244,71 +161,9 @@ final class MeetingRepository {
     nonisolated func updateWorkspaceAISettings(_ settings: WorkspaceAISettingsSnapshot) async throws -> WorkspaceRecord? {
         try await dbQueue.write { db in
             guard var workspace = try WorkspaceRecord.fetchOne(db, key: settings.workspaceID) else { return nil }
-            let changesGeneration = workspace.generationSettings.outputLanguage != settings.generationSettings.outputLanguage
-            if changesGeneration, !workspace.allowsWorkspaceManagement { throw SyncTransactionQueueError.readOnlyWorkspace }
             settings.applyAISettings(to: &workspace)
             try workspace.update(db)
-            if changesGeneration {
-                try SyncTransactionRecorder.record(
-                    workspaceId: workspace.id,
-                    operations: [SyncInitialSnapshotBuilder.workspaceOperation(workspace, action: .update)],
-                    in: db
-                )
-            }
             return workspace
-        }
-    }
-
-    nonisolated func acceptServerSyncVersion(
-        workspaceId: UUID,
-        expectedLastTransactionId: UUID? = nil,
-        expectedHasConfirmedWorkspace: Bool? = nil
-    ) async throws {
-        try await SyncTransactionQueue.acceptServerVersion(
-            workspaceId: workspaceId,
-            expectedLastTransactionId: expectedLastTransactionId,
-            expectedHasConfirmedWorkspace: expectedHasConfirmedWorkspace,
-            dbQueue: dbQueue
-        )
-    }
-
-    nonisolated func discardInvalidSyncTransaction(
-        workspaceId: UUID,
-        expectedLastTransactionId: UUID? = nil,
-        expectedHasConfirmedWorkspace: Bool? = nil
-    ) async throws {
-        try await SyncTransactionQueue.discardInvalidTransaction(
-            workspaceId: workspaceId,
-            expectedLastTransactionId: expectedLastTransactionId,
-            expectedHasConfirmedWorkspace: expectedHasConfirmedWorkspace,
-            dbQueue: dbQueue
-        )
-    }
-
-    nonisolated func discardFileSyncChanges(workspaceId: UUID, fileId: UUID, expectedLastTransactionId: UUID) async throws {
-        try await SyncTransactionQueue.discardFileChanges(
-            workspaceId: workspaceId,
-            fileId: fileId,
-            expectedLastTransactionId: expectedLastTransactionId,
-            dbQueue: dbQueue
-        )
-    }
-
-    nonisolated func retryInvalidSyncTransaction(workspaceId: UUID) async throws {
-        try await SyncTransactionQueue.retryInvalidTransaction(workspaceId: workspaceId, dbQueue: dbQueue)
-    }
-
-    nonisolated func retryAuthorizationSync(connectionId: UUID) async throws {
-        try await SyncTransactionQueue.retryAuthorizationBlocks(connectionId: connectionId, dbQueue: dbQueue)
-    }
-
-    nonisolated func reapplyLocalSyncVersion(workspaceId: UUID) async throws {
-        try await SyncTransactionQueue.reapplyLocalVersion(workspaceId: workspaceId, dbQueue: dbQueue)
-    }
-
-    nonisolated func blockedSyncWorkspaceIDs() async throws -> Set<UUID> {
-        try await dbQueue.read { db in
-            try UUID.fetchSet(db, sql: "SELECT DISTINCT workspace_id FROM sync_transactions WHERE blockedReason IS NOT NULL")
         }
     }
 
@@ -323,28 +178,8 @@ final class MeetingRepository {
         }
     }
 
-    nonisolated func workspaceCountsByAccountConnectionID() async throws -> [UUID: Int] {
-        try await dbQueue.read { db in
-            let rows = try Row.fetchAll(
-                db,
-                sql: """
-                SELECT accountConnectionId, COUNT(*) AS workspaceCount
-                FROM workspaces
-                WHERE accountConnectionId IS NOT NULL
-                GROUP BY accountConnectionId
-                """
-            )
-            return Dictionary(uniqueKeysWithValues: rows.compactMap { row in
-                guard let connectionID: UUID = row["accountConnectionId"] else { return nil }
-                let count: Int = row["workspaceCount"]
-                return (connectionID, count)
-            })
-        }
-    }
-
     /// ワークスペースを削除する（関連プロジェクト・ミーティングもカスケード削除）。
     nonisolated func deleteWorkspace(id: UUID) throws {
-        try ensureWorkspaceCanBeRemoved(id: id)
         let meetingIds = try meetingIds(workspaceId: id)
         try ensureNoLiveSegmentedAudio(meetingIds: Set(meetingIds))
         let audioTargets = try BatchAudioCleanupService.deletionTargets(workspaceId: id, dbQueue: dbQueue)
@@ -361,9 +196,6 @@ final class MeetingRepository {
     }
 
     private nonisolated static func deleteWorkspaceRows(id: UUID, in db: Database) throws {
-        if try WorkspaceRecord.fetchOne(db, key: id)?.syncRole == "viewer" {
-            try SyncTransactionQueue.discard(workspaceId: id, in: db)
-        }
         let projects = try ProjectRecord.fetchResolvedAll(workspaceId: id, in: db)
             .sorted {
                 $0.path.split(separator: "/").count > $1.path.split(separator: "/").count
@@ -378,184 +210,12 @@ final class MeetingRepository {
         id: UUID,
         managedRootURL: URL = BatchAudioStorage.managedRootURL
     ) async throws {
-        try ensureWorkspaceCanBeRemoved(id: id)
         let ids = try meetingIds(workspaceId: id)
         try await prepareSegmentedAudioForDeletion(
             meetingIds: Set(ids),
             managedRootURL: managedRootURL
         )
         try deleteWorkspace(id: id)
-    }
-
-    nonisolated func resolveWorkspacesForSignOut(
-        connectionID: UUID,
-        disposition: DahliaAccountWorkspaceDisposition,
-        managedRootURL: URL = BatchAudioStorage.managedRootURL,
-        screenshotContent: ScreenshotContentProvider = .shared,
-        textContent: MeetingContentProvider = .shared
-    ) async throws {
-        let workspaceIds = try await dbQueue.read { db in
-            try UUID.fetchAll(
-                db,
-                sql: "SELECT id FROM workspaces WHERE accountConnectionId = ? ORDER BY id",
-                arguments: [connectionID]
-            )
-        }
-        guard !workspaceIds.isEmpty else { return }
-
-        try await DocumentEditorModel.finishLocalSaves(dbQueue: dbQueue)
-        if disposition != .moveToLocalAccount {
-            try await dbQueue.read { db in
-                for id in workspaceIds where try DocumentRetention.hasPrivateData(workspaceID: id, in: db) {
-                    throw DocumentCoreError.privateDataRequiresLocalCopy
-                }
-            }
-        }
-
-        if disposition == .moveToLocalAccount {
-            screenshotContent.retainOriginals(workspaceIds: workspaceIds, dbQueue: dbQueue)
-            defer { screenshotContent.releaseOriginals(workspaceIds: workspaceIds, dbQueue: dbQueue) }
-            let textSources = try await textContent.prepareAccountTransfer(
-                workspaceIds: workspaceIds,
-                connectionId: connectionID,
-                dbQueue: dbQueue,
-                screenshotContent: screenshotContent
-            )
-            defer { Task { await textContent.releaseAccountTransfer(workspaceIds: workspaceIds, dbQueue: dbQueue) } }
-            var prepared: [UUID: [FileTransfer]] = [:]
-            for workspaceId in workspaceIds {
-                prepared[workspaceId] = try await screenshotContent.prepareAccountTransfer(
-                    workspaceId: workspaceId,
-                    connectionId: nil,
-                    dbQueue: dbQueue
-                )
-            }
-            let transfers = prepared
-            try await textContent.validateAccountTransfer(textSources, dbQueue: dbQueue)
-            try await dbQueue.write { db in
-                guard try Set(UUID.fetchAll(db, sql: "SELECT id FROM workspaces WHERE accountConnectionId = ?", arguments: [connectionID])) ==
-                    Set(workspaceIds)
-                else { throw TextContentError.changed }
-                for workspaceId in workspaceIds {
-                    guard try WorkspaceRecord.fetchOne(db, key: workspaceId)?.accountConnectionId == connectionID
-                    else { throw ScreenshotContentError.authorizationRequired }
-                    guard try MeetingContentProvider.TransferSource.read(workspaceId: workspaceId, in: db) == textSources[workspaceId]
-                    else { throw TextContentError.changed }
-                    try TextContentStore.requireWorkspaceComplete(workspaceId: workspaceId, in: db)
-                    try ScreenshotContentProvider.installTransfers(transfers[workspaceId, default: []], workspaceId: workspaceId, in: db)
-                }
-                for workspaceId in workspaceIds {
-                    try SyncTransactionQueue.discard(workspaceId: workspaceId, in: db)
-                    try db.execute(sql: "DELETE FROM sync_content_state WHERE workspace_id = ?", arguments: [workspaceId])
-                }
-                try db.execute(
-                    sql: "DELETE FROM sync_entity_state WHERE workspace_id IN (\(workspaceIds.map { _ in "?" }.joined(separator: ",")))",
-                    arguments: StatementArguments(workspaceIds)
-                )
-                for var workspace in try WorkspaceRecord.filter(Column("accountConnectionId") == connectionID).fetchAll(db) {
-                    workspace.moveToLocalAccount()
-                    try workspace.update(db)
-                    try db.execute(
-                        sql: "UPDATE document_updates SET pending = 0 WHERE documentId IN (SELECT id FROM documents WHERE workspace_id = ?)",
-                        arguments: [workspace.id]
-                    )
-                    try db.execute(
-                        sql: "UPDATE documents SET generation = NULL, revision = 0 WHERE workspace_id = ?",
-                        arguments: [workspace.id]
-                    )
-                    try db.execute(
-                        sql: "UPDATE document_recoveries SET pending = 0 WHERE documentId IN (SELECT id FROM documents WHERE workspace_id = ?)",
-                        arguments: [workspace.id]
-                    )
-                }
-            }
-            // The moved screenshots are local now, so the next launch converts them like any local library.
-            UserDefaults.standard.removeObject(forKey: ScreenshotContentProvider.localScreenshotConversionCompletedKey)
-            return
-        }
-
-        let meetingIds = try await dbQueue.read { db in
-            try UUID.fetchAll(
-                db,
-                sql: "SELECT id FROM meetings WHERE workspace_id IN (\(workspaceIds.map { _ in "?" }.joined(separator: ",")))",
-                arguments: StatementArguments(workspaceIds)
-            )
-        }
-        let hasActiveRecording = if meetingIds.isEmpty {
-            false
-        } else {
-            try await dbQueue.read { db in
-                try Bool.fetchOne(
-                    db,
-                    sql: """
-                    SELECT EXISTS (
-                        SELECT 1 FROM recording_sessions
-                        WHERE meetingId IN (\(meetingIds.map { _ in "?" }.joined(separator: ",")))
-                          AND endedAt IS NULL
-                    )
-                    """,
-                    arguments: StatementArguments(meetingIds)
-                ) ?? false
-            }
-        }
-        guard !hasActiveRecording else { throw RecordingAudioStoreError.invalidState }
-        try ensureNoLiveSegmentedAudio(meetingIds: Set(meetingIds))
-        try await prepareSegmentedAudioForDeletion(meetingIds: Set(meetingIds), managedRootURL: managedRootURL)
-        let audioTargets = try workspaceIds.flatMap {
-            try BatchAudioCleanupService.deletionTargets(workspaceId: $0, dbQueue: dbQueue)
-        }
-        try await dbQueue.writeWithoutTransaction { db in
-            try db.inTransaction {
-                for workspaceId in workspaceIds {
-                    try SyncTransactionQueue.discard(workspaceId: workspaceId, in: db)
-                    try Self.deleteWorkspaceRows(id: workspaceId, in: db)
-                }
-                return .rollback
-            }
-        }
-        try BatchAudioCleanupService.deleteFiles(audioTargets)
-        try await dbQueue.write { db in
-            let placeholders = workspaceIds.map { _ in "?" }.joined(separator: ",")
-            let arguments = StatementArguments(workspaceIds)
-            let hasActiveRecording = try Bool.fetchOne(
-                db,
-                sql: """
-                SELECT EXISTS (
-                    SELECT 1 FROM recording_sessions
-                    JOIN meetings ON meetings.id = recording_sessions.meetingId
-                    WHERE meetings.workspace_id IN (\(placeholders))
-                      AND recording_sessions.endedAt IS NULL
-                )
-                """,
-                arguments: arguments
-            ) ?? false
-            let hasLiveAudio = try Bool.fetchOne(
-                db,
-                sql: """
-                SELECT EXISTS (
-                    SELECT 1 FROM recording_audio_segments
-                    JOIN recording_sessions ON recording_sessions.id = recording_audio_segments.recordingSessionId
-                    JOIN meetings ON meetings.id = recording_sessions.meetingId
-                    WHERE meetings.workspace_id IN (\(placeholders))
-                      AND recording_audio_segments.state != ?
-                )
-                """,
-                arguments: arguments + [RecordingAudioSegmentState.purged.rawValue]
-            ) ?? false
-            guard !hasActiveRecording, !hasLiveAudio else { throw RecordingAudioStoreError.invalidState }
-            for workspaceId in workspaceIds {
-                try SyncTransactionQueue.discard(workspaceId: workspaceId, in: db)
-                try Self.deleteWorkspaceRows(id: workspaceId, in: db)
-            }
-        }
-    }
-
-    private nonisolated func ensureWorkspaceCanBeRemoved(id: UUID) throws {
-        if try dbQueue.read({ db in
-            try WorkspaceRecord.fetchOne(db, key: id)?.requiresServerDeletionBeforeRemoval == true
-        }) {
-            throw WorkspaceDeletionError.serverCopyExists
-        }
     }
 
     /// UI をブロックせず、ワークスペースの最終オープン日時を更新する。
@@ -631,11 +291,6 @@ final class MeetingRepository {
                 record.name = newName
                 record.updatedAt = .now
                 try record.update(db)
-                try SyncTransactionRecorder.record(
-                    workspaceId: record.workspaceId,
-                    operations: [SyncInitialSnapshotBuilder.meetingOperation(record, action: .update, in: db)],
-                    in: db
-                )
             }
         }
     }
@@ -645,12 +300,6 @@ final class MeetingRepository {
         let audioTargets = try BatchAudioCleanupService.deletionTargets(meetingIds: [id], dbQueue: dbQueue)
         try BatchAudioCleanupService.deleteFiles(audioTargets)
         try dbQueue.write { db in
-            guard let meeting = try MeetingRecord.fetchOne(db, key: id) else { return }
-            try SyncTransactionRecorder.record(
-                workspaceId: meeting.workspaceId,
-                operations: [SyncOperationDraft(entity: .meeting, action: .delete, entityId: id)],
-                in: db
-            )
             _ = try MeetingRecord.deleteOne(db, key: id)
         }
     }
@@ -698,16 +347,6 @@ final class MeetingRepository {
         let audioTargets = try BatchAudioCleanupService.deletionTargets(meetingIds: ids, dbQueue: dbQueue)
         try BatchAudioCleanupService.deleteFiles(audioTargets)
         try dbQueue.write { db in
-            let meetings = try MeetingRecord.filter(ids.contains(Column("id"))).fetchAll(db)
-            for (workspaceId, workspaceMeetings) in Dictionary(grouping: meetings, by: \.workspaceId) {
-                try SyncTransactionRecorder.recordBatches(
-                    workspaceId: workspaceId,
-                    operations: workspaceMeetings.map {
-                        SyncOperationDraft(entity: .meeting, action: .delete, entityId: $0.id)
-                    },
-                    in: db
-                )
-            }
             _ = try MeetingRecord.filter(ids.contains(Column("id"))).deleteAll(db)
         }
     }
@@ -792,18 +431,6 @@ final class MeetingRepository {
                 .filter(Column("workspace_id") == workspaceId)
                 .updateAll(db, Column("projectId").set(to: toProjectId))
 
-            let changedMeetings = try MeetingRecord
-                .filter(ids.contains(Column("id")))
-                .filter(Column("workspace_id") == workspaceId)
-                .fetchAll(db)
-            try SyncTransactionRecorder.recordBatches(
-                workspaceId: workspaceId,
-                operations: changedMeetings.map {
-                    try SyncInitialSnapshotBuilder.meetingOperation($0, action: .update, in: db)
-                },
-                in: db
-            )
-
             try Self.updateWorkspaceExports(workspaceExportUpdates, forMeetingIds: ids, in: db)
         }
     }
@@ -843,19 +470,11 @@ final class MeetingRepository {
                 createdAt: existingSummary?.createdAt ?? Date()
             )
             try record.save(db)
-            try SyncTransactionRecorder.record(
-                workspaceId: meeting.workspaceId,
-                operations: [
-                    SyncInitialSnapshotBuilder.meetingOperation(meeting, action: .update, in: db),
-                    SyncInitialSnapshotBuilder.summaryOperation(record, action: .upsert),
-                ],
-                in: db
-            )
             _ = try SummaryExportRecord
                 .filter(Column("meetingId") == meetingId)
                 .deleteAll(db)
 
-            try Self.mergeGeneratedSummaryTags(tags, meetingId: meetingId, recordEvents: true, in: db)
+            try Self.mergeGeneratedSummaryTags(tags, meetingId: meetingId, in: db)
             if let sessionID = expectation?.recordingSessionID, var processing {
                 processing.summaryApplied = true
                 processing.summaryExpectation = try SummaryGenerationExpectation(
@@ -870,7 +489,7 @@ final class MeetingRepository {
     }
 
     nonisolated static func mergeGeneratedSummaryTags(
-        _ tags: [String], meetingId: UUID, recordEvents: Bool, in db: Database
+        _ tags: [String], meetingId: UUID, in db: Database
     ) throws {
         let tagNames = Array(Set(tags.filter { !$0.isEmpty }))
         if !tagNames.isEmpty {
@@ -899,9 +518,6 @@ final class MeetingRepository {
                     sql: "INSERT OR IGNORE INTO meeting_tags (meetingId, tagId) VALUES (?, ?)",
                     arguments: [meetingId, tagId]
                 )
-                if recordEvents, db.changesCount > 0 {
-                    try MeetingEventRecorder.record(.tagAdded, meetingId: meetingId, relatedId: String(tagId), in: db)
-                }
             }
         }
     }
@@ -923,9 +539,6 @@ final class MeetingRepository {
                 sql: "INSERT OR IGNORE INTO meeting_tags (meetingId, tagId) VALUES (?, ?)",
                 arguments: [meetingId, tagId]
             )
-            if db.changesCount > 0 {
-                try MeetingEventRecorder.record(.tagAdded, meetingId: meetingId, relatedId: String(tagId), in: db)
-            }
         }
     }
 
@@ -934,12 +547,9 @@ final class MeetingRepository {
         try dbQueue.write { db in
             guard let tag = try TagRecord.filter(Column("name") == name).fetchOne(db),
                   let tagId = tag.id else { return }
-            let removed = try MeetingTagRecord
+            _ = try MeetingTagRecord
                 .filter(Column("meetingId") == meetingId && Column("tagId") == tagId)
                 .deleteAll(db)
-            if removed > 0 {
-                try MeetingEventRecorder.record(.tagRemoved, meetingId: meetingId, relatedId: String(tagId), in: db)
-            }
             let count = try MeetingTagRecord.filter(Column("tagId") == tagId).fetchCount(db)
             if count == 0 {
                 _ = try TagRecord.deleteOne(db, key: tagId)
@@ -1077,7 +687,7 @@ final class MeetingRepository {
         }
     }
 
-    /// Summary input excludes screenshots that Server image analysis found to have no shared material.
+    /// Summary input excludes screenshots that image analysis found to have no shared material.
     nonisolated func fetchSummaryScreenshots(forMeetingId meetingId: UUID) throws -> [MeetingScreenshotRecord] {
         try dbQueue.read { db in
             try MeetingScreenshotRecord
@@ -1111,18 +721,6 @@ final class MeetingRepository {
             _ = try MeetingAttachmentRecord
                 .filter(deletedIds.contains(Column("id")))
                 .deleteAll(db)
-            guard let workspaceId = try UUID.fetchOne(
-                db,
-                sql: "SELECT workspace_id FROM meetings WHERE id = ?",
-                arguments: [meetingId]
-            ) else { return deletedScreenshots }
-            try SyncTransactionRecorder.recordBatches(
-                workspaceId: workspaceId,
-                operations: deletedScreenshots.map {
-                    SyncOperationDraft(entity: .meetingAttachment, action: .delete, entityId: $0.id)
-                },
-                in: db
-            )
             return deletedScreenshots
         }
     }
@@ -1191,16 +789,6 @@ final class MeetingRepository {
         try dbQueue.write { db in
             try TextContentAccess.requireComplete(entity: .summary, id: summary.meetingId, in: db)
             try summary.save(db)
-            guard let workspaceId = try UUID.fetchOne(
-                db,
-                sql: "SELECT workspace_id FROM meetings WHERE id = ?",
-                arguments: [summary.meetingId]
-            ) else { return }
-            try SyncTransactionRecorder.record(
-                workspaceId: workspaceId,
-                operations: [SyncInitialSnapshotBuilder.summaryOperation(summary, action: .upsert)],
-                in: db
-            )
         }
     }
 
@@ -1210,14 +798,13 @@ final class MeetingRepository {
         try dbQueue.write { db in
             guard let meeting = try MeetingRecord.fetchOne(db, key: meetingID),
                   let workspace = try WorkspaceRecord.fetchOne(db, key: meeting.workspaceId),
-                  workspace.accountConnectionId == nil, workspace.url == nil,
+                  workspace.url == nil,
                   var summary = try TextContentAccess.summary(meetingId: meetingID, in: db),
                   let promoted = try SummaryVersionRecord.fetchOne(
                       db, key: ["meetingId": meetingID.databaseValue, "version": version.databaseValue]
                   )
             else { throw TextContentError.changed }
             guard !promoted.isCurrent else { return }
-            try WorkspaceTransferFence.recordLocalMutation(workspaceID: workspace.id, in: db)
             // The marker moves first so the body triggers see the promoted version as current and add nothing.
             try db.execute(sql: "UPDATE summary_versions SET isCurrent = 0 WHERE meetingId = ? AND isCurrent", arguments: [meetingID])
             try db.execute(
@@ -1291,10 +878,6 @@ final class MeetingRepository {
             in: db
         )
     }
-}
-
-enum WorkspaceDeletionError: Error {
-    case serverCopyExists
 }
 
 extension MeetingRepository {

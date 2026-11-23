@@ -216,8 +216,8 @@ struct ChatThreadStore: ChatItemStore, Sendable {
         default: nil
         }
         if let projectID, let project = try ProjectRecord.fetchOne(db, key: projectID),
-           let workspace = try WorkspaceRecord.fetchOne(db, key: project.workspaceId),
-           CodexRuntimeProvider(workspace: workspace).accountKey == accountID {
+           try WorkspaceRecord.exists(db, key: project.workspaceId),
+           CodexRuntimeProvider.local.accountKey == accountID {
             try db.execute(sql: "UPDATE chat_threads SET projectID = ? WHERE id = ? AND projectID IS NULL", arguments: [projectID, threadID])
         }
     }

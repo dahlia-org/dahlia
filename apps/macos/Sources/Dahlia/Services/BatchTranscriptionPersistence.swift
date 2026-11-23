@@ -23,7 +23,7 @@ enum BatchTranscriptionPersistence {
             }
             for input in inputs {
                 guard let archive = archives.first(where: {
-                    $0.number == input.recordingNumber && $0.workspaceId == workspace.id && $0.connectionId == workspace.accountConnectionId
+                    $0.number == input.recordingNumber && $0.workspaceId == workspace.id && $0.connectionId == nil
                 }), try archive.audio[input.source]?.checksum == input.checksum else {
                     throw TranscriptVersionError.fullTranscriptionUnavailable
                 }
@@ -45,7 +45,7 @@ enum BatchTranscriptionPersistence {
         try dbQueue.write { db in
             guard let session = try RecordingSessionRecord.fetchOne(db, key: sessionId),
                   session.meetingId == meetingId,
-                  let meeting = try MeetingRecord.fetchOne(db, key: meetingId) else {
+                  try MeetingRecord.exists(db, key: meetingId) else {
                 throw CocoaError(.fileNoSuchFile)
             }
             guard session.batchDiscardedAt == nil,
@@ -154,13 +154,7 @@ enum BatchTranscriptionPersistence {
                 metadata: metadata
             )
             try TranscriptRecord(meetingId: meetingId, info: info).save(db)
-            try TranscriptRecord.enqueueSnapshot(meetingId: meetingId, info: info, in: db)
-            guard let updated = try MeetingRecord.fetchOne(db, key: meetingId) else { throw CocoaError(.fileNoSuchFile) }
-            try SyncTransactionRecorder.record(
-                workspaceId: meeting.workspaceId,
-                operations: [SyncInitialSnapshotBuilder.meetingOperation(updated, action: .update, in: db)],
-                in: db
-            )
+            guard try MeetingRecord.exists(db, key: meetingId) else { throw CocoaError(.fileNoSuchFile) }
         }
     }
 }

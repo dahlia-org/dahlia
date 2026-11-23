@@ -2,7 +2,6 @@ import AppKit
 import SwiftUI
 
 struct MainSidebarAccountMenuButton: NSViewRepresentable {
-    @State private var accountController = DahliaCloudAccountController.shared
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     let connections: [DahliaAccountConnection]
@@ -70,32 +69,12 @@ struct MainSidebarAccountMenuButton: NSViewRepresentable {
         _ = dynamicTypeSize
         let currentConnection = connections.first { $0.id == currentConnectionID }
         let accountTitle = isLocalAccount ? L10n.localAccount : currentConnection?.displayName ?? L10n.dahliaNotSignedIn
-        let progress = currentConnectionID.flatMap { accountController.syncProgress[$0] }
-        let syncTitle: String? = if isLocalAccount {
-            nil
-        } else if accountController.syncProgressUnavailable {
-            L10n.syncProgressUnavailable
-        } else {
-            progress?.summary
-        }
-        button.attributedTitle = Self.footerTitle(
-            accountName: accountTitle,
-            syncSummary: progress?.state == .synced ? nil : syncTitle
-        )
-        let font = NSFont.dahliaBody
-        if !isLocalAccount, let currentConnectionID {
-            let state = accountController.syncStates[currentConnectionID] ?? .pending
-            let icon = NSImage(systemSymbolName: state.symbol, accessibilityDescription: state.title)?
-                .withSymbolConfiguration(.init(pointSize: font.pointSize, weight: .regular)
-                    .applying(.init(paletteColors: [state == .synced ? .systemGreen : .secondaryLabelColor, .secondaryLabelColor])))
-            button.setIcon(icon, animated: progress?.isSyncing == true)
-        } else {
-            let icon = NSImage(systemSymbolName: isLocalAccount ? "person.2" : "icloud.slash", accessibilityDescription: nil)?
-                .withSymbolConfiguration(.init(pointSize: font.pointSize, weight: .regular))
-            button.setIcon(icon, animated: false)
-        }
-        button.toolTip = syncTitle
-        button.setAccessibilityLabel("\(L10n.account), \(accountTitle); \(syncTitle ?? "")")
+        button.attributedTitle = Self.footerTitle(accountName: accountTitle)
+        let icon = NSImage(systemSymbolName: isLocalAccount ? "person.2" : "person.crop.circle", accessibilityDescription: nil)?
+            .withSymbolConfiguration(.init(pointSize: NSFont.dahliaBody.pointSize, weight: .regular))
+        button.setIcon(icon, animated: false)
+        button.toolTip = nil
+        button.setAccessibilityLabel("\(L10n.account), \(accountTitle)")
     }
 
     private var accountSelection: MainSidebarAccountSelection {

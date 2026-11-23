@@ -16,19 +16,16 @@ import Foundation
             #expect(settings.imageAnalysis.fallbackModel == nil)
         }
 
-        @Test(arguments: ["local", "server"])
-        func fallbackPreferencesAreAccountLocalCapturedByJobsAndCanBeCleared(kind: String) throws {
+        @Test
+        func fallbackPreferencesAreAccountLocalCapturedByJobsAndCanBeCleared() throws {
             let suite = "FallbackSettings-\(UUID())"
             let defaults = try #require(UserDefaults(suiteName: suite))
             defer { defaults.removePersistentDomain(forName: suite) }
-            let connectionID: UUID? = kind == "server" ? .v7() : nil
-            let workspace = WorkspaceRecord(
-                id: .v7(), path: nil, name: "Workspace", createdAt: .now, lastOpenedAt: .now, accountConnectionId: connectionID
-            )
+            let workspace = WorkspaceRecord(id: .v7(), path: nil, name: "Workspace", createdAt: .now, lastOpenedAt: .now)
             var account = AccountInferenceSettings(workspace: workspace, defaults: defaults)
             account.local.fallbackModel = "summary-fallback"
             account.imageAnalysis.fallbackModel = "vision-fallback"
-            account.save(connectionID: connectionID, defaults: defaults)
+            account.save(connectionID: nil, defaults: defaults)
             let restored = AccountInferenceSettings(workspace: workspace, defaults: defaults)
             #expect(restored.local.fallbackModel == "summary-fallback")
             #expect(restored.imageAnalysis.fallbackModel == "vision-fallback")
@@ -43,7 +40,7 @@ import Foundation
 
             account.local.fallbackModel = nil
             account.imageAnalysis.fallbackModel = nil
-            account.save(connectionID: connectionID, defaults: defaults)
+            account.save(connectionID: nil, defaults: defaults)
             let cleared = AccountInferenceSettings(workspace: workspace, defaults: defaults)
             #expect(cleared.local.fallbackModel == nil && cleared.imageAnalysis.fallbackModel == nil)
             #expect(job.workspacePreferences?.local.fallbackModel == "summary-fallback")

@@ -12,8 +12,6 @@ struct SettingsDetailView: View {
     @ObservedObject private var appSettings = AppSettings.shared
     @State private var workspaceDetailsID: UUID?
     @State private var deletingWorkspace: WorkspaceRecord?
-    @State private var publishingDocuments = WorkspaceDocumentPublicationPresentation()
-    @State private var dahliaAccountController = DahliaCloudAccountController.shared
 
     var body: some View {
         VStack(spacing: 0) {
@@ -53,7 +51,7 @@ struct SettingsDetailView: View {
             if let workspace = workspaceManagementModel.workspaces.first(where: { $0.id == workspaceDetailsID }) {
                 WorkspaceSettingsDetailsView(
                     workspace: workspace,
-                    accountName: WorkspaceAccountChoice(workspace).displayName(connections: dahliaAccountController.connections),
+                    accountName: L10n.localAccount,
                     onClose: { workspaceDetailsID = nil }
                 )
             }
@@ -73,20 +71,10 @@ struct SettingsDetailView: View {
                 .id(workspace.id)
             }
         }
-        .overlay {
-            if let workspace = publishingDocuments.workspace, let appDatabase {
-                let requestID = publishingDocuments.id
-                DocumentPublicationView(workspace: workspace, dbQueue: appDatabase.dbQueue) {
-                    publishingDocuments.dismiss(id: requestID)
-                }
-                .id(requestID)
-            }
-        }
         .scrollContentBackground(.hidden)
         .scrollEdgeEffectHidden()
         .onChange(of: selection) { _, selection in
             workspaceDetailsID = nil
-            publishingDocuments.dismiss()
             if selection != .agents { mainWindowNavigation.dismissDahliaSignIn() }
         }
     }
@@ -100,24 +88,15 @@ struct SettingsDetailView: View {
             AppearanceSettingsView()
         case .accountsAndWorkspaces, .dahliaAccounts, .accountPreferences, .macInference, .modelProvider, .aiSummary, .mcp, .agents:
             AgentSettingsView()
-                .onChange(of: dahliaAccountController.connections) {
-                    Task { await workspaceManagementModel.loadWorkspaces() }
-                }
         case .workspace, .workspacePreferences:
             WorkspaceSettingsView(
                 appDatabase: appDatabase,
                 model: workspaceManagementModel,
                 currentWorkspace: appSettings.currentWorkspace,
-                accountConnections: dahliaAccountController.connections,
-                canSwitchWorkspace: canSwitchWorkspace,
                 onShowDetails: { workspaceDetailsID = $0 },
                 onRequestDeletion: { deletingWorkspace = $0 },
-                onShowDocumentPublication: { publishingDocuments.show($0) },
                 onUpdateWorkspace: updateCurrentWorkspaceIfNeeded
             )
-            .onChange(of: workspaceManagementModel.workspaces.map { "\($0.id):\($0.accountConnectionId?.uuidString ?? "local")" }) {
-                Task { await dahliaAccountController.reload() }
-            }
         case .providers:
             ProviderAccountsSettingsView()
         case .skills:
@@ -141,15 +120,12 @@ struct SettingsDetailView: View {
         case .dahliaMCP:
             MCPSettingsView(
                 workspaces: workspaceManagementModel.workspaces,
-                currentWorkspace: appSettings.currentWorkspace,
-                accountConnections: dahliaAccountController.connections
+                currentWorkspace: appSettings.currentWorkspace
             )
         case .calendar, .eventDisplay:
             CalendarSettingsView()
         case .instructions:
             InstructionsSettingsView(sidebarViewModel: sidebarViewModel)
-        case .betaFeatures:
-            BetaFeaturesSettingsView()
         case .audioDiagnostics:
             DebugSettingsView()
         }
@@ -168,10 +144,6 @@ struct SettingsDetailView: View {
         case .backups: L10n.settingsDataProtectionIntro
         default: L10n.thisMacSettingsDescription
         }
-    }
-
-    private var canSwitchWorkspace: Bool {
-        captionViewModel.canSwitchWorkspace && !WorkspaceAISettingsModel.shared.isSwitchingRuntime
     }
 
     private func updateCurrentWorkspaceIfNeeded(_ workspace: WorkspaceRecord) {

@@ -8,7 +8,6 @@ struct BatchTranscriptionConfirmationView: View {
     let displayLocale: Locale
     let projects: [FlatProjectRow]
     let processingMethod: RecordingProcessingMethod?
-    let usesServerSummary: Bool
     let isRetranscription: Bool
     let allowsRecordedLanguageSelection: Bool
     let onStart: (BatchTranscriptionLanguageSelection, Bool, SummaryGenerationOptions, UUID?) -> String?
@@ -35,7 +34,6 @@ struct BatchTranscriptionConfirmationView: View {
         summaryGenerationOptions: SummaryGenerationOptions,
         isRetranscription: Bool,
         processingMethod: RecordingProcessingMethod? = nil,
-        usesServerSummary: Bool,
         onStart: @escaping (BatchTranscriptionLanguageSelection, Bool, SummaryGenerationOptions, UUID?) -> String?,
         onPostpone: @escaping () -> Void
     ) {
@@ -47,7 +45,6 @@ struct BatchTranscriptionConfirmationView: View {
         self.onStart = onStart
         self.onPostpone = onPostpone
         self.processingMethod = processingMethod
-        self.usesServerSummary = usesServerSummary
         self.isRetranscription = isRetranscription
         self.allowsRecordedLanguageSelection = allowsRecordedLanguageSelection
         _languageSelection = State(initialValue: initialLanguageSelection)
@@ -84,7 +81,6 @@ struct BatchTranscriptionConfirmationView: View {
                 projects: projects,
                 selectedProjectId: $selectedProjectId,
                 processingMethod: processingMethod,
-                usesServerSummary: usesServerSummary,
                 isRetranscription: isRetranscription
             )
 

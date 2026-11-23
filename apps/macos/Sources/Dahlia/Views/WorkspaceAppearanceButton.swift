@@ -18,7 +18,6 @@ struct WorkspaceAppearanceButton: View {
                 .contentShape(.rect)
         }
         .buttonStyle(WorkspaceSettingsButtonStyle())
-        .disabled(!workspace.allowsWorkspaceManagement)
         .help(L10n.appearance)
         .accessibilityLabel(L10n.appearance)
         .popover(isPresented: $isPresented) {

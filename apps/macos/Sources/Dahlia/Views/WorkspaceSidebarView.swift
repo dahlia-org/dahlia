@@ -48,7 +48,6 @@ struct WorkspaceSidebarView: View {
                     mainWindowNavigation.isShowingSettings
                         || selectedWorkspace == nil
                         || isCurrentWorkspaceSelected
-                        || selectedWorkspace?.accountConnectionId != nil
                 )
             }
 
@@ -102,7 +101,7 @@ struct WorkspaceSidebarView: View {
     }
 
     private func requestRemoval() {
-        guard let selectedWorkspace, !isCurrentWorkspaceSelected, selectedWorkspace.accountConnectionId == nil else { return }
+        guard let selectedWorkspace, !isCurrentWorkspaceSelected else { return }
         onRemove(selectedWorkspace)
     }
 }

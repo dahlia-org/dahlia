@@ -5,9 +5,7 @@ struct MemorySettingsView: View {
     @State private var workspaceSettings = WorkspaceAISettingsModel.shared
 
     var body: some View {
-        let account = CodexRuntimeProvider(
-            accountConnectionID: workspaceSettings.accountConnectionID
-        )
+        let account = CodexRuntimeProvider.local
         AgentMemorySettingsView(account: account).id(account)
     }
 }
