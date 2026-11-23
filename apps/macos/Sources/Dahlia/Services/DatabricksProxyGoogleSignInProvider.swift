@@ -1,9 +1,9 @@
 import AppKit
 import Foundation
 
-/// Routes Google Calendar reads through the provider the user chose for it (`GoogleCalendarProvider`), and Drive reads
-/// through the account's Databricks connection when it has one: the connection's Unity Catalog proxy, or else the
-/// direct Google OAuth adapter. The Google grant lives in Databricks and is the source of truth: Dahlia restores
+/// Routes Google Calendar and Drive reads through the provider the user chose for Google (`GoogleCalendarProvider`):
+/// a Databricks connection's Unity Catalog proxy, or the direct Google OAuth adapter. The Google grant lives in Databricks and is the source of
+/// truth: Dahlia restores
 /// whenever the proxy answers, unless the user disconnected.
 @MainActor
 final class DatabricksProxyGoogleSignInProvider: GoogleSignInProviding {
@@ -69,11 +69,8 @@ final class DatabricksProxyGoogleSignInProvider: GoogleSignInProviding {
     }
 
     private var connection: DatabricksConnection? {
-        let account = openAccount()
-        let connectionID = sessionKind == .calendar
-            ? GoogleCalendarProvider.current(account: account, defaults: userDefaults).databricksConnectionID
-            : account.providerAccount(offering: .calendar)?.databricksConnectionID
-        guard let connectionID else { return nil }
+        guard let connectionID = GoogleCalendarProvider.current(account: openAccount(), defaults: userDefaults).databricksConnectionID
+        else { return nil }
         return try? storage.loadConnections().first { $0.id == connectionID }
     }
 

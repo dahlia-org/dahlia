@@ -42,10 +42,14 @@ import Security
             #expect(body["grant_type"] == "refresh_token")
         }
 
+        /// Google is one provider account: Calendar and Drive share its sign-in, and each hears the other's changes.
         @Test
-        func calendarSessionKeepsItsStoredKeyAndNotification() {
-            #expect(GoogleAuthSessionKind.calendar.keychainKey == "googleCalendarOAuthSession")
-            #expect(GoogleAuthSessionKind.calendar.sessionDidChangeNotification == .googleCalendarSessionDidChange)
+        func calendarAndDriveShareOneSignIn() {
+            #expect(GoogleAuthSessionKind.calendar.keychainKey == GoogleAuthSessionKind.drive.keychainKey)
+            #expect(GoogleAuthSessionKind.calendar.sessionDidChangeNotification == GoogleAuthSessionKind.drive.sessionDidChangeNotification)
+            #expect(!GoogleAuthSessionKind.retiredKeychainKeys.contains(GoogleAuthSessionKind.keychainKey))
+            #expect(GoogleSignInAdapter.disconnectPendingUserDefaultsKey(for: .calendar)
+                == GoogleSignInAdapter.disconnectPendingUserDefaultsKey(for: .drive))
         }
 
         @Test

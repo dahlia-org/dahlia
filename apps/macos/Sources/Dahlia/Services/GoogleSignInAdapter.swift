@@ -33,16 +33,18 @@ enum GoogleOAuthScope {
     }
 }
 
+/// What a Google sign-in is used for. Google is one provider account: both uses share one sign-in, which gains each
+/// use's scopes as it asks for them, and one disconnect ends both.
 enum GoogleAuthSessionKind: Hashable, Sendable {
     case calendar
     case drive
 
-    var keychainKey: String {
-        switch self {
-        case .calendar: "googleCalendarOAuthSession"
-        case .drive: "googleDriveBackupReadSession"
-        }
-    }
+    /// The provider account's one sign-in.
+    static let keychainKey = "googleProviderAccountSession"
+    /// Sign-ins kept per use, and by older releases, which a launch deletes.
+    static let retiredKeychainKeys = ["googleCalendarOAuthSession", "googleDriveBackupReadSession", "googleOAuthSession"]
+
+    var keychainKey: String { Self.keychainKey }
 
     var serviceScopes: Set<String> {
         switch self {
@@ -51,18 +53,8 @@ enum GoogleAuthSessionKind: Hashable, Sendable {
         }
     }
 
-    var sessionDidChangeNotification: Notification.Name {
-        switch self {
-        case .calendar: .googleCalendarSessionDidChange
-        case .drive: .googleDriveSessionDidChange
-        }
-    }
-
-    fileprivate func canAdoptLegacySession(_ session: StoredGoogleSession) -> Bool {
-        // 旧実装は複数サービスのスコープを 1 つのセッションに union して保存していたため、
-        // 完全一致ではなく「Calendar のスコープを含むか」で採用可否を判定する。
-        self == .calendar && serviceScopes.isSubset(of: session.grantedScopes)
-    }
+    /// Both uses hear a change to the shared sign-in.
+    var sessionDidChangeNotification: Notification.Name { .googleSessionDidChange }
 }
 
 enum GoogleAuthSessionChangeReason: Equatable, Sendable {
@@ -133,8 +125,8 @@ enum GoogleSignInError: LocalizedError {
 }
 
 actor GoogleKeychainWorker {
-    private var generations: [GoogleAuthSessionKind: UInt64] = [:]
-    private var activeDisconnectCounts: [GoogleAuthSessionKind: Int] = [:]
+    private var generations: [String: UInt64] = [:]
+    private var activeDisconnectCounts: [String: Int] = [:]
 
     func perform<Value: Sendable>(_ operation: @Sendable () throws -> Value) rethrows -> Value {
         try operation()
@@ -144,7 +136,7 @@ actor GoogleKeychainWorker {
         for sessionKind: GoogleAuthSessionKind,
         _ operation: @Sendable () throws -> Value
     ) rethrows -> (Value, UInt64) {
-        try (operation(), generations[sessionKind, default: 0])
+        try (operation(), generations[sessionKind.keychainKey, default: 0])
     }
 
     func performIfCurrent(
@@ -152,24 +144,24 @@ actor GoogleKeychainWorker {
         generation expectedGeneration: UInt64,
         _ operation: @Sendable () throws -> Void
     ) rethrows -> Bool {
-        guard activeDisconnectCounts[sessionKind, default: 0] == 0,
-              generations[sessionKind, default: 0] == expectedGeneration else { return false }
+        guard activeDisconnectCounts[sessionKind.keychainKey, default: 0] == 0,
+              generations[sessionKind.keychainKey, default: 0] == expectedGeneration else { return false }
         try operation()
         return true
     }
 
     func beginDisconnect(for sessionKind: GoogleAuthSessionKind) {
-        generations[sessionKind, default: 0] &+= 1
-        activeDisconnectCounts[sessionKind, default: 0] += 1
+        generations[sessionKind.keychainKey, default: 0] &+= 1
+        activeDisconnectCounts[sessionKind.keychainKey, default: 0] += 1
     }
 
     func finishDisconnect(for sessionKind: GoogleAuthSessionKind) {
-        activeDisconnectCounts[sessionKind, default: 0] -= 1
-        generations[sessionKind, default: 0] &+= 1
+        activeDisconnectCounts[sessionKind.keychainKey, default: 0] -= 1
+        generations[sessionKind.keychainKey, default: 0] &+= 1
     }
 
     func isCurrent(for sessionKind: GoogleAuthSessionKind, generation expectedGeneration: UInt64) -> Bool {
-        generations[sessionKind, default: 0] == expectedGeneration
+        generations[sessionKind.keychainKey, default: 0] == expectedGeneration
     }
 }
 
@@ -187,7 +179,6 @@ protocol GoogleSignInProviding: AnyObject {
 
 @MainActor
 final class GoogleSignInAdapter: NSObject, GoogleSignInProviding {
-    private nonisolated static let legacyKeychainKey = "googleOAuthSession"
     /// Keychain keys of the retired Google Drive export: the per-account key is `<prefix>.<scope>`.
     private nonisolated static let retiredDriveKeychainKey = "googleDriveOAuthSession"
     private nonisolated static let keychainWorker = GoogleKeychainWorker()
@@ -253,7 +244,9 @@ final class GoogleSignInAdapter: NSObject, GoogleSignInProviding {
         let sessionKind = sessionKind
         let previousSessionSnapshot = await Self.loadStoredSessionSnapshot(sessionKind: sessionKind)
         let previousSessionLookup = isDisconnectPending ? nil : previousSessionSnapshot.lookup
-        let authorizationScopes = authorizationScopesForSignIn(requestedScopes: requestedScopes)
+        let authorizationScopes = authorizationScopesForSignIn(
+            requestedScopes: requestedScopes, held: previousSessionLookup?.session.grantedScopes ?? []
+        )
         let clientSecret = await Self.loadClientSecret()
         let pkce = PKCE.generate()
         let state = PKCE.randomURLSafeString(length: 32)
@@ -349,16 +342,9 @@ final class GoogleSignInAdapter: NSObject, GoogleSignInProviding {
         sessionKind: GoogleAuthSessionKind
     ) async -> StoredGoogleSessionSnapshot {
         let (lookup, generation) = await keychainWorker.snapshot(for: sessionKind) { () -> StoredGoogleSessionLookup? in
-            if let session = loadStoredSession(key: sessionKind.keychainKey) {
-                return StoredGoogleSessionLookup(session: session, keychainKey: sessionKind.keychainKey)
+            loadStoredSession(key: sessionKind.keychainKey).map {
+                StoredGoogleSessionLookup(session: $0, keychainKey: sessionKind.keychainKey)
             }
-
-            guard let legacySession = loadStoredSession(key: legacyKeychainKey),
-                  sessionKind.canAdoptLegacySession(legacySession)
-            else {
-                return nil
-            }
-            return StoredGoogleSessionLookup(session: legacySession, keychainKey: legacyKeychainKey)
         }
         let currentLookup = lookup.map {
             StoredGoogleSessionLookup(session: $0.session, keychainKey: $0.keychainKey, generation: generation)
@@ -379,15 +365,12 @@ final class GoogleSignInAdapter: NSObject, GoogleSignInProviding {
     private nonisolated static func save(
         _ session: StoredGoogleSession,
         key: String,
-        migrating lookup: StoredGoogleSessionLookup?,
+        migrating _: StoredGoogleSessionLookup?,
         sessionKind: GoogleAuthSessionKind,
         generation: UInt64
     ) async -> Bool {
         let operation: @Sendable () -> Void = {
             saveStoredSession(session, key: key)
-            guard let lookup else { return }
-            guard lookup.keychainKey == legacyKeychainKey else { return }
-            KeychainService.delete(key: legacyKeychainKey)
         }
         return await keychainWorker.performIfCurrent(for: sessionKind, generation: generation, operation)
     }
@@ -420,8 +403,7 @@ final class GoogleSignInAdapter: NSObject, GoogleSignInProviding {
     }
 
     private func clearDisconnectPending() {
-        // Explicit sign-in re-enables only the service the user just authorized.
-        // The other service remains blocked until it receives its own consent.
+        // An explicit sign-in re-enables the provider account's one sign-in.
         for key in Self.disconnectPendingUserDefaultsKeys(for: sessionKind) {
             UserDefaults.standard.removeObject(forKey: key)
         }
@@ -443,6 +425,9 @@ final class GoogleSignInAdapter: NSObject, GoogleSignInProviding {
     /// secret override.
     nonisolated static func deleteRetiredCredentials(scopes: [AppAccountScope]) {
         KeychainService.delete(key: "googleOAuthClientSecretOverride")
+        for key in GoogleAuthSessionKind.retiredKeychainKeys {
+            KeychainService.delete(key: key)
+        }
         KeychainService.delete(key: retiredDriveKeychainKey)
         for scope in scopes {
             KeychainService.delete(key: "\(retiredDriveKeychainKey).\(scope.storageKey)")
@@ -461,8 +446,9 @@ final class GoogleSignInAdapter: NSObject, GoogleSignInProviding {
         }
     }
 
-    private func authorizationScopesForSignIn(requestedScopes: Set<String>) -> Set<String> {
-        GoogleOAuthScope.authorizationScopes(for: requestedScopes)
+    /// A sign-in keeps the scopes the provider account already holds, so asking for Drive never drops Calendar.
+    private func authorizationScopesForSignIn(requestedScopes: Set<String>, held: Set<String>) -> Set<String> {
+        GoogleOAuthScope.authorizationScopes(for: requestedScopes.union(held))
     }
 
     private func refreshedSession(from storedSession: StoredGoogleSession) async throws -> StoredGoogleSession {
@@ -977,8 +963,8 @@ final class OAuthLoopbackRedirectServer: @unchecked Sendable {
 }
 
 extension Notification.Name {
-    static let googleDriveSessionDidChange = Notification.Name("GoogleDriveSessionDidChangeNotification")
-    static let googleCalendarSessionDidChange = Notification.Name("GoogleCalendarSessionDidChangeNotification")
+    /// The Google provider account's sign-in changed.
+    static let googleSessionDidChange = Notification.Name("GoogleSessionDidChangeNotification")
 }
 
 /// Builds the authorization URL for a loopback redirect URI, then returns the callback and the redirect URI it used.

@@ -103,10 +103,10 @@ import Foundation
 
         @Test
         @MainActor
-        func directDriveScopeAndProxyAreSeparateFromCalendar() {
+        func driveHasItsOwnScopeAndProxyButSharesTheGoogleSignIn() {
             #expect(GoogleOAuthScope.drive == ["https://www.googleapis.com/auth/drive.readonly"])
-            #expect(GoogleAuthSessionKind.drive.keychainKey != GoogleAuthSessionKind.calendar.keychainKey)
-            #expect(GoogleAuthSessionKind.drive.sessionDidChangeNotification != GoogleAuthSessionKind.calendar.sessionDidChangeNotification)
+            #expect(GoogleAuthSessionKind.drive.serviceScopes != GoogleAuthSessionKind.calendar.serviceScopes)
+            #expect(GoogleAuthSessionKind.drive.keychainKey == GoogleAuthSessionKind.calendar.keychainKey)
             #expect(DatabricksProxyGoogleSignInProvider.driveConnectionName == "system_ai_agent_google_drive")
         }
     }
