@@ -127,7 +127,6 @@
             databricks.databricksConnectionId = connectionID
 
             model.activate(workspace: databricks)
-            #expect(model.isDatabricksAccount)
             #expect(model.databricksAccountConnectionID == connectionID)
             let snapshot = try #require(model.snapshot)
             #expect(CodexRuntimeProvider(
@@ -138,7 +137,6 @@
             #expect(defaults.data(forKey: AccountInferenceSettings.key(connectionID: nil, databricksConnectionID: connectionID)) != nil)
 
             model.activate(workspace: makeWorkspace(openedAt: .now))
-            #expect(!model.isDatabricksAccount)
             #expect(model.summaryModelID != "databricks/system.ai.claude")
             model.activate(workspace: databricks)
             #expect(model.summaryModelID == "databricks/system.ai.claude")

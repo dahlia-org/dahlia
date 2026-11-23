@@ -350,7 +350,8 @@ import Foundation
             let databricks = try locator.agentURL(for: .databricks(connectionID: databricksID))
             let deviceID = try locator.deviceID()
 
-            #expect(local == rootURL.appending(path: "Dahlia/accounts/local/pi", directoryHint: .isDirectory))
+            // The app's one account has one agent folder, named for neither Pi nor an account.
+            #expect(local == rootURL.appending(path: "Dahlia/agent", directoryHint: .isDirectory))
             #expect(databricks == rootURL.appending(
                 path: "Dahlia/accounts/\(databricksID.uuidString.lowercased())/pi", directoryHint: .isDirectory
             ))
@@ -381,7 +382,7 @@ import Foundation
 
             // The same workspace under another account starts with that account's own (empty) history.
             #expect(local == rootURL.appending(
-                path: "Dahlia/accounts/local/pi/sessions/\(workspaceID.uuidString.lowercased())",
+                path: "Dahlia/agent/sessions/\(workspaceID.uuidString.lowercased())",
                 directoryHint: .isDirectory
             ))
             #expect(databricks.path.hasSuffix("accounts/\(databricksID.uuidString.lowercased())/pi/sessions/\(workspaceID.uuidString.lowercased())"))

@@ -29,7 +29,7 @@ struct DatabricksOAuthStorage: Sendable {
 
     private static let cache = Mutex(ConnectionCache())
 
-    /// Connections live in the app database's `accounts` table, which the app sets once it opens; credentials stay
+    /// Connections live in the app database's `provider_accounts` table, which the app sets once it opens; credentials stay
     /// in the Keychain under the profile.
     static func local(
         profile: DahliaRuntimeProfile = DahliaApplicationSupport.profile(),
@@ -58,8 +58,11 @@ struct DatabricksOAuthStorage: Sendable {
                     let kept = connections.map(\.id)
                     try DahliaAccountConnectionRecord.databricksWorkspaces.filter(!kept.contains(Column("id"))).deleteAll(db)
                     for connection in connections {
-                        let createdAt = try DahliaAccountConnectionRecord.fetchOne(db, key: connection.id)?.createdAt ?? .now
-                        try DahliaAccountConnectionRecord(connection, createdAt: createdAt).save(db)
+                        // A sign-in again keeps when the connection was added and the name the user gave it.
+                        let stored = try DahliaAccountConnectionRecord.fetchOne(db, key: connection.id)
+                        var record = DahliaAccountConnectionRecord(connection, createdAt: stored?.createdAt ?? .now)
+                        record.name = stored?.name
+                        try record.save(db)
                     }
                 }
                 cache.withLock { $0 = ConnectionCache(generation: $0.generation + 1) }

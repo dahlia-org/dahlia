@@ -83,7 +83,7 @@ private struct AgentSettingsTabs: View {
                     AgentEnvironmentSection(model: launch)
                     AgentChatSettingsSection()
                     AgentChatInstructionsSection(account: account)
-                    if case .databricks = account { AgentOmnigentSection(account: account) }
+                    if account.databricksConnectionID != nil { AgentOmnigentSection(account: account) }
                 }
                 .formStyle(.grouped)
                 .font(.dahliaBody)
@@ -378,12 +378,12 @@ private struct AgentProviderSection<Models: View, SubscriptionModels: View>: Vie
     var body: some View {
         Section {
             switch account {
-            case .local:
-                EmptyView()
-            case .databricks:
-                // The account signs in and out from the account menu.
-                // Until its workspace is known, the account's provider shows without a host.
-                if let provider = model.accountProvider {
+            case .local, .databricks:
+                // The Databricks connection signs out here; adding one is the account menu's sign-in.
+                // Until its workspace is known, the connection's provider shows without a host.
+                if account.databricksConnectionID == nil {
+                    EmptyView()
+                } else if let provider = model.accountProvider {
                     gatewayRow(provider)
                 } else {
                     AgentProviderRow(title: L10n.databricksUnityGateway, icon: .databricksLogo, uses: [L10n.agentProviderModels, L10n.mcp]) {
@@ -499,6 +499,10 @@ private struct AgentProviderSection<Models: View, SubscriptionModels: View>: Vie
                         Button(L10n.delete, role: .destructive) { pendingRemoval = provider }
                     }
                     .disabled(model.isBusy)
+                } else if let connectionID = account.databricksConnectionID {
+                    AgentProviderActions {
+                        Button(L10n.signOut) { WorkspaceAISettingsModel.shared.requestDatabricksSignOut(connectionID: connectionID) }
+                    }
                 }
             }
             .contentShape(.rect)

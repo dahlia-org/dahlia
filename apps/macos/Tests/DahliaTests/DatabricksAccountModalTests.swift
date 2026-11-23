@@ -6,23 +6,12 @@
 
     @MainActor
     struct DatabricksAccountModalTests {
-        @Test(arguments: [false, true])
-        func backgroundClicksKeepTheModalOpenAndEscapeCancels(isWorkspaceSetup: Bool) async throws {
+        @Test
+        func backgroundClicksKeepTheModalOpenAndEscapeCancels() async throws {
             var cancellations = 0
-            let workspace = WorkspaceRecord(
-                id: .v7(), path: nil, name: "My meetings", createdAt: .now, lastOpenedAt: .distantPast
-            )
-            let content = if isWorkspaceSetup {
-                AnyView(DatabricksWorkspaceSetupView(
-                    workspaces: [workspace], isEmbedded: false, isBusy: false, canTransferWorkspace: true,
-                    errorMessage: nil, onCancel: { cancellations += 1 }, onCreate: {}, onTransfer: { _ in }
-                ))
-            } else {
-                AnyView(DatabricksSignInView(
-                    workspaceManagementModel: WorkspaceManagementModel(), onCancel: { cancellations += 1 },
-                    onContinueWithDatabricks: { _ in }, onContinueLocally: {}
-                ))
-            }
+            let content = AnyView(DatabricksSignInView(
+                onCancel: { cancellations += 1 }, onContinueWithDatabricks: { _ in }, onContinueLocally: {}
+            ))
             let host = NSHostingView(rootView: content)
             host.frame = NSRect(x: 0, y: 0, width: 720, height: 600)
             let window = NSWindow(contentRect: host.frame, styleMask: .titled, backing: .buffered, defer: false)
@@ -46,7 +35,7 @@
                 let bitmap = try #require(host.bitmapImageRepForCachingDisplay(in: host.bounds))
                 host.cacheDisplay(in: host.bounds, to: bitmap)
                 let data = try #require(bitmap.representation(using: .png, properties: [:]))
-                try data.write(to: URL(fileURLWithPath: directory).appending(path: isWorkspaceSetup ? "workspace.png" : "sign-in.png"))
+                try data.write(to: URL(fileURLWithPath: directory).appending(path: "sign-in.png"))
             }
 
             let escape = try #require(NSEvent.keyEvent(

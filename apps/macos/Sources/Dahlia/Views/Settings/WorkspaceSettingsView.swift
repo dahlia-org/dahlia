@@ -17,7 +17,6 @@ struct WorkspaceSettingsView: View {
     @State private var isShowingCreateAlert = false
     @State private var isShowingRenameAlert = false
     @State private var accountUpdateTask: Task<Void, Never>?
-    @State private var creationDatabricksConnectionID: UUID?
     @State private var pendingRename: WorkspaceRecord?
     @State private var pendingExportFolderWorkspace: WorkspaceRecord?
     @State private var proposedName = ""
@@ -75,8 +74,8 @@ struct WorkspaceSettingsView: View {
 
         ForEach(WorkspaceSettingsAccountGroup.grouped(
             model.workspaces,
-            including: [.local] + WorkspaceAISettingsModel.shared.databricksConnections.map { .databricks($0.id) },
-            hideLocalAccount: settings.hideLocalAccount
+            // Databricks connections are provider accounts; no workspace belongs to one.
+            including: [.local]
         )) { group in
             Section {
                 ForEach(group.workspaces) { workspace in
@@ -206,11 +205,7 @@ struct WorkspaceSettingsView: View {
     }
 
     private func showCreateAlert(for account: WorkspaceAccountChoice) {
-        switch account {
-        case .local: creationDatabricksConnectionID = nil
-        case let .databricks(id): creationDatabricksConnectionID = id
-        case .dahlia: return
-        }
+        guard account == .local else { return }
         proposedName = ""
         isShowingCreateAlert = true
     }
@@ -226,7 +221,7 @@ struct WorkspaceSettingsView: View {
             WorkspaceAccountMenu(
                 workspace: workspace,
                 connections: accountConnections,
-                databricksAccounts: WorkspaceAISettingsModel.shared.databricksConnections,
+                databricksAccounts: [],
                 onSelect: { requestAccountChange(of: workspace, to: $0) }
             )
             // A recording keeps the account it started with until it is processed.
@@ -286,13 +281,11 @@ struct WorkspaceSettingsView: View {
 
     private func createWorkspace() {
         let name = proposedName
-        let connectionID = creationDatabricksConnectionID
         clearCreateRequest()
-        Task { _ = await model.createWorkspace(named: name, databricksConnectionID: connectionID) }
+        Task { _ = await model.createWorkspace(named: name) }
     }
 
     private func clearCreateRequest() {
-        creationDatabricksConnectionID = nil
         proposedName = ""
     }
 
@@ -329,10 +322,9 @@ struct WorkspaceSettingsView: View {
 
     private func changeAccount(of workspace: WorkspaceRecord, to choice: WorkspaceAccountChoice) async {
         switch choice {
-        case .local:
-            _ = await model.moveWorkspace(workspace, toDatabricks: nil)
-        case let .databricks(connectionID):
-            _ = await model.moveWorkspace(workspace, toDatabricks: connectionID)
+        case .local, .databricks:
+            // Every workspace is the app's account's; only a Dahlia Server adopts one.
+            break
         case let .dahlia(connectionID):
             if let connection = accountConnections.first(where: { $0.id == connectionID }) {
                 await model.requestServerAdoption(for: workspace, connection: connection)

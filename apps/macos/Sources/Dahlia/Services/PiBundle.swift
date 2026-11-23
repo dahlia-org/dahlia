@@ -73,8 +73,9 @@ enum DahliaMCPBundle {
     }
 }
 
-/// Each account's folder is `accounts/<account id>` (`accounts/local` for the Local Account); Pi's agent directory is
-/// its `pi` folder, holding that account's credentials, `models.json`, and chat sessions. Pi never reads `~/.pi`.
+/// The app's one account keeps its agent's files in `agent`: credentials, `models.json`, and chat sessions. The name
+/// names neither Pi nor an account, so another agent could use it. A Dahlia Server account still has its own
+/// `accounts/<account id>/pi`. Pi never reads `~/.pi`.
 struct PiAgentDirectoryLocator: Sendable {
     private let applicationSupportURL: URL?
 
@@ -93,8 +94,16 @@ struct PiAgentDirectoryLocator: Sendable {
         accountsURL.appending(path: provider.accountKey, directoryHint: .isDirectory)
     }
 
+    /// The agent directory of the app's one account.
+    var sharedAgentURL: URL { rootURL.appending(path: "agent", directoryHint: .isDirectory) }
+
+    /// An account's agent directory before the app had one account (`accounts/<local or account id>/pi`).
+    func legacyAgentURL(accountKey: String) -> URL {
+        accountsURL.appending(path: accountKey, directoryHint: .isDirectory).appending(path: "pi", directoryHint: .isDirectory)
+    }
+
     func agentURL(for provider: CodexRuntimeProvider) throws -> URL {
-        let url = accountURL(for: provider).appending(path: "pi", directoryHint: .isDirectory)
+        let url = provider == .local ? sharedAgentURL : legacyAgentURL(accountKey: provider.accountKey)
         try Self.createPrivateDirectory(url)
         try Self.createPrivateDirectory(url.appending(path: "skills", directoryHint: .isDirectory))
         return url

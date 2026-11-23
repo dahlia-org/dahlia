@@ -60,7 +60,7 @@ struct CodexChatModelPickerPanel: View {
         guard providerID == PiProviderConfiguration.databricksProviderIDs[0] else { return L10n.unityGatewayHost(providerID) }
         // The Databricks account's own gateway.
         let settings = WorkspaceAISettingsModel.shared
-        let host = settings.databricksConnections.first { $0.id == settings.databricksAccountConnectionID }?.hostName
+        let host = settings.databricksConnections.first { $0.id == settings.providerDatabricksConnectionID }?.hostName
         return host.map(L10n.unityGatewayHost) ?? L10n.databricksUnityGateway
     }
 

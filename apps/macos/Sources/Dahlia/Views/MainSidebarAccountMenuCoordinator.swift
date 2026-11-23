@@ -118,7 +118,7 @@ final class MainSidebarAccountMenuCoordinator: NSObject {
                 connections: connections,
                 currentConnectionID: currentConnectionID,
                 isLocalAccount: isLocalAccount,
-                showsLocalAccount: !settings.hideLocalAccount,
+                showsLocalAccount: true,
                 showsAddAccount: showsAddAccount,
                 showsAccountAction: showsAccountAction,
                 databricksAccounts: databricksAccounts,
@@ -565,7 +565,7 @@ extension MainSidebarAccountMenuCoordinator {
             selectDatabricksAccount(databricksAccounts[selection - databricksIndices.lowerBound].id)
             return
         }
-        if !settings.hideLocalAccount, selection == connections.count {
+        if selection == connections.count {
             // Choosing the Local Account opens its `Default` workspace when it has none.
             selectAccount(nil)
             return
@@ -607,7 +607,7 @@ extension MainSidebarAccountMenuCoordinator {
         switch navigation.activeMenu {
         case .root:
             var titles = connections.map(\.displayName)
-            if !settings.hideLocalAccount { titles.append(L10n.localAccount) }
+            titles.append(L10n.localAccount)
             titles += databricksAccounts.map { L10n.unityGatewayHost($0.hostName) }
             if showsAddAccount { titles.append(L10n.addAccount) }
             titles += [L10n.language, L10n.appearance, L10n.settings, L10n.unprocessedRecordings]
@@ -649,7 +649,7 @@ extension MainSidebarAccountMenuCoordinator {
     var showsAddAccount: Bool { !connections.isEmpty || !databricksAccounts.isEmpty }
     var showsAccountAction: Bool { hasCurrentConnection || currentDatabricksID != nil || !showsAddAccount }
     var menuOffset: Int { databricksStartIndex + databricksAccounts.count + (showsAddAccount ? 1 : 0) }
-    private var databricksStartIndex: Int { connections.count + (settings.hideLocalAccount ? 0 : 1) }
+    private var databricksStartIndex: Int { connections.count + 1 }
     /// Databricks accounts follow the Local Account and create their first workspace when chosen.
     private var databricksIndices: Range<Int> { databricksStartIndex ..< databricksStartIndex + databricksAccounts.count }
 

@@ -15,7 +15,7 @@ dahlia-mcp --workspace <ws_TypeID>            # 指定したワークスペー�
 dahlia-mcp --workspace-id <ws_TypeID> --write  # 指定したワークスペースだけ読み書き
 ```
 
-`--account` は `--workspace` / `--workspace-id` と排他で、併用・重複・不正な値は起動時に拒否する。`--account` の UUID はこの Mac の `accounts.id` であり、Server の user / organization ID ではない。Local Account は ID を持たないため `local` と指定する。Server アカウントは `accountConnectionId`、Databricks アカウントは `databricksConnectionId` の所属で絞り、Local Account はどちらも未設定の Workspace に限定する。起動後の追加・移動も操作時に反映する。不明・削除済みアカウントでは失敗し、全件にフォールバックしない。
+`--account` は `--workspace` / `--workspace-id` と排他で、併用・重複・不正な値は起動時に拒否する。`--account` の UUID はこの Mac の `provider_accounts.id` であり、Server の user / organization ID ではない。Local Account は ID を持たないため `local` と指定する。Server アカウントは `accountConnectionId`、Databricks アカウントは `databricksConnectionId` の所属で絞り、Local Account はどちらも未設定の Workspace に限定する。起動後の追加・移動も操作時に反映する。不明・削除済みアカウントでは失敗し、全件にフォールバックしない。
 
 `list_workspaces` はワークスペース ID・名前・`account_type`・`account_id`・`access_state`・`freshness` を返す。`account_id` は登録にそのまま使える UUID または `local`。`account_type` は従来どおりデータ保持方式の `local` / `server` を表し、Databricks アカウントの Workspace も `local` になる。Server の `last_synced` は端末に保持した同期済みデータであり、最新の共有権限や接続を保証しない。`query_meetings` の `is_recording`（Server: `isRecording`）で録音状態を確認する。Server の状態は開始・終了イベントの同期に従う。
 

@@ -24,7 +24,7 @@
             model.activate(workspace: workspace)
 
             #expect(model.pendingDatabricksSignOut == nil)
-            model.requestDatabricksSignOut()
+            model.requestDatabricksSignOut(connectionID: connection.id)
             #expect(model.pendingDatabricksSignOut == connection)
             #expect(try await service.connections() == [connection])
 

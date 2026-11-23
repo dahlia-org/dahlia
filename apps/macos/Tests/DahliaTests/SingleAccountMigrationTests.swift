@@ -1,0 +1,184 @@
+#if canImport(Testing)
+    @testable import Dahlia
+    import DahliaRuntimeSupport
+    import Foundation
+    import GRDB
+    import Testing
+
+    struct SingleAccountMigrationTests {
+        /// A Mac that used a Databricks account, with a little Local Account data too.
+        final class Fixture: @unchecked Sendable {
+            // Only the test's own task touches these.
+            let database: AppDatabaseManager
+            let root: URL
+            let locator: PiAgentDirectoryLocator
+            let suite = "SingleAccountMigrationTests.\(UUID())"
+            let defaults: UserDefaults
+            var secrets: [String: String] = [:]
+            let connectionID = UUID.v7()
+            let databricksThread = UUID.v7().uuidString
+            let localThread = UUID.v7().uuidString
+            var key: String { connectionID.uuidString.lowercased() }
+
+            init(lastOpenedIsDatabricks: Bool = true) throws {
+                database = try AppDatabaseManager(path: ":memory:")
+                root = FileManager.default.temporaryDirectory.appending(path: "dahlia-single-account-\(UUID().uuidString)")
+                locator = PiAgentDirectoryLocator(applicationSupportURL: root)
+                defaults = try #require(UserDefaults(suiteName: suite))
+                let connection = DahliaAccountConnectionRecord(
+                    DatabricksConnection(id: connectionID, host: "https://dbc-1.cloud.databricks.com"), createdAt: .now
+                )
+                try database.dbQueue.write { db in
+                    try connection.insert(db)
+                    try WorkspaceRecord(
+                        id: .v7(), path: nil, name: "Local", createdAt: .now,
+                        lastOpenedAt: lastOpenedIsDatabricks ? .distantPast : .now
+                    ).insert(db)
+                    try WorkspaceRecord(
+                        id: .v7(), path: nil, name: "Databricks", createdAt: .now,
+                        lastOpenedAt: lastOpenedIsDatabricks ? .now : .distantPast, databricksConnectionId: connectionID
+                    ).insert(db)
+                    for (id, account) in [(databricksThread, key), (localThread, "local")] {
+                        try ChatThreadRecord(
+                            id: id, accountID: account, projectID: nil, parentThreadID: nil, title: id,
+                            model: nil, reasoningEffort: nil, createdAt: .now, updatedAt: .now
+                        ).insert(db)
+                    }
+                    for (account, createdBy) in [(key, "databricks"), ("local", "local")] {
+                        try db.execute(
+                            sql: "INSERT INTO agent_skill_states (accountID, name, createdBy) VALUES (?, 'shared', ?)",
+                            arguments: [account, createdBy]
+                        )
+                    }
+                }
+                try write("databricks", to: "accounts/\(key)/pi/sessions/shared/databricks.jsonl")
+                try write("databricks skill", to: "accounts/\(key)/pi/skills/shared/SKILL.md")
+                try write(#"{"dbc-2.cloud.databricks.com":{"type":"oauth"}}"#, to: "accounts/\(key)/pi/auth.json")
+                try write("local", to: "accounts/local/pi/sessions/shared/local.jsonl")
+                try write("local skill", to: "accounts/local/pi/skills/shared/SKILL.md")
+                try write("local only", to: "accounts/local/pi/skills/notes/SKILL.md")
+                try write(#"{"openai":{"type":"oauth"}}"#, to: "accounts/local/pi/auth.json")
+                try write("device", to: "accounts/local/pi/dahlia-device-id")
+                defaults.set("databricks", forKey: "agentMCPs.\(key)")
+                defaults.set("local", forKey: "agentMCPs.local")
+                defaults.set(Data("inference".utf8), forKey: "accountInferenceSettings.databricks.\(key)")
+                let secretID = UUID()
+                PiLaunchSettings(variables: [.init(id: secretID, name: "TOKEN", isSecret: true)])
+                    .save(for: .databricks(connectionID: connectionID), defaults: defaults)
+                secrets[PiLaunchSettings.secretKey(for: .databricks(connectionID: connectionID), id: secretID)] = "secret"
+                self.secretID = secretID
+            }
+
+            var secretID = UUID()
+
+            deinit {
+                defaults.removePersistentDomain(forName: suite)
+                try? FileManager.default.removeItem(at: root)
+            }
+
+            func write(_ text: String, to path: String) throws {
+                let url = root.appending(path: "Dahlia/\(path)")
+                try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+                try Data(text.utf8).write(to: url)
+            }
+
+            func read(_ path: String) -> String? {
+                (try? Data(contentsOf: root.appending(path: "Dahlia/\(path)"))).map { String(decoding: $0, as: UTF8.self) }
+            }
+
+            func run() throws {
+                try SingleAccountMigration(
+                    dbQueue: database.dbQueue, locator: locator, defaults: defaults,
+                    loadSecret: { self.secrets[$0] }, saveSecret: { self.secrets[$0] = $1 }
+                ).run()
+            }
+
+            func threadAccounts() throws -> [String: String] {
+                try database.dbQueue.read { db in
+                    try Dictionary(uniqueKeysWithValues: ChatThreadRecord.fetchAll(db).map { ($0.id, $0.accountID) })
+                }
+            }
+        }
+
+        @Test
+        func theDatabricksAccountsDataMovesToTheAccountAndItsConnectionStays() throws {
+            let fixture = try Fixture()
+
+            try fixture.run()
+
+            #expect(try fixture.threadAccounts() == [fixture.databricksThread: "local", fixture.localThread: "local"])
+            let skill = try fixture.database.dbQueue.read { db in
+                try Row.fetchAll(db, sql: "SELECT accountID, createdBy FROM agent_skill_states")
+            }
+            #expect(skill.count == 1 && skill.first?["createdBy"] == "databricks")
+            try fixture.database.dbQueue.read { db throws in
+                #expect(try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM workspaces WHERE databricksConnectionId IS NOT NULL") == 0)
+                #expect(try DahliaAccountConnectionRecord.fetchOne(db, key: fixture.connectionID) != nil)
+            }
+            // The account used the Databricks account's settings, so they win; the old keys stay.
+            #expect(fixture.defaults.string(forKey: "agentMCPs.local") == "databricks")
+            #expect(fixture.defaults.string(forKey: "agentMCPs.\(fixture.key)") == "databricks")
+            #expect(fixture.defaults.data(forKey: "accountInferenceSettings.local") == Data("inference".utf8))
+            #expect(fixture.secrets[PiLaunchSettings.secretKey(for: .local, id: fixture.secretID)] == "secret")
+
+            #expect(fixture.read("agent/sessions/shared/databricks.jsonl") == "databricks")
+            #expect(fixture.read("agent/sessions/shared/local.jsonl") == "local")
+            #expect(fixture.read("agent/skills/shared/SKILL.md") == "databricks skill")
+            #expect(fixture.read("agent/skills/notes/SKILL.md") == "local only")
+            #expect(fixture.read("agent/dahlia-device-id") == "device")
+            let signIns = try JSONDecoder().decode(JSONValue.self, from: Data(fixture.read("agent/auth.json")?.utf8 ?? "".utf8))
+            #expect(signIns.objectValue.map { Set($0.keys) } == ["openai", "dbc-2.cloud.databricks.com"])
+            // The old folders stay for a release.
+            #expect(fixture.read("accounts/local/pi/skills/shared/SKILL.md") == "local skill")
+            #expect(try fixture.locator.agentURL(for: .local) == fixture.locator.sharedAgentURL)
+        }
+
+        @Test
+        func aMacThatUsedTheLocalAccountKeepsItsDataAndMovesNoDatabricksRows() throws {
+            let fixture = try Fixture(lastOpenedIsDatabricks: false)
+
+            try fixture.run()
+
+            #expect(try fixture.threadAccounts() == [fixture.databricksThread: fixture.key, fixture.localThread: "local"])
+            #expect(fixture.defaults.string(forKey: "agentMCPs.local") == "local")
+            #expect(fixture.read("agent/skills/shared/SKILL.md") == "local skill")
+            #expect(fixture.read("agent/sessions/shared/databricks.jsonl") == nil)
+            #expect(try fixture.database.dbQueue.read { db in
+                try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM workspaces WHERE databricksConnectionId IS NOT NULL")
+            } == 0)
+        }
+
+        @Test
+        func runningAgainBeforeItCompletedReachesTheSameResult() throws {
+            let fixture = try Fixture()
+            try fixture.run()
+            fixture.defaults.removeObject(forKey: SingleAccountMigration.completedKey)
+            // Later launches keep the source though its workspace no longer names it.
+            try fixture.run()
+
+            #expect(try fixture.threadAccounts() == [fixture.databricksThread: "local", fixture.localThread: "local"])
+            #expect(fixture.read("agent/skills/shared/SKILL.md") == "databricks skill")
+            #expect(fixture.defaults.string(forKey: "agentMCPs.local") == "databricks")
+        }
+
+        @Test
+        func aBackupRestoredFromBeforeTheMoveEndsTheSameWay() throws {
+            let fixture = try Fixture()
+            try fixture.run()
+            fixture.defaults.set("changed later", forKey: "agentMCPs.local")
+            try fixture.database.dbQueue.write { db in
+                try db.execute(sql: "UPDATE chat_threads SET accountID = ? WHERE id = ?", arguments: [fixture.key, fixture.databricksThread])
+                try db.execute(sql: "UPDATE workspaces SET databricksConnectionId = ? WHERE name = 'Databricks'", arguments: [fixture.connectionID])
+            }
+
+            try fixture.run()
+
+            #expect(try fixture.threadAccounts()[fixture.databricksThread] == "local")
+            #expect(try fixture.database.dbQueue.read { db in
+                try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM workspaces WHERE databricksConnectionId IS NOT NULL")
+            } == 0)
+            // Settings moved once; a later change is not overwritten.
+            #expect(fixture.defaults.string(forKey: "agentMCPs.local") == "changed later")
+        }
+    }
+#endif

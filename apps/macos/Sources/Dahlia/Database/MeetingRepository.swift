@@ -211,23 +211,11 @@ final class MeetingRepository {
         }
     }
 
-    /// Lists a local workspace under the Databricks account (or back under the Local Account). Never synced either way.
-    /// False when the workspace is no longer a Local or Databricks one, such as after a Server adopted it.
-    nonisolated func updateWorkspaceDatabricksConnection(id: UUID, connectionID: UUID?) async throws -> Bool {
-        try await dbQueue.write { db in
-            try db.execute(
-                sql: "UPDATE workspaces SET databricksConnectionId = ? WHERE id = ? AND accountConnectionId IS NULL",
-                arguments: [connectionID, id]
-            )
-            return db.changesCount > 0
-        }
-    }
-
-    /// The Local Account's (nil) or a Databricks account's oldest workspace, or `created` inserted when it has none.
-    nonisolated func accountWorkspace(databricksConnectionID connectionID: UUID?, creating created: WorkspaceRecord) async throws -> WorkspaceRecord {
+    /// The app's account's oldest workspace, or `created` inserted when it has none.
+    nonisolated func accountWorkspace(creating created: WorkspaceRecord) async throws -> WorkspaceRecord {
         try await dbQueue.write { db in
             if let existing = try WorkspaceRecord
-                .filter(Column("databricksConnectionId") == connectionID && Column("accountConnectionId") == nil)
+                .filter(Column("accountConnectionId") == nil)
                 .order(Column("createdAt"), Column("id"))
                 .fetchOne(db) {
                 return existing

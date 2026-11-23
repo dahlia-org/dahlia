@@ -375,7 +375,7 @@
         @Test(.timeLimit(.minutes(1))) func fixedSendWindowDoesNotRestartAndFlushBypassesIt() async throws {
             let (queue, _, meetingID) = try seed(server: true)
             let origin = "https://window-\(UUID.v7().uuidString.lowercased()).invalid"
-            try await queue.write { try $0.execute(sql: "UPDATE accounts SET origin = ?", arguments: [origin]) }
+            try await queue.write { try $0.execute(sql: "UPDATE provider_accounts SET origin = ?", arguments: [origin]) }
             let calls = Mutex(0)
             ImageURLProtocol.register(origin: origin) { request in
                 if request.url!.path.hasSuffix("/capabilities") { return (200, [:], Data(#"{"documents":{"version":3}}"#.utf8)) }
@@ -552,7 +552,7 @@
             try await persistence.receive(document: document, update: shared, generation: originalGeneration, revision: 1, validate: { _ in })
             try await persistence.append(meetingID: meetingID, update: pending, local: true)
             let origin = "https://rejected-generation-\(UUID.v7().uuidString.lowercased()).invalid"
-            try await queue.write { try $0.execute(sql: "UPDATE accounts SET origin = ?", arguments: [origin]) }
+            try await queue.write { try $0.execute(sql: "UPDATE provider_accounts SET origin = ?", arguments: [origin]) }
             let calls = Mutex(0), uploads = Mutex<[Bool]>([])
             let restored = try JSONSerialization.data(withJSONObject: ["document": [
                 "id": document.id.uuidString, "workspaceId": workspaceID.uuidString, "meetingId": meetingID.uuidString,
@@ -602,7 +602,7 @@
             try await persistence.append(meetingID: meetingID, update: pending, local: true)
             let origin = "https://viewer-\(UUID.v7().uuidString.lowercased()).invalid"
             try await queue.write { db in
-                try db.execute(sql: "UPDATE accounts SET origin = ?", arguments: [origin])
+                try db.execute(sql: "UPDATE provider_accounts SET origin = ?", arguments: [origin])
                 try db.execute(sql: "UPDATE workspaces SET syncRole = 'viewer' WHERE id = ?", arguments: [workspaceID])
                 try DocumentRecoveryRecord(id: .v7(), documentId: document.id, blocksJSON: "[]", reason: "deleted", pending: true, createdAt: .now)
                     .insert(db)
@@ -943,7 +943,7 @@
             let persistence = DocumentPersistence(dbQueue: queue)
             let checkpoint = try await persistence.legacyImport(text: "見出し\n\n本文\n")
             let origin = "https://documents-\(UUID.v7().uuidString.lowercased()).invalid"
-            try await queue.write { try $0.execute(sql: "UPDATE accounts SET origin = ?", arguments: [origin]) }
+            try await queue.write { try $0.execute(sql: "UPDATE provider_accounts SET origin = ?", arguments: [origin]) }
             let body = try JSONSerialization.data(withJSONObject: ["document": [
                 "id": UUID.v7().uuidString, "workspaceId": workspaceID.uuidString, "meetingId": meetingID.uuidString,
                 "kind": "notes", "title": "", "schemaVersion": 2, "generation": UUID.v7().uuidString, "revision": 1,
@@ -974,7 +974,7 @@
             let (queue, workspaceID, meetingID) = try seed(server: true)
             let persistence = DocumentPersistence(dbQueue: queue), canonicalID = UUID.v7(), generation = UUID.v7()
             let origin = "https://documents-\(UUID.v7().uuidString.lowercased()).invalid"
-            try await queue.write { try $0.execute(sql: "UPDATE accounts SET origin = ?", arguments: [origin]) }
+            try await queue.write { try $0.execute(sql: "UPDATE provider_accounts SET origin = ?", arguments: [origin]) }
             try await persistence.append(meetingID: meetingID, update: persistence.legacyImport(text: "offline input"), local: true)
             let proposed = try #require(try await queue.read { try DocumentRecord.notes(in: $0, meetingID: meetingID)?.id })
             let response = try JSONSerialization.data(withJSONObject: ["document": [
@@ -1022,7 +1022,7 @@
             let checkpoint = try await persistence.legacyImport(text: "Independent body")
             let origin = "https://general-\(UUID.v7().uuidString.lowercased()).invalid"
             try await queue.write { db in
-                try db.execute(sql: "UPDATE accounts SET origin = ?", arguments: [origin])
+                try db.execute(sql: "UPDATE provider_accounts SET origin = ?", arguments: [origin])
                 if alreadyCached {
                     var oldWorkspace = try #require(try WorkspaceRecord.fetchOne(db, key: workspaceID))
                     oldWorkspace.id = oldWorkspaceID
@@ -1087,7 +1087,7 @@
             let pending = try await persistence.legacyImport(text: "pending edit")
             let origin = "https://relocated-\(UUID.v7().uuidString.lowercased()).invalid"
             let organizationID = try await queue.write { db in
-                try db.execute(sql: "UPDATE accounts SET origin = ?", arguments: [origin])
+                try db.execute(sql: "UPDATE provider_accounts SET origin = ?", arguments: [origin])
                 try DocumentRecord(
                     id: id, workspaceId: sourceID, meetingId: nil, kind: "general", title: "Independent",
                     revision: 1, generation: generation, checkpoint: checkpoint, text: "shared", createdAt: .now, updatedAt: .now
@@ -1195,7 +1195,7 @@
             let checkpoint = try await persistence.legacyImport(text: "Retained body")
             let origin = "https://missing-\(UUID.v7().uuidString.lowercased()).invalid"
             try await queue.write { db in
-                try db.execute(sql: "UPDATE accounts SET origin = ?", arguments: [origin])
+                try db.execute(sql: "UPDATE provider_accounts SET origin = ?", arguments: [origin])
                 try DocumentRecord(
                     id: id, workspaceId: workspaceID, meetingId: nil, kind: "general", title: "Document",
                     revision: 1, generation: generation, checkpoint: checkpoint, text: "Retained body", createdAt: .now, updatedAt: .now
@@ -1260,7 +1260,7 @@
             let persistence = DocumentPersistence(dbQueue: queue), generation = UUID.v7()
             let origin = "https://retry-\(UUID.v7().uuidString.lowercased()).invalid"
             try await queue.write { db in
-                try db.execute(sql: "UPDATE accounts SET origin = ?", arguments: [origin])
+                try db.execute(sql: "UPDATE provider_accounts SET origin = ?", arguments: [origin])
                 try db.execute(sql: "UPDATE workspaces SET syncPullCursor = 'ready' WHERE id = ?", arguments: [workspaceID])
                 try DocumentRecord(
                     id: .v7(), workspaceId: workspaceID, meetingId: meetingID, generation: generation,

@@ -242,6 +242,49 @@ import os
             }
         }
 
+        final class ResolvedAccounts: @unchecked Sendable {
+            // Guarded by `lock`.
+            private let lock = NSLock()
+            private var storage: [ProviderAccount] = []
+            var all: [ProviderAccount] { lock.withLock { storage } }
+            func append(_ account: ProviderAccount) { lock.withLock { storage.append(account) } }
+        }
+
+        /// The extension names the provider it needs. Only a provider the account bridges gets a token, and it is that
+        /// provider account's token.
+        @Test(arguments: [("databricks", true), ("openai", false), ("dahlia", false)])
+        func tokenRequestsResolveOnlyTheNamedBridgedProvider(providerID: String, bridged: Bool) async throws {
+            let connectionID = UUID.v7()
+            let log = TestPiTransportLog()
+            let resolved = ResolvedAccounts()
+            let pi = TestPiRuntime(provider: .databricks(connectionID: connectionID), tokenResolver: { account in
+                resolved.append(account)
+                throw TokenFailure()
+            }) { options in
+                let transport = options.mode == .control
+                    ? TestPiTransport(reply: TestPiRuntime.modelsReply([TestPiTransport.model(provider: "databricks", id: "gpt")]))
+                    : TestPiTransport { command in
+                        guard let id = command["id"], command["type"]?.stringValue == "prompt" else { return [] }
+                        return [
+                            TestPiTransport.response(id: id),
+                            TestPiTransport.bridgeRequest(id: "ui-1", method: "token", payload: .object(["provider": .string(providerID)])),
+                        ]
+                    }
+                log.append(transport)
+                return transport
+            }
+            let generation = Task { try await pi.service.generate(Self.request(model: nil, inputs: [.text("x")])) }
+
+            let summary = await log.transport(at: 1)
+            let answer = await summary.command("extension_ui_response")
+            #expect(answer["cancelled"] == .bool(true))
+            await summary.emit(TestPiTransport.assistantEnd("", stopReason: "error", errorMessage: "Dahlia did not answer token"))
+            await summary.emit(TestPiTransport.settled())
+            _ = try? await generation.value
+
+            #expect(resolved.all == (bridged ? [.databricks(connectionID: connectionID)] : []))
+        }
+
         @Test(arguments: [
             ("401 Unauthorized", true), ("HTTP error 401: invalid token", true), ("No API key found for provider openai", true),
             ("prompt is too long: 214013 tokens > 200000 maximum", false), ("429 rate limited", false),

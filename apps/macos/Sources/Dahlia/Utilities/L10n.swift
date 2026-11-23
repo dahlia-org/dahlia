@@ -2005,10 +2005,6 @@ enum L10n { // swiftlint:disable:this type_body_length
     static var accountsAndWorkspaces: String { String(localized: "Accounts and Workspaces", bundle: bundle) }
     static var dahliaAccount: String { String(localized: "Dahlia Account", bundle: bundle) }
     static var addAccount: String { String(localized: "Add Account", bundle: bundle) }
-    static var hideLocalAccount: String { String(localized: "Hide Local Account", bundle: bundle) }
-    static var hideLocalAccountDescription: String {
-        String(localized: "Hide the Local Account from account lists. Its workspaces and data stay on this Mac.", bundle: bundle)
-    }
 
     static var localAccount: String { String(localized: "Local Account", bundle: bundle) }
     static var continueWithLocalAccount: String { String(localized: "Continue with Local Account", bundle: bundle) }
@@ -2277,7 +2273,13 @@ enum L10n { // swiftlint:disable:this type_body_length
     ) }
     static var calendarSources: String { String(localized: "Calendar Sources", bundle: bundle) }
     static var calendarSourcesDescription: String { String(
-        localized: "Each account chooses the calendar services that provide its upcoming events. A Databricks account reads Google Calendar through its workspace.",
+        localized: "Turn on the providers that supply upcoming events. Google Calendar comes from Google or from a Databricks connection, one at a time.",
+        bundle: bundle
+    ) }
+    static var calendarProviders: String { String(localized: "Calendar Providers", bundle: bundle) }
+    static var google: String { String(localized: "Google", bundle: bundle) }
+    static var calendarProviderTurnOnToConnect: String { String(
+        localized: "Turn this provider on to connect it.",
         bundle: bundle
     ) }
     static var calendarEventsToInclude: String { String(localized: "Events to Include", bundle: bundle) }

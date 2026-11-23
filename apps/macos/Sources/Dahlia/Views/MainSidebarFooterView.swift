@@ -26,12 +26,12 @@ struct MainSidebarFooterView: View {
                 connections: signedInConnections,
                 currentConnectionID: connection?.id,
                 isLocalAccount: workspaceAISettings.isLocalAccount,
-                databricksAccounts: workspaceAISettings.databricksConnections,
-                currentDatabricksAccountID: workspaceAISettings.isDatabricksAccount
-                    ? workspaceAISettings.databricksAccountConnectionID : nil,
+                // Databricks connections are provider accounts in Settings, not accounts to switch to.
+                databricksAccounts: [],
+                currentDatabricksAccountID: nil,
                 onOpenSettings: showSettings,
                 onSelectAccount: selectAccount,
-                onSelectDatabricksAccount: { selectLocalAccount(databricks: $0) },
+                onSelectDatabricksAccount: { _ in },
                 onAddAccount: { mainWindowNavigation.openDahliaSignIn() },
                 onAccountAction: accountAction,
                 unprocessedRecordingCount: unprocessedRecordingCount,
@@ -101,15 +101,13 @@ struct MainSidebarFooterView: View {
             } else {
                 dahliaAccountController.startReauthentication(connectionID: connection.id)
             }
-        } else if workspaceAISettings.isDatabricksAccount {
-            workspaceAISettings.requestDatabricksSignOut()
         } else {
             mainWindowNavigation.openDahliaSignIn()
         }
     }
 
     private func selectAccount(_ connection: DahliaAccountConnection?) {
-        guard connection != nil else { return selectLocalAccount(databricks: nil) }
+        guard connection != nil else { return selectLocalAccount() }
         guard let workspace = Self.workspaceToSelect(
             from: workspaces,
             currentWorkspace: currentWorkspace,
@@ -118,32 +116,27 @@ struct MainSidebarFooterView: View {
         onSelectWorkspace(workspace)
     }
 
-    private func selectLocalAccount(databricks: UUID?) {
+    private func selectLocalAccount() {
         Self.selectLocalAccount(
-            databricks: databricks,
             workspaces: workspaces,
             currentWorkspace: currentWorkspace,
             onSelectWorkspace: onSelectWorkspace
         )
     }
 
-    /// The Local Account and each Databricks account (`databricks`, a connected workspace) open their own workspaces;
-    /// each gets its first one on first use. All keep their data on this Mac.
+    /// The app's account opens one of its workspaces, which it gets on first use. Its data stays on this Mac.
     static func selectLocalAccount(
-        databricks: UUID?,
         workspaces: [WorkspaceRecord],
         currentWorkspace: WorkspaceRecord?,
         onSelectWorkspace: @escaping (WorkspaceRecord) -> Void
     ) {
-        if let workspace = workspaceToSelect(
-            from: workspaces, currentWorkspace: currentWorkspace, connectionID: nil, databricks: databricks
-        ) {
+        if let workspace = workspaceToSelect(from: workspaces, currentWorkspace: currentWorkspace, connectionID: nil) {
             onSelectWorkspace(workspace)
             return
         }
-        guard Self.workspaces(workspaces, linkedTo: nil, databricks: databricks).isEmpty else { return }
+        guard Self.workspaces(workspaces, linkedTo: nil).isEmpty else { return }
         Task { @MainActor in
-            if let workspace = await WorkspaceAISettingsModel.shared.accountWorkspace(databricksConnectionID: databricks) {
+            if let workspace = await WorkspaceAISettingsModel.shared.accountWorkspace() {
                 onSelectWorkspace(workspace)
             }
         }

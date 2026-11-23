@@ -162,14 +162,12 @@ struct DahliaApp: App {
                 if mainWindowNavigation.isShowingDahliaSignIn {
                     // Dahlia Cloud and Server sign-in (`DahliaServerSignInView`) is hidden for now.
                     DatabricksSignInView(
-                        showsLocalAccount: !AppSettings.shared.hideLocalAccount && !workspaceManagementModel.workspaces.contains {
+                        showsLocalAccount: !workspaceManagementModel.workspaces.contains {
                             $0.accountConnectionId == nil && $0.databricksConnectionId == nil
                         },
-                        workspaceManagementModel: workspaceManagementModel,
-                        canTransferWorkspace: viewModel.canSwitchWorkspace,
                         onCancel: cancelDahliaSignIn,
-                        onContinueWithDatabricks: { continueFromSignIn(databricks: $0) },
-                        onContinueLocally: { continueFromSignIn(databricks: nil) }
+                        onContinueWithDatabricks: { _ in continueFromSignIn() },
+                        onContinueLocally: continueFromSignIn
                     )
                 }
             }
@@ -413,6 +411,12 @@ struct DahliaApp: App {
         AppDelegate.backupRestoreOutcome = restoreOutcome
         startup.show(.loadingWorkspaces)
         AccountsDatabase.configure(db.dbQueue)
+        // Before anything reads the agent folder or per-account settings. A failure runs again on the next launch.
+        do {
+            try await SingleAccountMigration.runAtLaunch(dbQueue: db.dbQueue)
+        } catch {
+            ErrorReportingService.capture(error, context: ["source": "singleAccountMigration"])
+        }
         DatabricksOAuthStorage.removeLegacyConnections()
         // Accounts are in the database now; listeners such as the Google Calendar proxy re-read them.
         NotificationCenter.default.post(name: .databricksConnectionDidChange, object: nil)
@@ -523,11 +527,12 @@ struct DahliaApp: App {
         return true
     }
 
-    /// `databricks` is the signed-in workspace's account to open; nil opens the Local Account.
-    private func continueFromSignIn(databricks: UUID?) {
+    /// A Databricks sign-in adds a provider account; no workspace belongs to it, so the open workspace stays.
+    private func continueFromSignIn() {
         mainWindowNavigation.dismissDahliaSignIn()
+        guard AppSettings.shared.currentWorkspace == nil else { return }
         Task {
-            if let workspace = await WorkspaceAISettingsModel.shared.accountWorkspace(databricksConnectionID: databricks) {
+            if let workspace = await WorkspaceAISettingsModel.shared.accountWorkspace() {
                 _ = openWorkspace(workspace)
             }
         }

@@ -75,6 +75,8 @@ final class GoogleCalendarStore: ObservableObject {
     private var isLoadingAccountData = false
     private var authChangeObserver: GoogleAuthSessionObserver?
     private var accountChangeObserver: AnyCancellable?
+    private var providerChangeObserver: AnyCancellable?
+    private var provider: GoogleCalendarProvider?
     private var refreshGeneration: UInt64 = 0
     private var refreshTask: Task<Void, Never>?
     private var refreshTaskID: UUID?
@@ -117,6 +119,9 @@ final class GoogleCalendarStore: ObservableObject {
         // Delivered synchronously as the account changes, not queued behind a session change still restoring.
         accountChangeObserver = NotificationCenter.default.publisher(for: .calendarAccountDidChange)
             .sink { [weak self] _ in self?.switchToOpenAccountIfChanged() }
+        provider = GoogleCalendarProvider.current(account: openAccount(), defaults: userDefaults)
+        providerChangeObserver = NotificationCenter.default.publisher(for: GoogleCalendarProvider.didChange)
+            .sink { [weak self] _ in self?.reloadIfProviderChanged() }
     }
 
     func restoreSessionIfNeeded() async {
@@ -461,6 +466,18 @@ final class GoogleCalendarStore: ObservableObject {
 
     /// The route changes with the account: drop the previous account's session, calendars, events, and every load still
     /// running for it before any of them can publish, then restore with the new account's selection and route.
+    /// Another provider reads Google Calendar now: its own sign-in, calendars, and cached events.
+    private func reloadIfProviderChanged() {
+        let current = GoogleCalendarProvider.current(account: openAccount(), defaults: userDefaults)
+        guard current != provider else { return }
+        provider = current
+        clearRuntimeState(clearSelection: false)
+        cachedEventsSnapshot = nil
+        didAttemptRestore = false
+        recomputeState()
+        Task { await restoreSessionIfNeeded() }
+    }
+
     private func switchToOpenAccountIfChanged() {
         let currentAccount = openAccount()
         guard currentAccount != selectionAccount else { return }

@@ -49,7 +49,7 @@ struct ServerConversationAnalyticsService: Sendable {
                   workspace.syncConfirmedConnectionId == connectionID,
                   let origin = try String.fetchOne(
                       db,
-                      sql: "SELECT origin FROM accounts WHERE id = ?",
+                      sql: "SELECT origin FROM provider_accounts WHERE id = ?",
                       arguments: [connectionID]
                   ).flatMap(URL.init(string:))
             else { return nil }

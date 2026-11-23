@@ -101,7 +101,7 @@ struct ContentView: View {
                                 onRequestProjectDeletion: { projectPendingDeletion = $0 }
                             )
                         } else if let omnigentSessionID,
-                                  let connectionID = WorkspaceAISettingsModel.shared.databricksAccountConnectionID {
+                                  let connectionID = WorkspaceAISettingsModel.shared.providerDatabricksConnectionID {
                             OmnigentSessionView(
                                 connectionID: connectionID,
                                 sessionID: omnigentSessionID,
@@ -397,11 +397,11 @@ private extension ContentView {
     }
 
     private var omnigentSessionID: String? {
-        mainWindowNavigation.shownOmnigentSessionID(for: WorkspaceAISettingsModel.shared.databricksAccountConnectionID)
+        mainWindowNavigation.shownOmnigentSessionID(for: WorkspaceAISettingsModel.shared.providerDatabricksConnectionID)
     }
 
     private func openOmnigentSession(_ id: String) {
-        guard let connectionID = WorkspaceAISettingsModel.shared.databricksAccountConnectionID else { return }
+        guard let connectionID = WorkspaceAISettingsModel.shared.providerDatabricksConnectionID else { return }
         mainWindowNavigation.recordNavigation(to: .omnigentSession(connectionID: connectionID, sessionID: id))
         restoreOmnigentPresentation()
     }
@@ -975,7 +975,7 @@ private extension ContentView {
             return true
         case .omnigentSession:
             // A session of another account's workspace cannot be shown after the account changed.
-            return location.omnigentSessionID(for: WorkspaceAISettingsModel.shared.databricksAccountConnectionID) != nil
+            return location.omnigentSessionID(for: WorkspaceAISettingsModel.shared.providerDatabricksConnectionID) != nil
         case let .chatThread(accountID, threadID):
             return await chatCoordinator.canRestoreThread(id: threadID, accountID: accountID)
         case let .meeting(meetingID):

@@ -1556,10 +1556,10 @@ actor SyncWorker {
                 db,
                 sql: """
                 SELECT workspaces.id, workspaces.syncConfirmedConnectionId, workspaces.syncPullCursor,
-                    workspaces.syncMutationGeneration, workspaces.syncLifecycleGeneration, accounts.origin
+                    workspaces.syncMutationGeneration, workspaces.syncLifecycleGeneration, provider_accounts.origin
                 FROM workspaces
-                JOIN accounts
-                  ON accounts.id = workspaces.syncConfirmedConnectionId
+                JOIN provider_accounts
+                  ON provider_accounts.id = workspaces.syncConfirmedConnectionId
                 WHERE workspaces.id = ? AND workspaces.accountConnectionId = ?
                   AND workspaces.syncConfirmedConnectionId = ?
                 """,
@@ -1583,10 +1583,10 @@ actor SyncWorker {
                 sql: """
                 SELECT workspaces.id, workspaces.syncConfirmedConnectionId, workspaces.syncPullCursor, workspaces.syncMutationGeneration, workspaces.syncLifecycleGeneration,
                     workspaces.syncRecoveryState,
-                    accounts.origin
+                    provider_accounts.origin
                 FROM workspaces
-                JOIN accounts
-                  ON accounts.id = workspaces.syncConfirmedConnectionId
+                JOIN provider_accounts
+                  ON provider_accounts.id = workspaces.syncConfirmedConnectionId
                 WHERE workspaces.accountConnectionId = workspaces.syncConfirmedConnectionId
                   AND (
                     (workspaces.syncPullCursor IS NOT NULL AND workspaces.syncRecoveryState IS NULL)

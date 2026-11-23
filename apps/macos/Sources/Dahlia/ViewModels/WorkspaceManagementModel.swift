@@ -153,7 +153,7 @@ final class WorkspaceManagementModel {
         return await task.value
     }
 
-    func createWorkspace(at url: URL, databricksConnectionID: UUID? = nil) async -> WorkspaceRecord? {
+    func createWorkspace(at url: URL) async -> WorkspaceRecord? {
         do {
             try await Self.createDirectory(at: url)
         } catch {
@@ -161,18 +161,16 @@ final class WorkspaceManagementModel {
             presentError(L10n.workspaceAddFailed, error: error, source: "createWorkspace.directory")
             return nil
         }
-        guard let workspace = await registerWorkspace(at: url, markAsOpened: false, databricksConnectionID: databricksConnectionID)
-        else { return nil }
-        // A folder has one workspace; one of another account is not the workspace this account asked for.
-        guard workspace.accountConnectionId == nil, workspace.databricksConnectionId == databricksConnectionID else {
+        guard let workspace = await registerWorkspace(at: url, markAsOpened: false) else { return nil }
+        // A folder has one workspace; a Dahlia Server's is not the workspace this account asked for.
+        guard workspace.accountConnectionId == nil else {
             presentError(L10n.workspaceAddFailed, source: "createWorkspace.otherAccount")
             return nil
         }
         return workspace
     }
 
-    /// `databricksConnectionID` lists the new workspace under the Databricks account instead of the Local Account.
-    func createWorkspace(named proposedName: String, databricksConnectionID: UUID? = nil) async -> WorkspaceRecord? {
+    func createWorkspace(named proposedName: String) async -> WorkspaceRecord? {
         guard let repository else {
             presentError(L10n.workspaceAddFailed, source: "createWorkspace")
             return nil
@@ -185,8 +183,7 @@ final class WorkspaceManagementModel {
             path: nil,
             name: name,
             createdAt: now,
-            lastOpenedAt: .distantPast,
-            databricksConnectionId: databricksConnectionID
+            lastOpenedAt: .distantPast
         )
         WorkspaceAISettingsModel.shared.snapshot(for: workspace.id).applyAISettings(to: &workspace)
         do {
@@ -199,11 +196,7 @@ final class WorkspaceManagementModel {
         }
     }
 
-    func registerWorkspace(
-        at url: URL,
-        markAsOpened: Bool = true,
-        databricksConnectionID: UUID? = nil
-    ) async -> WorkspaceRecord? {
+    func registerWorkspace(at url: URL, markAsOpened: Bool = true) async -> WorkspaceRecord? {
         guard let repository else {
             presentError(L10n.workspaceAddFailed, source: "registerWorkspace")
             return nil
@@ -222,8 +215,7 @@ final class WorkspaceManagementModel {
             path: normalizedURL.path,
             name: normalizedURL.lastPathComponent,
             createdAt: now,
-            lastOpenedAt: markAsOpened ? now : .distantPast,
-            databricksConnectionId: databricksConnectionID
+            lastOpenedAt: markAsOpened ? now : .distantPast
         )
         WorkspaceAISettingsModel.shared.snapshot(for: workspace.id).applyAISettings(to: &workspace)
 
@@ -355,26 +347,6 @@ final class WorkspaceManagementModel {
             presentError(L10n.workspaceRenameFailed, error: error, source: "renameWorkspace")
             return nil
         }
-    }
-
-    func workspaceTransferCandidates(toDatabricks connectionID: UUID) -> [WorkspaceRecord] {
-        workspaces.filter { $0.accountConnectionId == nil && $0.databricksConnectionId != connectionID }
-    }
-
-    /// Moves a local workspace between the Local and Databricks accounts. Its data stays on this Mac either way.
-    func moveWorkspace(_ workspace: WorkspaceRecord, toDatabricks connectionID: UUID?) async -> Bool {
-        guard workspace.accountConnectionId == nil, let repository else { return false }
-        guard workspace.databricksConnectionId != connectionID else { return true }
-        do {
-            guard try await repository.updateWorkspaceDatabricksConnection(id: workspace.id, connectionID: connectionID) else { return false }
-            if let index = workspaces.firstIndex(where: { $0.id == workspace.id }) {
-                workspaces[index].databricksConnectionId = connectionID
-            }
-        } catch {
-            presentError(L10n.workspaceOperationFailed, error: error, source: "moveWorkspaceToDatabricks")
-            return false
-        }
-        return true
     }
 
     func requestServerAdoption(for workspace: WorkspaceRecord, connection: DahliaAccountConnection) async {

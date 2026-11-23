@@ -32,7 +32,7 @@
                 dbQueue: fixture.dbQueue
             ))
             try await fixture.dbQueue.write { db in
-                try db.execute(sql: "UPDATE accounts SET origin = ? WHERE id = ?", arguments: ["https://changed.example.test", fixture.connectionId])
+                try db.execute(sql: "UPDATE provider_accounts SET origin = ? WHERE id = ?", arguments: ["https://changed.example.test", fixture.connectionId])
             }
             #expect(try await !provider.isAvailable(
                 id: fixture.screenshotId,

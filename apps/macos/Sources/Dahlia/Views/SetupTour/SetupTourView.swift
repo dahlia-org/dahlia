@@ -176,9 +176,7 @@ struct SetupTourView: View {
             // Dahlia Cloud and Server sign-in are hidden for now; existing connections stay usable from Settings.
             DatabricksSignInView(
                 isEmbedded: true,
-                showsLocalAccount: model.mode == .initial || !settings.hideLocalAccount,
-                workspaceManagementModel: workspaceManagementModel,
-                canTransferWorkspace: canComplete(),
+                showsLocalAccount: true,
                 onCancel: {},
                 onContinueWithDatabricks: continueWithDatabricks,
                 onContinueLocally: continueWithLocalAccount,
@@ -260,10 +258,8 @@ struct SetupTourView: View {
 
     private func prepareInitialWorkspace() async -> WorkspaceRecord? {
         let connectionID = model.selectedAccountConnectionID
-        if let databricks = model.selectedDatabricksConnectionID {
-            return await model.prepareInitialWorkspace {
-                await WorkspaceAISettingsModel.shared.accountWorkspace(databricksConnectionID: databricks)
-            }
+        if model.selectedDatabricksConnectionID != nil {
+            return await model.prepareInitialWorkspace { await WorkspaceAISettingsModel.shared.accountWorkspace() }
         }
         return await model.prepareInitialWorkspace {
             let workspace = await workspaceManagementModel.resolveInitialWorkspace(accountConnectionID: connectionID) {
@@ -293,8 +289,8 @@ struct SetupTourView: View {
             } else if let originalWorkspace = model.originalWorkspace, model.keepsOriginalWorkspace {
                 originalWorkspace
             } else {
-                // The account step offers only the Local and Databricks accounts, so another account is one of them.
-                await WorkspaceAISettingsModel.shared.accountWorkspace(databricksConnectionID: model.selectedDatabricksConnectionID)
+                // A Databricks sign-in only adds a provider account, so the tour opens the app's account workspace.
+                await WorkspaceAISettingsModel.shared.accountWorkspace()
             }
             guard let workspace else {
                 workspaceManagementModel.isShowingError = false
@@ -307,7 +303,6 @@ struct SetupTourView: View {
                 model.finishCompletion(errorMessage: L10n.workspaceOperationFailed)
                 return
             }
-            model.initializeLocalAccountVisibility()
             model.finishCompletion(errorMessage: nil)
         }
     }

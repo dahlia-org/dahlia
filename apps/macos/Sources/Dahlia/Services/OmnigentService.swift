@@ -32,7 +32,8 @@ enum OmnigentService {
 
     /// The Databricks workspace to call, when the account is a Databricks account that turned Omnigent on (it is off by default).
     nonisolated static func connectionID(for provider: CodexRuntimeProvider, defaults: UserDefaults = .standard) -> UUID? {
-        guard case let .databricks(connectionID) = provider, defaults.bool(forKey: enabledKey(provider.accountKey)) else { return nil }
+        guard let connectionID = provider.databricksConnectionID,
+              defaults.bool(forKey: enabledKey(provider.accountKey)) else { return nil }
         return connectionID
     }
 

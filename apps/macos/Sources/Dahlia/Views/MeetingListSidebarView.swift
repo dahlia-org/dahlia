@@ -69,7 +69,7 @@ struct MeetingListSidebarView: View {
                         onOpenThread: onOpenChatThread
                     )
                     let aiSettings = WorkspaceAISettingsModel.shared
-                    if aiSettings.isDatabricksAccount, let connectionID = aiSettings.databricksAccountConnectionID {
+                    if let connectionID = aiSettings.providerDatabricksConnectionID {
                         MainSidebarOmnigentSection(
                             connectionID: connectionID,
                             selectedSessionID: omnigentSessionID,

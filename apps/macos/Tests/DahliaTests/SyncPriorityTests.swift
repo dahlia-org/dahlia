@@ -351,7 +351,7 @@
                 )
                 let connection = try #require(try WorkspaceRecord.fetchOne(db, key: workspace)?.accountConnectionId)
                 try db.execute(
-                    sql: "UPDATE accounts SET origin = ? WHERE id = ?",
+                    sql: "UPDATE provider_accounts SET origin = ? WHERE id = ?",
                     arguments: ["https://summary-priority-\(workspace.uuidString).invalid", connection]
                 )
                 return connection
@@ -500,7 +500,7 @@
             #expect(try await queue
                 .read { try String.fetchOne($0, sql: "SELECT syncPullCursor FROM workspaces WHERE id = ?", arguments: [workspace]) } == "before")
             let origin = "https://scoped-resolution-\(workspace.uuidString).invalid"
-            try await queue.write { try $0.execute(sql: "UPDATE accounts SET origin = ?", arguments: [origin]) }
+            try await queue.write { try $0.execute(sql: "UPDATE provider_accounts SET origin = ?", arguments: [origin]) }
             let items: [[String: Any]] = deleted ? [] : [[
                 "entity": "meeting",
                 "id": accepted.uuidString,

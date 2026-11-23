@@ -37,8 +37,9 @@ final class WorkspaceAISettingsModel {
         }
     }
 
-    var isDatabricksAccount: Bool {
-        isLocalAccount && databricksAccountConnectionID != nil
+    /// The Databricks connection the app's account uses, the oldest, as `CodexRuntimeProvider.providerAccounts` does.
+    var providerDatabricksConnectionID: UUID? {
+        databricksConnections.first?.id
     }
 
     var generationSettings = WorkspaceGenerationSettings() {
@@ -101,6 +102,8 @@ final class WorkspaceAISettingsModel {
             Task { @MainActor in
                 guard let self else { return }
                 await self.reloadDatabricksConnections()
+                // The app's one account uses every connection, so adding or removing one changes its providers.
+                try? await CodexRuntimeContextCoordinator.shared.providerAccountsDidChange()
             }
         }
     }
@@ -153,21 +156,21 @@ final class WorkspaceAISettingsModel {
         }
     }
 
-    func requestDatabricksSignOut() {
-        guard isDatabricksAccount else { return }
-        pendingDatabricksSignOut = databricksConnections.first { $0.id == databricksAccountConnectionID }
+    /// Asks to remove a Databricks connection, a provider account of the app's account.
+    func requestDatabricksSignOut(connectionID: UUID) {
+        pendingDatabricksSignOut = databricksConnections.first { $0.id == connectionID }
     }
 
     func cancelDatabricksSignOut() {
         pendingDatabricksSignOut = nil
     }
 
-    /// Removes only the confirmed connection. Its workspaces return to the Local Account.
+    /// Removes only the confirmed connection. The account keeps its history and settings; only the connection's
+    /// models, MCP services, and calendar go.
     func confirmDatabricksSignOut() async {
         guard let connectionID = pendingDatabricksSignOut?.id else { return }
         pendingDatabricksSignOut = nil
         do {
-            // Its workspaces are the Local Account's now. Its folder, with its chats, stays.
             try await databricksService.remove(connectionID: connectionID)
             CodexRuntimeContextStore.shared.accountRemoved(.databricks(connectionID: connectionID))
             await PiRuntimeService.shared.removeCredentials(of: .databricks(connectionID: connectionID))
@@ -177,17 +180,15 @@ final class WorkspaceAISettingsModel {
         }
     }
 
-    /// The Local Account's (nil) or a Databricks account's workspace to open, created on first use so the account
-    /// always has one.
-    func accountWorkspace(databricksConnectionID connectionID: UUID?) async -> WorkspaceRecord? {
+    /// The app's account workspace to open, created on first use so the account always has one.
+    func accountWorkspace() async -> WorkspaceRecord? {
         guard let dbQueue else { return nil }
         var created = WorkspaceRecord(
-            id: .v7(), path: nil, name: WorkspaceManagementModel.initialWorkspaceName, createdAt: .now, lastOpenedAt: .distantPast,
-            databricksConnectionId: connectionID
+            id: .v7(), path: nil, name: WorkspaceManagementModel.initialWorkspaceName, createdAt: .now, lastOpenedAt: .distantPast
         )
         snapshot(for: created.id).applyAISettings(to: &created)
         do {
-            return try await MeetingRepository(dbQueue: dbQueue).accountWorkspace(databricksConnectionID: connectionID, creating: created)
+            return try await MeetingRepository(dbQueue: dbQueue).accountWorkspace(creating: created)
         } catch {
             errorMessage = error.localizedDescription
             return nil

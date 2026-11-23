@@ -641,7 +641,10 @@
 "Calendar Source" = "カレンダーソース";
 "Choose which calendar service provides upcoming events." = "今後の予定を取得するカレンダーサービスを選びます。";
 "Calendar Sources" = "カレンダーソース";
-"Each account chooses the calendar services that provide its upcoming events. A Databricks account reads Google Calendar through its workspace." = "今後の予定を取得するカレンダーサービスはアカウントごとに選びます。Databricks アカウントは Google カレンダーをワークスペース経由で読み込みます。";
+"Turn on the providers that supply upcoming events. Google Calendar comes from Google or from a Databricks connection, one at a time." = "予定を取得するプロバイダーをオンにします。Google カレンダーは、Google か Databricks の接続のどちらか一方から取得します。";
+"Calendar Providers" = "カレンダーのプロバイダー";
+"Google" = "Google";
+"Turn this provider on to connect it." = "このプロバイダーをオンにすると接続できます。";
 "Events to Include" = "イベントを含める";
 "Turn on the event types to show in Home, the menu bar, and calendar notifications." = "Home、メニューバー、カレンダー通知に表示するイベントの種類をオンにします。";
 "All-day events" = "終日イベント";
@@ -2074,8 +2077,6 @@
 
 "Response model" = "応答モデル";
 
-"Hide Local Account" = "ローカルアカウントを非表示にする";
-"Hide the Local Account from account lists. Its workspaces and data stay on this Mac." = "アカウント一覧でローカルアカウントを非表示にします。ワークスペースやデータはこの Mac に残ります。";
 "Add Account" = "アカウントを追加する";
 
 "oauth.callback.language" = "ja";

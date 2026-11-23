@@ -39,7 +39,7 @@ actor PiRuntimeService {
     /// Answers the chat extension's approval and reviewer-model requests.
     typealias ChatBridge = PiRPCConnection.Bridge
     typealias Launcher = @Sendable (LaunchOptions, CodexRuntimeProvider, URL) throws -> any CodexAppServerTransport
-    typealias TokenResolver = @Sendable (CodexRuntimeProvider) async throws -> String
+    typealias TokenResolver = @Sendable (ProviderAccount) async throws -> String
 
     private let agentLocator: PiAgentDirectoryLocator
     private let contextStore: CodexRuntimeContextStore
@@ -111,7 +111,11 @@ actor PiRuntimeService {
             switch method {
             case "token":
                 do {
-                    return try await .string(tokenResolver(provider))
+                    // The extension names the provider it needs; only this account's bridged providers get a token.
+                    guard let providerID = payload.objectValue?["provider"]?.stringValue,
+                          let account = provider.providerAccount(piProviderID: providerID)
+                    else { throw AIConfigurationError.databricksProfileRequired }
+                    return try await .string(tokenResolver(account))
                 } catch is CancellationError {
                     throw CancellationError()
                 } catch {
@@ -265,7 +269,8 @@ actor PiRuntimeService {
     private func refreshDahliaCatalog(_ provider: CodexRuntimeProvider) async {
         guard let agentURL = try? agentLocator.agentURL(for: provider),
               let baseURL = PiProviderConfiguration.dahliaBaseURL(agentURL: agentURL),
-              let token = try? await tokenResolver(provider),
+              let account = provider.providerAccount(offering: .model),
+              let token = try? await tokenResolver(account),
               let catalog = try? await PiProviderConfiguration.fetchDahliaCatalog(baseURL: baseURL, token: token),
               let providers = try? PiProviderConfiguration.dahliaProvider(baseURL: baseURL, catalog: catalog)
         else { return }
@@ -307,7 +312,8 @@ actor PiRuntimeService {
 
     /// The account's gateways: a Databricks account's own, then the workspaces added in Agents settings.
     private func gateways(of account: CodexRuntimeProvider, agentURL: URL) -> [AgentMCPProvider] {
-        let own = if case .databricks = account { PiProviderConfiguration.databricksWorkspaceURL(agentURL: agentURL) } else { URL?.none }
+        let own = account.providerAccount(offering: .model)?.databricksConnectionID == nil
+            ? URL?.none : PiProviderConfiguration.databricksWorkspaceURL(agentURL: agentURL)
         return (own.map { [.account(workspaceURL: $0)] } ?? []) + gatewayWorkspaces(account)
     }
 
@@ -947,15 +953,12 @@ actor PiRuntimeService {
         return environment
     }
 
-    nonisolated static func resolveToken(_ provider: CodexRuntimeProvider) async throws -> String {
-        switch provider {
+    nonisolated static func resolveToken(_ account: ProviderAccount) async throws -> String {
+        switch account {
         case let .dahlia(connectionID):
-            return try await DahliaCloudTokenServiceRegistry.shared.validAccessToken(connectionID: connectionID)
+            try await DahliaCloudTokenServiceRegistry.shared.validAccessToken(connectionID: connectionID)
         case let .databricks(connectionID):
-            return try await DatabricksOAuthService.shared.accessToken(connectionID: connectionID)
-        case .local:
-            // The subscriptions keep their own sign-ins; nothing is bridged.
-            throw AIConfigurationError.databricksProfileRequired
+            try await DatabricksOAuthService.shared.accessToken(connectionID: connectionID)
         }
     }
 }

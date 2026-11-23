@@ -57,7 +57,8 @@ final class AgentMCPSettingsModel {
 
     /// Finds a Databricks account's own workspace, so its MCPs can be added too.
     func loadAccountProvider() async {
-        guard case let .databricks(connectionID) = account, let url = try? await accountWorkspaceURL(connectionID) else { return }
+        guard let connectionID = account.providerAccount(offering: .mcp)?.databricksConnectionID,
+              let url = try? await accountWorkspaceURL(connectionID) else { return }
         accountProvider = .account(workspaceURL: url)
     }
 
@@ -81,7 +82,7 @@ final class AgentMCPSettingsModel {
         // Chat tells a workspace's provider from Pi's own (`openai`, `databricks`) by the dot in its host.
         guard url.host()?.contains(".") == true else { throw AIConfigurationError.invalidDatabricksWorkspaceURL }
         // Read the account's workspace here, not from the tab's copy, which may not be loaded or may have failed.
-        if case let .databricks(connectionID) = account,
+        if let connectionID = account.providerAccount(offering: .mcp)?.databricksConnectionID,
            try await AgentMCPProvider.account(workspaceURL: accountWorkspaceURL(connectionID)).host == url.host() {
             throw AgentMCPSettingsError(message: L10n.mcpWorkspaceIsAccount)
         }

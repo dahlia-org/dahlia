@@ -20,19 +20,12 @@ enum PiSubscription: String, CaseIterable, Identifiable, Sendable {
 extension CodexRuntimeProvider {
     /// Pi provider IDs whose models Dahlia offers for this account. Pi lists only those with credentials.
     var piProviderIDs: [String] {
-        switch self {
-        case .local: PiSubscription.allCases.map(\.rawValue)
-        case .databricks: PiProviderConfiguration.databricksProviderIDs
-        case .dahlia: ["dahlia"]
-        }
+        (self == .local ? PiSubscription.allCases.map(\.rawValue) : []) + piBridgedProviderIDs
     }
 
-    /// Providers whose credential is the account's token, which the extension resolves through the bridge for each use.
+    /// Providers whose credential the app holds, which the extension resolves through the bridge for each use.
     var piBridgedProviderIDs: [String] {
-        switch self {
-        case .local: []
-        case .databricks, .dahlia: piProviderIDs
-        }
+        providerAccounts.map(\.piProviderID)
     }
 }
 

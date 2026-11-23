@@ -95,6 +95,39 @@ import Synchronization
             }
         }
 
+        /// Google Calendar comes from the provider the user chose: Google itself, or the Databricks connection.
+        @Test
+        func calendarFollowsTheChosenProviderAndDriveKeepsTheConnection() async throws {
+            let defaults = makeDefaults()
+            let direct = FakeDirectProvider(isConfigured: true, hasPreviousSignIn: true)
+            let calendar = makeProvider(connection: connection, direct: direct, userDefaults: defaults)
+            #expect(calendar.isProxyActive)
+
+            defaults.set("google", forKey: GoogleCalendarProvider.userDefaultsKey)
+            #expect(calendar.isProxyActive == false)
+            _ = try await calendar.restorePreviousSignIn()
+            #expect(direct.restoreCallCount == 1)
+
+            defaults.set(connection.id.uuidString, forKey: GoogleCalendarProvider.userDefaultsKey)
+            #expect(calendar.isProxyActive)
+        }
+
+        @Test
+        func theChoiceFallsBackToTheAccountsConnectionWhenItIsGone() {
+            let defaults = makeDefaults()
+            let id = UUID.v7()
+            ProviderAccountDirectory.$connectionIDs.withValue([id]) {
+                #expect(GoogleCalendarProvider.current(account: .local, defaults: defaults) == .databricks(connectionID: id))
+                defaults.set("google", forKey: GoogleCalendarProvider.userDefaultsKey)
+                #expect(GoogleCalendarProvider.current(account: .local, defaults: defaults) == .google)
+                defaults.set(UUID.v7().uuidString, forKey: GoogleCalendarProvider.userDefaultsKey)
+                #expect(GoogleCalendarProvider.current(account: .local, defaults: defaults) == .databricks(connectionID: id))
+            }
+            ProviderAccountDirectory.$connectionIDs.withValue([]) {
+                #expect(GoogleCalendarProvider.current(account: .local, defaults: defaults) == .google)
+            }
+        }
+
         @Test
         func databricksConnectionRestoresWhateverTheProxyGrants() async throws {
             let direct = FakeDirectProvider(isConfigured: false, hasPreviousSignIn: false)

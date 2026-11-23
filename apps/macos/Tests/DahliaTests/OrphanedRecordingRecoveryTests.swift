@@ -169,7 +169,7 @@ import GRDB
                 if serverOwned {
                     let connectionID = UUID.v7()
                     try db.execute(sql: """
-                    INSERT INTO accounts(id, origin, clientID, createdAt) VALUES (?, 'https://example.com', 'desktop', ?);
+                    INSERT INTO provider_accounts(id, origin, clientID, createdAt) VALUES (?, 'https://example.com', 'desktop', ?);
                     INSERT INTO workspaces(id, name, createdAt, lastOpenedAt, accountConnectionId, organizationId)
                     VALUES (?, 'Server workspace', ?, ?, ?, ?);
                     """, arguments: [connectionID, Date.now, unavailableID, Date.now, Date.now, connectionID, UUID.v7()])

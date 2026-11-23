@@ -174,12 +174,6 @@ final class SetupTourModel {
         persistProgress()
     }
 
-    func initializeLocalAccountVisibility(in defaults: UserDefaults = .standard) {
-        guard mode == .initial,
-              defaults.object(forKey: AppSettings.hideLocalAccountUserDefaultsKey) == nil else { return }
-        defaults.set(selectedDatabricksConnectionID != nil, forKey: AppSettings.hideLocalAccountUserDefaultsKey)
-    }
-
     func beginCompletion() {
         isCompleting = true
         errorMessage = nil

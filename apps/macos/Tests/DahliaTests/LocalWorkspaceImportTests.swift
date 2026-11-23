@@ -572,7 +572,7 @@
                     do {
                         try queue.write {
                             try $0.execute(
-                                sql: "UPDATE accounts SET clientID = clientID WHERE id = ?",
+                                sql: "UPDATE provider_accounts SET clientID = clientID WHERE id = ?",
                                 arguments: [connectionId]
                             )
                             try $0.execute(

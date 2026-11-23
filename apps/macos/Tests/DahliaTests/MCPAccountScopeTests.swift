@@ -173,7 +173,7 @@ import GRDB
             #expect(throws: MeetingAccessError.workspaceNotFound) {
                 try scopedStore.createProject(name: "Moved", parentProjectID: nil, projectType: nil)
             }
-            try fixture.manager.dbQueue.write { db in try db.execute(sql: "DELETE FROM accounts WHERE id = ?", arguments: [accountID]) }
+            try fixture.manager.dbQueue.write { db in try db.execute(sql: "DELETE FROM provider_accounts WHERE id = ?", arguments: [accountID]) }
             #expect(throws: MCPAccountScope.Failure.accountNotFound) { try listedWorkspaces(server) }
         }
 

@@ -17,7 +17,8 @@ struct MainSidebarOmnigentSection: View {
         self.connectionID = connectionID
         self.selectedSessionID = selectedSessionID
         self.onOpen = onOpen
-        let account = CodexRuntimeProvider.databricks(connectionID: connectionID).accountKey
+        // The setting belongs to the app's account, which uses the connection.
+        let account = CodexRuntimeProvider.local.accountKey
         _isEnabled = AppStorage(wrappedValue: false, OmnigentService.enabledKey(account))
     }
 

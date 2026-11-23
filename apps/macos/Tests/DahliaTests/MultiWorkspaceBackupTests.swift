@@ -69,7 +69,7 @@ import GRDB
                 #expect(try MeetingRecord.fetchCount(db) == 3)
                 #expect(try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM tags") == 1)
                 #expect(try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM meeting_tags") == 2)
-                #expect(try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM accounts") == 0)
+                #expect(try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM provider_accounts") == 0)
                 #expect(try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM sync_transactions") == 0)
             }
             try backup.close()

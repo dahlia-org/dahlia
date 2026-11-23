@@ -641,7 +641,10 @@
 "Calendar Source" = "Calendar Source";
 "Choose which calendar service provides upcoming events." = "Choose which calendar service provides upcoming events.";
 "Calendar Sources" = "Calendar Sources";
-"Each account chooses the calendar services that provide its upcoming events. A Databricks account reads Google Calendar through its workspace." = "Each account chooses the calendar services that provide its upcoming events. A Databricks account reads Google Calendar through its workspace.";
+"Turn on the providers that supply upcoming events. Google Calendar comes from Google or from a Databricks connection, one at a time." = "Turn on the providers that supply upcoming events. Google Calendar comes from Google or from a Databricks connection, one at a time.";
+"Calendar Providers" = "Calendar Providers";
+"Google" = "Google";
+"Turn this provider on to connect it." = "Turn this provider on to connect it.";
 "Events to Include" = "Events to Include";
 "Turn on the event types to show in Home, the menu bar, and calendar notifications." = "Turn on the event types to show in Home, the menu bar, and calendar notifications.";
 "All-day events" = "All-day events";
@@ -2074,8 +2077,6 @@
 
 "Response model" = "Response model";
 
-"Hide Local Account" = "Hide Local Account";
-"Hide the Local Account from account lists. Its workspaces and data stay on this Mac." = "Hide the Local Account from account lists. Its workspaces and data stay on this Mac.";
 "Add Account" = "Add Account";
 
 "oauth.callback.language" = "en";

@@ -458,6 +458,7 @@
                 "v64_agentLearning",
                 "v65_chatRunPresentation",
                 "v66_skillCurator",
+                "v67_providerAccounts",
             ])
             try database.dbQueue.read { db throws in
                 #expect(try Row.fetchAll(db, sql: "PRAGMA foreign_key_check").isEmpty)
@@ -534,6 +535,47 @@
             try queue.write { db in
                 try Self.expectNoReferenceToTheConnectionsTable(in: db)
                 try WorkspaceRecord(id: .v7(), path: nil, name: "New", createdAt: .now, lastOpenedAt: .now).insert(db)
+                #expect(try AppDatabaseManager.hasExpectedCurrentSchema(db))
+            }
+        }
+
+        @Test
+        func providerAccountsMigrationKeepsConnectionsAndTheirReferences() throws {
+            let queue = try DatabaseQueue(configuration: AppDatabaseManager.configuration())
+            try AppDatabaseManager.migrator.migrate(queue, upTo: "v66_skillCurator")
+            let databricks = DahliaAccountConnectionRecord(
+                DatabricksConnection(id: .v7(), host: "https://dbc-1.cloud.databricks.com", email: "me@example.com"),
+                createdAt: .now
+            )
+            let workspaceID = UUID.v7()
+            try queue.write { db in
+                try db.execute(
+                    sql: "INSERT INTO accounts (id, origin, clientID, createdAt, kind, email) VALUES (?, ?, ?, ?, ?, ?)",
+                    arguments: [databricks.id, databricks.origin, databricks.clientID, databricks.createdAt, databricks.kind, databricks.email]
+                )
+                try db.execute(
+                    sql: "INSERT INTO workspaces (id, name, createdAt, lastOpenedAt, databricksConnectionId) VALUES (?, 'Preserved', ?, ?, ?)",
+                    arguments: [workspaceID, Date.now, Date.now, databricks.id]
+                )
+            }
+
+            try AppDatabaseManager.migrator.migrate(queue)
+
+            try queue.write { db in
+                #expect(try !db.tableExists("accounts"))
+                let connection = try #require(try DahliaAccountConnectionRecord.fetchOne(db, key: databricks.id))
+                #expect(connection.origin == databricks.origin && connection.kind == DahliaAccountConnectionRecord.databricksKind)
+                #expect(connection.email == "me@example.com" && connection.name == nil)
+                #expect(try WorkspaceRecord.fetchOne(db, key: workspaceID)?.databricksConnectionId == databricks.id)
+                // Every foreign key names the renamed table, so the reference still holds and still clears on delete.
+                #expect(try String.fetchAll(db, sql: #"SELECT name FROM sqlite_master WHERE sql LIKE '%REFERENCES "accounts"%'"#).isEmpty)
+                #expect(try Row.fetchAll(db, sql: "PRAGMA foreign_key_check").isEmpty)
+                var named = connection
+                named.name = "Work"
+                try named.update(db)
+                #expect(try DahliaAccountConnectionRecord.fetchOne(db, key: databricks.id)?.name == "Work")
+                _ = try DahliaAccountConnectionRecord.deleteOne(db, key: databricks.id)
+                #expect(try WorkspaceRecord.fetchOne(db, key: workspaceID)?.databricksConnectionId == nil)
                 #expect(try AppDatabaseManager.hasExpectedCurrentSchema(db))
             }
         }

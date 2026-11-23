@@ -27,7 +27,7 @@ public enum MCPAccountScope: Equatable, Sendable {
 
     func validate(in db: Database) throws {
         if case let .account(id) = self,
-           try Bool.fetchOne(db, sql: "SELECT EXISTS(SELECT 1 FROM accounts WHERE id = ?)", arguments: [id]) != true {
+           try Bool.fetchOne(db, sql: "SELECT EXISTS(SELECT 1 FROM provider_accounts WHERE id = ?)", arguments: [id]) != true {
             throw Failure.accountNotFound
         }
     }

@@ -6,8 +6,7 @@ struct WorkspaceSettingsAccountGroup: Identifiable {
 
     static func grouped(
         _ workspaces: [WorkspaceRecord],
-        including accounts: [WorkspaceAccountChoice] = [],
-        hideLocalAccount: Bool = false
+        including accounts: [WorkspaceAccountChoice] = []
     ) -> [Self] {
         let ordered = workspaces.sorted { ($0.createdAt, $0.id.uuidString) < ($1.createdAt, $1.id.uuidString) }
         var groups: [Self] = []
@@ -25,6 +24,6 @@ struct WorkspaceSettingsAccountGroup: Identifiable {
         if let localIndex = groups.firstIndex(where: { $0.id == .local }) {
             groups.insert(groups.remove(at: localIndex), at: 0)
         }
-        return hideLocalAccount ? groups.filter { $0.id != .local } : groups
+        return groups
     }
 }

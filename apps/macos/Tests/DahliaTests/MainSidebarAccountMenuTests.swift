@@ -6,13 +6,12 @@
 
     @MainActor
     struct MainSidebarAccountMenuTests {
-        @Test(arguments: ["localOnly", "localWithDatabricks", "localWithServer", "databricks", "server"], [false, true])
-        func addingAccountsAndBottomActionsFollowTheSelectedAccount(account: String, hidden: Bool) throws {
+        @Test(arguments: ["localOnly", "localWithDatabricks", "localWithServer", "databricks", "server"])
+        func addingAccountsAndBottomActionsFollowTheSelectedAccount(account: String) throws {
             let suite = "AccountMenuActions-\(UUID())"
             let defaults = try #require(UserDefaults(suiteName: suite))
             defer { defaults.removePersistentDomain(forName: suite) }
             let settings = AppSettings(generalDefaults: defaults)
-            settings.hideLocalAccount = hidden
             let server = makeConnection(origin: "https://server.example.com", isCloud: false)
             let gateway = DatabricksConnection(id: .v7(), host: "https://one.example.com")
             let hasServer = account == "server" || account == "localWithServer"
@@ -50,13 +49,12 @@
             #expect(actions == [showsBottom ? "account" : "recordings"])
         }
 
-        @Test(arguments: [false, true])
-        func hiddenLocalAccountKeepsKeyboardAccountAndSettingsActionsAligned(hidden: Bool) throws {
+        @Test
+        func keyboardAccountAndSettingsActionsStayAligned() throws {
             let suite = "AccountMenuVisibility-\(UUID())"
             let defaults = try #require(UserDefaults(suiteName: suite))
             defer { defaults.removePersistentDomain(forName: suite) }
             let settings = AppSettings(generalDefaults: defaults)
-            settings.hideLocalAccount = hidden
             let gateway = DatabricksConnection(id: .v7(), host: "https://one.example.com")
             let current = DatabricksConnection(id: .v7(), host: "https://current.example.com")
             var selections: [String] = []
@@ -75,7 +73,7 @@
                 onShowUnprocessedRecordings: {},
                 settings: settings
             )
-            #expect(coordinator.menuOffset == (hidden ? 3 : 4))
+            #expect(coordinator.menuOffset == 4)
             func activate(row: Int) {
                 for _ in 0 ... row {
                     coordinator.moveSelection(1)
@@ -84,7 +82,7 @@
             }
             activate(row: 0)
             activate(row: coordinator.menuOffset + 2)
-            #expect(selections == [hidden ? "databricks" : "local", "settings"])
+            #expect(selections == ["local", "settings"])
         }
 
         @Test(arguments: [false, true])

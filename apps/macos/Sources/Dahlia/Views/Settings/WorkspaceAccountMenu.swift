@@ -10,9 +10,7 @@ struct WorkspaceAccountMenu: View {
 
     var body: some View {
         Menu(L10n.moveWorkspaceToAccount, systemImage: "arrow.right.arrow.left") {
-            if !settings.hideLocalAccount {
-                accountButton(.local)
-            }
+            accountButton(.local)
             ForEach(databricksAccounts) { account in
                 accountButton(.databricks(account.id))
             }
