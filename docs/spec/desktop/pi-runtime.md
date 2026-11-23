@@ -132,7 +132,7 @@ Pi の codemode（未有効）の script は Pi の process 内の QuickJS で�
 Local Account は OpenAI と Anthropic に別々にサインインでき、サインイン済みの両方のモデルをまとめて一覧に出す。サインインは
 「Dahlia AI」>「モデル」の「プロバイダー」で行う（セットアップツアーにも残す）。「プロバイダー」には、アカウント自身のサインインと、
 サインイン済みのサブスクリプション、追加した Databricks を並べ、それぞれに使い道（「モデル」「MCP」）のバッジを付ける（Databricks は両方）。サブスクリプションと
-Databricks は「プロバイダーを追加」のモーダルで選んで追加する。設定のモーダルは窓全体に重ねる。追加はアプリ側のサインイン（アカウントメニューのサインインと同じ）で、接続は `provider_accounts` の行になり、Keychain が認証を持つ。アプリのアカウントは、Pi のサブスクリプションと、すべての接続の Gateway のモデルを一覧に出す。接続の provider ID はその workspace のホスト名（ドットを含む）である。
+Databricks は「プロバイダーを追加」のモーダルで選んで追加する。設定のモーダルは窓全体に重ねる。追加はアプリ側のサインイン（アカウントメニューのサインインと同じ）で、接続は `provider_accounts` の行になり、Keychain が認証を持つ。アプリのアカウントは、Pi のサブスクリプションと、すべての接続の Gateway のモデルを一覧に出す。接続の provider ID はその workspace のホスト名（ドットを含む）である。接続の追加・削除では Pi のプロセスを止めない。`models.json` を書き直し、新しく起動するプロセスから使う。待機中のチャットは閉じて次の送信で開き直し、実行中のチャットはそのターンが終わってから閉じる。
 表示名は Pi の名前に合わせる（`openai` は「OpenAI (ChatGPT subscription)」）。Dahlia account は自分の Server の provider だけを使う。
 
 | 表示名 | Pi provider | 認証 |

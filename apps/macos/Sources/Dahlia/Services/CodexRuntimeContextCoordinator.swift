@@ -58,16 +58,17 @@ actor CodexRuntimeContextCoordinator {
         }
     }
 
-    // shortcut: restarting interrupts chats that use another provider; reload per provider once Pi can add one live.
     /// Writes the open account's providers again after a provider account was added or removed. Pi reads them when it
-    /// starts, so its processes restart.
+    /// starts: each new process has them, and chats reopen with them as their turns end (`PiChatService`), so no running
+    /// work stops.
     func providerAccountsDidChange() async throws {
         guard contextStore.isConfigured, let provider = configuredProvider else { return }
         activationGeneration += 1
         let generation = activationGeneration
         try await service.reloadConfiguration(applyingContext: {
             try await self.configure(provider: provider, generation: generation)
-        }, interruptActiveOperations: true)
+        })
+        await PiChatService.shared.providerAccountsDidChange()
     }
 
     private func configure(provider: CodexRuntimeProvider, generation: Int) async throws {

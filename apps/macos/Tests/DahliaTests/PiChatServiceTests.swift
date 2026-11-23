@@ -763,6 +763,53 @@ import Synchronization
             #expect(await fixture.chatTransport.isClosed)
         }
 
+        /// Pi reads its providers when it starts: after a provider account changes, an idle chat closes and reopens with
+        /// it on its next message, and a running turn finishes on its process first.
+        @Test
+        func providerChangesCloseIdleChatsAndRunningOnesAfterTheirTurn() async throws {
+            let (release, releaseContinuation) = AsyncStream<Void>.makeStream()
+            let fixture = try Self.fixture { transport in
+                var iterator = release.makeAsyncIterator()
+                _ = await iterator.next()
+                await transport.emit(TestPiTransport.assistantEnd("Done"))
+                await transport.emit(TestPiTransport.settled())
+            }
+            let thread = try await fixture.chat.startThread(model: nil, effort: "medium")
+            let lease = await fixture.chat.acquireThreadLease(threadID: thread.id)
+            let turn = try await fixture.chat.beginTurn(
+                threadID: thread.id, inputs: [.text("Hello")], model: nil, effort: "medium",
+                approvalMethod: .ask, expectedProvider: nil
+            )
+
+            await fixture.chat.providerAccountsDidChange()
+            #expect(await !fixture.chatTransport.isClosed)
+
+            releaseContinuation.yield()
+            for try await _ in turn.events {}
+            #expect(await pollUntil { await fixture.chatTransport.isClosed })
+            await fixture.chat.releaseThreadLease(threadID: thread.id, leaseID: lease)
+        }
+
+        @Test
+        func providerChangesCloseAnIdleChatAtOnce() async throws {
+            let fixture = try Self.fixture { transport in
+                await transport.emit(TestPiTransport.assistantEnd("Done"))
+                await transport.emit(TestPiTransport.settled())
+            }
+            let thread = try await fixture.chat.startThread(model: nil, effort: "medium")
+            let lease = await fixture.chat.acquireThreadLease(threadID: thread.id)
+            let turn = try await fixture.chat.beginTurn(
+                threadID: thread.id, inputs: [.text("Hello")], model: nil, effort: "medium",
+                approvalMethod: .ask, expectedProvider: nil
+            )
+            for try await _ in turn.events {}
+            #expect(await !fixture.chatTransport.isClosed)
+
+            await fixture.chat.providerAccountsDidChange()
+            #expect(await fixture.chatTransport.isClosed)
+            await fixture.chat.releaseThreadLease(threadID: thread.id, leaseID: lease)
+        }
+
         @Test
         func commandDiscoveryReusesTheOpenThreadWithoutClosingIt() async throws {
             let fixture = try Self.fixture(commands: .array([])) { transport in

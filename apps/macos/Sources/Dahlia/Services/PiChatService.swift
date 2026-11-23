@@ -97,6 +97,25 @@ actor PiChatService: CodexChatServicing {
         settledRuns[threadID] = (accountID, runID, (try? history().run(id: runID)?.origin) == "schedule")
         publishStates()
         runDidSettle(threadID, accountID: accountID)
+        if staleThreads.remove(threadID) != nil {
+            let processID = sessions[threadID]?.processID
+            Task {
+                guard self.sessions[threadID]?.processID == processID, self.sessions[threadID]?.turn == nil else { return }
+                await self.closeSession(threadID)
+            }
+        }
+    }
+
+    /// A provider account was added or removed. Idle chats close now and reopen with it on their next message; a
+    /// running turn finishes on the process it started on, which closes after it.
+    func providerAccountsDidChange() async {
+        for (threadID, session) in sessions {
+            if session.turn == nil, startingTurns[threadID] == nil {
+                await closeSession(threadID)
+            } else {
+                staleThreads.insert(threadID)
+            }
+        }
     }
 
     /// The settle handler has already saved the thread's status and undelivered steers, and fails the turn if that throws.
@@ -255,6 +274,9 @@ actor PiChatService: CodexChatServicing {
     var schedulingAccounts: Set<String> = []
     var waitingParents: Set<String> = []
     var stoppingAccounts: Set<String> = []
+    /// Threads whose process started before the account's provider accounts changed. Pi reads its providers when it
+    /// starts, so each reopens with the new ones once its turn ends.
+    var staleThreads: Set<String> = []
 
     init(
         runtime: PiRuntimeService = .shared,
