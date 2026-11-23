@@ -86,19 +86,6 @@ import Synchronization
             #expect(direct.disconnectCallCount == 1)
         }
 
-        /// A Dahlia account signs in to Google directly even when a Databricks connection exists on this Mac.
-        @Test
-        func dahliaAccountUsesDirectProviderBesideADatabricksConnection() async throws {
-            for account in [CodexRuntimeProvider.dahlia(connectionID: UUID())] {
-                let direct = FakeDirectProvider(isConfigured: true, hasPreviousSignIn: true)
-                let provider = makeProvider(connection: connection, direct: direct, account: account)
-
-                #expect(provider.isProxyActive == false)
-                _ = try await provider.restorePreviousSignIn()
-                #expect(direct.restoreCallCount == 1)
-            }
-        }
-
         /// Google Calendar comes from the provider the user chose: Google itself, or the Databricks connection.
         @Test
         func calendarFollowsTheChosenProviderAndDriveKeepsTheConnection() async throws {

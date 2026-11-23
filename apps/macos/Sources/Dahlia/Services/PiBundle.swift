@@ -90,10 +90,6 @@ struct PiAgentDirectoryLocator: Sendable {
 
     private var accountsURL: URL { rootURL.appending(path: "accounts", directoryHint: .isDirectory) }
 
-    func accountURL(for provider: CodexRuntimeProvider) -> URL {
-        accountsURL.appending(path: provider.accountKey, directoryHint: .isDirectory)
-    }
-
     /// The agent directory of the app's one account.
     var sharedAgentURL: URL { rootURL.appending(path: "agent", directoryHint: .isDirectory) }
 
@@ -125,7 +121,7 @@ struct PiAgentDirectoryLocator: Sendable {
 
     /// Removes an account's folder and its Codex-era home, which holds the same kind of data.
     func removeAccountDirectory(connectionID: UUID) throws {
-        let url = accountURL(for: .dahlia(connectionID: connectionID))
+        let url = accountsURL.appending(path: connectionID.uuidString.lowercased(), directoryHint: .isDirectory)
         if FileManager.default.fileExists(atPath: url.path) { try FileManager.default.removeItem(at: url) }
         let legacyHome = rootURL.appending(path: "CodexAccounts/\(connectionID.uuidString.lowercased())", directoryHint: .isDirectory)
         if FileManager.default.fileExists(atPath: legacyHome.path) {
@@ -159,11 +155,6 @@ struct PiAgentDirectoryLocator: Sendable {
 }
 
 extension CodexRuntimeProvider {
-    /// `local`, or the account's ID; names the account's folder and its per-account settings.
-    nonisolated var accountKey: String {
-        switch self {
-        case .local: "local"
-        case let .dahlia(connectionID): connectionID.uuidString.lowercased()
-        }
-    }
+    /// Names the account's per-account settings and rows. The app has one account, so this is always `local`.
+    nonisolated var accountKey: String { "local" }
 }

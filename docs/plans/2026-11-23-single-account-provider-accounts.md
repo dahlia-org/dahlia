@@ -139,7 +139,7 @@ DB の `accountID` と UserDefaults の接尾辞には、当面 `local` を定�
 | 項目 | 現在 | 移行後 |
 | --- | --- | --- |
 | `workspaces.databricksConnectionId` | Databricks アカウントへの所属。一覧の絞り込みと実行アカウントの導出に使う | 段階 3 で列を削除する（新しい migration を足す。リリース済みの migration は変更しない） |
-| `workspaces.accountConnectionId` | Server アカウントへの所属。同期先を兼ねる（未リリース） | 実行アカウントの導出には使わない。段階 4 で、現行の Server 同期のコードと同時に削除する |
+| `workspaces.accountConnectionId` | Server アカウントへの所属。同期先を兼ねる（未リリース） | 段階 4 で、現行の Server 同期のコードと同時に参照を削除した。列は DB に残し、起動時に空にする |
 | Workspace の一覧 | サイドバーでアカウントごとに絞る | すべて表示する |
 | Local ⇄ Databricks の移管、アカウントごとの `Default`、「ローカルアカウントを非表示にする」 | あり | 削除する |
 | サイドバーのアカウントメニュー | Local と Databricks アカウントを並べて切り替える | Dahlia account のサインイン状態だけを示す。Dahlia account のリリースまでは表示しない |
@@ -195,7 +195,11 @@ DB の `accountID` と UserDefaults の接尾辞には、当面 `local` を定�
 #### 段階 4 の進捗
 
 - 実装した（2026-11-23）: 実行アカウントの `.databricks` と `WorkspaceAccountChoice.databricks`、`WorkspaceRecord.databricksConnectionId` の参照、アカウントメニューの Databricks の分岐を削除した。`workspaces.databricksConnectionId` の列は、外部キーごと消すには表の作り直しが要るので DB に残し、起動時に空にする。外部の `dahlia-mcp --account` に Databricks の接続を指定すると、黙って空にせず失敗する。
-- 残り: 現行の Server 同期のコードと `accountConnectionId` の削除。旧ディレクトリと旧設定キーの削除（1 リリース後）。
+- 実装した（2026-11-24）: 現行の Server 同期のコード（送受信、本文の部分保持、Workspace の発見・取り込み・再接続、Server の要約・会話分析・画像解析、Server の内容の保持期間）と、実行アカウントの `.dahlia` を削除した。`CodexRuntimeProvider` は `.local` だけの型として残し、`accountKey` は常に `local`。
+  `workspaces.accountConnectionId`・`organizationId`・`personalUserId`・`sync*` の列と同期のテーブルは DB に残し、起動時の移行（`Services/SingleAccountMigration.swift`）がすべての Workspace で列を空にする。Server Workspace だった Workspace は、会議・文字起こし・ファイルを残したままアカウントの Workspace になる。Server にだけあった本文・画像・録音アーカイブは読めなくなる。
+  サインインした Dahlia account の Server の Gateway は、アカウントのプロバイダーアカウント（capability は `model`、Pi のプロバイダー ID は `dahlia`）にした。サインインが 2 つ以上あるときは当面最も古い 1 つだけを使う。
+  Server Account で走ったチャットとエージェントの行は、`accountID` に接続の ID を持ったまま残し、移さない（未リリースの別アカウントだったため）。
+- 残り: `CodexRuntimeProvider` 型そのものの置き換え。旧ディレクトリと旧設定キーの削除（1 リリース後）。
 
 #### 段階 3 の残り
 

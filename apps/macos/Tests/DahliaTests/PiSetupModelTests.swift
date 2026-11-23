@@ -6,11 +6,11 @@
     @MainActor
     struct PiSetupModelTests {
         @Test
-        func successfulInstallEnablesOnlyTheSelectedAccount() async throws {
+        func successfulInstallEnablesManagedPi() async throws {
             let suite = "PiSetup-\(UUID())"
             let defaults = try #require(UserDefaults(suiteName: suite))
             defer { defaults.removePersistentDomain(forName: suite) }
-            let account = CodexRuntimeProvider.dahlia(connectionID: .v7())
+            let account = CodexRuntimeProvider.local
             let model = PiSetupModel(account: account, defaults: defaults)
             var installs = 0
 
@@ -20,7 +20,6 @@
             #expect(installs == 1)
             #expect(model.isReady)
             #expect(PiBundle.usesManagedPi(for: account, defaults: defaults))
-            #expect(!PiBundle.usesManagedPi(for: .local, defaults: defaults))
         }
 
         @Test

@@ -42,47 +42,6 @@ struct CodexRuntimeAccountIsolationTests {
         }
     }
 
-    @Test(arguments: ["activate", "cancel", "remove"])
-    func inactiveAccountWaitHandlesReturnCancellationAndRemoval(action: String) async {
-        let store = CodexRuntimeContextStore()
-        store.apply(.local)
-        // A summary recorded in a Dahlia account waits until that account is open again.
-        let expected = CodexRuntimeProvider.dahlia(connectionID: .v7())
-        var started = false
-        var finished = false
-        var failure: (any Error)?
-        let waiter = Task {
-            started = true
-            defer { finished = true }
-            do {
-                try await store.waitUntilActive(expected)
-            } catch {
-                failure = error
-            }
-        }
-        #expect(await pollUntil { started })
-        #expect(!finished)
-        switch action {
-        case "activate":
-            store.beginActivation(expected)
-            store.apply(expected)
-        case "remove":
-            // Signed out: it can never come back, so the wait fails instead of hanging.
-            store.accountRemoved(expected)
-        default:
-            waiter.cancel()
-        }
-        let completed = await pollUntil { finished }
-        waiter.cancel()
-        await waiter.value
-        #expect(completed)
-        switch action {
-        case "activate": #expect(failure == nil)
-        case "remove": #expect(failure as? AIConfigurationError == .providerChanged(expected.displayName))
-        default: #expect(failure is CancellationError)
-        }
-    }
-
     @Test
     func prepareNormalizesEffortAfterFallingBackToAnAvailableModel() async throws {
         let service = TestCodexChatService(mode: .complete)
@@ -116,34 +75,6 @@ struct CodexRuntimeAccountIsolationTests {
         #expect(workspaceSettings.chatModelID == "unavailable-model")
         #expect(workspaceSettings.chatReasoningEffort == "high")
 
-    }
-
-    @Test
-    func existingChatDoesNotSendAfterRuntimeProviderChanges() async {
-        let service = TestCodexChatService(mode: .complete)
-        let provider = Mutex(CodexRuntimeProvider.local)
-        let settings = AppSettings()
-        settings.currentWorkspace = WorkspaceRecord(
-            id: .v7(),
-            path: "/tmp/provider-change",
-            name: "Provider Change",
-            createdAt: .now,
-            lastOpenedAt: .now
-        )
-        let session = CodexChatSessionModel(
-            service: service,
-            settings: settings,
-            runtimeProviderResolver: { provider.withLock { $0 } }
-        )
-        await session.prepare()
-
-        provider.withLock { $0 = .dahlia(connectionID: .v7()) }
-        session.draft = "Do not send this"
-        session.sendDraft()
-        #expect(await pollUntil { session.errorMessage != nil })
-
-        #expect(session.errorMessage == L10n.codexChatProviderChanged(L10n.localAccount))
-        #expect(await service.sentTextBlocks.isEmpty)
     }
 
     @Test
@@ -194,7 +125,7 @@ struct CodexRuntimeAccountIsolationTests {
     }
 
     @Test
-    func dahliaAccountActivatesWithoutReachingItsServer() async throws {
+    func dahliaGatewayActivatesWithoutReachingItsServer() async throws {
         let pi = TestPiRuntime { _ in TestPiTransport() }
         defer { try? FileManager.default.removeItem(at: pi.rootURL) }
         let database = try AppDatabaseManager(path: ":memory:")
@@ -212,20 +143,33 @@ struct CodexRuntimeAccountIsolationTests {
             contextStore: pi.contextStore
         )
         await coordinator.configure(dbQueue: database.dbQueue)
-        let modelsURL = try locator.agentURL(for: .dahlia(connectionID: connectionID)).appending(path: "models.json")
+        let modelsURL = try locator.agentURL(for: .local).appending(path: "models.json")
 
         // Activation records the Server URL without any network request; models are fetched when listed.
-        try await coordinator.activate(provider: .dahlia(connectionID: connectionID))
+        try await ProviderAccountDirectory.$connections.withValue([]) {
+            try await ProviderAccountDirectory.$dahliaConnections.withValue([connectionID]) {
+                try await coordinator.activate(provider: .local)
+            }
+        }
 
-        #expect(pi.contextStore.provider == .dahlia(connectionID: connectionID))
         let written = try String(contentsOf: modelsURL, encoding: .utf8)
         #expect(written.contains(#""models":[]"#))
         #expect(PiProviderConfiguration.dahliaBaseURL(agentURL: modelsURL.deletingLastPathComponent())?.absoluteString
             == "https://offline.dahlia.test/api/v1")
         try Data(#"{"providers":{"dahlia":{"baseUrl":"https://offline.dahlia.test/api/v1","models":[{"id":"kept"}]}}}"#.utf8)
             .write(to: modelsURL)
-        try await coordinator.activate(provider: .local)
-        try await coordinator.activate(provider: .dahlia(connectionID: connectionID))
+        try await ProviderAccountDirectory.$connections.withValue([]) {
+            try await ProviderAccountDirectory.$dahliaConnections.withValue([connectionID]) {
+                try await coordinator.providerAccountsDidChange()
+            }
+        }
         #expect(try String(contentsOf: modelsURL, encoding: .utf8).contains("kept"))
+        // Signing out removes the Gateway's models.
+        try await ProviderAccountDirectory.$connections.withValue([]) {
+            try await ProviderAccountDirectory.$dahliaConnections.withValue([]) {
+                try await coordinator.providerAccountsDidChange()
+            }
+        }
+        #expect(try !String(contentsOf: modelsURL, encoding: .utf8).contains("offline.dahlia.test"))
     }
 }

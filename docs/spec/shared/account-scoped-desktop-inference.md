@@ -39,11 +39,7 @@ Macで再実行できる失敗として表示する。不正JSONは該当録音�
 
 Server設定の既知の旧キーは受け付け、旧クライアントが読める応答形状を維持する。未知のキーは拒否する。
 旧キーを新しい実行場所判定に使わない。旧imageAnalysis要求も同期の互換入力として受け付け、AI生成は登録しない。
-要約の保存と同期要求は同じローカルtransactionで確定し、revision競合では未同期結果を保持する。
-明示的なServer版の採用まで、[RemoteChangePolicy.permits](../../../apps/macos/Sources/Dahlia/Services/RemoteChangePolicy.swift)と
-[SyncTransactionQueue](../../../apps/macos/Sources/Dahlia/Database/SyncTransactionQueue.swift)の既存保護を維持する。
-保存と同期要求の原子性は[MeetingRepository.applyGeneratedSummary](../../../apps/macos/Sources/Dahlia/Database/MeetingRepository.swift)、
-競合後もローカル要約を再送できることは[MeetingSyncMigrationTests.reapplyingADeletedMeetingRestoresItBeforeItsSummary](../../../apps/macos/Tests/DahliaTests/MeetingSyncMigrationTests.swift)で確認する。
+Desktopは同期しないので、要約はローカルに保存するだけとする（[同期契約](sync.md#正本とアカウント境界)）。
 
 ## T5への適用
 

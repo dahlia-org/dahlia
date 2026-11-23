@@ -702,21 +702,21 @@ import os
         @Test
         func anEmptyModelListIsListedAgainOnTheNextRequest() async throws {
             let calls = OSAllocatedUnfairLock(initialState: 0)
-            let pi = TestPiRuntime(provider: .dahlia(connectionID: .v7())) { _ in
+            let pi = TestPiRuntime { _ in
                 TestPiTransport { command in
                     guard let id = command["id"] else { return [] }
                     let count = calls.withLock { value -> Int in
                         value += 1
                         return value
                     }
-                    let models = count == 1 ? [] : [TestPiTransport.model(provider: "dahlia", id: "gpt")]
+                    let models = count == 1 ? [] : [TestPiTransport.model(provider: "example.cloud.databricks.com", id: "gpt")]
                     return [TestPiTransport.response(id: id, data: .object(["models": .array(models)]))]
                 }
             }
 
-            #expect(try await pi.service.models().isEmpty)
-            #expect(try await pi.service.models().map(\.model) == ["dahlia/gpt"])
-            #expect(try await pi.service.models().map(\.model) == ["dahlia/gpt"])
+            await #expect(throws: PiRuntimeError.notLoggedIn) { try await pi.service.models() }
+            #expect(try await pi.service.models().map(\.model) == ["example.cloud.databricks.com/gpt"])
+            #expect(try await pi.service.models().map(\.model) == ["example.cloud.databricks.com/gpt"])
             #expect(calls.withLock { $0 } == 2)
         }
 
@@ -792,50 +792,14 @@ import os
         }
 
         @Test
-        func anAccountBeingLeftCannotStartPiButLocalSignInStillCan() async throws {
+        func signOutClosesTheAccountsProcesses() async throws {
             let pi = TestPiRuntime { _ in TestPiTransport() }
             let cwd = FileManager.default.temporaryDirectory
-            let databricks = CodexRuntimeProvider.dahlia(connectionID: .v7())
-            // The switch to Dahlia has begun, so the Local Account's delayed work must not launch Pi now.
-            pi.contextStore.beginActivation(databricks)
-
-            await #expect(throws: AIConfigurationError.providerChanged(CodexRuntimeProvider.local.displayName)) {
-                try await pi.service.connect(.init(mode: .summary, cwd: cwd), provider: .local)
-            }
-            await #expect(throws: AIConfigurationError.self) {
-                try await pi.service.connect(.init(mode: .control, cwd: cwd), provider: .dahlia(connectionID: .v7()))
-            }
-            let signIn = try await pi.service.connect(.init(mode: .control, cwd: cwd), provider: .local)
-            let summary = try await pi.service.connect(.init(mode: .summary, cwd: cwd), provider: databricks)
-            await pi.service.close(signIn)
-            await pi.service.close(summary)
-        }
-
-        @Test
-        func signOutClosesLocalProcessesAndKeepsOtherAccounts() async throws {
-            let log = TestPiTransportLog()
-            let pi = TestPiRuntime { _ in
-                let transport = TestPiTransport()
-                log.append(transport)
-                return transport
-            }
-            let cwd = FileManager.default.temporaryDirectory
-            /// Each account's process starts while that account is open; switching does not close these test processes.
-            func connect(_ provider: CodexRuntimeProvider) async throws -> PiRPCConnection {
-                pi.contextStore.apply(provider)
-                return try await pi.service.connect(.init(mode: .chat, cwd: cwd), provider: provider)
-            }
-            let dahlia = try await connect(.dahlia(connectionID: .v7()))
-            let databricks = try await connect(.dahlia(connectionID: .v7()))
-            let local = try await connect(.local)
+            let local = try await pi.service.connect(.init(mode: .chat, cwd: cwd), provider: .local)
 
             try await pi.service.signOut(.openai)
 
             #expect(await !local.isOpen)
-            #expect(await dahlia.isOpen)
-            #expect(await databricks.isOpen)
-            await pi.service.close(databricks)
-            await pi.service.close(dahlia)
         }
 
         @Test

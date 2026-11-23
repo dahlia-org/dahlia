@@ -210,7 +210,7 @@
         }
 
         @Test func reviewLaunchRechecksMemorySettingBeforeCreatingTheProcess() async throws {
-            let provider = CodexRuntimeProvider.dahlia(connectionID: .v7())
+            let provider = CodexRuntimeProvider.local
             let pi = TestPiRuntime(provider: provider) { _ in TestPiTransport() }
             let key = AgentLearningSettings.memoryKey(provider.accountKey)
             UserDefaults.standard.set(false, forKey: key)
@@ -277,7 +277,7 @@
             #expect(!FileManager.default.fileExists(atPath: root.appending(path: "sample").path))
             #expect(try memory.changes(account: "local").isEmpty)
             try await store.dbQueue.write { try $0.execute(sql: "UPDATE agent_reviews SET status='running' WHERE id=?", arguments: [review.id]) }
-            pi.contextStore.beginActivation(.dahlia(connectionID: .v7()))
+            pi.contextStore.beginActivation(.local)
             await #expect(throws: (any Error).self) { try await store.dbQueue.read { try authorize($0) } }
             pi.contextStore.apply(.local)
             let cancelled = Task { () throws in

@@ -2664,7 +2664,6 @@ enum L10n { // swiftlint:disable:this type_body_length
     static var agentVariableMakePlain: String { String(localized: "settings.agents.variableMakePlain", bundle: bundle) }
     static var agentVariableNameInvalid: String { String(localized: "settings.agents.variableNameInvalid", bundle: bundle) }
     static var agentProviders: String { String(localized: "settings.agents.providers", bundle: bundle) }
-    static var agentProviderAccountSignIn: String { String(localized: "settings.agents.providerAccountSignIn", bundle: bundle) }
     static var agentProviderModels: String { String(localized: "settings.agents.providerModels", bundle: bundle) }
 
     static var mcpAccountSignInRequired: String { String(localized: "settings.agents.mcpAccountSignInRequired", bundle: bundle) }

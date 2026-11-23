@@ -356,8 +356,8 @@ final class DahliaCloudAccountController {
             try await service(for: connection.record).deleteLocalCredential()
             await Task.detached { GoogleSignInAdapter.deleteRetiredCredentials(scopes: [.dahlia(connectionID)]) }.value
             try await repository.deleteDahliaAccountConnection(id: connectionID)
-            CodexRuntimeContextStore.shared.accountRemoved(.dahlia(connectionID: connectionID))
-            await Task.detached { PiLaunchSettings.removeSecrets(for: .dahlia(connectionID: connectionID)) }.value
+            // The account's agent folder and settings from when it was a separate runtime account.
+            await Task.detached { PiLaunchSettings.removeSecrets(accountKey: connectionID.uuidString.lowercased()) }.value
             try agentLocator.removeAccountDirectory(connectionID: connectionID)
             services.removeValue(forKey: connectionID)
             await DahliaCloudTokenServiceRegistry.shared.remove(connectionID: connectionID)

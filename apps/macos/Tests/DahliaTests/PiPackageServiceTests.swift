@@ -136,25 +136,21 @@ import Foundation
         }
 
         @Test
-        func accountsReadOnlyTheirOwnPackageDeclarations() async throws {
+        func packagesAreReadFromTheAccountsDeclarations() async throws {
             let root = FileManager.default.temporaryDirectory.appending(path: "PiPackages-\(UUID())")
             defer { try? FileManager.default.removeItem(at: root) }
             let locator = PiAgentDirectoryLocator(applicationSupportURL: root)
             let service = PiPackageService(locator: locator)
-            let server = CodexRuntimeProvider.dahlia(connectionID: UUID())
             try Data(#"{"packages":["npm:local-tools"]}"#.utf8)
                 .write(to: locator.agentURL(for: .local).appending(path: "settings.json"))
-            try Data(#"{"packages":["npm:server-tools"]}"#.utf8)
-                .write(to: locator.agentURL(for: server).appending(path: "settings.json"))
             #expect(try await service.packages(for: .local) == ["npm:local-tools"])
-            #expect(try await service.packages(for: server) == ["npm:server-tools"])
         }
 
         @Test
         func packageCommandUsesTheChosenAccountAndCanDownload() throws {
             let directory = URL(fileURLWithPath: "/tmp/package-account")
             let environment = try PiPackageService.environment(
-                account: .dahlia(connectionID: UUID()), directory: directory,
+                account: .local, directory: directory,
                 executable: URL(fileURLWithPath: "/opt/homebrew/bin/pi"), launch: .init()
             )
             #expect(environment["PI_CODING_AGENT_DIR"] == directory.path)

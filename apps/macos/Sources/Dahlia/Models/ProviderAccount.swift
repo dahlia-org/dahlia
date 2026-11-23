@@ -86,16 +86,11 @@ enum ProviderAccountDirectory {
 }
 
 extension CodexRuntimeProvider {
-    /// The provider accounts this runtime account uses. This is the one place that maps an account kind to the
-    /// connections its features use; features ask for a capability instead of switching on the account. The app's one
-    /// account (Local) uses every Databricks connection and the signed-in Dahlia account's Gateway.
+    /// The provider accounts the app's account uses: every Databricks connection, then the signed-in Dahlia account's
+    /// Gateway. Features ask for a capability instead of naming a connection.
     var providerAccounts: [ProviderAccount] {
-        switch self {
-        case .local:
-            ProviderAccountDirectory.databricksConnections().map { .databricks(connectionID: $0.id) }
-                + [ProviderAccountDirectory.dahliaConnectionID().map { .dahlia(connectionID: $0) }].compactMap(\.self)
-        case let .dahlia(connectionID): [.dahlia(connectionID: connectionID)]
-        }
+        ProviderAccountDirectory.databricksConnections().map { .databricks(connectionID: $0.id) }
+            + [ProviderAccountDirectory.dahliaConnectionID().map { .dahlia(connectionID: $0) }].compactMap(\.self)
     }
 
     func providerAccount(offering capability: ProviderCapability) -> ProviderAccount? {

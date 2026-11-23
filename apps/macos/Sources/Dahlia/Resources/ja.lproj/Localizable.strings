@@ -1649,7 +1649,6 @@
 "settings.agents.variableMakePlain" = "秘密にするのをやめる（値は消えます）";
 "settings.agents.variableNameInvalid" = "変数名には英字・数字・_ が使えます（先頭は数字以外）。この変数は渡しません。";
 "settings.agents.providers" = "プロバイダー";
-"settings.agents.providerAccountSignIn" = "アカウントのサインインを使用";
 "settings.agents.providerModels" = "モデル";
 "settings.agents.mcpAccountSignInRequired" = "アカウントのサインインが切れています。サイドバー下部のアカウントメニューからサインインし直してください。";
 "settings.agents.addProvider" = "プロバイダーを追加…";

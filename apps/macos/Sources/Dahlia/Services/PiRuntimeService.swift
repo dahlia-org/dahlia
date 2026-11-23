@@ -193,7 +193,7 @@ actor PiRuntimeService {
 
     func models(for provider: CodexRuntimeProvider, forceRefresh: Bool) async throws -> [CodexModel] {
         let models = try await listedModels(provider, forceRefresh: forceRefresh)
-        if models.isEmpty, provider.accountConnectionID == nil { throw PiRuntimeError.notLoggedIn }
+        if models.isEmpty { throw PiRuntimeError.notLoggedIn }
         guard contextStore.provider == provider else { throw AIConfigurationError.providerChanged(provider.displayName) }
         guard provider == .local else { return models }
         let choices = modelChoices(provider)
@@ -526,7 +526,7 @@ actor PiRuntimeService {
         if let url = try? agentLocator.agentURL(for: account).appending(path: "auth.json") {
             try? FileManager.default.removeItem(at: url)
         }
-        PiLaunchSettings.removeSecrets(for: account)
+        PiLaunchSettings.removeSecrets(accountKey: account.accountKey)
     }
 
     /// Pi removes a credential without its provider registered, so the generic sign-out serves MCP sign-ins too.

@@ -76,12 +76,13 @@
         }
 
         @Test
-        func runtimeProviderKeepsEachAccountAndReadsCodexEraLocalProviders() throws {
+        func runtimeProviderReadsEveryEarlierAccountAsTheAppsAccount() throws {
             let id = UUID()
-            for provider in [CodexRuntimeProvider.local, .dahlia(connectionID: id)] {
-                let data = try JSONEncoder().encode(provider)
-                #expect(try JSONDecoder().decode(CodexRuntimeProvider.self, from: data) == provider)
-            }
+            let data = try JSONEncoder().encode(CodexRuntimeProvider.local)
+            #expect(try JSONDecoder().decode(CodexRuntimeProvider.self, from: data) == .local)
+            // A Dahlia account's recordings ran under its own runtime account, which is the app's one account now.
+            let dahlia = Data(#"{"dahlia":{"connectionID":"\#(id.uuidString)"}}"#.utf8)
+            #expect(try JSONDecoder().decode(CodexRuntimeProvider.self, from: dahlia) == .local)
             // Codex-era Databricks profiles and Databricks-account keys ran under the Local Account, the app's one account now.
             let legacy = Data(#"{"databricks":{"profile":"DEFAULT"}}"#.utf8)
             #expect(try JSONDecoder().decode(CodexRuntimeProvider.self, from: legacy) == .local)

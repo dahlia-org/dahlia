@@ -40,7 +40,7 @@ import SwiftUI
             let suite = "AgentChatInstructionsTests.\(UUID.v7())"
             let defaults = try #require(UserDefaults(suiteName: suite))
             defer { defaults.removePersistentDomain(forName: suite) }
-            let accounts: [CodexRuntimeProvider] = [.local, .dahlia(connectionID: .v7()), .dahlia(connectionID: .v7())]
+            let accounts: [CodexRuntimeProvider] = [.local]
             for account in accounts {
                 defaults.set("Focus on decisions", forKey: AgentChatInstructions.defaultsKey(for: account))
                 #expect(AgentChatInstructions.loadForSummary(for: account, defaults: defaults) == nil)
@@ -100,7 +100,7 @@ import SwiftUI
             let suite = "AgentChatInstructionsTests.\(UUID.v7())"
             let defaults = try #require(UserDefaults(suiteName: suite))
             defer { defaults.removePersistentDomain(forName: suite) }
-            let accounts: [CodexRuntimeProvider] = [.local, .dahlia(connectionID: .v7()), .dahlia(connectionID: .v7())]
+            let accounts: [CodexRuntimeProvider] = [.local]
             for account in accounts {
                 #expect(AgentChatInstructions.load(for: account, defaults: defaults).isEmpty)
             }
@@ -113,7 +113,6 @@ import SwiftUI
             }
             defaults.set("", forKey: AgentChatInstructions.defaultsKey(for: .local))
             #expect(AgentChatInstructions.load(for: .local, defaults: defaults).isEmpty)
-            #expect(!AgentChatInstructions.load(for: accounts[1], defaults: defaults).isEmpty)
         }
     }
 #endif

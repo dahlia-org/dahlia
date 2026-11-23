@@ -83,14 +83,12 @@ import Foundation
         }
 
         @Test
-        func settingsAreLocalToEachAccountAndRemovalPersists() throws {
+        func settingsPersistAndRemovalPersists() throws {
             let defaults = try #require(UserDefaults(suiteName: "PiFileAccessSettingsTests.\(UUID())"))
-            let other = CodexRuntimeProvider.dahlia(connectionID: .v7())
             var settings = PiFileAccessSettings(grants: [.init(path: "/Users/test/.desk.toml", isDirectory: false, access: .readWrite)])
             #expect(PiFileAccessSettings.load(for: .local, defaults: defaults).grants.isEmpty)
             settings.save(for: .local, defaults: defaults)
             #expect(PiFileAccessSettings.load(for: .local, defaults: defaults) == settings)
-            #expect(PiFileAccessSettings.load(for: other, defaults: defaults).grants.isEmpty)
             settings.grants.removeAll()
             settings.save(for: .local, defaults: defaults)
             #expect(PiFileAccessSettings.load(for: .local, defaults: defaults).grants.isEmpty)
@@ -219,7 +217,7 @@ import Foundation
             let suite = "PiFileAccessSettingsTests.\(UUID())"
             let defaults = try #require(UserDefaults(suiteName: suite))
             defer { defaults.removePersistentDomain(forName: suite) }
-            let account = CodexRuntimeProvider.dahlia(connectionID: UUID())
+            let account = CodexRuntimeProvider.local
             let root = FileManager.default.temporaryDirectory.appending(path: suite)
             let nvm = root.appending(path: "custom-nvm")
             let bins = ["v22.16.0", "v24.22.1"].map { nvm.appending(path: "versions/node/\($0)/bin") }

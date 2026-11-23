@@ -6,7 +6,7 @@ import Testing
 
 struct OmnigentServiceTests {
     @Test
-    func onlyTheAccountWithADatabricksConnectionThatTurnedItOnHasAWorkspace() throws {
+    func onlyADatabricksConnectionThatTurnedItOnHasAWorkspace() throws {
         let defaults = try #require(UserDefaults(suiteName: "OmnigentServiceTests.\(UUID())"))
         let id = UUID()
         let connections: [ProviderAccountDirectory.Connection] = [.init(id: id, workspaceURL: URL(string: "https://dbc.cloud.databricks.com")!)]
@@ -14,7 +14,6 @@ struct OmnigentServiceTests {
             #expect(OmnigentService.connectionID(for: .local, defaults: defaults) == nil)
             defaults.set(true, forKey: OmnigentService.enabledKey(CodexRuntimeProvider.local.accountKey))
             #expect(OmnigentService.connectionID(for: .local, defaults: defaults) == id)
-            #expect(OmnigentService.connectionID(for: .dahlia(connectionID: id), defaults: defaults) == nil)
         }
     }
 

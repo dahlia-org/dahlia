@@ -114,7 +114,7 @@ import Foundation
         func obsoleteCacheReadCannotReplaceNewerSession(_ interruption: CacheReadInterruption) async {
             let defaults = isolatedUserDefaults()
             seedSelectedCalendars(["primary"], defaults: defaults)
-            var account = CodexRuntimeProvider.local
+            let account = CodexRuntimeProvider.local
             let readStarted = AsyncStream<Void>.makeStream()
             let cachedEvents = AsyncStream<[CalendarEvent]>.makeStream()
             defer {
@@ -145,11 +145,6 @@ import Foundation
                 await store.disconnect()
             case .signIn:
                 await store.signIn()
-            case .accountSwitch:
-                account = .dahlia(connectionID: UUID())
-                defaults.set("[]", forKey: GoogleCalendarStore.selectedCalendarIDsKey(for: account))
-                NotificationCenter.default.post(name: .calendarAccountDidChange, object: nil)
-                #expect(await pollUntil { store.state == .needsCalendarSelection })
             }
             let expectedState = store.state
             let expectedAccount = store.account
@@ -730,60 +725,6 @@ import Foundation
             #expect(saved?.contains(secondaryCalendar.id) == true)
         }
 
-        /// Switching accounts changes the route, and each account keeps its own calendar selection; one without its own
-        /// starts from the selection saved before selections became per account.
-        @Test
-        func accountChangeLoadsTheNewAccountsSelectionAndRestoresItsRoute() async {
-            let defaults = isolatedUserDefaults()
-            let databricks = CodexRuntimeProvider.dahlia(connectionID: UUID())
-            seedSelectedCalendars([primaryCalendar.id], defaults: defaults)
-            defaults.set("[\"\(secondaryCalendar.id)\"]", forKey: GoogleCalendarStore.selectedCalendarIDsKey(for: databricks))
-            var account = CodexRuntimeProvider.local
-            let signInProvider = MockGoogleCalendarSignInProvider(hasPreviousSignIn: true)
-            let store = GoogleCalendarStore(
-                signInProvider: signInProvider,
-                apiClient: MockGoogleCalendarAPIClient(calendars: [primaryCalendar, secondaryCalendar], events: []),
-                userDefaults: defaults,
-                openAccount: { account }
-            )
-            #expect(store.selectedCalendarIDs == [primaryCalendar.id])
-
-            account = databricks
-            NotificationCenter.default.post(name: .calendarAccountDidChange, object: nil)
-
-            #expect(store.selectedCalendarIDs == [secondaryCalendar.id])
-            #expect(await pollUntil { signInProvider.restoreCallCount == 1 })
-        }
-
-        /// A restore still running for the previous account must not publish its identity or calendars under the new one,
-        /// even when the switch arrives while that restore is suspended.
-        @Test
-        func accountChangeRejectsTheRestoreStillRunningForThePreviousAccount() async {
-            var account = CodexRuntimeProvider.local
-            let signInProvider = MockGoogleCalendarSignInProvider(hasPreviousSignIn: true, suspendsRestore: true)
-            let store = GoogleCalendarStore(
-                signInProvider: signInProvider,
-                apiClient: MockGoogleCalendarAPIClient(calendars: [primaryCalendar], events: []),
-                userDefaults: isolatedUserDefaults(),
-                openAccount: { account },
-                now: { fixtureNow }
-            )
-            let previousRestore = Task { await store.restoreSessionIfNeeded() }
-            #expect(await pollUntil { signInProvider.restoreCallCount == 1 })
-
-            account = .dahlia(connectionID: UUID())
-            NotificationCenter.default.post(name: .calendarAccountDidChange, object: nil)
-            #expect(await pollUntil { signInProvider.restoreCallCount == 2 })
-            signInProvider.finishRestore()
-            await previousRestore.value
-
-            #expect(store.account == nil)
-            #expect(store.availableCalendars.isEmpty)
-
-            signInProvider.finishRestore()
-            #expect(await pollUntil { store.account == fixtureSession.account })
-        }
-
         @Test
         func signInRequestsCalendarScopes() async {
             let signInProvider = MockGoogleCalendarSignInProvider(signInResult: .success(fixtureSession))
@@ -969,7 +910,6 @@ private let fixtureNow = Date(timeIntervalSince1970: 1_776_384_000)
 enum CacheReadInterruption: CaseIterable {
     case disconnect
     case signIn
-    case accountSwitch
 }
 
 private let fixtureSession = GoogleSession(

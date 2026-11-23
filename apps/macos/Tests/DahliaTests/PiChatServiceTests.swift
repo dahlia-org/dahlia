@@ -210,7 +210,7 @@ import Synchronization
             await fixture.pi.service.shutdown()
         }
 
-        @Test(arguments: ["declined", "stopped", "accountChanged", "wrongProcess"])
+        @Test(arguments: ["declined", "stopped", "wrongProcess"])
         func scheduleCommitRejectsDeclinedOrObsoleteApprovals(state: String) async throws {
             let fixture = try Self.fixture { _ in }
             defer { try? FileManager.default.removeItem(at: fixture.pi.rootURL) }
@@ -225,7 +225,6 @@ import Synchronization
             ]), threadID: thread.id, processID: process)
             let id = try #require(prepared.objectValue?["request_id"]?.stringValue)
             if state == "stopped" { await fixture.chat.abort(threadID: thread.id) }
-            if state == "accountChanged" { fixture.pi.contextStore.beginActivation(.dahlia(connectionID: .v7())) }
             for approved in [false, true] {
                 await #expect(throws: (any Error).self) {
                     try await fixture.chat.learningTool("cronjobCommit", payload: .object([
@@ -1364,24 +1363,13 @@ import Synchronization
         }
 
         @Test
-        func restoringHistoryStartsNoProcessAndAFailedTurnSetupClosesIt() async throws {
+        func restoringHistoryStartsNoProcess() async throws {
             let fixture = try Self.fixture { _ in }
             let thread = try await fixture.chat.startThread(model: nil, effort: "medium")
             await fixture.chat.setThreadName(threadID: thread.id, name: "Named early")
             let restored = try await fixture.chat.resumeThread(id: thread.id)
             #expect(restored.title == "Named early")
             #expect(!fixture.pi.launches.all.contains { $0.mode == .chat })
-
-            await #expect(throws: AIConfigurationError.providerChanged(L10n.dahliaAccount)) {
-                _ = try await fixture.chat.beginTurn(
-                    threadID: thread.id, inputs: [.text("x")], model: nil, effort: "medium",
-                    approvalMethod: .ask, expectedProvider: .dahlia(connectionID: .v7())
-                )
-            }
-            #expect(fixture.pi.launches.all.count { $0.mode == .chat } == 1)
-            #expect(await fixture.chatTransport.isClosed)
-            let named = await fixture.chatTransport.command("set_session_name")
-            #expect(named["name"]?.stringValue == "Named early")
         }
 
         @Test

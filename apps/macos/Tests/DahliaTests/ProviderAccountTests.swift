@@ -31,7 +31,6 @@
             let databricksID = UUID.v7()
             let dahliaID = UUID.v7()
             let local = CodexRuntimeProvider.local
-            let dahlia = CodexRuntimeProvider.dahlia(connectionID: dahliaID)
             let connection = ProviderAccountDirectory.Connection(id: databricksID, workspaceURL: URL(string: "https://dbc.cloud.databricks.com")!)
 
             #expect(ProviderAccountDirectory.$connections.withValue([]) { local.providerAccounts.isEmpty })
@@ -54,12 +53,13 @@
                     #expect(local.piBridgedProviderIDs.contains("dahlia"))
                 }
             }
-            #expect(dahlia.providerAccounts == [.dahlia(connectionID: dahliaID)])
-            #expect(dahlia.providerAccount(offering: .model) == .dahlia(connectionID: dahliaID))
-            #expect(dahlia.providerAccount(offering: .calendar) == nil)
-            #expect(dahlia.databricksConnectionID == nil)
-            for capability in [ProviderCapability.storage, .database] {
-                #expect(dahlia.providerAccount(offering: capability) == nil)
+            // Without Databricks, the Gateway serves models and nothing else.
+            ProviderAccountDirectory.$connections.withValue([]) {
+                ProviderAccountDirectory.$dahliaConnections.withValue([dahliaID]) {
+                    #expect(local.providerAccount(offering: .model) == .dahlia(connectionID: dahliaID))
+                    #expect(local.providerAccount(offering: .calendar) == nil)
+                    #expect(local.databricksConnectionID == nil)
+                }
             }
         }
 
@@ -81,7 +81,6 @@
             ProviderAccountDirectory.$connections.withValue([]) {
                 #expect(CodexRuntimeProvider.local.piBridgedProviderIDs.isEmpty)
                 #expect(CodexRuntimeProvider.local.piProviderIDs == ["openai", "anthropic"])
-                #expect(CodexRuntimeProvider.dahlia(connectionID: .v7()).piProviderIDs == ["dahlia"])
             }
         }
     }

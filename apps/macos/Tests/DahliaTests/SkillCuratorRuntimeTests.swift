@@ -8,14 +8,15 @@
 
     @Suite(.timeLimit(.minutes(1)))
     struct SkillCuratorRuntimeTests {
-        @Test(arguments: [
+        // Every case uses the app's one account, whose curator setting lives in the shared defaults.
+        @Test(.serialized, arguments: [
             "unauthorized", "errorAfterIntermediate", "messageAbort", "settledAbort", "emptyFinal", "success",
             "budget", "noMessage", "eof", "consolidationOff", "drainDuringTransitions", "drainDuringConsolidation",
         ])
         func consolidationRecordsTerminalOutcome(scenario: String) async throws {
             let script = events(scenario)
             let transports = TestPiTransportLog()
-            let provider = CodexRuntimeProvider.dahlia(connectionID: .v7())
+            let provider = CodexRuntimeProvider.local
             // pi-hermes-skills answers `/hermes-curator` through the bridge before Pi reports the command handled.
             let report: JSONValue = .object([
                 "counts": .object(["archived": .number(1), "markedStale": .number(0), "reactivated": .number(0)]),

@@ -25,24 +25,6 @@ import Foundation
             #expect(signIn.disconnectCount == 1)
         }
 
-        @Test
-        func anAccountSwitchDiscardsThePreviousAccountsRestore() async {
-            let signIn = BackupReadSignIn()
-            signIn.delaysRestore = true
-            var owner = CodexRuntimeProvider.local
-            let model = GoogleDriveBackupModel(signIn: signIn, openAccount: { owner })
-            var started = signIn.started.makeAsyncIterator()
-            let load = Task { await model.refresh() }
-            _ = await started.next()
-            owner = .dahlia(connectionID: .v7())
-            model.resetForAccount()
-            signIn.completeRestore()
-            await load.value
-            #expect(!model.isAuthorized)
-            #expect(model.account == nil)
-            #expect(model.files.isEmpty)
-            #expect(!model.isBusy)
-        }
     }
 
     @MainActor

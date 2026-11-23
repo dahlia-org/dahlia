@@ -1649,7 +1649,6 @@
 "settings.agents.variableMakePlain" = "Stop keeping it secret (clears the value)";
 "settings.agents.variableNameInvalid" = "Use letters, digits, and _ in a variable name, not starting with a digit. This variable is not passed.";
 "settings.agents.providers" = "Providers";
-"settings.agents.providerAccountSignIn" = "Uses the account's sign-in";
 "settings.agents.providerModels" = "Models";
 "settings.agents.mcpAccountSignInRequired" = "The account's sign-in has expired. Sign in again from the account menu at the bottom of the sidebar.";
 "settings.agents.addProvider" = "Add Provider…";

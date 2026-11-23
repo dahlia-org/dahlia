@@ -369,20 +369,8 @@ private struct AgentProviderSection<Models: View, SubscriptionModels: View>: Vie
 
     var body: some View {
         Section {
-            switch account {
-            case .local:
-                ForEach(model.accountProviders) { provider in
-                    gatewayRow(provider)
-                }
-            case .dahlia:
-                AgentProviderRow(
-                    title: L10n.dahliaAccount,
-                    icon: Image(nsImage: NSApplication.shared.applicationIconImage),
-                    uses: [L10n.agentProviderModels]
-                ) {
-                    EmptyView()
-                }
-                .help(L10n.agentProviderAccountSignIn)
+            ForEach(model.accountProviders) { provider in
+                gatewayRow(provider)
             }
             ForEach(signedInSubscriptions, id: \.subscription) { controller in
                 DisclosureGroup(isExpanded: expansion(of: controller.subscription.rawValue)) {

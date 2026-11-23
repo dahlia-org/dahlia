@@ -1,14 +1,14 @@
 # Desktop の認証と account 分離
 
-対象: Desktop。採択: 2026-08-04〜09-01。実行場所と AI 設定のスコープは [アカウント別の Desktop 推論](../shared/account-scoped-desktop-inference.md)（採択: 2026-10-02）、実行ランタイムは [内蔵 Pi runtime](pi-runtime.md)（採択: 2026-11-06）に従う。Server Account の移行・サインアウト時のデータ扱いは [同期契約](../shared/sync.md#正本とアカウント境界) に従う。
+対象: Desktop。採択: 2026-08-04〜09-01。実行場所と AI 設定のスコープは [アカウント別の Desktop 推論](../shared/account-scoped-desktop-inference.md)（採択: 2026-10-02）、実行ランタイムは [内蔵 Pi runtime](pi-runtime.md)（採択: 2026-11-06）に従う。Desktop は Dahlia Server と同期しない（[同期契約](../shared/sync.md#正本とアカウント境界)）。
 
 ## 接続と Workspace
 
-Server Account の接続はアプリ共有の接続として SQLite に UUID、正規化 origin、client ID、作成日時を保存する。Cloud は最大1件、Server は複数登録できるが同一 origin は一意。Cloud / Server 種別は現在の Cloud origin との一致から導出し、保存しない。同一 origin の複数 remote account 切替は対象外。
+Dahlia account（Dahlia Server へのサインイン）の接続はアプリ共有の接続として SQLite に UUID、正規化 origin、client ID、作成日時を保存する。Cloud は最大1件、Server は複数登録できるが同一 origin は一意。Cloud / Server 種別は現在の Cloud origin との一致から導出し、保存しない。同一 origin の複数 remote account 切替は対象外。
 
 credential と remote identity / 表示情報は接続 UUID ごとの Keychain が所有する。token API は connection ID を必須にし、接続ごとの actor が refresh の集約と rotation の永続化を行う。credential がなければ再サインインを案内し、ローカル機能を妨げない。
 
-サインアウトは remote revocation を試みた後、結果にかかわらず local credential を削除し、失効失敗は通知する。Server の canonical data は削除せず、local working copy の扱いは同期契約に従う。
+サインアウトは remote revocation を試みた後、結果にかかわらず local credential を削除し、失効失敗は通知する。Workspace と会議は Server に属さないので、サインインとサインアウトでは変わらない。
 
 プロバイダーアカウントは設定の「機能」グループの「プロバイダー」ページで管理する。ChatGPT・Anthropic（Pi がサインインを持つ）、Databricks の接続、以前に追加した workspace、Google を並べ、追加・再サインイン・名前の変更・サインアウト・削除と、各アカウントが提供する capability を示す。「エージェント → モデル」はプロバイダーごとのモデルのオン・オフだけを持ち、アカウントの操作はこのページへ案内する。アプリのアカウントは 1 つで、今の Local Account を引き継ぐ（[単一アカウントへの移行](../../plans/2026-11-23-single-account-provider-accounts.md)）。Databricks の接続はアカウントではなく、そのアカウントが使うプロバイダーアカウントであり、モデル（Gateway）・MCP・カレンダー（Google Calendar の proxy）を提供する。サイドバー下部のアカウントメニューは Databricks の接続を並べず、アカウントを切り替えない。設定の「Dahlia AI」はアカウントの provider と AI 設定を示す。Databricks の接続のサインアウトは設定の「プロバイダー」ページで行い、確認モーダルで対象を示す。確認後にだけ接続を切断し、キャンセル、閉じる、Escape、背景クリックでは切断しない。接続を削除しても、アカウントの履歴と設定は残り、その接続のモデル・MCP・カレンダーだけが使えなくなる。接続が 2 つ以上あるときは、当面最も古い 1 つだけを使う（Pi のプロバイダー ID が `databricks` で共通のため）。
 
@@ -20,15 +20,15 @@ Workspace を Databricks の接続へ移す操作と、接続ごとの `Default`
 
 アカウントメニューのサインインでは、接続済みかどうかにかかわらず URL を入れて Databricks の接続を追加する（接続済みの URL は再認証になる）。サインインの後に Workspace の移動や作成は尋ねず、開いている Workspace は変わらない。セットアップのアカウント選択とアカウントメニューのサインインは、従来のモーダルの形で Databricks workspace への接続と Local Account だけを示し、Server Account のサインインは表示しない（未確定事項を参照）。
 
-モデルプロバイダー設定の provider 一覧には、Local / Databricks アカウントの provider に加え、Server Account 自身の provider（`dahlia`、Server の Gateway）を並べる（[内蔵 Pi runtime](pi-runtime.md) の provider 表）。
+サインインした Dahlia account の Server の Gateway は、アプリのアカウントのプロバイダーアカウント（capability は model、Pi のプロバイダー ID は `dahlia`）とする（[内蔵 Pi runtime](pi-runtime.md) の provider 表）。`models.json` に `dahlia` provider を書き、モデル一覧の取得時に Gateway の catalog を更新する。サインインが 2 つ以上あるときは当面最も古い 1 つだけを使う（Pi のプロバイダー ID が `dahlia` で共通のため）。サインアウトすると provider を外す。
 
 ## 実行アカウントの context
 
-Workspace の nullable connection ID は nil を Local Account とし、削除時は SET NULL。Local Account は OpenAI / Anthropic の subscription を、Databricks アカウントはその workspace の Gateway を、Server Account はその Server の Gateway を使う。
+実行アカウントは常にアプリのアカウントで、OpenAI / Anthropic の subscription と、プロバイダーアカウント（Databricks の接続の Gateway、Dahlia account の Gateway）を使う。`workspaces.accountConnectionId`・`organizationId`・`personalUserId` と同期の列は DB に残し、起動時にすべての Workspace で空にする。Server Workspace だった Workspace は、会議・文字起こし・ファイルを残したままアカウントの Workspace になる。Server にだけあった本文・画像・録音アーカイブは読めなくなる。処理場所が `remote` の Workspace の設定は `local` に戻す。
 
 モデルは開いているアカウントのものだけを使う。設定には、そのアカウントの provider だけを表示する。AI 設定のスコープ、アカウント切替の処理、モデル設定の保存先は [アカウント別の Desktop 推論](../shared/account-scoped-desktop-inference.md) に従う。旧 Vault の summary 列は互換性のため保持するが、新規 summary の設定や実行先判定には使わない。
 
-Pi の agent directory は、アプリのアカウントでは `Application Support/Dahlia/agent` の 1 つ、Dahlia Server のアカウントでは `Application Support/Dahlia/accounts/<provider_accounts.id>/pi` にする。実行アカウントは Local、Databricks 接続（`databricks(connectionID:)`）、Server Account を区別する。切替は Pi の process を閉じ、そのアカウントの `models.json` に workspace の Gateway を書く。録音後の処理の実行先は `databricksWorkspace` キーで保存する。
+Pi の agent directory は `Application Support/Dahlia/agent` の 1 つにする。設定と行のアカウントのキー（`accountKey`）は常に `local`。以前に Server Account が使った `Application Support/Dahlia/accounts/<provider_accounts.id>/pi` は、その Dahlia account を削除すると消す。Server Account で走ったチャットとエージェントの行（`accountID` が接続の ID）は移さずに残し、画面には出さない。録音後の処理に保存した実行先は、`dahlia`・`databricksWorkspace`・`databricks` のキーも含めて `local` として読む。
 
 ## ChatGPT と Databricks Workspace OAuth
 
@@ -42,14 +42,12 @@ token は要求ごとに標準入力で渡し、config・環境変数・log に�
 
 ## 制約
 
-接続関連の契約を Server Account の現在のデータ lifecycle へ一般化しない。移行とサインアウト時のデータ扱いは同期契約に従う。
-
 設定画面を開いても、実行アカウントの context・設定ファイル・Server の token 認可は変更しない。
 
 実ユーザーの HOME 継承により `$HOME/.agents/skills` が探索され得る。これは未監査の user skill であり、分離は未検証のまま残す。当面の最終境界は、要約での skill 無効化、MCP の Workspace 検証、[承認方針](chat-approval.md) とする。
 
 ## 未適合・未検証
 
-- 未確定: Server Account のサインインの表示。記録では「当面表示しない」とし、接続の削除の導線がないため、サインインを戻すときに足すとする。Databricks をデータの正本にする場合の同期設計は別途行うとする。現在の表示と同期契約（Server Account を前提とする）との関係は未確定。
+- 未確定: Server Account のサインインの表示。記録では「当面表示しない」とし、接続の削除の導線がないため、サインインを戻すときに足すとする。Databricks をデータの正本にする場合の同期設計は別途行うとする。
 - 未確定: Gateway の 401 時の強制 refresh と1回の再試行、ブラウザ認証の待受 300 秒、認証コマンドと broker の timeout（360 秒、365 秒、20 秒）、token 更新間隔 25 分、直接 Databricks provider の stream retry を 0 にすること、ChatGPT ログインの request shape は、Codex・auth-helper・token broker の経路の値である。Pi への置換（2026-11-06）後に同じ規則が有効かは [内蔵 Pi runtime](pi-runtime.md) に記載がなく未確定。Pi の bridge が要求元との対応を検証し、認証完了後に認可を再検証するかも未確定。
 - 未検証: 実ユーザーの HOME 継承による `$HOME/.agents/skills` の分離。追跡 issue は [dahlia-org/dahlia#234](https://github.com/dahlia-org/dahlia/issues/234)。

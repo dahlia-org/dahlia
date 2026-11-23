@@ -14,7 +14,6 @@ macOS、ローカル SQLite、録音、UI、内蔵 Pi / local MCP。
 - [サマリーの構造と更新](desktop/summary.md)
 - [ローカル全文検索](desktop/search.md)
 - [Workspace archive backup / restore](desktop/database-backup.md)
-- [Server Workspace への取り込みと再接続](desktop/workspace-reconnection.md)
 - [Local MCP と Project 階層](desktop/local-mcp-and-projects.md)
 - [Desktop の認証と account 分離](desktop/accounts.md)
 - [内蔵 Pi runtime](desktop/pi-runtime.md)

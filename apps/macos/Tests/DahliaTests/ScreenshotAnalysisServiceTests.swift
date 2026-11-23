@@ -95,9 +95,7 @@ import Foundation
 
         @Test(arguments: [
             (CodexRuntimeProvider.local, nil as String?, "openai/gpt-6-luna"),
-            (.dahlia(connectionID: .v7()), nil, "dahlia/gpt-6-luna"),
             (.local, "openai/gpt-5.6-luna", "openai/gpt-5.6-luna"),
-            (.dahlia(connectionID: .v7()), "dahlia/gpt-6-sol", "dahlia/gpt-6-sol"),
         ])
         func sendsOneStructuredLunaRequestForOneScreenshot(
             provider: CodexRuntimeProvider,

@@ -50,9 +50,9 @@ struct PiLaunchSettings: Codable, Equatable, Sendable {
 
     /// Deletes the account's secret values from the Keychain when the account signs out or is removed. Blocks on the
     /// Keychain, so call it off MainActor.
-    static func removeSecrets(for account: CodexRuntimeProvider, defaults: UserDefaults = .standard) {
-        for variable in load(for: account, defaults: defaults).variables where variable.isSecret {
-            _ = KeychainService.delete(key: secretKey(for: account, id: variable.id))
+    static func removeSecrets(accountKey: String, defaults: UserDefaults = .standard) {
+        for variable in load(accountKey: accountKey, defaults: defaults).variables where variable.isSecret {
+            _ = KeychainService.delete(key: secretKey(accountKey: accountKey, id: variable.id))
         }
     }
 

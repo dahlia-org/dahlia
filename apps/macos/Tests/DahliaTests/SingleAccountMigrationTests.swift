@@ -69,9 +69,9 @@
                 defaults.set("local", forKey: "agentMCPs.local")
                 defaults.set(Data("inference".utf8), forKey: "accountInferenceSettings.databricks.\(key)")
                 let secretID = UUID()
-                PiLaunchSettings(variables: [.init(id: secretID, name: "TOKEN", isSecret: true)])
-                    .save(for: .dahlia(connectionID: connectionID), defaults: defaults)
-                secrets[PiLaunchSettings.secretKey(for: .dahlia(connectionID: connectionID), id: secretID)] = "secret"
+                let settings = PiLaunchSettings(variables: [.init(id: secretID, name: "TOKEN", isSecret: true)])
+                defaults.set(try JSONEncoder().encode(settings), forKey: PiLaunchSettings.defaultsKey(accountKey: key))
+                secrets[PiLaunchSettings.secretKey(accountKey: key, id: secretID)] = "secret"
                 self.secretID = secretID
             }
 
