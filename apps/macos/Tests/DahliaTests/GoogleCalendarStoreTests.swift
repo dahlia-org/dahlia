@@ -426,6 +426,76 @@ import Foundation
             }
         }
 
+        @Test(arguments: CalendarReadinessEntryPoint.allCases, [
+            (false, false), (false, true), (true, false), (true, true),
+        ])
+        func supersededCredentialLookupCannotReplaceProxyLoad(
+            entryPoint: CalendarReadinessEntryPoint, outcome: (Bool, Bool)
+        ) async throws {
+            let (staleResult, proxyAlreadyLoaded) = outcome
+            let connection = DatabricksConnection(id: .v7(), host: "https://calendar.example")
+            try await ProviderAccountDirectory.$connections.withValue([
+                .init(id: connection.id, workspaceURL: #require(URL(string: connection.host))),
+            ]) {
+                let defaults = isolatedUserDefaults()
+                defaults.set("google", forKey: GoogleCalendarProvider.userDefaultsKey)
+                seedSelectedCalendars(["primary"], defaults: defaults)
+                let route = Notification.Name("CalendarReadinessRoute.\(UUID())")
+                let direct = MockGoogleCalendarSignInProvider(hasPreviousSignIn: true)
+                let memory = DatabricksTestStorage(connection: connection)
+                memory.state.withLock {
+                    $0.credentials[connection.id] = DatabricksOAuthCredential(
+                        accessToken: "fixture-token", refreshToken: "fixture-refresh",
+                        expirationDate: Date().addingTimeInterval(3600),
+                        tokenEndpoint: URL(string: "https://calendar.example/oidc/v1/token")!
+                    )
+                }
+                let provider = DatabricksProxyGoogleSignInProvider(
+                    direct: direct, oauth: DatabricksOAuthService(storage: memory.storage) { _ in throw CancellationError() },
+                    storage: memory.storage, apiClient: MockGoogleCalendarAPIClient(calendars: [primaryCalendar]),
+                    userDefaults: defaults, connectionChangeNotification: Notification.Name("CalendarReadinessConnection.\(UUID())")
+                )
+                let client = ControllableGoogleCalendarAPIClient(initialEvents: [fixtureEvent])
+                let store = GoogleCalendarStore(
+                    signInProvider: provider, apiClient: client, userDefaults: defaults, now: { fixtureNow },
+                    providerChangeNotification: route, directSessionChangeNotification: direct.sessionDidChangeNotification
+                )
+                if entryPoint == .authChange { await store.restoreSessionIfNeeded() }
+                client.suspendsAllEvents = true
+                let expectedEventCalls = client.fetchEventsCallCount + 1
+                direct.suspendsPreviousSignIn = true
+                let request: Task<Void, Never>?
+                switch entryPoint {
+                case .startup:
+                    request = Task { await store.restoreSessionIfNeeded() }
+                case .background:
+                    request = Task { await store.refreshIfNeeded(force: true) }
+                case .authChange:
+                    request = nil
+                    NotificationCenter.default.post(name: direct.sessionDidChangeNotification, object: nil)
+                }
+                #expect(await pollUntil { direct.isPreviousSignInLookupPending })
+                defaults.set(connection.id.uuidString, forKey: GoogleCalendarProvider.userDefaultsKey)
+                NotificationCenter.default.post(name: route, object: nil)
+                #expect(await pollUntil { client.fetchEventsCallCount == expectedEventCalls })
+                if proxyAlreadyLoaded {
+                    client.resumePendingRequest(at: 0, with: [fixtureEvent])
+                    #expect(await pollUntil { store.isLoaded })
+                }
+                // Unexpected extra restores must finish so a regression fails instead of hanging.
+                client.returnsAllEventsImmediately = true
+                direct.finishPreviousSignInLookup(returning: staleResult)
+                #expect(await pollUntil { direct.didCompleteSuspendedPreviousSignInLookup })
+                await request?.value
+                if !proxyAlreadyLoaded { client.resumePendingRequest(at: 0, with: [fixtureEvent]) }
+                #expect(await pollUntil { store.isLoaded })
+                #expect(client.fetchEventsCallCount == expectedEventCalls)
+                #expect(store.upcomingEvents == [fixtureEvent])
+                #expect(store.selectedCalendarIDs == ["primary"])
+                #expect(store.account?.id == primaryCalendar.id)
+            }
+        }
+
         @Test(arguments: [false, true])
         func returningToAProxyVerifiesItsGoogleUserBeforeShowingCache(identityFails: Bool) async throws {
             let connectionID = UUID.v7()
@@ -1387,7 +1457,26 @@ private func calendarEvent(id: String, calendarID: String = "primary") -> Calend
 @MainActor
 private final class MockGoogleCalendarSignInProvider: GoogleSignInProviding {
     let isConfigured: Bool
-    let hasPreviousSignIn: Bool
+    private let previousSignInResult: Bool
+    var suspendsPreviousSignIn = false
+    private var previousSignInContinuation: CheckedContinuation<Bool, Never>?
+    private(set) var didCompleteSuspendedPreviousSignInLookup = false
+    var isPreviousSignInLookupPending: Bool { previousSignInContinuation != nil }
+    var hasPreviousSignIn: Bool {
+        get async {
+            guard suspendsPreviousSignIn else { return previousSignInResult }
+            let result = await withCheckedContinuation { previousSignInContinuation = $0 }
+            didCompleteSuspendedPreviousSignInLookup = true
+            return result
+        }
+    }
+
+    func finishPreviousSignInLookup(returning result: Bool) {
+        suspendsPreviousSignIn = false
+        previousSignInContinuation?.resume(returning: result)
+        previousSignInContinuation = nil
+    }
+
     let sessionDidChangeNotification: Notification.Name
     var restoreResult: Result<GoogleSession, Error>
     var signInResult: Result<GoogleSession, Error>
@@ -1412,7 +1501,7 @@ private final class MockGoogleCalendarSignInProvider: GoogleSignInProviding {
         suspendsRestore: Bool = false
     ) {
         self.isConfigured = isConfigured
-        self.hasPreviousSignIn = hasPreviousSignIn
+        self.previousSignInResult = hasPreviousSignIn
         self.sessionDidChangeNotification = sessionDidChangeNotification
         self.restoreResult = restoreResult
         self.signInResult = signInResult
@@ -1499,6 +1588,8 @@ private final class MockGoogleCalendarAPIClient: GoogleCalendarAPIClientProvidin
 private final class ControllableGoogleCalendarAPIClient: GoogleCalendarAPIClientProviding {
     private let initialEvents: [CalendarEvent]
     var suspendsCalendarList: Bool
+    var suspendsAllEvents = false
+    var returnsAllEventsImmediately = false
     private var calendarListContinuation: CheckedContinuation<Void, Never>?
     private var pendingRequests: [CheckedContinuation<[CalendarEvent], any Error>] = []
     private(set) var fetchEventsCallCount = 0
@@ -1530,7 +1621,7 @@ private final class ControllableGoogleCalendarAPIClient: GoogleCalendarAPIClient
     ) async throws -> [CalendarEvent] {
         fetchEventsCallCount += 1
         eventCalendars.append(calendars)
-        if fetchEventsCallCount == 1 {
+        if returnsAllEventsImmediately || (fetchEventsCallCount == 1 && !suspendsAllEvents) {
             return initialEvents
         }
         let events = try await withCheckedThrowingContinuation { continuation in
@@ -1583,4 +1674,8 @@ private func seedSelectedCalendars(_ ids: [String], defaults: UserDefaults) {
         preconditionFailure("Static calendar identifiers must be JSON encodable")
     }
     defaults.set(String(data: data, encoding: .utf8), forKey: GoogleCalendarStore.selectedCalendarIDsKey)
+}
+
+enum CalendarReadinessEntryPoint: CaseIterable {
+    case startup, authChange, background
 }

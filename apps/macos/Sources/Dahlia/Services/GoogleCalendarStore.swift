@@ -148,14 +148,16 @@ final class GoogleCalendarStore: ObservableObject {
             return
         }
 
-        guard await signInProvider.hasPreviousSignIn else {
-            recomputeState()
-            return
-        }
-
         let generation = beginAccountDataLoad(cancelRefreshTask: !startedByRefreshTask)
         defer {
             if isCurrentRefresh(generation) { isLoadingAccountData = false }
+        }
+        let hasPreviousSignIn = await signInProvider.hasPreviousSignIn
+        guard isCurrentRefresh(generation) else { return }
+        guard hasPreviousSignIn else {
+            clearRuntimeState(clearSelection: false)
+            recomputeState()
+            return
         }
         do {
             let session = try await signInProvider.restorePreviousSignIn()
@@ -268,7 +270,7 @@ final class GoogleCalendarStore: ObservableObject {
         }
 
         guard currentSession != nil else {
-            if !didAttemptRestore, await signInProvider.hasPreviousSignIn {
+            if !didAttemptRestore {
                 await restoreSessionIfNeeded(startedByRefreshTask: true)
                 return
             }
@@ -501,10 +503,10 @@ final class GoogleCalendarStore: ObservableObject {
 
     private func handleAuthSessionChanged(forceSignOut: Bool) async {
         if reloadIfProviderChanged() { return }
-        didAttemptRestore = false
         guard !isDisconnecting else { return }
-        guard !forceSignOut, await signInProvider.hasPreviousSignIn else {
-            clearRuntimeState(clearSelection: forceSignOut)
+        didAttemptRestore = false
+        if forceSignOut {
+            clearRuntimeState(clearSelection: true)
             recomputeState()
             return
         }
