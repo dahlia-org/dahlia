@@ -16,7 +16,7 @@ extension DahliaMCPServer {
         try store.database.read { db in
             try store.accountScope?.validate(in: db)
             let rows = try Row.fetchAll(db, sql: """
-            SELECT id, name, accountConnectionId, databricksConnectionId, syncConfirmedConnectionId, syncRecoveryState
+            SELECT id, name, accountConnectionId, syncConfirmedConnectionId, syncRecoveryState
             FROM workspaces ORDER BY name, id
             """)
             return rows.compactMap { row in
@@ -24,12 +24,11 @@ extension DahliaMCPServer {
                 guard workspaceScope == nil || workspaceScope == id,
                       store.accountScope?.contains(row) != false else { return nil }
                 let connection: UUID? = row["accountConnectionId"]
-                let databricks: UUID? = row["databricksConnectionId"]
                 let confirmed: UUID? = row["syncConfirmedConnectionId"]
                 let recovery: String? = row["syncRecoveryState"]
                 return WorkspaceAccess(
                     id: id, name: row["name"], accountType: connection == nil ? "local" : "server",
-                    accountID: (connection ?? databricks)?.uuidString.lowercased() ?? "local",
+                    accountID: connection?.uuidString.lowercased() ?? "local",
                     accessState: connection == nil ? "local" : (connection != confirmed ? "not_synced" : (recovery ?? "cached")),
                     freshness: connection == nil ? "local" : "last_synced"
                 )

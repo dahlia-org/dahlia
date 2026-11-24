@@ -1095,7 +1095,7 @@ extension MeetingAccessStore {
         try validateSchema(in: db)
         guard let row = try Row.fetchOne(
             db,
-            sql: "SELECT id, name, accountConnectionId, databricksConnectionId FROM workspaces WHERE id = ?",
+            sql: "SELECT id, name, accountConnectionId FROM workspaces WHERE id = ?",
             arguments: [workspaceID]
         ) else {
             throw MeetingAccessError.workspaceNotFound

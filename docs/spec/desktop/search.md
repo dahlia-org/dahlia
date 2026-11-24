@@ -26,7 +26,7 @@ macOS の設定「検索」で、内蔵ランタイムと同じ6系の公式 IPA
 
 選択した辞書は未適用の設定として保存し、再構築が必要な旨を表示する。取得、選択、アプリ再起動では辞書を適用せず、自動再索引もしない。明示的な「全文検索を再構築」でのみ適用中の設定と index generation を同 transaction で切り替え、その後に索引を再構築する。それまでは直前の辞書と索引で検索を継続できる。内蔵 IPADIC への復帰とユーザー辞書の解除にも同じ操作を使う。取得・検証失敗では既存の辞書と索引を保持する。
 
-この設定は Local Account と Server Account の端末内検索、および Local MCP に共通とする。接続ごとの SQLite snapshot から適用中の設定を読み、同一 snapshot の索引と query を異なる辞書で処理しない。Private Web、Electron alpha、Server 検索と Server MCP の辞書は対象外。
+この設定は Desktop の端末内検索と Local MCP に共通とする。接続ごとの SQLite snapshot から適用中の設定を読み、同一 snapshot の索引と query を異なる辞書で処理しない。Private Web、Electron alpha、Server 検索と Server MCP の辞書は対象外。
 
 query は2文字以上、最大16 token、最後だけ prefix。field を跨いでも全 token が揃えば一致とし、最も document frequency の小さい token から候補を作り、残りを交差させてから pagination する。候補を推測で打ち切らず、SQLite read の30秒期限を超えれば絞り込みを求める。
 
@@ -52,14 +52,6 @@ enqueue と projection 更新で revision を同 transaction で進め、query c
 
 保存済みの projectPath 重みは無視し、残りの重みを保つ。
 
-## Server Account の部分保持検索
-
-ローカル FTS の結果を先に表示し、Server の meeting / screenshot FTS ページを別に取得して ID で重複を除いて追加する。Server の対象は meeting 名・説明・summary、OCR・caption のままとし、transcript は追加しない。端末固有の tag / calendar と未送信変更はローカル検索に残る。既存 Project・日時・tag 等の filter は Server ページに適用してから返し、全件が除外されても後続ページの探索を続ける。
-
-Server 検索は前後の空白を除いた500 UTF-16 code unit までとし、UI と MCP が通る共通 provider で通信前に検査する。Server の JavaScript `String.length` と同じ数え方を使い、絵文字なども同じ境界で受理・拒否する。
-
-オフラインは「この端末に保持した本文」が対象で、Server の取得中、続きあり、失敗、探索完了を分ける。失敗時もローカル結果を保持し、再試行は新しい Server cursor から始める。Server snippet は軽量な結果にだけ使い、本文として DB に保存しない。本文解放は対応 FTS / 旧 vector を消し、要約がなくても metadata の索引を維持する。未保持 OCR / caption を未解析とみなして画像を再取得・再生成しない。
-
 ## 却下した案
 
 - Project 名・path を meeting の全文検索に含める、または Project vector で meeting の順位を補正する: 要約生成に既に使った Project 文脈を独立の証拠として二重評価しないため。
@@ -67,5 +59,4 @@ Server 検索は前後の空白を除いた500 UTF-16 code unit までとし、U
 ## 未適合・未検証
 
 - 未確定: 2026-09 に Neural 検索を廃止し全文検索へ統一した理由は、記録に記載がない。Neural 検索（EmbeddingGemma）を再導入する条件は未確定。
-- 未確定: Server Account の画像解析で `system.ai.gpt-5-6-luna` を指定する記録と、Server 側の画像解析モデルの記録は、Codex 経路から内蔵 Pi への移行（2026-11-06）後の値かどうか未確定。画像解析の fallback は [内蔵 Pi runtime](pi-runtime.md) の記載に従う。
 - 未検証: 評価用の20クエリは自動生成で、生成元の会議を正解としている。20件では同点を解消できず、個別の重みは一意に決められない。

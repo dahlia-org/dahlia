@@ -27,7 +27,6 @@ final class CodexChatCoordinator {
     @ObservationIgnored private let settings: AppSettings
     @ObservationIgnored private let contextProvider: CodexChatContextProvider
     @ObservationIgnored private var historyGeneration = 0
-    @ObservationIgnored private var dockedAccount: WorkspaceAccountChoice
     @ObservationIgnored private var contextWorkspaceID: UUID?
 
     init(
@@ -36,7 +35,6 @@ final class CodexChatCoordinator {
     ) {
         self.service = service
         self.settings = settings
-        dockedAccount = settings.currentWorkspace.map(WorkspaceAccountChoice.init) ?? .local
         contextWorkspaceID = settings.currentWorkspace?.id
         let contextProvider = CodexChatContextProvider()
         self.contextProvider = contextProvider
@@ -139,37 +137,11 @@ final class CodexChatCoordinator {
         Task { await refreshHistory() }
     }
 
-    /// Keeps the chat across Workspaces in one account; a different account gets its own history and models.
+    /// Keeps the chat, its history, and any generation across Workspaces; only the screen context follows.
     func activateWorkspace(_ workspace: WorkspaceRecord) {
-        let account = WorkspaceAccountChoice(workspace)
-        let changesAccount = dockedAccount != account
-        dockedAccount = account
-        if contextWorkspaceID != workspace.id {
-            contextProvider.update(workspaceID: workspace.id, meetingID: nil, projectID: nil, draftMeeting: nil, dbQueue: nil)
-            contextWorkspaceID = workspace.id
-        }
-        guard changesAccount else { return }
-        runtimeStates = []
-        Task { await service.stopAccountRuns(except: AppAccount.key) }
-        for session in sessions.values
-            where session.accountID != AppAccount.key && session.hasPendingGenerationWork {
-            session.release(stoppingRun: true)
-        }
-        let session = makeSession()
-        replaceDockedSession(
-            with: session,
-            isVisible: isDockedVisible,
-            preservesGeneratingPreviousSession: false
-        )
-        historyGeneration += 1
-        history = []
-        historyCursor = nil
-        historyError = nil
-        isLoadingHistory = false
-        if isDockedVisible {
-            Task { await session.prepare() }
-            Task { await refreshHistory() }
-        }
+        guard contextWorkspaceID != workspace.id else { return }
+        contextProvider.update(workspaceID: workspace.id, meetingID: nil, projectID: nil, draftMeeting: nil, dbQueue: nil)
+        contextWorkspaceID = workspace.id
     }
 
     func hideDocked() {

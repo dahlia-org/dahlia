@@ -3,23 +3,18 @@ import Foundation
 
 enum MCPAccessScope: Equatable {
     case all
-    case account(WorkspaceAccountChoice)
     case workspace(UUID)
 
     var arguments: [String] {
         switch self {
         case .all: []
-        case .account(.local): ["--account", "local"]
         case let .workspace(id): ["--workspace-id", TypeID.encode(id, as: .workspace)]
         }
     }
 
-    static func resolve(account: WorkspaceAccountChoice?, workspaceID: UUID?, workspaces: [WorkspaceRecord]) -> Self? {
-        if let workspaceID {
-            guard let workspace = workspaces.first(where: { $0.id == workspaceID }),
-                  WorkspaceAccountChoice(workspace) == account else { return nil }
-            return .workspace(workspaceID)
-        }
-        return account.map(Self.account) ?? .all
+    /// Nil when the chosen workspace is no longer on this Mac.
+    static func resolve(workspaceID: UUID?, workspaces: [WorkspaceRecord]) -> Self? {
+        guard let workspaceID else { return .all }
+        return workspaces.contains { $0.id == workspaceID } ? .workspace(workspaceID) : nil
     }
 }

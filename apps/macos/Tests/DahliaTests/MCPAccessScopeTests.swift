@@ -6,19 +6,15 @@ import Foundation
 
     struct MCPAccessScopeTests {
         @Test
-        func accountAndWorkspaceScopesAreExclusiveAndMatchWorkspaceOwnership() {
-            let local = workspace()
-            let other = workspace()
-            // Every workspace belongs to the app's account (Local).
-            let workspaces = [local, other]
+        func scopeIsEveryWorkspaceOrOneThatIsStillOnThisMac() {
+            let workspaces = [workspace(), workspace()]
 
-            #expect(MCPAccessScope.resolve(account: .local, workspaceID: nil, workspaces: workspaces) == .account(.local))
+            #expect(MCPAccessScope.resolve(workspaceID: nil, workspaces: []) == .all)
+            #expect(MCPAccessScope.all.arguments.isEmpty)
             for workspace in workspaces {
-                #expect(MCPAccessScope.resolve(account: .local, workspaceID: workspace.id, workspaces: workspaces) == .workspace(workspace.id))
+                #expect(MCPAccessScope.resolve(workspaceID: workspace.id, workspaces: workspaces) == .workspace(workspace.id))
             }
-            #expect(MCPAccessScope.resolve(account: nil, workspaceID: nil, workspaces: []) == .all)
-            #expect(MCPAccessScope.resolve(account: .local, workspaceID: UUID.v7(), workspaces: workspaces) == nil)
-            #expect(MCPAccessScope.resolve(account: nil, workspaceID: local.id, workspaces: workspaces) == nil)
+            #expect(MCPAccessScope.resolve(workspaceID: UUID.v7(), workspaces: workspaces) == nil)
         }
 
         @Test

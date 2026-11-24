@@ -2,7 +2,6 @@ import SwiftUI
 
 struct WorkspaceSettingsDetailsView: View {
     let workspace: WorkspaceRecord
-    let accountName: String
     let onClose: () -> Void
 
     var body: some View {
@@ -20,7 +19,6 @@ struct WorkspaceSettingsDetailsView: View {
                 Form {
                     Section {
                         LabeledContent(L10n.workspaceName, value: workspace.name)
-                        LabeledContent(L10n.account, value: accountName)
                         LabeledContent(L10n.localExportFolder) {
                             Text(workspace.path ?? L10n.noLocalExportFolder)
                                 .fixedSize(horizontal: false, vertical: true)

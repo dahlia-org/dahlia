@@ -365,7 +365,7 @@
               <div class="mcp-card-visual" aria-hidden="true">
                 <div class="mcp-client-row"><span>Claude Code</span><i></i><span>Codex</span></div>
                 <div class="mcp-tool-row"><code>query_meetings</code><b>READ ONLY</b></div>
-                <div class="mcp-tool-row"><code>get_meeting</code><b>VAULT SCOPED</b></div>
+                <div class="mcp-tool-row"><code>get_meeting</code><b>WORKSPACE SCOPED</b></div>
                 <div class="mcp-tool-row"><code>get_meeting_transcript</code><b>CONFIRMED</b></div>
               </div>
             </article>
@@ -461,7 +461,7 @@
               <p>
                 <span class="copy-line"><span class="mobile-copy-line">Dahliaのアプリ内AIだけでなく、</span><span class="mobile-copy-line">Claude CodeやCodexからも、</span></span>
                 <span class="copy-line">同じ会議データを検索できます。</span>
-                <span class="copy-line"><span class="mobile-copy-line">MCPで参照できるのは、</span><span class="mobile-copy-line">選択したVault内のデータだけです。</span></span>
+                <span class="copy-line"><span class="mobile-copy-line">MCPで参照できるのは、</span><span class="mobile-copy-line">選択したワークスペース内のデータだけです。</span></span>
               </p>
             </div>
           </div>
@@ -518,14 +518,14 @@
                 <div><span>00:16</span><p>共有体験を優先します。</p></div>
                 <i></i>
               </div>
-              <div class="step-copy"><small>UNDERSTAND</small><h3>必要なことを聞く</h3><p><span class="mobile-copy-line">要約を生成するか、アプリ内AIに質問。</span><span class="mobile-copy-line">選択したVaultの会議から、</span><span class="mobile-copy-line">決定事項や背景、次のアクションを</span><span class="mobile-copy-line">引き出します。</span></p></div>
+              <div class="step-copy"><small>UNDERSTAND</small><h3>必要なことを聞く</h3><p><span class="mobile-copy-line">要約を生成するか、アプリ内AIに質問。</span><span class="mobile-copy-line">選択したワークスペースの会議から、</span><span class="mobile-copy-line">決定事項や背景、次のアクションを</span><span class="mobile-copy-line">引き出します。</span></p></div>
             </li>
             <li class="step reveal">
               <span class="step-number">3</span>
               <div class="step-visual step-summarize" aria-hidden="true">
                 <span>⌁</span><div><i></i><i></i><i></i></div><b>MCP</b>
               </div>
-              <div class="step-copy"><small>ACT</small><h3>次の仕事に活かす</h3><p><span class="mobile-copy-line">議事録を書き出すか、</span><span class="mobile-copy-line">Claude CodeやCodexから、</span><span class="mobile-copy-line">Vault限定・読み取り専用のMCPで</span><span class="mobile-copy-line">必要な会議を参照します。</span></p></div>
+              <div class="step-copy"><small>ACT</small><h3>次の仕事に活かす</h3><p><span class="mobile-copy-line">議事録を書き出すか、</span><span class="mobile-copy-line">Claude CodeやCodexから、</span><span class="mobile-copy-line">ワークスペース限定・読み取り専用のMCPで</span><span class="mobile-copy-line">必要な会議を参照します。</span></p></div>
             </li>
           </ol>
         </div>
@@ -540,7 +540,7 @@
             <p>
               <span class="copy-line"><span class="mobile-copy-line">会議データはローカルのSQLiteに保存し、</span><span class="mobile-copy-line">音声認識もMac上で処理します。</span></span>
               <span class="copy-line"><span class="mobile-copy-line">AIに文脈を渡すのは、</span><span class="mobile-copy-line">質問、要約、自動要約を実行するときだけ。</span></span>
-              <span class="copy-line"><span class="mobile-copy-line">外部クライアントには、</span><span class="mobile-copy-line">選択したVaultへの読み取り権限だけを</span><span class="mobile-copy-line">提供します。</span></span>
+              <span class="copy-line"><span class="mobile-copy-line">外部クライアントには、</span><span class="mobile-copy-line">選択したワークスペースへの読み取り権限だけを</span><span class="mobile-copy-line">提供します。</span></span>
             </p>
           </div>
           <div class="privacy-cards">
@@ -554,7 +554,7 @@
             </article>
             <article class="privacy-card reveal">
               <span class="privacy-icon" aria-hidden="true">⌂</span>
-              <div><h3>外部アクセスは必要な範囲だけ</h3><p>MCPが公開するのは、選択したVaultの会議検索、保存済み要約、確定済みの文字起こし、スクリーンショットだけです。スクリーンショットは既定で縮小され、明示的に指定した場合のみ元サイズで取得できます。</p></div>
+              <div><h3>外部アクセスは必要な範囲だけ</h3><p>MCPが公開するのは、選択したワークスペースの会議検索、保存済み要約、確定済みの文字起こし、スクリーンショットだけです。スクリーンショットは既定で縮小され、明示的に指定した場合のみ元サイズで取得できます。</p></div>
             </article>
           </div>
         </div>

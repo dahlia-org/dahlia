@@ -101,6 +101,7 @@ enum PiSandbox {
             "APP_SUPPORT": realPath(applicationSupportURL),
             // A development build must not reach a released user's data either.
             "RELEASED_APP_SUPPORT": realPath(DahliaApplicationSupport.directoryURL(profile: .production)),
+            "RELEASED_AGENT": realPath(DahliaApplicationSupport.agentDirectoryURL(profile: .production)),
         ]
         var arguments = parameters.flatMap { ["-D", "\($0)=\($1)"] }
         var rules: [String] = []

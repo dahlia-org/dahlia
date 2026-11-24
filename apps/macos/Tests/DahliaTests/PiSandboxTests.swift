@@ -368,6 +368,7 @@ import Foundation
             // The home folder and its ancestors hold shell profiles and installed tools; Library holds app settings.
             #expect(!allowed("/Users/u") && !allowed("/Users/u/") && !allowed("/Users") && !allowed("/"))
             #expect(!allowed("/Users/u/Library") && !allowed("/Users/u/Library/Application Support/Dahlia"))
+            #expect(!allowed("/Users/u/.dahlia") && !allowed("/Users/u/.dahlia/agent") && allowed("/Users/u/.dahlia-notes"))
             #expect(!allowed("/Users/u/Dahlia/../../u") && !allowed("Dahlia"))
 
             // A folder that holds commands Dahlia starts outside the sandbox: chat could replace `pi` or shadow `node`.

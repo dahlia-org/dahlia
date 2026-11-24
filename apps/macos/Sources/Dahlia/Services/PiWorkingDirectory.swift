@@ -14,12 +14,12 @@ struct PiWorkingDirectory: Sendable {
     }
 
     /// Chat writes this folder freely, so it must hold nothing that runs outside chat's sandbox: not the home folder
-    /// itself (shell profiles, tools installed under it, among them Pi) and not the Library folder (app settings).
+    /// itself (shell profiles, tools installed under it, among them Pi), not the Library folder (app settings), and
+    /// not `~/.dahlia` (the agent's settings and installed code).
     nonisolated static func isAllowed(_ path: String, home: String = NSHomeDirectory()) -> Bool {
         let folder = URL(fileURLWithPath: path).standardizedFileURL.path
-        let library = home + "/Library"
         return path.hasPrefix("/") && !(home + "/").hasPrefix(folder == "/" ? "/" : folder + "/")
-            && folder != library && !folder.hasPrefix(library + "/")
+            && [home + "/Library", home + "/.dahlia"].allSatisfy { folder != $0 && !folder.hasPrefix($0 + "/") }
     }
 
     /// Whether the folder is, or contains, a folder on the search path Pi is found and started with. Chat could

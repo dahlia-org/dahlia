@@ -49,7 +49,7 @@ enum ProviderAccount: Hashable, Sendable {
     }
 }
 
-/// The Databricks connections in `provider_accounts`, oldest first, which the app's one account uses.
+/// The provider accounts on this Mac. The app's one account uses all of them at once.
 enum ProviderAccountDirectory {
     @TaskLocal static var googleAccounts: [GoogleProviderAccount]?
     private static let registeredGoogleAccounts = Mutex<[GoogleProviderAccount]>([])
@@ -119,6 +119,7 @@ extension ProviderAccountDirectory {
 
     /// The Databricks connection, for features that only Databricks offers (such as Omnigent).
     static var databricksConnectionID: UUID? {
+        // shortcut: Omnigent always uses the oldest connection; let it choose one when users connect several workspaces.
         databricksConnections().first?.id
     }
 

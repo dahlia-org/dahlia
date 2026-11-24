@@ -14,16 +14,16 @@ final class WorkspaceAISettingsModel {
         didSet { persistLocalAccountSettingsIfChanged(oldValue, localProvider) }
     }
 
-    /// Kept for released settings. The open workspace's `databricksConnectionId` now chooses the Databricks account.
+    /// Kept for released settings; it no longer chooses a Databricks connection.
     var databricksProfile: String {
         didSet { persistLocalAccountSettingsIfChanged(oldValue, databricksProfile) }
     }
 
-    /// Connected Databricks workspaces, oldest first. Each one is a Databricks account with its own workspaces.
+    /// Connected Databricks workspaces, oldest first: provider accounts of the app's account, owning no workspace.
     private(set) var databricksConnections: [DatabricksConnection] = []
     private(set) var pendingDatabricksSignOut: DatabricksConnection?
 
-    /// The Databricks connection the app's account uses, the oldest, as `ProviderAccountDirectory.accounts` does.
+    /// The Databricks connection Omnigent uses, the oldest, as `ProviderAccountDirectory.databricksConnectionID` does.
     var providerDatabricksConnectionID: UUID? {
         databricksConnections.first?.id
     }

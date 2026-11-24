@@ -4,15 +4,14 @@
 
 ## Workspace 境界
 
-署名済み stdio helper `dahlia-mcp` は `--workspace <ws_TypeID>`（互換名 `--workspace-id`）指定時に参照範囲を固定する。`--account <UUID|local>` はその Mac のアカウント所属で範囲を制限し、Workspace 指定とは排他にする。Local は Server / Databricks のどちらにも属さない Workspace、UUID は `provider_accounts.id` に対応する Server または Databricks アカウントの Workspace を対象にする。所属は操作時に検査し、追加・移動を反映する。不明・削除済みのアカウントでは失敗し、全件へ戻さない。未指定時はアプリに追加済みの全 Workspace を対象にし、選択中のアカウントとは連動しない。`list_workspaces` は名前・アカウント種別・登録に使う `account_id`・保持状態を返す。query は任意の `workspace_id` で絞り込み、省略時は Workspace ごとの結果・cursor・取得失敗を返す。詳細 ID の実所属と cursor の Workspace、meeting、ordering identity を検証し、明示 scope を広げない。
+署名済み stdio helper `dahlia-mcp` は `--workspace <ws_TypeID>`（互換名 `--workspace-id`）指定時に参照範囲を固定する。既存の登録との互換のため `--account local` と `--account <Dahlia account の UUID>` を受け付け、Workspace 指定とは排他にする。`local` は Server の所属を持たない Workspace、UUID はその Dahlia account の所属を残した Workspace を対象にする。Databricks の接続 ID・不明・削除済みの UUID では失敗し、全件へ戻さない。未指定時はアプリに追加済みの全 Workspace を対象にする。`list_workspaces` は名前・アカウント種別・`account_id`（Desktop の Workspace は `local`）・保持状態を返す。query は任意の `workspace_id` で絞り込み、省略時は Workspace ごとの結果・cursor・取得失敗を返す。詳細 ID の実所属と cursor の Workspace、meeting、ordering identity を検証し、明示 scope を広げない。
 
 既定は SQLite read-only、明示 `--write` が公開 write tool を有効にする。`--write` 単独も許可する。任意の `--workspace` / `--workspace-id` は読み書きの範囲を制限する。更新・削除先は対象 ID、新規作成先は明示的な `workspace_id` または一意の親 ID で解決する。ワークスペースをまたぐ参照と曖昧な作成先は拒否する。helper は migration や permission 変更をせず、初期化時の schema 検証でアプリ更新後の初回起動を必要とする。
 
 発見は compact metadata と [summary 本文の検索](search.md)、詳細は保存済み summary、原文 transcript のページング、保存済み screenshot（長辺1568px以下）を返す。保存済み取得では音声、note、翻訳、未確定 transcript と transcript 全文検索は対象外。未確定文を MCP へ公開しない。Notes（Documents）は MCP の対象外とする。summary schema v3 の description と meeting metadata の更新は [サマリー](summary.md) に従う。
 
-chat の履歴と実行範囲はアカウントで隔離し、Thread は任意の Project だけに関連付ける。Project から Workspace を解決しない。
-同じアカウント内の Workspace 切替では会話を維持し、別アカウントへの切替では以前の会話から送信しない。
-chat の Dahlia helper は `--account` で実行アカウントに固定し、Project の有無にかかわらずそのアカウント内を参照する。
+Thread は任意の Project だけに関連付ける。Project から Workspace を解決しない。Workspace 切替では会話を維持する。
+chat の Dahlia helper は `--account` を付けずに起動し、Project の有無にかかわらずすべての Workspace を参照する。
 start / resume とも Dahlia helper を使い、要約は全 MCP を無効にする。外部 client の登録範囲は chat の選択と独立する。
 
 ## Project の正本

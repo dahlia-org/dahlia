@@ -1,7 +1,7 @@
 # Desktop Pi のメモリーと自己学習
 
 採択: 2026-11-15。利用者が実装を指示した。Curator は 2026-11-18 に利用者の指示により、スキルの最適化と `/learn` は 2026-11-19 に、同じ上流から移植した。
-対象は macOS の内蔵 Pi チャット。Local Account / Server Account とも Mac 内のアカウント別に保存する。
+対象は macOS の内蔵 Pi チャット。この Mac のアプリのアカウントに保存する。
 Private Web、Electron、Local MCP、Server MCP、要約と画像解析には追加しない。
 
 Hermes Agent と hermes-agent-self-evolution の固定コミット、プロンプト、ツールスキーマ、検査パターンと差分は
@@ -52,7 +52,7 @@ Hermes Agent と hermes-agent-self-evolution の固定コミット、プロン�
 - 初回はアカウントで利用可能なモデル（Haiku、Luna、その他の順で自分の provider を優先）を選んで保存し、推論の強さは medium。
 - 旧共通設定で明示したモデル・強さは両方の初期値に引き継ぐ。
 - 同時に条件を満たしたときも、ふり返りは別々の背景ジョブとして直列実行する。
-- レビューは既存の背景処理と別の1本。選択中アカウント・録音していない間だけ開始し、切替・無効化で止める。
+- レビューは既存の背景処理と別の1本。録音していない間だけ開始し、無効化で止める。
 
 ## ふり返りの実行
 
@@ -87,7 +87,7 @@ Hermes Agent と hermes-agent-self-evolution の固定コミット、プロン�
 
 ## スキルの自動整理（Curator）
 
-- アプリの `Housekeeping` が1分刻みで動き、60回に1回、選択中アカウントについて判定する。
+- アプリの `Housekeeping` が1分刻みで動き、60回に1回判定する。
 - 条件は `interval_hours`（初期値7日）の経過と、`min_idle_hours`（2時間、固定）の会話の無操作と起動からの経過。
 - 初回は記録だけを残し、1回分の間隔を待つ。録音中・会話の実行中・ふり返り中は始めない。
 - 1回の整理ごとに、スキル道具だけを持つ別の Pi process を起動し、package の `/hermes-curator` で LLM を使わない遷移を行う。遷移の各変更は bridge `skillStore` を通り、`AgentSkillService` が Curator の権限（`createdBy='agent'`、固定・ロック・予定で使うスキルでない）と実行の可否を毎回確かめる。package は件数と候補一覧を bridge `curatorReport` で返し、統合が入なら同じ process で統合パスに進む。

@@ -4,13 +4,13 @@
 
 ## 正本と公開
 
-会議 Notes は Tiptap / Yjs の文書とする。Server Workspace の共有文書は Server が正本、Desktop SQLite はオフライン作業コピー、Local Account は独立した正本である。文書の識別・所属は [独立した Document](document-identity.md) に従う。文書 UUID は独立して発行し、公開 ID は `doc_` とする。会議との関連は任意で、会議 Notes のみ会議ごとに一意とする。Yjs checkpoint と更新ログが本文の正本であり、本文テキストとブロック一覧は派生物である。別の `document_blocks` / `meeting_documents` 正本は持たない。
+会議 Notes は Tiptap / Yjs の文書とする。Server Workspace の共有文書は Server が正本である。Desktop は Server と同期せず、Desktop SQLite の文書が正本である。文書の識別・所属は [独立した Document](document-identity.md) に従う。文書 UUID は独立して発行し、公開 ID は `doc_` とする。会議との関連は任意で、会議 Notes のみ会議ごとに一意とする。Yjs checkpoint と更新ログが本文の正本であり、本文テキストとブロック一覧は派生物である。別の `document_blocks` / `meeting_documents` 正本は持たない。
 
-既存 Notes は自動公開しない。Local Account の既存本文は文字列・改行・日時を保って変換する。Server Workspace の既存 Notes は端末内に残し、Workspace 単位で対象と公開先を確認してから空の文書へ一度だけ取り込む。既存の共有本文との衝突では非公開コピーを保持し、人が判断する。旧 `notes` は削除しない。共有 Notes と復元記録は Workspace の閲覧権限を継承する。未公開本文は共有要約に混ぜない。
+既存 Notes は自動公開しない。Desktop の既存本文は文字列・改行・日時を保って変換する。旧 `notes` は削除しない。共有 Notes と復元記録は Workspace の閲覧権限を継承する。未公開本文は共有要約に混ぜない。
 
 ## 同期と復元
 
-文書の Yjs state／単一更新は8 MiBまでとする。専用 API の JSON request は24 MiB、Desktop の response 受信は32 MiBまでとする。既存 domain transaction の8 MiB上限は変えない。初回更新に正本の全状態が含まれる場合も、専用 API で送信できる。
+文書の Yjs state／単一更新は8 MiBまでとする。専用 API の JSON request は24 MiBまでとする。既存 domain transaction の8 MiB上限は変えない。初回更新に正本の全状態が含まれる場合も、専用 API で送信できる。
 
 本文の編集には CRDT 専用 API と文書ごとの独立した送信待ちを使う。これは既存の `/api/v1/transactions` によるドメイン更新契約の例外であり、文書の障害で録音・文字起こし・要約の同期を止めない。送信待ちでも受信をマージする。再送は Yjs の冪等性を使い、編集ごとの永久 transaction receipt は作らない。SSE は revision / cursor のみを通知し、再接続時は HTTP による差分交換で復旧する。送信間隔は [Documents 専用同期](sync.md#documents-専用同期) に従う。
 
@@ -18,7 +18,7 @@
 
 文書の作成・削除・復元・移管・reset は会議と Workspace の認可・ライフサイクルに従い、遅延した編集で削除済みの親を復活させない。viewer は read-only である。権限失効時の未送信編集は黙って破棄せず、保持する。presence は共有 DB に保存する5秒 heartbeat / 15秒 TTL のユーザー一覧で、本文や同期キューとは分離する。
 
-会議を削除すると文書の送信世代を変更し、削除中の本文取得・更新と旧世代の送信を拒否する。利用者が会議を明示的に復元した後は、認可された最新 checkpoint を取得してから、新世代で未送信差分をマージする。Desktop と Web のエディタ・保存先は同じ Yjs の依存関係を保持し、保存先だけを空にしない。Workspace／Account をまたぐ未公開コピーの保全は、別の公開確認に従う。
+会議を削除すると文書の送信世代を変更し、削除中の本文取得・更新と旧世代の送信を拒否する。利用者が会議を明示的に復元した後は、認可された最新 checkpoint を取得してから、新世代で未送信差分をマージする。Web のエディタと保存先は同じ Yjs の依存関係を保持し、保存先だけを空にしない。Workspace／Account をまたぐ未公開コピーの保全は、別の公開確認に従う。Desktop の会議の削除と復元は端末内の文書にだけ適用する。
 
 容量拒否は canonical を変更せず、`accepted=false` と canonical の差分を返す。未送信ログは保持し、後続の修正を含む現在の causal diff を再送し、取得時点の pending sequence だけを ACK する（2026-10-02 承認の修正計画）。
 
@@ -30,9 +30,9 @@
 
 文書操作・差分集約・同期状態・復元判定は DOM / Node に依存しない TypeScript コアとする。保存、通信、時刻と乱数は host adapter で提供する。Web と Desktop WKWebView は共通 Tiptap エディタを使う。Desktop の JavaScriptCore は DB ごとに共有する専用スレッドが所有し、エディタ非表示でも同期できる。コア・エディタ・Desktop 同梱資材の生成は [`packages/ui`](../../../packages/ui/AGENTS.md) が所有する。
 
-Desktop は差分と送信待ちを短い SQLite transaction で保存してから保存済みと通知する。本文生成・マージ・checkpoint 作成は MainActor と DB write transaction の外で行う。通常時250ms以内のローカル commit を目標とするが、強制終了前の未確認入力の保全時間は保証しない。録音停止に文書の待機を加えない。通常終了・画面切替はローカル commit だけを待つ。Web は未送信入力をメモリにだけ保持し、閉じた後の未送信入力は復元保証の対象外とする。
+Desktop は差分を短い SQLite transaction で保存してから保存済みと通知する。本文生成・マージ・checkpoint 作成は MainActor と DB write transaction の外で行う。通常時250ms以内のローカル commit を目標とするが、強制終了前の未確認入力の保全時間は保証しない。録音停止に文書の待機を加えない。通常終了・画面切替はローカル commit だけを待つ。Web は未送信入力をメモリにだけ保持し、閉じた後の未送信入力は復元保証の対象外とする。
 
-本文・差分・復元記録・要約 snapshot は既存の Server 暗号化 store と RLS の対象とする。Notes の FTS・検索・保存メモリーへの直接取り込みは行わない。再取得可能な共有文書キャッシュは既存128 MiB LRU へ含め、[Desktop の最低保持期間](sync.md#容量と最低保持期間) を優先して解放する。未送信・非公開・復元用・Local Account のデータは解放しない。バックアップ、移管、Server→Local、サインアウトで同じ保存境界を維持する。
+本文・差分・復元記録・要約 snapshot は既存の Server 暗号化 store と RLS の対象とする。Notes の FTS・検索・保存メモリーへの直接取り込みは行わない。Desktop は Server の文書を保持しないので、Desktop の文書はすべて正本として解放しない。
 
 通常の Desktop ingress / send / editor notification は、常駐 runtime の処理済み位置から新しい SQLite delta だけを取得する。cache miss 時には checkpoint と永続ログ全体を再取得し、不完全な前提状態から開始しない。検出済みの復元コピーは durable recovery watermark が進むまで runtime に保持する。下書きの archive 前提は staging にだけ適用し、SQLite commit 後に canonical へ反映する。Web は Worker 障害に備え、main thread に index を持たない保存済み Yjs replica を delta で保持する。再起動時だけ snapshot を生成し、未保存の editor input を canonical に昇格しない。
 
@@ -40,7 +40,7 @@ Desktop は差分と送信待ちを短い SQLite transaction で保存してか�
 
 ジョブ受理時の共有 Notes の ID・revision・本文（存在しない状態も含む）を内部専用 `notesSnapshot` として暗号化保存する。現在の Notes は入力 fingerprint の再検査に含めない。既存入力の変更検知は維持する。Notes を含めて 2,000,000 UTF-16 code units の上限を適用し、XML escape した untrusted data として渡す。状態 API で snapshot 本文を返さない。要約入力は対象会議の kind=notes の文書だけを選ぶ（[独立した Document](document-identity.md)）。
 
-Desktop / Web の開始と明示的な `/retry` は編集を送り切ってから実行する。Server だけの開始では受理時の Server 状態を使う。同じジョブの自動再試行は同じ snapshot を使い、新しい `/retry` ジョブは最新 snapshot を使う。既存ジョブには後付けしない。Server Workspace のローカル要約にも共有 Notes だけを含める。
+Desktop の要約は開始時に端末へ保存済みの Notes を使う。Web の開始と明示的な `/retry` は編集を送り切ってから実行する。Server だけの開始では受理時の Server 状態を使う。同じジョブの自動再試行は同じ snapshot を使い、新しい `/retry` ジョブは最新 snapshot を使う。既存ジョブには後付けしない。
 
 ## 配布と migration
 
@@ -74,7 +74,7 @@ Web は最初の編集から100msの固定窓で HTTP/Yjs 差分を送信する�
 
 購読変更は旧接続を閉じ、対象一覧を付けた新しい HTTP GET で接続を入れ替える。購読はその接続内にのみ存在し、変更 API やグローバルな可変購読レコードは作らない。同じ tab 値を別接続へ指定しても既存接続を変更・削除できないため、別ユーザー・別タブからの購読操作は成立しない。別 Server へ再接続しても sticky routing や共有購読テーブルは不要である。通常の EventSource 自動再接続も同じ一覧を再送する。エラーのない旧接続を入れ替えるときは、最後に受け取った通常データ cursor を `cursor` に付け、Server はそれより後の変更だけを `invalidation` で通知する。この入れ替えは再接続として扱わず、通常データを全件読み直さない。初回接続とエラー後の接続では全件を読み直す。
 
-クライアントは同じ Notes の表示を参照カウントし、最後の表示を閉じると直ちに解除する。旧接続の遅延イベントは世代検査で無視する。アカウントの切替は App の通常データ購読が所有し、遅れて完了した旧アカウントの Notes 取得・復旧から現在の購読を置き換えない。再接続・再表示では購読を有効にしてから差分を読む。サーバーも購読開始後に全対象の現在 revision を返し、接続切替中の変更を回収する。会議 ID で未作成の Notes も購読し、存在確認だけで空文書を作らない。閉じた Notes の未送信編集・復元記録は購読とは別に保存・再送を続ける。
+クライアントは同じ Notes の表示を参照カウントし、最後の表示を閉じると直ちに解除する。旧接続の遅延イベントは世代検査で無視する。Web のアカウントの切替は App の通常データ購読が所有し、遅れて完了した旧アカウントの Notes 取得・復旧から現在の購読を置き換えない。再接続・再表示では購読を有効にしてから差分を読む。サーバーも購読開始後に全対象の現在 revision を返し、接続切替中の変更を回収する。会議 ID で未作成の Notes も購読し、存在確認だけで空文書を作らない。閉じた Notes の未送信編集・復元記録は購読とは別に保存・再送を続ける。
 
 通常データは `invalidation`（opaque cursor）、Notes は `document`（公開 Workspace/Meeting/Document ID、generation/revision cursor、unavailable）を送る。本文は含めず、文書ごとの最新位置へ合流する。Notes のイベントは通常データ用 cursor を進めない。購読対象の権限を DB 確認ごとに評価し、失効・削除時は unavailable を通知して解除する。表示が残っている場合は、認可された HTTP 同期が再び成功した時点で購読を再登録する。失敗した再試行や、閉じた表示に対する遅延応答では再登録しない。認証を5秒ごとに再検査し、切断時は listener とタイマーを解放する。AI 本文ストリームは別用途として維持する。既存の文書別 SSE API は互換用に残すが、Web は使用しない。
 
@@ -97,7 +97,7 @@ Workers / Hyperdrive は LISTEN/NOTIFY を使わず共有 DB を確認する（[
 
 ### 初回表示と表示書式
 
-Desktop の Documents は専用 URLSession の接続プールを持ち、domain SSE や大量添付転送による接続枠待ちを分離する。初回の checkpoint 取得で未送信編集がない場合は、その確定状態を直ちに表示し、冗長な差分交換を待たない。未送信編集がある場合は交換と ACK を行う。復元履歴の取得は初回のエディタ表示を待たせない。会議の要約と文字起こしは既存の本文取得2枠で並行取得する。
+Desktop の復元履歴の取得は初回のエディタ表示を待たせない。
 
 段落の空行・余白、見出し、箇条書きのスタイルを `packages/ui/src/documents/editor.css` に共通化し、Web と Desktop 同梱資材の双方から使用する。改行を同期用本文へ再変換せず、Yjs のブロック構造を保持する。
 
@@ -126,7 +126,7 @@ Notion と同様に、段落・見出し・リストの左のハンドルから�
 
 復元記録はマージ後・物理消去前の本文から作る。端末で追記して削除した更新が一緒に届いた場合も追記を含む全文を保全する。表示から消えた葉ブロックに加え、非表示のまま更新された非空の本文も記録する。復元は新しい段落の挿入で、古い全 checkpoint の再適用ではない。復元記録そのものは期限削除しない。
 
-正本（Server、Local Account では Desktop）だけが以下を子孫ごと消去する。
+正本（Server Workspace では Server、Desktop では Desktop）だけが以下を子孫ごと消去する。
 
 - 親が存在しないブロック。親の消去後に届いた遅い作成も、復元記録を確保して回収する。
 - 削除から既定 24 時間を経過した墓標。Server は `DAHLIA_DOCUMENT_DELETION_GRACE_HOURS`（0–8760 時間）で変更できる。
@@ -134,7 +134,7 @@ Notion と同様に、段落・見出し・リストの左のハンドルから�
 
 消去した ID だけを配列から除く。重複・別の親・まだ消去しない墓標の配列項目は、Undo で有効になるため修復しない。同時移動後に片側を Undo しても、もう片方の移動は残る。消去した削除は Undo できない。消去後に届いた編集や作成の Undo と競合した入力は、入力した端末の復元記録で保全する。削除時刻は端末時計なので、大幅な時計ずれは Undo 猶予を短くすることがある。
 
-上限は、表示 5,000 ブロック、墓標・非表示を含む総数 8,000、本文 2,000,000 UTF-16 単位、URL 8,192 文字、深さ 64、状態と単一更新 8 MiB である。専用 request 24 MiB、Desktop 受信 32 MiB は維持する。エディタは変更前に件数・文字数・属性・容量を検査し、超過する変更を Y.Doc に書かない。容量は最後の実測に保守的な増分を加え、90% 付近で再実測する。セッションと Server でも検証するが、同時追加で上限を超えたリモート状態はクライアントが受信できる。旧 Notes の取り込みや復元の行数が多い場合は段落内改行にまとめ、CRLF・空行・末尾改行を含む文字列を保つ。
+上限は、表示 5,000 ブロック、墓標・非表示を含む総数 8,000、本文 2,000,000 UTF-16 単位、URL 8,192 文字、深さ 64、状態と単一更新 8 MiB である。専用 request 24 MiB は維持する。エディタは変更前に件数・文字数・属性・容量を検査し、超過する変更を Y.Doc に書かない。容量は最後の実測に保守的な増分を加え、90% 付近で再実測する。セッションと Server でも検証するが、同時追加で上限を超えたリモート状態はクライアントが受信できる。旧 Notes の取り込みや復元の行数が多い場合は段落内改行にまとめ、CRLF・空行・末尾改行を含む文字列を保つ。
 
 Server の消去が届くまでは、オフラインの墓標や削除直後の大きな本文のため新規入力を拒否する場合がある。容量圧力の閾値未満なら、同期しただけでは消去されず猶予期間も適用される。同時追加によって Server 上限を超えた後着差分は拒否され、未送信分は端末に残る。
 
@@ -144,9 +144,9 @@ Undo / Redo も変更前に検証する。リモートの追加で上限へ達�
 
 通常入力も、Desktop の50ms待ちや host 保存待ちの間に受信した削除と競合し得る。共通の受信処理は未確認のローカル編集がある場合、マージで消える本文を先に復元キューへ渡す。受信 checkpoint が編集側の clock を含んでいても、消去後に差分だけ受け取って本文を失った可能性があるため、復元判定を先に行う。未反映の clock が残る場合は確認待ちを維持し、本文を失わず host 確認できた編集は host 側の通常の復元経路に任せる。
 
-未確認の編集がない受信では復元用の全文コピーを作らない。保存確認も、Yjs の struct と削除集合の両方が編集側に既知ならコピーを省く。Desktop と Web の host は、過去の編集履歴ではなく現在の未 ACK 更新で追加の競合復元を判定する。Desktop は checkpoint へ取り込んだ未送信更新も対象にし、判定と保存を同じ DB transaction で行う。Web の ACK は受信・保存と同じ順序キューを通す。
+未確認の編集がない受信では復元用の全文コピーを作らない。保存確認も、Yjs の struct と削除集合の両方が編集側に既知ならコピーを省く。Web の host は、過去の編集履歴ではなく現在の未 ACK 更新で追加の競合復元を判定し、ACK を受信・保存と同じ順序キューに通す。Desktop は削除の復元の判定と保存を checkpoint と同じ DB transaction で行う。
 
-Desktop の未送信削除は Server 側での復元保存が保証されないため、Server レプリカでも checkpoint を進める前に復元記録を保存する。復元と checkpoint は原子的に確定し、表示用の projectionSequence を復元済みの根拠にしない。これにより、未送信の末尾を残して Local Account へ移した場合や保存失敗後の再試行でも本文を保持する。Web も未送信の削除本文を local append と同時に既存の復元キューへ渡し、送信より先に Server の消去が届いても保持する。
+Desktop は checkpoint を進める前に削除した本文の復元記録を保存する。復元と checkpoint は原子的に確定し、表示用の projectionSequence を復元済みの根拠にしない。これにより、保存失敗後の再試行でも本文を保持する。Web は未送信の削除本文を local append と同時に既存の復元キューへ渡し、送信より先に Server の消去が届いても保持する。
 
 v1 の自動変換・互換読み取りは設けない。checkpoint / legacyUpdate は `unsupported_document_schema`（Server 422）、未解決の依存が残る差分は `invalid_document_update`（400）で拒否し、保存と ACK を行わない。旧文書・未送信差分・非公開コピーは残す。Desktop は旧形式専用の表示を行い、1件の旧 archive が他の archive の一覧を止めない。
 
@@ -158,7 +158,7 @@ v1 の自動変換・互換読み取りは設けない。checkpoint / legacyUpda
 
 ### Notes の状態表示
 
-Desktop と Web は保存・同期状態、同期エラーを画面ヘッダーに表示する。詳細はヘッダーのポップオーバーで確認し、状態変化で本文の位置を動かさない。Web の未送信編集に対するタブ保持の案内とコピー操作もヘッダーから利用でき、別画面へ移動した後も保持する。復元履歴と未公開の旧 Notes は本文側で確認する。
+Desktop は保存状態と保存エラーを、Web は保存・同期状態と同期エラーを画面ヘッダーに表示する。詳細はヘッダーのポップオーバーで確認し、状態変化で本文の位置を動かさない。Web の未送信編集に対するタブ保持の案内とコピー操作もヘッダーから利用でき、別画面へ移動した後も保持する。復元履歴と未公開の旧 Notes は本文側で確認する。
 
 ## 却下した案
 

@@ -1,7 +1,7 @@
 # 単一アカウントへの移行とプロバイダーアカウント
 
 対象: macOS アプリ（`apps/macos`）。Electron alpha・Desktop v2・Private Web・Server は対象外。
-状態: 段階 1 と、段階 2 のうち `provider_accounts` への改名を実装した（未コミット）。判断 1・2 はユーザーの指示どおりで、判断 3 は段階 3 で必要になる。
+状態: 段階 1〜4 を実装した。残りは「段階 4 の進捗」の「残り」。判断 1・2 はユーザーの指示どおりで、判断 3 は段階 3 で必要になる。
 前提: [常時実行エージェント](https://github.com/dahlia-org/dahlia/pull/840)（PR #840、未リリース）は、この改修の後に合わせる。
 リリース済み利用者の DB と Pi のファイルを壊さない。変更量の少なさは判断基準にしない。
 Server Account による同期は未リリースで、見直しの対象である。この計画は現行の同期契約を守る対象にしない。
@@ -108,7 +108,7 @@ Server Account による同期は未リリースで、見直しの対象であ�
 
 Pi のディレクトリ:
 
-- アカウントごとの `accounts/<local または UUID>/pi` をやめ、`Application Support/Dahlia/agent` の 1 つにする。
+- アカウントごとの `accounts/<local または UUID>/pi` をやめ、`~/.dahlia/agent` の 1 つにする（2026-11-24 にユーザーが場所を変更。未リリースの `Application Support/Dahlia/agent` からは写さない）。
   Pi 以外のエージェントに替わっても使えるよう、名前に `pi` も `local` も含めない（2026-11-23 にユーザーが決定）。
 - 移す元（Databricks アカウントがあればそのディレクトリ、なければ `accounts/local/pi`）を `agent` へ写す。
   Databricks アカウントから写すときは、`accounts/local/pi` の ChatGPT・Anthropic のサインイン（`auth.json` のその項目）と、
@@ -189,18 +189,19 @@ DB の `accountID` と UserDefaults の接尾辞には、当面 `local` を定�
 | 段階 | 状態 |
 | --- | --- |
 | 1 | 実装した。`Models/ProviderAccount.swift` が capability の入口で、token の要求は Pi が送るプロバイダー ID から接続を引く。機能が接続を選ぶ箇所（Pi のプロバイダー ID、`models.json` の書き出し、Gateway の一覧、Omnigent、カレンダーの proxy、MCP の設定）を置き換えた。画面の分岐（アカウント名の表示、Workspace の所属）は段階 3 で画面ごと消すので残した。`accountKey` の導出は段階 4 で消す |
-| 2 | 実装した（未コミット）。`v67_providerAccounts` で `accounts` を `provider_accounts` に改名し `name` 列を足した。実行アカウントは常に Local で、Databricks の接続を Local のプロバイダーアカウントとして使う。起動時の移行（`Services/SingleAccountMigration.swift`）が、Databricks アカウントのデータを Local へ写し、すべての Workspace の `databricksConnectionId` を空にする。Pi のディレクトリは `agent` の 1 つにした。アカウントメニューの Databricks の一覧と切り替え、サインイン後の移管・作成、Workspace 設定の移管とアカウント別のグループ、「ローカルアカウントを非表示にする」を削除した。Databricks の接続のサインアウトは設定のプロバイダー一覧へ移した |
-| 3 | 未着手。残りは下の「段階 3 の残り」 |
+| 2 | 実装した。`v67_providerAccounts` で `accounts` を `provider_accounts` に改名し `name` 列を足した。実行アカウントは常に Local で、Databricks の接続を Local のプロバイダーアカウントとして使う。起動時の移行（`Services/SingleAccountMigration.swift`）が、Databricks アカウントのデータを Local へ写し、すべての Workspace の `databricksConnectionId` を空にする。Pi のディレクトリは `agent` の 1 つにした。アカウントメニューの Databricks の一覧と切り替え、サインイン後の移管・作成、Workspace 設定の移管とアカウント別のグループ、「ローカルアカウントを非表示にする」を削除した。Databricks の接続のサインアウトは設定のプロバイダー一覧へ移した |
+| 3 | 実装した。内容は下の「段階 3 の残り」 |
+| 4 | 実装した。完了条件のうち「`accountConnectionId` の参照が 0」は満たさない（列を DB に残すため）。内容は下の「段階 4 の進捗」 |
 
 #### 段階 4 の進捗
 
 - 実装した（2026-11-23）: 実行アカウントの `.databricks` と `WorkspaceAccountChoice.databricks`、`WorkspaceRecord.databricksConnectionId` の参照、アカウントメニューの Databricks の分岐を削除した。`workspaces.databricksConnectionId` の列は、外部キーごと消すには表の作り直しが要るので DB に残し、起動時に空にする。外部の `dahlia-mcp --account` に Databricks の接続を指定すると、黙って空にせず失敗する。
-- 実装した（2026-11-24）: 現行の Server 同期のコード（送受信、本文の部分保持、Workspace の発見・取り込み・再接続、Server の要約・会話分析・画像解析、Server の内容の保持期間）と、実行アカウントの `.dahlia` を削除した。`CodexRuntimeProvider` は `.local` だけの型として残し、`accountKey` は常に `local`。
+- 実装した（2026-11-24）: 現行の Server 同期のコード（送受信、本文の部分保持、Workspace の発見・取り込み・再接続、Server の要約・会話分析・画像解析、Server の内容の保持期間）と、実行アカウントの `.dahlia` を削除した。`accountKey` は常に `local`。
   `workspaces.accountConnectionId`・`organizationId`・`personalUserId`・`sync*` の列と同期のテーブルは DB に残し、起動時の移行（`Services/SingleAccountMigration.swift`）がすべての Workspace で列を空にする。Server Workspace だった Workspace は、会議・文字起こし・ファイルを残したままアカウントの Workspace になる。Server にだけあった本文・画像・録音アーカイブは読めなくなる。
   サインインした Dahlia account の Server の Gateway は、アカウントのプロバイダーアカウント（capability は `model`、Pi のプロバイダー ID は `dahlia`）にした。サインインが 2 つ以上あるときは当面最も古い 1 つだけを使う。
   Server Account で走ったチャットとエージェントの行は、`accountID` に接続の ID を持ったまま残し、移さない（未リリースの別アカウントだったため）。
 - 実装した（2026-11-24）: `CodexRuntimeProvider` を削除した。機能はアカウントを引数に取らず、アカウントの固定キーは `AppAccount.key`（値は `local`、保存済みの設定キーと行の `accountID` のため）、プロバイダーアカウントは `ProviderAccountDirectory.accounts` から引く。アカウントの切り替えを前提にした判定（チャット・要約・画像解析の「実行中にアカウントが変わった」検査、カレンダーと Drive の「開いているアカウント」の追跡、セットアップツアーのアカウント）も削除した。型名は Codex から Pi に改めた（`PiRuntimeContextStore`、`PiRuntimeContextCoordinator`、`PiSubscriptionController`）。
-- 残り: 旧ディレクトリと旧設定キーの削除（1 リリース後）。
+- 残り: 旧ディレクトリと旧設定キーの削除（1 リリース後）。`PiChatService` の実行の管理が今も `accountID`（常に `local`）を鍵にしていること。`AIAccountProvider`・`LocalAccountAISettings` の旧プロバイダー選択。`ScreenshotRemoteReference.accountConnectionId`。Omnigent が最も古い Databricks の接続だけを使う近道。実アプリでの確認。
 
 #### 段階 3 の残り
 
@@ -210,7 +211,7 @@ DB の `accountID` と UserDefaults の接尾辞には、当面 `local` を定�
 - 実装した（2026-11-23）: 表示名の編集。設定のエージェントのプロバイダー一覧（接続ごとの行）で名前を変え、一覧・モデルの選択・カレンダー・サインアウトの確認に出す。モデルと MCP は、その一覧の接続ごとの行で選ぶ。
   カレンダー設定とセットアップには、macOS カレンダーと登録済みのプロバイダーだけを並べる。未登録 Google の固定行は表示しない。Google カレンダーは、登録済み Google アカウントと Databricks 接続を複数同時に有効にできる。接続ごとに認証・表示カレンダーの選択・取得状態を持ち、予定を集約する。旧 Databricks の有効状態・表示カレンダー選択・iCalendar UID のない予定の録音予約は、移行時に確定した元の接続にだけ引き継ぎ、明示済みの新設定を優先する。Drive の選択から移行先を推測しない。Calendar のオブジェクトが先に生成されていても、アカウント移行後に同じインスタンスへ設定と録音予約を読み直してから連携を有効にする。有効化前の更新や通知では設定を書き戻さない。表示では予定の情報を補完して集約するが、保存済みミーティングの自動更新は取得元が返した1つの予定を使い、接続をまたいだ参加者の和集合を保存しない。接続の識別はプロバイダーアカウントとカレンダーサービスの組とし、Databricks 経由の Microsoft 365 を追加できるサービスアダプター境界を残す（取得 API と設定の候補は未実装）。未選択・削除済みの割り当てから別プロバイダーへ自動で切り替えない。Google アカウントごとのカレンダー選択・キャッシュ・認証通知を分離し、1つのアカウントのサインアウトが他のアカウントへ影響しないようにする。カレンダーや Drive での切断はその連携だけを止め、プロバイダー一覧からのサインアウトが当該アカウントの共通認証を削除する。macOS カレンダーは OS の権限なので `provider_accounts` に置かない。
 - 実装した（2026-11-23）: 接続の追加・削除で Pi を止めない。設定ファイルを書き直し、待機中のチャットは閉じて次の送信で開き直す。実行中のチャットはターンの終了後に閉じる。
-- `dahlia-mcp` の `--account` を外す。今も `--account local` は Server 以外のすべての Workspace を対象にする（所属を空にしたため）。
+- 実装した: チャットの `dahlia-mcp` に `--account` を渡さない。外部の `dahlia-mcp` は既存の登録のため `--account local` と `--account <Dahlia account の UUID>` を受け付け続ける。
 
 目標: アップデートで再サインインを求める回数 0、移す元のアカウントで失われるスレッド 0、アカウント操作が原因で常時実行が止まる時間 0 秒。
 移行は元を残して写すので、3 つとも stretch ではなく完了条件として扱う。例外は 2 つで、どちらも 1 回だけ再サインインを求める。追加 workspace（認証を Keychain へ移す）と、直接の Google 接続（2 つのセッションを 1 つの認証にする）である。

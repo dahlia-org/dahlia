@@ -828,10 +828,7 @@ actor PiChatService: CodexChatServicing {
         if let sessionFile {
             try PiChatSessionFiles.setWorkingDirectory(workURL, in: sessionFile)
         }
-        let mcpCommand = try Self.mcpCommand(
-            executableURL: mcpExecutableURL ?? DahliaMCPBundle.executableURL(),
-            accountID: AppAccount.key
-        )
+        let mcpCommand = try Self.mcpCommand(executableURL: mcpExecutableURL ?? DahliaMCPBundle.executableURL())
         let fileAccess = fileAccessSettings()
         let accessDescription = fileAccess.grants.map {
             "\($0.access.rawValue) (\($0.isDirectory ? "directory and descendants" : "file only")): \($0.path)"
@@ -1211,13 +1208,13 @@ actor PiChatService: CodexChatServicing {
         return [.text(text)] + inputs.filter(\.isImageRelated)
     }
 
-    nonisolated static func mcpCommand(executableURL: URL, accountID: String) -> [String] {
+    /// Reads every workspace on this Mac: they all belong to the app's one account.
+    nonisolated static func mcpCommand(executableURL: URL) -> [String] {
         let launch = switch DahliaApplicationSupport.profile() {
         case .production: [executableURL.path]
         case .development: ["/usr/bin/env", "\(DahliaApplicationSupport.profileEnvironmentKey)=development", executableURL.path]
         }
         return launch + [
-            "--account", accountID,
             "--write",
             "--telemetry-origin", "codexChat",
         ]

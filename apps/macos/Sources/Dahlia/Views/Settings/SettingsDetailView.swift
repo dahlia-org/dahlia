@@ -51,7 +51,6 @@ struct SettingsDetailView: View {
             if let workspace = workspaceManagementModel.workspaces.first(where: { $0.id == workspaceDetailsID }) {
                 WorkspaceSettingsDetailsView(
                     workspace: workspace,
-                    accountName: L10n.localAccount,
                     onClose: { workspaceDetailsID = nil }
                 )
             }

@@ -1,4 +1,3 @@
-"settings.organization.checkAdvancedModels" = "A selected model is unavailable. Open advanced settings to change it or choose Automatic.";
 "settings.organization.settingsDataAndAccounts" = "Data management";
 "settings.organization.workspaceSettings" = "Workspace settings";
 "settings.organization.searchSettings" = "Search settings";
@@ -53,13 +52,10 @@
 "Delete" = "Delete";
 "Remove from Project" = "Remove from Project";
 "Backups" = "Backups";
-"Database Backup" = "Database Backup";
-"Backups include transcripts and other database content. Audio files and their references are excluded." = "Backups include transcripts and other database content. Audio files and their references are excluded.";
 "Create Backup" = "Create Backup";
 "Import Backup" = "Import Backup";
 "Restore" = "Restore";
 "Delete Backup" = "Delete Backup";
-"Backup Generations" = "Backup Generations";
 "No Backups" = "No Backups";
 "Create a backup to preserve the selected workspace." = "Create a backup to preserve the selected workspace.";
 "Backup created." = "Backup created.";
@@ -82,7 +78,6 @@
 "Delete this backup?" = "Delete this backup?";
 "This backup generation will be permanently deleted. This cannot be undone." = "This backup generation will be permanently deleted. This cannot be undone.";
 "Restore this backup?" = "Restore this backup?";
-"The current database will be backed up first, then replaced. Dahlia will restart. Audio files and app settings are not restored." = "The current database will be backed up first, then replaced. Dahlia will restart. Audio files and app settings are not restored.";
 "Unprocessed Recordings" = "Unprocessed Recordings";
 "Open Unprocessed Recordings" = "Open Unprocessed Recordings";
 "Finish the current recording before opening unprocessed recordings in another workspace." = "Finish the current recording before opening unprocessed recordings in another workspace.";
@@ -154,7 +149,6 @@
 "Create New Meeting" = "New meeting";
 "Quick Recording" = "Quick Recording";
 "Quick recording %@" = "Quick recording %1$@";
-"Home" = "Home";
 "Good morning" = "Good morning";
 "Good afternoon" = "Good afternoon";
 "Good evening" = "Good evening";
@@ -176,9 +170,7 @@
 "Project Options" = "Project Options";
 "Pin Project" = "Pin Project";
 "Unpin Project" = "Unpin Project";
-"Open Project" = "Open Project";
 "No meetings in this project" = "No meetings in this project";
-"Project Management" = "Project Management";
 "Instructions" = "Instructions";
 "Context" = "Context";
 "Action Items" = "Action Items";
@@ -186,8 +178,6 @@
 "Ask" = "Ask";
 "New Project" = "New Project";
 "Create Project" = "Create Project";
-"New Subproject" = "New Subproject";
-"New Project at Workspace Top" = "New Project at Workspace Top";
 "Create a subproject inside %@." = "Create a subproject inside %@.";
 "Create a project at the top level of the workspace." = "Create a project at the top level of the workspace.";
 "Could Not Create Project" = "Could Not Create Project";
@@ -197,8 +187,6 @@
 "Context changed to %@" = "Context changed to %@";
 "The selected meeting is no longer available." = "The selected meeting is no longer available.";
 "Project Name" = "Project Name";
-"Project Icon" = "Project Icon";
-"Theme Color" = "Theme Color";
 "Neutral" = "Neutral";
 "Red" = "Red";
 "Orange" = "Orange";
@@ -233,17 +221,13 @@
 "Science" = "Science";
 "Ideas" = "Ideas";
 "Favorite" = "Favorite";
-"Rename Project" = "Rename Project";
-"Renaming updates the logical Project path and tracked Summary outputs. Unrelated directories and files are not moved." = "Renaming updates the logical Project path and tracked Summary outputs. Unrelated directories and files are not moved.";
 "Location" = "Location";
 "Latest Meeting" = "Latest Meeting";
-"Open in Finder" = "Open in Finder";
 "Open in Obsidian" = "Open in Obsidian";
 "Open in Browser" = "Open in Browser";
 "Home is under construction." = "Home is under construction.";
 "Action items will appear here." = "Action items will appear here.";
 "Select a project from Projects." = "Select a project from Projects.";
-"Open Projects" = "Open Projects";
 "Title" = "Title";
 "All" = "All";
 "Filter" = "Filter";
@@ -275,16 +259,11 @@
 "Searching…" = "Searching…";
 "No meetings match your search" = "No meetings match your search";
 "Try changing the keywords or filters." = "Try changing the keywords or filters.";
-"Search is limited to %lld characters. Extra text was not entered." = "Search is limited to %lld characters. Extra text was not entered.";
 "Clear All" = "Clear All";
 "Selected (Outside Results)" = "Selected (Outside Results)";
 "Period" = "Period";
 "Tag" = "Tag";
-"Projects (match any)" = "Projects (match any)";
-"Tags (match any)" = "Tags (match any)";
-"Includes subprojects" = "Includes subprojects";
 "No tags yet" = "No tags yet";
-"No matching tags" = "No matching tags";
 "Loading Tags…" = "Loading Tags…";
 "Past 7 days" = "Past 7 days";
 "Past 30 days" = "Past 30 days";
@@ -323,25 +302,14 @@
 "Create a project to organize meetings and summaries." = "Create a project to organize meetings and summaries.";
 "Clear Search" = "Clear Search";
 "No project" = "No project";
-"Summary Destinations" = "Summary Destinations";
-"The logical Project path determines this destination. The folder is created when a Summary is exported." = "The logical Project path determines this destination. The folder is created when a Summary is exported.";
-"Local Summary Folder" = "Local Summary Folder";
 "The Summary output destination must resolve inside the Workspace without symlink or file path components." = "The Summary output destination must resolve inside the Workspace without symlink or file path components.";
-"The Summary output folder has not been created yet." = "The Summary output folder has not been created yet.";
 "Project Description" = "Project Description";
 "The description is provided as context when generating summaries. For example, you can include project members." = "The description is provided as context when generating summaries. For example, you can include project members.";
 "Describe this project..." = "Describe this project...";
-"Could not save the project description." = "Could not save the project description.";
 "Saving…" = "Saving…";
 "Saved" = "Saved";
-"Danger Zone" = "Danger Zone";
-"Project Overview" = "Project Overview";
 "Project Location" = "Project Location";
-"Included Subprojects" = "Included Subprojects";
-"Meetings in This Project" = "Meetings in This Project";
-"Meetings in Hierarchy" = "Meetings in Hierarchy";
 "Delete Project" = "Delete Project";
-"Deletes this Project and its subprojects from Dahlia. Export directories and unrelated files are kept." = "Deletes this Project and its subprojects from Dahlia. Export directories and unrelated files are kept.";
 "Delete %@?" = "Delete %@?";
 "This affects %lld projects and %lld meetings." = "This affects %lld projects and %lld meetings.";
 "Project directories and unrelated files will be kept." = "Project directories and unrelated files will be kept.";
@@ -369,7 +337,6 @@
 "A summary file named %@ already exists in the destination." = "A summary file named %@ already exists in the destination.";
 "The summary file %@ is linked to multiple meetings and cannot be moved safely." = "The summary file %@ is linked to multiple meetings and cannot be moved safely.";
 "The project operation failed (%@), and Dahlia could not restore the Summary output (%@)." = "The project operation failed (%@), and Dahlia could not restore the Summary output (%@).";
-"Select a project to manage summary destinations and instructions." = "Select a project to manage summary destinations and instructions.";
 "Open a workspace before managing project settings." = "Open a workspace before managing project settings.";
 "Today" = "Today";
 "Tomorrow" = "Tomorrow";
@@ -378,8 +345,6 @@
 "No meetings match the current filter." = "No meetings match the current filter.";
 "%lld meetings" = "%lld meetings";
 "%lld" = "%lld";
-"%lld subprojects included" = "%lld subprojects included";
-"Search meetings..." = "Search meetings...";
 "Selected Meeting" = "Selected Meeting";
 "Loading Meetings…" = "Loading Meetings…";
 "Loading More…" = "Loading More…";
@@ -414,14 +379,12 @@
 "Preparing speech recognition..." = "Preparing speech recognition...";
 "Recognizing..." = "Recognizing...";
 "Transcription" = "Transcription";
-"%lld segments" = "%lld segments";
 "Stop" = "Stop";
 "Start Recording" = "Start Recording";
 "Stop Recording" = "Stop Recording";
 "A recording session is already active." = "A recording session is already active.";
 "No recording session is active." = "No recording session is active.";
 "Stop transcribing" = "Stop transcribing";
-"Pause" = "Pause";
 "Resume" = "Resume";
 "Record" = "Record";
 "Export" = "Export";
@@ -461,7 +424,6 @@
 "Subtitles" = "Subtitles";
 "Live subtitles on" = "On";
 "Live subtitles off" = "Off";
-"Live Subtitle Overlay" = "Subtitle display";
 "Show live subtitles when recording starts." = "Show live subtitles when recording starts.";
 "Show speech as subtitles during recording. The final transcript is created separately after recording stops." = "Show speech as subtitles during recording. The final transcript is created separately after recording stops.";
 "Include Microphone" = "Include Microphone";
@@ -477,14 +439,12 @@
 "Screenshots" = "Screenshots";
 "Meeting Content" = "Meeting Content";
 "Transcript" = "Transcript";
-"Assignee" = "Assignee";
 "Assign to me" = "Assign to me";
 "Edit assignee" = "Edit assignee";
 "Mark action item complete" = "Mark action item complete";
 "Mark action item incomplete" = "Mark action item incomplete";
 
 /* Audio Source Mode */
-"Audio source" = "Audio source";
 "Microphone" = "Microphone";
 "Mic" = "Mic";
 "System" = "System";
@@ -537,7 +497,6 @@
 "Model" = "Model";
 "Reasoning Effort" = "Reasoning Effort";
 "Controls how much reasoning Pi uses for each summary." = "Controls how much reasoning Pi uses for each summary.";
-"Summary Output" = "Summary Output";
 "Detail Level" = "Detail Level";
 "Event Play-by-Play" = "Event Play-by-Play";
 "Event Session" = "Event Session";
@@ -545,18 +504,14 @@
 "Concise" = "Concise";
 "Detailed" = "Detailed";
 "Output Language" = "Output Language";
-"Select the language used for generated summaries." = "Select the language used for generated summaries.";
 "Minimal" = "Minimal";
 "Low" = "Low";
-"Medium" = "Medium";
 "High" = "High";
 "Extra High" = "Extra High";
 "Max" = "Max";
 "Ultra" = "Ultra";
 "Workspace" = "Workspace";
-"Accounts and Workspaces" = "Accounts and Workspaces";
 "Dahlia Account" = "Dahlia Account";
-"%@ - %@" = "%@ - %@";
 "Dahlia Server is not configured." = "Dahlia Server is not configured.";
 "Signed in" = "Signed in";
 "Not signed in" = "Not signed in";
@@ -566,7 +521,6 @@
 "Sign In to Dahlia Cloud" = "Sign In to Dahlia Cloud";
 "Dahlia Cloud (Coming Soon)" = "Dahlia Cloud (Coming Soon)";
 "Or connect to a server" = "Or connect to a server";
-"Connect to Dahlia Server" = "Connect to Dahlia Server";
 "Server URL" = "Server URL";
 "Connect" = "Connect";
 "Dahlia account" = "Dahlia account";
@@ -579,25 +533,11 @@
 "Dahlia credentials could not be saved securely." = "Dahlia credentials could not be saved securely.";
 "A Dahlia connection already exists for this server." = "A Dahlia connection already exists for this server.";
 "Sign in with the same Dahlia account, or add a new connection." = "Sign in with the same Dahlia account, or add a new connection.";
-"%lld Dahlia accounts" = "%lld Dahlia accounts";
 "Sign out of %@?" = "Sign out of %@?";
-"Move to Server" = "Move to Server";
-"Reconnect Server Workspace" = "Reconnect Server Workspace";
-"Keep in Local Account" = "Keep in Local Account";
-"Reconnect %@ to this Server?" = "Reconnect %@ to this Server?";
-"Move %@ to this Server?" = "Move %@ to this Server?";
-"A Workspace with the same ID exists on the Server. Member access uses the Server version; owners can choose which version to use if records conflict." = "A Workspace with the same ID exists on the Server. Member access uses the Server version; owners can choose which version to use if records conflict.";
-"This Workspace will move from the Local Account to the Server and synchronize automatically. Its working copy remains on this Mac." = "This Workspace will move from the Local Account to the Server and synchronize automatically. Its working copy remains on this Mac.";
-"Signed in as %@" = "Signed in as %@";
 "Dahlia request failed (HTTP %lld)." = "Dahlia request failed (HTTP %lld).";
-"Coming Soon" = "Coming Soon";
 "Loading Workspaces…" = "Loading Workspaces…";
 "Deleting Workspace…" = "Deleting Workspace…";
-"Confirm Meeting Deletions" = "Confirm Meeting Deletions";
-"Continue Deleting" = "Continue Deleting";
-"%lld server meeting deletions are waiting. Continue deleting them?" = "%lld server meeting deletions are waiting. Continue deleting them?";
 "Current Workspace" = "Current Workspace";
-"Choose the workspace used for recordings and sync." = "Choose the workspace used for recordings and sync.";
 "No workspace selected" = "No workspace selected";
 "Appearance" = "Appearance";
 "settings.appearance.menuBar" = "Menu Bar";
@@ -606,16 +546,13 @@
 "Typography" = "Typography";
 "Font Size" = "Font Size";
 "%lld pt" = "%lld pt";
-"Meeting Sidebar" = "Meeting Sidebar";
 "Sidebar Display Style" = "Sidebar Display Style";
-"Controls how meetings appear in the sidebar." = "Controls how meetings appear in the sidebar.";
 "App Language" = "App Language";
 "appearance.textSize" = "Text Size";
 "appearance.textSize.description" = "The size of text throughout the app.";
 "appearance.textSize.footer" = "Some open views use the new text size after you reopen them or restart the app.";
 "appearance.textSize.points %lld" = "%lld pt";
 "appearance.textSize.default %lld" = "%lld pt (Default)";
-"Set the display language for the app." = "Set the display language for the app.";
 "Follow System" = "Follow System";
 "Choose one or both conditions. Calendar notifications use events from enabled calendar sources." = "Choose one or both conditions. Calendar notifications use events from enabled calendar sources.";
 "Choose which languages are available for transcription and automatic detection." = "Choose which languages are available for transcription and automatic detection.";
@@ -626,8 +563,6 @@
 "liveSubtitleTranslationDisabledForMatchingLiveTranscriptionLanguage" = "Translation is automatically disabled when the target language matches the live subtitle language.";
 "Google Calendar" = "Google Calendar";
 "macOS Calendar" = "macOS Calendar";
-"Calendar Source" = "Calendar Source";
-"Choose which calendar service provides upcoming events." = "Choose which calendar service provides upcoming events.";
 "Calendar Sources" = "Calendar Sources";
 "Turn on registered providers to combine their calendars. Add Google accounts in Providers. Each connection keeps its own calendar selection." = "Turn on registered providers to combine their calendars. Add Google accounts in Providers. Each connection keeps its own calendar selection.";
 "Calendar Providers" = "Calendar Providers";
@@ -660,10 +595,7 @@
 "Automatically start recording when this event begins." = "Automatically start recording when this event begins.";
 "From calendar event" = "From calendar event";
 "Calendar event: %@" = "Calendar event: %@";
-"Connect a Google account and choose which calendars appear on Home." = "Connect a Google account and choose which calendars appear on Home.";
-"Use events from the Calendar app on this Mac." = "Use events from the Calendar app on this Mac.";
 "Display Calendars" = "Display Calendars";
-"Only selected calendars are shown on Home." = "Only selected calendars are shown on Home.";
 "Connect" = "Connect";
 "Disconnect" = "Disconnect";
 "Sign in with Google in your Databricks workspace. The browser opens the connection page; Dahlia connects once you finish." = "Sign in with Google in your Databricks workspace. The browser opens the connection page; Dahlia connects once you finish.";
@@ -677,7 +609,6 @@
 "Loading Google Calendar…" = "Loading Google Calendar…";
 "Loading macOS Calendar…" = "Loading macOS Calendar…";
 "Retry" = "Retry";
-"Retry Sync" = "Retry Sync";
 "Join" = "Join";
 "All day" = "All day";
 "Google Calendar is not configured" = "Google Calendar is not configured";
@@ -734,7 +665,6 @@
 /* Workspace Picker */
 "Create New Workspace" = "Create New Workspace";
 "Add Workspace" = "Add Workspace";
-"Registered Workspaces" = "Registered Workspaces";
 "Open Folder as Workspace" = "Open Folder as Workspace";
 "Delete Workspace" = "Delete Workspace";
 "Open a different workspace before deleting this one." = "Open a different workspace before deleting this one.";
@@ -763,12 +693,8 @@
 "No matching languages" = "No matching languages";
 "%lld languages selected" = "%lld languages selected";
 "%lld more languages" = "%lld more languages";
-"Transcription Languages" = "Transcription Languages";
 "App Languages" = "App Languages";
 "Limits languages shown for transcription and live subtitles, automatic language detection, and screenshot text extraction." = "Limits languages shown for transcription and live subtitles, automatic language detection, and screenshot text extraction.";
-"Screenshot Text Languages" = "Screenshot Text Languages";
-"Pi uses the app languages selected in Language settings as hints when extracting screenshot text." = "Pi uses the app languages selected in Language settings as hints when extracting screenshot text.";
-"Open Language Settings" = "Open Language Settings";
 "Recorded Languages" = "Languages used while recording";
 "Transcription Language" = "Transcription Language";
 "liveTranscriptionLanguage" = "Live Subtitle Language";
@@ -776,8 +702,6 @@
 "Language Range" = "Language Range";
 "All Supported Languages" = "All Supported Languages";
 "Selected Languages" = "Selected Languages";
-"All Apple Speech languages appear in pickers. Automatic detection uses the languages also supported by WhisperKit." = "All Apple Speech languages appear in pickers. Automatic detection uses the languages also supported by WhisperKit.";
-"Selected languages appear in pickers, and WhisperKit-supported selections become automatic detection candidates." = "Selected languages appear in pickers, and WhisperKit-supported selections become automatic detection candidates.";
 
 /* Settings - LLM */
 "Empty response from server" = "Empty response from server";
@@ -844,7 +768,6 @@
 "Stop and save after both recording and supported meeting-app activity have lasted at least 30 seconds. Browser activity also requires a recognized meeting window. In-person meetings are not detected." = "Stop and save after both recording and supported meeting-app activity have lasted at least 30 seconds. Browser activity also requires a recognized meeting window. In-person meetings are not detected.";
 
 /* Sidebar Footer */
-"Switch Workspace" = "Switch Workspace";
 "MCP Settings" = "MCP Settings";
 "Settings" = "Settings";
 "Help" = "Help";
@@ -916,9 +839,6 @@
 "No screenshots yet." = "No screenshots yet.";
 
 /* Keychain */
-"Cloud Storage" = "Cloud Storage";
-"Notion" = "Notion";
-"Export summaries to Notion." = "Export summaries to Notion.";
 "No previous Google session was found." = "No previous Google session was found.";
 "Google sign-in timed out. Please try again." = "Google sign-in timed out. Please try again.";
 "This build of Dahlia has no Google OAuth client ID, so it can't connect Google services." = "This build of Dahlia has no Google OAuth client ID, so it can't connect Google services.";
@@ -927,11 +847,9 @@
 "Google account connected, but Calendar access has not been granted yet." = "Google account connected, but Calendar access has not been granted yet.";
 
 /* Batch Transcription */
-"Transcription Method" = "Transcription Method";
 "Real-time Transcription" = "Real-time Transcription";
 "Batch Transcription" = "Batch Transcription";
 "Show the transcript while recording. Accuracy may be lower than transcription after recording, and audio files are not saved. Real-time transcription uses the live subtitle language. Change it in Language settings or from the recording panel." = "Show the transcript while recording. Accuracy may be lower than transcription after recording, and audio files are not saved. Real-time transcription uses the live subtitle language. Change it in Language settings or from the recording panel.";
-"Record audio first, then create a higher-accuracy transcript after recording stops." = "Record audio first, then create a higher-accuracy transcript after recording stops.";
 "Recording Retention" = "Recording Retention";
 "Recordings become eligible for deletion this long after both recording and transcription finish. Audio with failed or unfinished transcription is kept." = "Recordings become eligible for deletion this long after both recording and transcription finish. Audio with failed or unfinished transcription is kept.";
 "Forever" = "Forever";
@@ -977,19 +895,10 @@
 "Generate this summary?" = "Generate this summary?";
 "Review the context and export options before generating the summary." = "Review the context and export options before generating the summary.";
 "summary.source.title" = "Source for this generation";
-"summary.source.transcript" = "Transcript";
 "summary.source.transcript.description" = "Regenerate only the summary from the latest transcript.";
-"summary.source.audio" = "Recording audio";
-"summary.source.audio.description" = "Regenerate both the transcript and summary from all recordings.";
 "summary.source.checking" = "Checking available sources…";
 "summary.source.checkFailed" = "Available sources could not be checked. Check sync and your connection, then try again.";
-"summary.source.unsupported" = "This server does not support this source.";
 "summary.source.transcript.unavailable" = "The latest transcript is empty or has not been saved to the server.";
-"summary.source.audio.unavailable" = "No committed recording audio is available. Try again after uploads finish.";
-"summary.source.audio.requiresServer" = "Generating from recording audio is available with server processing.";
-"summary.source.noneAvailable" = "No source is available for every selected meeting.";
-"%lld selected meetings do not have an available transcript." = "%lld selected meetings do not have an available transcript.";
-"%lld selected meetings do not have completed recording audio." = "%lld selected meetings do not have completed recording audio.";
 "Regenerate Summaries" = "Regenerate Summaries";
 "Regenerate selected summaries?" = "Regenerate selected summaries?";
 "Each selected meeting is regenerated independently. Existing summaries are replaced only after generation succeeds." = "Each selected meeting is regenerated independently. Existing summaries are replaced only after generation succeeds.";
@@ -1012,7 +921,6 @@
 "Speech analysis could not read the recorded audio." = "Speech analysis could not read the recorded audio.";
 
 /* Debug */
-"Debug" = "Debug";
 "Microphone & Speech Recognition Test" = "Microphone & Speech Recognition Test";
 "Test microphone input and speech recognition without creating a recording." = "Test microphone input and speech recognition without creating a recording.";
 "Captures raw microphone PCM through ScreenCaptureKit without opening AVAudioEngine device I/O." = "Captures raw microphone PCM through ScreenCaptureKit without opening AVAudioEngine device I/O.";
@@ -1100,10 +1008,6 @@
 "The AI backend was restarted to stop an unconfirmed operation safely." = "The AI backend was restarted to stop an unconfirmed operation safely.";
 "This approval request is no longer pending." = "This approval request is no longer pending.";
 "Account" = "Account";
-"Selected Workspace" = "Selected Workspace";
-"Local Account Model Provider" = "Local Account Model Provider";
-"Choose the model provider used by the Local Account." = "Choose the model provider used by the Local Account.";
-"This setting is shared by all Local Account workspaces. Dahlia Server and Cloud use hosted models automatically." = "This setting is shared by all Local Account workspaces. Dahlia Server and Cloud use hosted models automatically.";
 "ChatGPT Subscription" = "ChatGPT Subscription";
 "Databricks" = "Databricks";
 "Unity Gateway" = "Unity Gateway";
@@ -1121,15 +1025,10 @@
 "View Databricks Privacy Notice" = "View Databricks Privacy Notice";
 "Dahlia could not control Terminal. The installation command was copied and Terminal was opened. Paste the command and press Return." = "Dahlia could not control Terminal. The installation command was copied and Terminal was opened. Paste the command and press Return.";
 "Enter a valid HTTPS Databricks workspace root URL." = "Enter a valid HTTPS Databricks workspace URL.";
-"Enter the HTTPS URL of the workspace used by Pi." = "Enter the HTTPS URL of the workspace used by Pi.";
 "https://your-workspace.cloud.databricks.com" = "https://your-workspace.cloud.databricks.com";
-"Create New Profile" = "Create New Profile";
-"Databricks Workspace ID" = "Databricks Workspace ID";
-"Workspace ID unavailable from profile" = "Workspace ID unavailable from profile";
 "Could not update the Pi configuration: %@" = "Could not update the Pi configuration: %@";
 "The selected AI account is not ready. Open Accounts and Workspaces in Settings and finish its configuration." = "The selected AI account is not ready. Open Accounts and Workspaces in Settings and finish its configuration.";
 "Pi returned no available models. Try again." = "Pi returned no available models. Try again.";
-"The saved model is used when available; otherwise the first available model is selected." = "The saved model is used when available; otherwise the first available model is selected.";
 
 /* Codex Chat */
 "Chat" = "Chat";
@@ -1188,8 +1087,6 @@
 "Waiting for your response or approval" = "Waiting for your response or approval";
 "This chat is no longer available." = "This chat is no longer available.";
 "Resize" = "Resize";
-"Show all chats" = "Show all";
-"Presets" = "Presets";
 "Organize meetings and Projects from the last %lld days" = "Organize meetings and Projects from the last %lld days";
 "Project organization chat shortcut prompt" = "Use $projects-optimizer to organize Dahlia Meetings and Projects from the last %1$lld days.\ncreated_from: %2$@\ncreated_before: %3$@\n\nReview the Meetings in this period together with the existing Project hierarchy, improve Project descriptions when supported by evidence, and update Meeting assignments.";
 "Review meeting speech" = "Review meeting speech";
@@ -1211,12 +1108,7 @@
 "MCP" = "MCP";
 "Parent Project" = "Parent Project";
 "Project Type" = "Project Type";
-"Hierarchy and Type" = "Hierarchy and Type";
-"Move Project" = "Move Project";
-"Update Project Type" = "Update Project Type";
-"Moving or changing a root type also updates every descendant's path or inherited type." = "Moving or changing a root type also updates every descendant's path or inherited type.";
 "This subproject inherits its Project Type from the root Project." = "This subproject inherits its Project Type from the root Project.";
-"Inherited from %@" = "Inherited from %@";
 "Customer" = "Customer";
 "Internal" = "Internal";
 "Personal" = "Personal";
@@ -1251,7 +1143,6 @@
 "Add" = "Add";
 "Save" = "Save";
 "Name" = "Name";
-"Danger Zone" = "Danger Zone";
 "Needs Review" = "Needs Review";
 "Edit" = "Edit";
 "Reload" = "Reload";
@@ -1264,7 +1155,6 @@
 "No text was detected." = "No text was detected.";
 "Text recognition failed." = "Text recognition failed.";
 "Recognizing text..." = "Recognizing text...";
-"Close search" = "Close search";
 "Remove search filter" = "Remove search filter";
 "Search unavailable" = "Search unavailable";
 "search.indexRecovery" = "The search index is unavailable. Try Rebuild Full-Text Search in Settings → Search.";
@@ -1273,13 +1163,11 @@
 "Shown" = "Shown";
 "Hidden" = "Hidden";
 "Recent Meetings" = "Recent Meetings";
-"Standard" = "Standard";
 "Compact" = "Compact";
 "Edit Project" = "Edit Project";
 "Updated" = "Updated";
 "Ascending" = "Ascending";
 "Descending" = "Descending";
-"Conversation analytics will be available after recording and transcription finish." = "Conversation analytics will be available after recording and transcription finish.";
 "Your Speaking Pace" = "Your Speaking Pace";
 "Calculated in %@-minute windows using merged speech intervals." = "Calculated in %@-minute windows using merged speech intervals.";
 "From %@ to %@: %@ chars/min" = "From %@ to %@: %@ chars/min";
@@ -1302,43 +1190,7 @@
 "%@ · %@–%@" = "%@ · %@–%@";
 "Transcript gaps up to %@ seconds are treated as continuous speech for the timeline, speaking time, ratios, and pace; short overlaps may include recognition timing differences." = "Transcript gaps up to %@ seconds are treated as continuous speech for the timeline, speaking time, ratios, and pace; short overlaps may include recognition timing differences.";
 "The longest monologue joins same-source gaps up to %@ seconds, even when the other side speaks in between." = "The longest monologue joins same-source gaps up to %@ seconds, even when the other side speaks in between.";
-"Some older transcript segments use an estimated timeline." = "Some older transcript segments use an estimated timeline.";
-"Voice Analysis Unavailable" = "Voice Analysis Unavailable";
-"Voice analysis is available for meetings transcribed from retained batch audio." = "Voice analysis is available for meetings transcribed from retained batch audio.";
-"There are not enough measured speech segments for reliable voice analysis." = "There are not enough measured speech segments for reliable voice analysis.";
-"Conversation Energy" = "Conversation Energy";
-"Relative changes in loudness and pitch compared with each source’s baseline." = "Relative changes in loudness and pitch compared with each source’s baseline.";
-"No measurable conversation-energy trend." = "No measurable conversation-energy trend.";
-"Hotspots" = "Hotspots";
-"No sustained hotspots detected." = "No sustained hotspots detected.";
-"Pitch data was limited, so some scores use loudness only." = "Pitch data was limited, so some scores use loudness only.";
-"Loudness" = "Loudness";
-"Pitch" = "Pitch";
-"Loudness and pitch" = "Loudness and pitch";
-"From %@ to %@: %@" = "From %@ to %@: %@";
-"%@ · %@–%@ · Peak %@ · %@" = "%@ · %@–%@ · Peak %@ · %@";
-"Voice Expression" = "Voice Expression";
-"Pitch and loudness variation are evaluated independently." = "Pitch and loudness variation are evaluated independently.";
-"Pitch Variation" = "Pitch Variation";
-"Loudness Variation" = "Loudness Variation";
-"Monotone" = "Monotone";
-"Steady" = "Steady";
-"Expressive" = "Expressive";
-"Dynamic" = "Dynamic";
-"Pitch Alignment" = "Pitch Alignment";
-"Distance between microphone and system-audio pitch over time." = "Distance between microphone and system-audio pitch over time.";
-"Voice pitch moved closer over the course of the meeting." = "Voice pitch moved closer over the course of the meeting.";
-"No clear convergence in voice pitch was detected." = "No clear convergence in voice pitch was detected.";
-"This is an experimental indicator and does not establish rapport or psychological state." = "This is an experimental indicator and does not establish rapport or psychological state.";
-"Both audio sources need sufficient pitch measurements." = "Both audio sources need sufficient pitch measurements.";
-"semitones" = "semitones";
-"Voice Energy Over Time" = "Voice Energy Over Time";
-"Loudness relative to each recording session’s baseline." = "Loudness relative to each recording session’s baseline.";
-"No measurable voice-energy trend." = "No measurable voice-energy trend.";
-"Voice energy trends downward toward the end of the meeting." = "Voice energy trends downward toward the end of the meeting.";
-"Relative dB" = "Relative dB";
 "Voice indicators show relative changes from speaker and recording-session baselines; they do not determine emotions or psychological state." = "Voice indicators show relative changes from speaker and recording-session baselines; they do not determine emotions or psychological state.";
-"Voice features are measured only during batch transcription." = "Voice features are measured only during batch transcription.";
 "Batch transcription stopped because Apple Speech made no progress for %@. The recording audio was kept for retry." = "Batch transcription stopped because Apple Speech made no progress for %@. The recording audio was kept for retry.";
 "No-progress Timeout" = "No-progress Timeout";
 "Stop batch transcription when Apple Speech makes no progress for this long." = "Stop batch transcription when Apple Speech makes no progress for this long.";
@@ -1394,22 +1246,16 @@
 "Setup Complete" = "Setup Complete";
 "Continue" = "Continue";
 "Start Dahlia" = "Start Dahlia";
-"Local Account" = "Local Account";
 "Continue with Local Account" = "Continue with Local Account";
 "Or continue without signing in" = "Or continue without signing in";
-"Choose the AI account used by this Workspace." = "Choose the AI account used by this Workspace.";
 "Choose the languages Dahlia should recognize. Set the AI output language in Manage Workspaces." = "Choose the languages Dahlia should recognize. Set the AI output language in Workspace settings.";
 "Recognition and OCR Languages" = "Recognition and OCR Languages";
-"Primary Language" = "Summary & Image Caption Language";
-"Used for summaries and screenshot captions." = "Used for summaries and screenshot captions.";
-"Summaries and Image Captions" = "Summaries and Image Captions";
 "setup.modelProviderDescription" = "Sign in to the model providers used for summaries and other AI features. You can use several at once. If you skip this, summaries and other AI features stay unavailable until you set one up in Settings > Dahlia AI.";
 "Allow access to the audio sources Dahlia records. You can continue and grant access later." = "Allow access to the audio sources Dahlia records. You can continue and grant access later.";
 "Calendar (Optional)" = "Calendar (Optional)";
 "Connect a calendar to see upcoming meetings in Dahlia. You can set this up later." = "Connect a calendar to see upcoming meetings in Dahlia. You can set this up later.";
 "setup.completionDescription" = "Review your choices, then start Dahlia.";
 "Setup Summary" = "Setup Summary";
-"Choose Local Folder" = "Choose Local Folder";
 "No local export folder" = "No local export folder";
 "Set Local Export Folder" = "Set Local Export Folder";
 "Change Local Export Folder" = "Change Local Export Folder";
@@ -1448,14 +1294,8 @@
 "text.content.empty" = "No text";
 "text.content.deleted" = "Text deleted";
 "text.content.searchLocal" = "Searching metadata and saved text on this device, including tags and calendar";
-"text.content.searchComplete" = "Searched the whole server plus device tags, calendar and unsent changes";
-"text.content.searchFailed" = "Server search is incomplete. Showing device results only.";
-"text.content.searchMore" = "More server matches are available. Load more to continue searching.";
 
 // Server account language settings
-"account.settings.imageLanguages" = "Image analysis languages";
-"account.settings.description" = "Shared across devices using this account. The output language applies to summaries and image captions. Recording and transcription language settings are unchanged.";
-"account.settings.notLoaded" = "Account settings have not been loaded.";
 
 
 "search.server.kind" = "Result type";
@@ -1466,26 +1306,15 @@
 "serverSummaryTranscript" = "Transcript and images";
 
 "settings.processing.title" = "Transcription and Summary";
-"settings.processing.account" = "Applies to";
-"settings.processing.scope" = "Saved in";
-"settings.processing.synced" = "Dahlia Account (synced)";
 "settings.processing.location" = "Processing location";
 "settings.processing.local" = "This Mac";
-"settings.processing.remote" = "Server";
-"settings.processing.localScope" = "Applies to every workspace in the Local Account on this Mac.";
-"settings.processing.syncedScope" = "Applies to every workspace in this account and syncs across your devices.";
-"settings.processing.localDescription" = "Apple Speech transcribes on this Mac, then the AI provider configured on this Mac creates the summary.";
-"settings.processing.transcribeFirst" = "Transcribe before generating the summary";
 "settings.processing.thisMac" = "This Mac";
 "settings.processing.thisMacDescription" = "Applies only to this Mac. Switching accounts does not change these settings.";
 
-"transcription.initial" = "Initial Transcription";
 "transcription.retranscription" = "Retranscription";
 "transcription.retranscription.appleSpeech" = "Apple Speech (per-segment language detection)";
 "transcription.retranscription.localDescription" = "Uses retained CAF recordings on this Mac and detects the language of each segment automatically.";
 "transcription.retranscription.keepsSummary" = "Retranscription replaces only the transcript and leaves the existing summary unchanged.";
-"transcription.retranscription.checkFailed" = "Could not check Server retranscription support.";
-"transcription.retranscription.unsupported" = "This Server does not support Gemini retranscription.";
 "Local CAF Recording Retention" = "Local Workspace CAF Recording Retention";
 "Local Workspace CAF recordings become eligible for deletion this long after both recording and transcription finish. Failed, unfinished, or active retranscription audio is kept. Server M4A storage is not affected." = "Local Workspace CAF recordings become eligible for deletion this long after both recording and transcription finish. Failed, unfinished, or active retranscription audio is kept. Server M4A storage is not affected.";
 
@@ -1553,7 +1382,6 @@
 "Sign out before connecting to another Databricks workspace." = "Sign out before connecting to another Databricks workspace.";
 
 // Sync progress
-"sync.serverError" = "Server error";
 
 
 
@@ -1562,8 +1390,6 @@
 "For this generation only" = "For this generation only";
 "Workspace default" = "Default";
 
-"summary.source.useSaved" = "Use the saved transcript";
-"summary.source.useSaved.description" = "Generate from the copy saved on this Mac without fetching the latest server version. It may be outdated. Select this when working offline.";
 
 "settings.serverConnections" = "Inference (Summary & Image Analysis)";
 
@@ -1644,7 +1470,6 @@
 "settings.agents.signInAgain" = "Sign In Again";
 "settings.providers.registered" = "Registered";
 "settings.providers.registeredSignInAgainHint" = "Databricks is registered. To renew its sign-in, finish setup, then choose Sign In Again in Settings > Providers. You can add another workspace here.";
-"settings.agents.providerAdded %@" = "%@ (added)";
 "settings.agents.mcpSearchPrompt" = "Search connectors";
 "settings.agents.mcpNoProviders" = "Add a Databricks workspace under Providers on the Models tab to turn on its Unity AI Gateway MCPs here.";
 "settings.agents.mcpProviderSignInRequired" = "Sign-in required. Sign in again under Providers on the Models tab.";
@@ -1747,7 +1572,6 @@
 "Chat notice expanded" = "Expanded";
 "Chat notice collapsed" = "Collapsed";
 
-"Queued until the response finishes: %@" = "Queued until the response finishes: %@";
 
 /* Additional chat file access */
 "settings.agents.security" = "Security";
@@ -1836,14 +1660,6 @@
 "A file could not be read or saved. Check disk space and installation-folder permissions." = "A file could not be read or saved. Check disk space and installation-folder permissions.";
 
 /* Workspace selection after signing in to a new account */
-"Choose a workspace" = "Choose a workspace";
-"Move an existing workspace to the account you just signed in to. Its meetings and files stay on this Mac. Chat history stays with the original account." = "Move an existing workspace to the account you just signed in to. Its meetings and files stay on this Mac. Chat history stays with the original account.";
-"Move existing workspace" = "Move existing workspace";
-"Stop recording before transferring a workspace." = "Stop recording before transferring a workspace.";
-"To start fresh, create a new workspace named Default." = "To start fresh, create a new workspace named Default.";
-"Create new workspace" = "Create new workspace";
-"Choose the workspace to use with this account." = "Choose the workspace to use with this account.";
-"New workspace (Default)" = "New workspace (Default)";
 
 "Local Export Folder" = "Local Export Folder";
 
@@ -1882,8 +1698,6 @@
 "Search NEologd unsupported" = "Unsupported, downloaded";
 "Search NEologd upgrade required" = "The active older dictionary is incompatible with this version. Select built-in IPADIC or a supported release, then rebuild full-text search.";
 
-"mcp.allAccounts" = "All accounts";
-"mcp.accountWorkspaces" = "All in this account";
 "mcp.chooseApp" = "1. Choose an app";
 "mcp.chooseScope" = "2. Choose what AI can access";
 "mcp.permissions" = "3. Choose permissions";
@@ -1894,7 +1708,7 @@
 "mcp.jsonInstructions" = "Add this configuration to the app’s MCP settings file. Replace any existing Dahlia entry, then restart the app.";
 "mcp.includedWorkspaces" = "Included workspaces (%lld)";
 "mcp.noWorkspaces" = "No workspaces have been added to this Mac for this selection.";
-"mcp.scopeUnavailable" = "The selected account or workspace is no longer available. Choose the access scope again.";
+"mcp.scopeUnavailable" = "The selected workspace is no longer available. Choose the access scope again.";
 "mcp.otherApps" = "Other apps (JSON)";
 "Chat resume state missing" = "The runtime file for this chat is missing. You can view its history; start a new chat to continue.";
 "Search meetings, screenshots, projects, and chats" = "Search meetings, screenshots, projects, and chats";

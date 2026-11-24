@@ -103,7 +103,7 @@ macOS の手動要約は録音中も実行でき、入力読込時点で SQLite 
 録音音声は writer queue への受理や partial CAF への書き込みではまだ durable ではなく、検証済みの immutable CAF と
 対応する SQLite state が `ready` になった時点で再読込可能な正本となる。
 
-画像の保持境界はアカウントで分ける。Local Account は原本だけを永続保存し、Server Account は一覧用 metadata を常時保持し、文字起こし原文・サマリー・OCR・caption の本文を部分保持する。
+Desktop は画像の原本だけを永続保存し、本文の部分保持はしない。
 文字起こし原文・要約・画像解析本文は専用の本文テーブルへ保存し、metadata・翻訳・音声特徴量・端末固有参照から分離する。アプリと MCP の完全な本文読取は共通 `TextContentAccess` が同一 DB snapshot 内で検査・取得する。
 Desktop のスクリーンショット本体は Application Support の共通ファイルストアへ保存し、SQLite には画像のファイル参照を保持する。
 ファイルを検証・確定してから画像 metadata を SQLite transaction で保存する。
@@ -139,7 +139,7 @@ Desktopはemailと表示名だけを保存し、Serverは旧Desktopがattendees�
 任意の Dahlia Server runtime は内蔵 Pi の provider transport を所有し、macOS の録音・文字起こし critical path には入らない。
 macOS アプリのアカウントは 1 つで、Workspace はアカウントに属さない。外部への接続はプロバイダーアカウントとして `provider_accounts` に登録し、OAuth credential と remote identity は
 接続 UUID ごとに Keychain が所有し、token 利用側は接続を指定する。サインアウトは選択した接続の credential を削除し、アカウントの履歴と設定は残す。Pi の agent directory は
-`Application Support/Dahlia/agent` の 1 つで、Pi のプロセスはアカウントに 1 組だけ持つ。モデルは
+`~/.dahlia/agent` の 1 つで、Pi のプロセスはアカウントに 1 組だけ持つ。モデルは
 OpenAI (ChatGPT subscription) と Anthropic (Claude Pro/Max) のサブスクリプション、Databricks の各接続の AI Gateway、Dahlia account の Server の Gateway から選ぶ。この境界は
 [内蔵 Pi runtime](docs/spec/desktop/pi-runtime.md#provider)を正本とする。
 Better Auth、Gateway 管理 metadata、meeting sync は単一の Drizzle application database を共有する。PostgreSQL は生成済み認証 table を
@@ -194,7 +194,7 @@ Workers Static Assets が直接配信し、Worker 内から asset binding を呼
 `index.html` へ fallback する一方、API と discovery の未定義 path は Hono の 404 を維持する。
 
 Gateway、認証 store、upstream、storage の停止は Server 操作だけを失敗させる。macOS の起動、録音、音声保存、文字起こし、
-閲覧、検索はこの runtime を待たない。ServerアカウントのWorkspace、Project、meeting、summary、transcript 原文、screenshot、OCR、AI captionはDesktopとWebが共有するServer canonical dataである。Desktop はこれを同期しない。Server Workspaceの所有主体は変更不能なOrganizationとする。Workspace Adminがuser／Organization／Teamへadmin・editor・viewerを付与し、Admin／Editorは内容を編集、AdminだけがWorkspaceの設定・共有・削除・reset・全内容移管を行う。本人用Workspaceはpersonal_user_idで識別し、本人かつ現在のOrganizationメンバーに限定する。Personal OrganizationとOrganization.kindは廃止した。Header認証では設定されたメールヘッダーを識別に使い、初回登録時だけドメイン組織を作成・参加する。
+閲覧、検索はこの runtime を待たない。Server Workspace の Project、meeting、summary、transcript 原文、screenshot、OCR、AI caption は Web と Server が扱う Server canonical data である。Desktop はこれを同期しない。Server Workspaceの所有主体は変更不能なOrganizationとする。Workspace Adminがuser／Organization／Teamへadmin・editor・viewerを付与し、Admin／Editorは内容を編集、AdminだけがWorkspaceの設定・共有・削除・reset・全内容移管を行う。本人用Workspaceはpersonal_user_idで識別し、本人かつ現在のOrganizationメンバーに限定する。Personal OrganizationとOrganization.kindは廃止した。Header認証では設定されたメールヘッダーを識別に使い、初回登録時だけドメイン組織を作成・参加する。
 PostgreSQL／LakebaseではBetter Authの機械生成migrationとDahlia application migrationを別ledgerに置き、認証方式によらず
 `auth`、`app`の順で適用する。Header identityは検証直後に`auth.user`へ射影し、Webはaccountsと共通のBetter Authセッション・Organization APIを使う。保護操作では検証済みHeaderを引き続き必須とし、Cookie本人不一致を拒否する。Serverは各identity transactionで
 `app.user_id`だけをtransaction-localに設定する。Workspace/content RLSは`app.workspace_permissions`を評価し、organizationとTeam membershipを
@@ -317,7 +317,7 @@ Desktop の AI チャットは GRDB の `chat_threads`／追記専用 `chat_item
 追記では新しいメッセージだけを索引化して結果を Thread ごとにまとめる。推論文・ツール引数／結果・画像は索引化せず、
 任意の Project で関連付け・絞り込みを行う。Thread は Workspace を直接参照せず、Workspace を切り替えても会話を維持する。辞書の再構築時はチャットも再構築する。チャットとその索引はバックアップの対象外。
 
-Desktop 検索は旧 Advanced 相当の全文検索に統一し、Simple／Neural とモード切替を廃止した。Gemma 推論、モデル取得、vector worker は実行しない。追加 migration で vector 検索を無効化し、専用 trigger を撤去する。互換性のため旧 schema、既存 vector と job は保持する。起動時に現在のアプリプロファイルの `Models/EmbeddingGemma` だけをバックグラウンド削除し、失敗時は次回起動で再試行する。Server Account の主検索は capabilities の `search: { version: 1 }` により `POST /api/v1/search` の共通順位へ切り替え、未同期の端末内結果を別枠で表示する。オフライン・旧 Server・metadata 同期待ち・タグ指定・複数 Project 指定は端末内検索と明示する。Web と Server MCP は同じ service を使う。上位100件は全件完了としない。旧 GET FTS ページングは local content broker と既存クライアントの全件探索用に維持する。
+Desktop 検索は旧 Advanced 相当の全文検索に統一し、Simple／Neural とモード切替を廃止した。Gemma 推論、モデル取得、vector worker は実行しない。追加 migration で vector 検索を無効化し、専用 trigger を撤去する。互換性のため旧 schema、既存 vector と job は保持する。起動時に現在のアプリプロファイルの `Models/EmbeddingGemma` だけをバックグラウンド削除し、失敗時は次回起動で再試行する。Web と Server MCP の検索は `POST /api/v1/search` の共通順位を使う。上位100件は全件完了としない。旧 GET FTS ページングは local content broker と既存クライアントの全件探索用に維持する。
 
 ミーティングサイドバーは SQLite を正本とし、最新 50 件から keyset pagination で段階表示する。表示用 projection は
 最大 500 件に制限し、それ以前は全履歴の FTS projection から検索可能にする。文字列検索は索引 revision 付き relevance
@@ -552,14 +552,12 @@ New Server Workspace batch sessions enqueue a durable `recording_archives` job a
 
 ## Organization-owned Server Workspaces
 
-Server Workspaces are owned by Organizations ([Organization ownership spec](docs/spec/shared/organization-personal-workspaces.md)); there is no personal Server Workspace ownership or read-only sharing model. Organization membership and Workspace access are separate; admin manages the Workspace and permissions, admin/editor writes content, and viewer reads. Header/accounts share Better Auth browser sessions while retaining their identity-entry and machine-client boundaries. The sync ledger, search projection work, and encryption keys are Workspace-scoped. Local migration reuses relocation and the durable sync queue, preserving recordings and newer edits.
+Server Workspaces are owned by Organizations ([Organization ownership spec](docs/spec/shared/organization-personal-workspaces.md)); there is no personal Server Workspace ownership or read-only sharing model. Organization membership and Workspace access are separate; admin manages the Workspace and permissions, admin/editor writes content, and viewer reads. Header/accounts share Better Auth browser sessions while retaining their identity-entry and machine-client boundaries. The sync ledger, search projection work, and encryption keys are Workspace-scoped.
 
 ## Collaborative meeting Documents
 
-The [Documents spec](docs/spec/shared/documents.md) defines meeting Notes as Yjs checkpoint plus update logs. `packages/ui/src/documents` owns portable operations, batching, and recovery detection; Server reuses that core for canonical merges. Web owns incremental canonical/staging replicas in a Worker and retains pending changes in memory. Desktop shares persistent replicas per database on a dedicated JavaScriptCore thread, commits deltas and recovery copies atomically before local acknowledgement, and builds projections on explicit reads. Normal editor notifications carry deltas and state vectors. Recovery synchronization uses monotonic high-water cursors; history display retains a single bounded page. Document synchronization runs independently of domain transactions and recording stop. Server Node and Workers use the same authorized store and encryption layer.
+The [Documents spec](docs/spec/shared/documents.md) defines meeting Notes as Yjs checkpoint plus update logs. `packages/ui/src/documents` owns portable operations, batching, and recovery detection; Server reuses that core for canonical merges. Web owns incremental canonical/staging replicas in a Worker and retains pending changes in memory. Desktop shares persistent replicas per database on a dedicated JavaScriptCore thread, commits deltas and recovery copies atomically before local acknowledgement, and builds projections on explicit reads. Normal editor notifications carry deltas and state vectors. Recovery synchronization uses monotonic high-water cursors; history display retains a single bounded page. Web document synchronization runs independently of domain transactions; Desktop Documents never wait on recording stop. Server Node and Workers use the same authorized store and encryption layer.
 
-Desktop domain synchronization and Documents still share the SQLite queue. Conflict checks use durable dependency keys that include stored and proposed attachment endpoints; unknown legacy requests remain barriers until indexed. This preserves protection during attachment moves without decoding the full outbox or loading unrelated meeting and project ancestry for every received record.
-
-Legacy Server Notes stay private until explicit Workspace publication. Local Account conversion preserves literal text and dates. Protected pending, private, and recovery data cannot be evicted; refetchable shared state participates in the 128 MiB cache, with device-wide indefinite retention by default (configurable in days). This prevents automatic capacity eviction immediately after linking a Server account. Minimum retention takes priority over cache budgets; background verification does not renew it. Remote deletion archives protected local state before removing the parent. Local-to-Server moves preserve documents privately by default. Server summaries capture an internal encrypted `notesSnapshot` at acceptance. Presence is a DB-backed expiring session list; there are no block locks.
+Legacy Server Notes stay private until explicit Workspace publication. Desktop conversion of legacy Notes preserves literal text and dates; the Desktop does not sync Documents with the Server. Server summaries capture an internal encrypted `notesSnapshot` at acceptance. Presence is a DB-backed expiring session list; there are no block locks.
 
 Documents have independent IDs, a Workspace owner, an optional meeting, kind, and title ([identity spec](docs/spec/shared/document-identity.md)). Only meeting Notes are unique per meeting; summary input resolves kind=notes. Desktop consolidates unshipped Documents, sync, and background jobs in v54; released v47 and earlier migrations remain unchanged. Development databases retain their rows through GRDB merging. The prerelease Server baseline includes the new schema. Generated assets and license notices are verified by `pnpm --filter @dahlia-ai/ui documents:check`; ordinary Swift builds use committed resources.
