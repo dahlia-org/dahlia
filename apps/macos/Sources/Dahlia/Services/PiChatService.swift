@@ -87,8 +87,7 @@ actor PiChatService: CodexChatServicing {
                 if outcome == "delivered" { Task { await self.notifySchedule(run) } }
                 let processID = sessions[threadID]?.processID
                 Task {
-                    guard self.sessions[threadID]?.processID == processID, self.sessions[threadID]?.turn == nil else { return }
-                    await self.closeSession(threadID)
+                    await self.closeIdleSession(threadID, processID: processID)
                 }
             } else if run.origin == "user" {
                 enqueueLearningReview(run, account: accountID)
@@ -97,11 +96,10 @@ actor PiChatService: CodexChatServicing {
         settledRuns[threadID] = (accountID, runID, (try? history().run(id: runID)?.origin) == "schedule")
         publishStates()
         runDidSettle(threadID, accountID: accountID)
-        if staleThreads.remove(threadID) != nil {
-            let processID = sessions[threadID]?.processID
+        if let session = sessions[threadID], session.providerGeneration != providerGeneration {
+            let processID = session.processID
             Task {
-                guard self.sessions[threadID]?.processID == processID, self.sessions[threadID]?.turn == nil else { return }
-                await self.closeSession(threadID)
+                await self.closeIdleSession(threadID, processID: processID)
             }
         }
     }
@@ -109,12 +107,9 @@ actor PiChatService: CodexChatServicing {
     /// A provider account was added or removed. Idle chats close now and reopen with it on their next message; a
     /// running turn finishes on the process it started on, which closes after it.
     func providerAccountsDidChange() async {
+        providerGeneration += 1
         for (threadID, session) in sessions {
-            if session.turn == nil, startingTurns[threadID] == nil {
-                await closeSession(threadID)
-            } else {
-                staleThreads.insert(threadID)
-            }
+            await closeIdleSession(threadID, processID: session.processID)
         }
     }
 
@@ -208,6 +203,7 @@ actor PiChatService: CodexChatServicing {
     /// One live Pi process for a thread. Its GRDB history outlives the process.
     struct Session {
         let processID: UUID
+        let providerGeneration: Int
         let connection: PiRPCConnection
         let fileAccess: PiFileAccessSettings
         var approvalMethod: CodexChatApprovalMethod?
@@ -274,9 +270,8 @@ actor PiChatService: CodexChatServicing {
     var schedulingAccounts: Set<String> = []
     var waitingParents: Set<String> = []
     var stoppingAccounts: Set<String> = []
-    /// Threads whose process started before the account's provider accounts changed. Pi reads its providers when it
-    /// starts, so each reopens with the new ones once its turn ends.
-    var staleThreads: Set<String> = []
+    /// Pi reads providers at process start. Keep the revision on each process until it is replaced, even if idle cleanup loses a race.
+    private var providerGeneration = 0
 
     init(
         runtime: PiRuntimeService = .shared,
@@ -769,10 +764,11 @@ actor PiChatService: CodexChatServicing {
                 guard sessions[threadID]?.connection === session.connection else { return try await connection(threadID: threadID) }
                 if sessions[threadID]?
                     .turn != nil ||
-                    (session.profile != .scheduled && session.fileAccess == fileAccessSettings() && session.profile
+                    (session.providerGeneration == providerGeneration && session.profile != .scheduled && session
+                        .fileAccess == fileAccessSettings() && session.profile
                         .rawValue == (scheduledRuns[threadID]?.profile ?? "interactive") && session.memoryEnabled == AgentLearningSettings
                         .memoryEnabled(AppAccount.key)) { return session.connection }
-                // Seatbelt is fixed at process start. Reopen idle threads before the next turn, including revocations.
+                // Process configuration is fixed at startup. Reopen idle threads before the next turn, including revocations.
                 await closeSession(threadID)
                 return try await connection(threadID: threadID)
             }
@@ -825,6 +821,7 @@ actor PiChatService: CodexChatServicing {
         threadID: String, sessionFile: URL? = nil, sessionArguments: [String]
     ) async throws -> PiRPCConnection {
         let processID = UUID.v7()
+        let generation = providerGeneration
         try await runtime.requireConfigured()
         let workURL = try workingDirectory.url()
         // Pi runs a thread in the folder its session file names, so an older thread moves to the folder set now.
@@ -947,7 +944,7 @@ actor PiChatService: CodexChatServicing {
             }
         )
         sessions[threadID] = try Session(
-            processID: processID, connection: connection, fileAccess: fileAccess,
+            processID: processID, providerGeneration: generation, connection: connection, fileAccess: fileAccess,
             reviewArguments: reviewArguments, reviewMemoryPrompt: memoryPrompt, reviewEnvironment: [
                 "DAHLIA_PI_MCP_COMMAND": HermesLearning.json(mcpCommand),
                 "DAHLIA_PI_MCP_SERVERS": HermesLearning.json(serverNames),
@@ -966,6 +963,13 @@ actor PiChatService: CodexChatServicing {
     /// Closes the process once no chat view holds the thread and no turn runs.
     private func closeIfUnused(_ threadID: String) async {
         guard leases[threadID] == nil, startingTurns[threadID] == nil, sessions[threadID]?.turn == nil else { return }
+        await closeSession(threadID)
+    }
+
+    /// A delayed cleanup must not close a replacement process or a turn still preparing its first prompt.
+    private func closeIdleSession(_ threadID: String, processID: UUID?) async {
+        guard sessions[threadID]?.processID == processID,
+              sessions[threadID]?.turn == nil, startingTurns[threadID] == nil else { return }
         await closeSession(threadID)
     }
 

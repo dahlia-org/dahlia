@@ -7,8 +7,8 @@ import Testing
 struct PiRuntimeContextTests {
     @Test(arguments: [false, true])
     func selectedProviderWaitsForActivationResult(fails: Bool) async {
-        let store = PiRuntimeContextStore()
-        store.apply()
+        let pi = TestPiRuntime { _ in TestPiTransport() }
+        let store = pi.contextStore
         store.beginActivation()
         var started = false
         var finished = false
@@ -17,7 +17,7 @@ struct PiRuntimeContextTests {
             started = true
             defer { finished = true }
             do {
-                try await store.waitUntilActive()
+                try await pi.service.requireConfigured()
             } catch {
                 failure = error
             }
@@ -110,7 +110,7 @@ struct PiRuntimeContextTests {
 
         // The app's one account uses every Databricks connection, so switching to it writes their gateways.
         try await ProviderAccountDirectory.$connections.withValue([
-            .init(id: connection.id, workspaceURL: URL(string: connection.host)!),
+            .init(id: connection.id, workspaceURL: #require(URL(string: connection.host))),
         ]) {
             try await coordinator.activate()
         }

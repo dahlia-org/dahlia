@@ -267,6 +267,103 @@ import os
             await pi.service.close(connection)
         }
 
+        @Test(.providerAccounts([.init(id: ownConnectionID, workspaceURL: URL(string: "https://own.cloud.databricks.com")!)]))
+        func providerRefreshKeepsAnUnchangedLiveCredentialAvailable() async throws {
+            let transports = TestPiTransportLog()
+            let pi = TestPiRuntime { _ in
+                let transport = TestPiTransport()
+                transports.append(transport)
+                return transport
+            }
+            let connection = try await pi.service.connect(.init(mode: .summary, cwd: pi.rootURL))
+            let transport = await transports.transport(at: 0)
+            pi.contextStore.beginActivation()
+            await transport.emit(TestPiTransport.bridgeRequest(
+                id: "unchanged", method: "token", payload: .object(["provider": .string("own.cloud.databricks.com")])
+            ))
+            let answer = await transport.command("extension_ui_response")
+            #expect(answer["value"] == .string(#""test-token""#))
+            #expect(answer["cancelled"] != .bool(true))
+            await pi.service.close(connection)
+        }
+
+        @Test
+        func aLiveProcessCannotResolveAReplacementGatewaysToken() async throws {
+            let oldID = UUID.v7()
+            let newID = UUID.v7()
+            let resolved = ResolvedAccounts()
+            try await ProviderAccountDirectory.$dahliaConnections.withValue([oldID]) {
+                let transports = TestPiTransportLog()
+                let pi = TestPiRuntime(tokenResolver: { account in
+                    resolved.append(account)
+                    return "test-token"
+                }) { _ in
+                    let transport = TestPiTransport()
+                    transports.append(transport)
+                    return transport
+                }
+                let connection = try await pi.service.connect(.init(mode: .summary, cwd: pi.rootURL))
+                let transport = await transports.transport(at: 0)
+                pi.contextStore.apply(providers: [.dahlia(connectionID: newID)])
+                try await ProviderAccountDirectory.$dahliaConnections.withValue([newID]) {
+                    await transport.emit(TestPiTransport.bridgeRequest(
+                        id: "retired",
+                        method: "token",
+                        payload: .object(["provider": .string("dahlia")])
+                    ))
+                    let answer = await transport.command("extension_ui_response")
+                    #expect(answer["cancelled"] == .bool(true))
+                    #expect(resolved.all.isEmpty)
+                    await pi.service.close(connection)
+                    let replacement = try await pi.service.connect(.init(mode: .summary, cwd: pi.rootURL))
+                    let fresh = await transports.transport(at: 1)
+                    await fresh.emit(TestPiTransport.bridgeRequest(id: "current", method: "token", payload: .object(["provider": .string("dahlia")])))
+                    _ = await fresh.command("extension_ui_response")
+                    #expect(resolved.all == [.dahlia(connectionID: newID)])
+                    await pi.service.close(replacement)
+                }
+            }
+        }
+
+        @Test
+        func supersededGatewayCatalogCannotOverwriteTheNewConfiguration() async throws {
+            let oldID = UUID.v7()
+            let newID = UUID.v7()
+            let oldURL = try #require(URL(string: "https://old.example/api/v1"))
+            let newURL = try #require(URL(string: "https://new.example/api/v1"))
+            let (started, didStart) = AsyncStream<Void>.makeStream()
+            let (release, proceed) = AsyncStream<Void>.makeStream()
+            try await ProviderAccountDirectory.$dahliaConnections.withValue([oldID]) {
+                let pi = TestPiRuntime(dahliaCatalog: { url, token in
+                    #expect(token == "test-token")
+                    if url == oldURL {
+                        didStart.yield()
+                        var iterator = release.makeAsyncIterator()
+                        _ = await iterator.next()
+                    }
+                    return .object(["data": .array([.object(["id": .string("stale-catalog")])])])
+                }) { _ in
+                    TestPiTransport(reply: TestPiRuntime.modelsReply([TestPiTransport.model(provider: "openai", id: "gpt-test")]))
+                }
+                let agentURL = try PiAgentDirectoryLocator(applicationSupportURL: pi.rootURL).agentURL()
+                pi.contextStore.apply(providers: [.dahlia(connectionID: oldID)], dahliaBaseURL: oldURL)
+                let load = Task { try await pi.service.models() }
+                var iterator = started.makeAsyncIterator()
+                _ = await iterator.next()
+                await pi.service.currentGatewayRefresh()?.value
+                pi.contextStore.apply(providers: [.dahlia(connectionID: newID)], dahliaBaseURL: newURL)
+                try PiProviderConfiguration.write(
+                    PiProviderConfiguration.dahliaProvider(baseURL: newURL, catalog: .object(["data": .array([])])), agentURL: agentURL
+                )
+                try await pi.service.reloadConfiguration()
+                proceed.yield()
+                _ = try await load.value
+                let written = try String(contentsOf: agentURL.appending(path: "models.json"), encoding: .utf8)
+                #expect(!written.contains("stale-catalog"))
+                #expect(PiProviderConfiguration.dahliaBaseURL(agentURL: agentURL) == newURL)
+            }
+        }
+
         @Test(arguments: [
             ("401 Unauthorized", true), ("HTTP error 401: invalid token", true), ("No API key found for provider openai", true),
             ("prompt is too long: 214013 tokens > 200000 maximum", false), ("429 rate limited", false),

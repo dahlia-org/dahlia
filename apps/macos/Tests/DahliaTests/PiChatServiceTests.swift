@@ -693,6 +693,143 @@ import Synchronization
         }
 
         @Test
+        func providerRefreshDoesNotCloseAChatReplacedDuringAnotherChatsClose() async throws {
+            let transports = TestPiTransportLog()
+            let closes = Mutex(0)
+            let (closing, didClose) = AsyncStream<String>.makeStream()
+            let (release, proceed) = AsyncStream<Void>.makeStream()
+            let pi = TestPiRuntime { options in
+                guard options.mode == .chat else {
+                    return TestPiTransport(reply: TestPiRuntime.modelsReply([TestPiTransport.model(provider: "openai", id: "gpt-test")]))
+                }
+                let index = options.arguments.firstIndex(of: "--session-id")
+                let threadID = index.map { options.arguments[$0 + 1] } ?? "resumed"
+                let transport = TestPiTransport(onClose: {
+                    let first = closes.withLock { value in
+                        value += 1
+                        return value == 1
+                    }
+                    if first {
+                        didClose.yield(threadID)
+                        var iterator = release.makeAsyncIterator()
+                        _ = await iterator.next()
+                    }
+                }) { command in
+                    guard let id = command["id"] else { return [] }
+                    return [TestPiTransport.response(id: id, data: .object(["disposition": .string("started")]))]
+                }
+                transports.append(transport)
+                return transport
+            }
+            let chat = try PiChatService(
+                runtime: pi.service, historyStore: Self.history(),
+                workingDirectory: PiWorkingDirectory(override: pi.rootURL.appending(path: "work")),
+                agentLocator: PiAgentDirectoryLocator(applicationSupportURL: pi.rootURL),
+                mcpExecutableURL: URL(filePath: "/usr/bin/true"),
+                mcpSettings: { AgentMCPSettings() }, fileAccessSettings: { PiFileAccessSettings() }
+            )
+            var threads: [CodexChatThread] = []
+            var leases: [UUID] = []
+            for index in 0 ..< 2 {
+                let thread = try await chat.startThread(model: "openai/gpt-test", effort: "medium")
+                threads.append(thread)
+                await leases.append(chat.acquireThreadLease(threadID: thread.id))
+                let turn = try await chat.beginTurn(
+                    threadID: thread.id, inputs: [.text("Initial")], model: nil, effort: "medium", approvalMethod: .ask
+                )
+                let process = await transports.transport(at: index)
+                await process.emit(TestPiTransport.assistantEnd("Done"))
+                await process.emit(TestPiTransport.settled())
+                for try await _ in turn.events {}
+            }
+            let refresh = Task { await chat.providerAccountsDidChange() }
+            var iterator = closing.makeAsyncIterator()
+            let closedID = try #require(await iterator.next())
+            let other = try #require(threads.first { $0.id != closedID })
+            let next = try await chat.beginTurn(
+                threadID: other.id, inputs: [.text("Next")], model: nil, effort: "medium", approvalMethod: .ask
+            )
+            proceed.yield()
+            await refresh.value
+            let process = try #require(transports.all.last)
+            #expect(await !process.isClosed)
+            await process.emit(TestPiTransport.assistantEnd("Still running"))
+            await process.emit(TestPiTransport.settled())
+            for try await _ in next.events {}
+            for (thread, lease) in zip(threads, leases) {
+                await chat.releaseThreadLease(threadID: thread.id, leaseID: lease)
+            }
+        }
+
+        @Test(arguments: [false, true])
+        func providerChangesDuringPreparationRefreshTheNextTurn(preparationFails: Bool) async throws {
+            let transports = TestPiTransportLog()
+            let pi = TestPiRuntime { options in
+                guard options.mode == .chat else {
+                    return TestPiTransport(reply: TestPiRuntime.modelsReply([TestPiTransport.model(provider: "openai", id: "gpt-test")]))
+                }
+                let first = transports.all.isEmpty
+                let held = Mutex(false)
+                let transport = TestPiTransport { command in
+                    guard let id = command["id"] else { return [] }
+                    if first, command["type"]?.stringValue == "set_thinking_level", held.withLock({ value in
+                        defer { value = true }
+                        return !value
+                    }) { return [] }
+                    return [TestPiTransport.response(id: id, data: .object(["disposition": .string("started")]))]
+                }
+                transports.append(transport)
+                return transport
+            }
+            let chat = try PiChatService(
+                runtime: pi.service,
+                historyStore: Self.history(),
+                workingDirectory: PiWorkingDirectory(override: pi.rootURL.appending(path: "work")),
+                agentLocator: PiAgentDirectoryLocator(applicationSupportURL: pi.rootURL),
+                mcpExecutableURL: URL(filePath: "/usr/bin/true"),
+                mcpSettings: { AgentMCPSettings() },
+                fileAccessSettings: { PiFileAccessSettings() }
+            )
+            let thread = try await chat.startThread(model: "openai/gpt-test", effort: "medium")
+            let lease = await chat.acquireThreadLease(threadID: thread.id)
+            let preparing = Task {
+                try await chat.beginTurn(
+                    threadID: thread.id, inputs: [.text("First")], model: nil, effort: "high", approvalMethod: .ask
+                )
+            }
+            let first = await transports.transport(at: 0)
+            let thinking = await first.command("set_thinking_level")
+            await chat.providerAccountsDidChange()
+            #expect(await !first.isClosed)
+            let commandID = try #require(thinking["id"])
+            if preparationFails {
+                // No turn reaches endRun: the idle, leased process must still retain its invalidation.
+                await first.emit(.object([
+                    "type": .string("response"), "id": commandID, "success": .bool(false), "error": .string("Setup failed"),
+                ]))
+                await #expect(throws: (any Error).self) { try await preparing.value }
+            } else {
+                await first.emit(TestPiTransport.response(id: commandID))
+                let turn = try await preparing.value
+                #expect(await !first.isClosed)
+                await first.emit(TestPiTransport.assistantEnd("Done"))
+                await first.emit(TestPiTransport.settled())
+                for try await _ in turn.events {}
+            }
+
+            let next = try await chat.beginTurn(
+                threadID: thread.id, inputs: [.text("Next")], model: nil, effort: "medium", approvalMethod: .ask
+            )
+            try #require(pi.launches.all.count(where: { $0.mode == .chat }) == 2)
+            #expect(await first.isClosed)
+            let second = await transports.transport(at: 1)
+            await second.emit(TestPiTransport.assistantEnd("Fresh providers"))
+            await second.emit(TestPiTransport.settled())
+            for try await _ in next.events {}
+            await chat.releaseThreadLease(threadID: thread.id, leaseID: lease)
+        }
+
+        @Test
         func commandDiscoveryUsesChatResourcesWithoutCreatingAThreadOrPrompt() async throws {
             let fixture = try Self.fixture(commands: .array([
                 .object(["name": .string("skill:summary"), "source": .string("skill"), "description": .string("Summarize")]),

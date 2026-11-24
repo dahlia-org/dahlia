@@ -46,6 +46,7 @@ actor PiRuntimeService {
     private let configurationReadiness: @Sendable () async -> Bool
     private let launcher: Launcher
     private let tokenResolver: TokenResolver
+    private let dahliaCatalog: @Sendable (URL, String) async throws -> JSONValue
     private let modelChoices: @Sendable () -> [String: Bool]
     private let gatewayWorkspaces: @Sendable () -> [AgentMCPProvider]
     private var connections: [ObjectIdentifier: (connection: PiRPCConnection, mode: LaunchOptions.Mode)] = [:]
@@ -68,6 +69,9 @@ actor PiRuntimeService {
         },
         launcher: @escaping Launcher = PiRuntimeService.launchPi,
         tokenResolver: @escaping TokenResolver = PiRuntimeService.resolveToken,
+        dahliaCatalog: @escaping @Sendable (URL, String) async throws -> JSONValue = {
+            try await PiProviderConfiguration.fetchDahliaCatalog(baseURL: $0, token: $1)
+        },
         modelChoices: @escaping @Sendable () -> [String: Bool] = { AgentModelSettings.choices() },
         gatewayWorkspaces: @escaping @Sendable () -> [AgentMCPProvider] = {
             AgentMCPSettings.load().providers.filter { !$0.isAccount }
@@ -78,6 +82,7 @@ actor PiRuntimeService {
         self.configurationReadiness = configurationReadiness
         self.launcher = launcher
         self.tokenResolver = tokenResolver
+        self.dahliaCatalog = dahliaCatalog
         self.modelChoices = modelChoices
         self.gatewayWorkspaces = gatewayWorkspaces
     }
@@ -99,6 +104,8 @@ actor PiRuntimeService {
             guard allowed, !AgentBackgroundActivity.isRecording else { throw CancellationError() }
         }
         let agentURL = try agentLocator.agentURL()
+        let providers = contextStore.configuration.providers
+        let contextStore = contextStore
         let transport = try launcher(options, agentURL)
         let tokenResolver = tokenResolver
         let connection = PiRPCConnection(transport: transport) { method, payload in
@@ -106,10 +113,18 @@ actor PiRuntimeService {
             case "token":
                 do {
                     // The extension names the provider it needs; only this account's bridged providers get a token.
+                    let current = contextStore.configuration
                     guard let providerID = payload.objectValue?["provider"]?.stringValue,
-                          let account = ProviderAccountDirectory.account(piProviderID: providerID)
+                          let account = providers[providerID],
+                          current.providers[providerID] == account,
+                          ProviderAccountDirectory.accounts.contains(account)
                     else { throw AIConfigurationError.databricksProfileRequired }
-                    return try await .string(tokenResolver(account))
+                    let token = try await tokenResolver(account)
+                    let latest = contextStore.configuration
+                    guard latest.providers[providerID] == account,
+                          ProviderAccountDirectory.accounts.contains(account)
+                    else { throw AIConfigurationError.databricksProfileRequired }
+                    return .string(token)
                 } catch is CancellationError {
                     throw CancellationError()
                 } catch {
@@ -171,6 +186,7 @@ actor PiRuntimeService {
     /// Throws until the app's account has written Pi's configuration.
     func requireConfigured() async throws {
         guard await configurationReadiness() else { throw AIConfigurationError.accountNotReady }
+        try await contextStore.waitUntilActive()
     }
 
     nonisolated var isConfigured: Bool {
@@ -207,7 +223,7 @@ actor PiRuntimeService {
         if !forceRefresh, let cachedModels { return cachedModels }
         let generation = modelGeneration
         let load = modelLoad?.task ?? Task {
-            if let account = ProviderAccountDirectory.account(piProviderID: "dahlia") { await self.refreshDahliaCatalog(account: account) }
+            await self.refreshDahliaCatalog()
             return try await self.availableModels()
         }
         if gatewayRefresh == nil {
@@ -252,13 +268,21 @@ actor PiRuntimeService {
     }
 
     /// Fetches the Dahlia Server's model list into `models.json`. Failure keeps the last list.
-    private func refreshDahliaCatalog(account: ProviderAccount) async {
-        guard let agentURL = try? agentLocator.agentURL(),
-              let baseURL = PiProviderConfiguration.dahliaBaseURL(agentURL: agentURL),
+    private func refreshDahliaCatalog() async {
+        let generation = modelGeneration
+        let configuration = contextStore.configuration
+        guard configuration.isConfigured, let account = configuration.providers["dahlia"],
+              let baseURL = configuration.dahliaBaseURL,
+              let agentURL = try? agentLocator.agentURL(),
               let token = try? await tokenResolver(account),
-              let catalog = try? await PiProviderConfiguration.fetchDahliaCatalog(baseURL: baseURL, token: token),
+              contextStore.isConfigured, contextStore.configuration.providers["dahlia"] == account,
+              let catalog = try? await dahliaCatalog(baseURL, token),
               let providers = try? PiProviderConfiguration.dahliaProvider(baseURL: baseURL, catalog: catalog)
         else { return }
+        let current = contextStore.configuration
+        guard generation == modelGeneration, current.isConfigured,
+              current.providers["dahlia"] == account, current.dahliaBaseURL == baseURL,
+              ProviderAccountDirectory.accounts.contains(account) else { return }
         try? PiProviderConfiguration.write(providers, agentURL: agentURL)
     }
 

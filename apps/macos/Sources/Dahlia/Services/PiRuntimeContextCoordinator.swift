@@ -49,12 +49,18 @@ actor PiRuntimeContextCoordinator {
     /// Writes the providers again after a provider account was added or removed. Pi reads them when it starts: each new
     /// process has them, and chats reopen with them as their turns end (`PiChatService`), so no running work stops.
     func providerAccountsDidChange() async throws {
-        guard contextStore.isConfigured, hasConfigured else { return }
+        guard hasConfigured else { return }
         activationGeneration += 1
         let generation = activationGeneration
-        try await service.reloadConfiguration(applyingContext: {
-            try await self.configure(generation: generation)
-        })
+        contextStore.beginActivation()
+        do {
+            try await service.reloadConfiguration(applyingContext: {
+                try await self.configure(generation: generation)
+            })
+        } catch {
+            if generation == activationGeneration { contextStore.activationFailed() }
+            throw error
+        }
         await PiChatService.shared.providerAccountsDidChange()
     }
 
@@ -65,12 +71,15 @@ actor PiRuntimeContextCoordinator {
         let agentURL = try agentLocator.agentURL()
         // Subscriptions use Pi's built-in catalog, and workspaces added in Agents settings keep their entries, so only
         // the provider accounts the app holds the credential for are written.
+        let accounts = ProviderAccountDirectory.accounts
         var providers: [String: JSONValue] = [:]
-        for account in ProviderAccountDirectory.accounts {
+        for account in accounts {
             try await providers.merge(piProviders(for: account, agentURL: agentURL)) { $1 }
         }
         // A removed connection's provider goes, so Pi stops offering its models; a workspace added before keeps its own.
         let kept = Set(PiProviderConfiguration.bridgedProviderIDs).union(AgentMCPSettings.load().providers.map(\.id))
+        try Task.checkCancellation()
+        guard generation == activationGeneration else { throw CancellationError() }
         try PiProviderConfiguration.updateProviders(agentURL: agentURL) { recorded in
             recorded = recorded.filter { id, _ in
                 kept.contains(id) || !(PiProviderConfiguration.isAddedWorkspace(id) || id == PiProviderConfiguration.legacyDatabricksProviderID
@@ -81,7 +90,7 @@ actor PiRuntimeContextCoordinator {
         hasConfigured = true
         try Task.checkCancellation()
         guard generation == activationGeneration else { throw CancellationError() }
-        contextStore.apply()
+        contextStore.apply(providers: accounts, dahliaBaseURL: PiProviderConfiguration.dahliaBaseURL(agentURL: agentURL))
     }
 
     /// One provider account's entries in `models.json`; empty keeps them as recorded.

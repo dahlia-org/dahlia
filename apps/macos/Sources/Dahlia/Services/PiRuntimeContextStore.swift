@@ -9,12 +9,24 @@ final class PiRuntimeContextStore: Sendable {
     private struct State: Sendable {
         var isConfigured = false
         var isActivating = false
+        var providers: [String: ProviderAccount] = [:]
+        var dahliaBaseURL: URL?
+    }
+
+    struct Configuration: Sendable {
+        let isConfigured: Bool
+        let providers: [String: ProviderAccount]
+        let dahliaBaseURL: URL?
     }
 
     private let state = Mutex(State())
 
     var isConfigured: Bool {
         state.withLock(\.isConfigured)
+    }
+
+    var configuration: Configuration {
+        state.withLock { Configuration(isConfigured: $0.isConfigured, providers: $0.providers, dahliaBaseURL: $0.dahliaBaseURL) }
     }
 
     func beginActivation() {
@@ -33,8 +45,11 @@ final class PiRuntimeContextStore: Sendable {
         NotificationCenter.default.post(name: Self.didChange, object: nil)
     }
 
-    func apply() {
+    func apply(providers: [ProviderAccount] = [], dahliaBaseURL: URL? = nil) {
+        let bindings = Dictionary(providers.map { ($0.piProviderID, $0) }, uniquingKeysWith: { first, _ in first })
         state.withLock {
+            $0.providers = bindings
+            $0.dahliaBaseURL = dahliaBaseURL
             $0.isConfigured = true
             $0.isActivating = false
         }

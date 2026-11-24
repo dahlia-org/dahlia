@@ -235,6 +235,9 @@ final class GoogleSignInAdapter: NSObject, GoogleSignInProviding {
         guard !isDisconnectPending else {
             throw GoogleSignInError.noPreviousSignIn
         }
+        if refreshed.grantedScopes != storedSessionLookup.session.grantedScopes {
+            NotificationCenter.default.post(name: sessionDidChangeNotification, object: nil)
+        }
         return refreshed.session
     }
 
@@ -286,7 +289,7 @@ final class GoogleSignInAdapter: NSObject, GoogleSignInProviding {
             refreshToken: tokenResponse
                 .refreshToken ?? (previousSessionLookup?.session.account.id == account.id ? previousSessionLookup?.session.refreshToken : nil),
             expirationDate: tokenResponse.expirationDate,
-            grantedScopes: authorizationScopes
+            grantedScopes: tokenResponse.grantedScopes ?? authorizationScopes
         )
         guard await save(session, migrating: previousSessionLookup, generation: previousSessionSnapshot.generation, replacingSession: true) else {
             throw CancellationError()
@@ -314,6 +317,9 @@ final class GoogleSignInAdapter: NSObject, GoogleSignInProviding {
         guard !isDisconnectPending else { return nil }
         guard await save(refreshed, migrating: storedSessionLookup, generation: storedSessionLookup.generation) else { return nil }
         guard !isDisconnectPending else { return nil }
+        if refreshed.grantedScopes != storedSessionLookup.session.grantedScopes {
+            NotificationCenter.default.post(name: sessionDidChangeNotification, object: nil)
+        }
         return refreshed.session
     }
 
@@ -484,7 +490,7 @@ final class GoogleSignInAdapter: NSObject, GoogleSignInProviding {
             accessToken: tokenResponse.accessToken,
             refreshToken: tokenResponse.refreshToken ?? refreshToken,
             expirationDate: tokenResponse.expirationDate,
-            grantedScopes: storedSession.grantedScopes
+            grantedScopes: tokenResponse.grantedScopes ?? storedSession.grantedScopes
         )
     }
 
@@ -557,7 +563,7 @@ final class GoogleSignInAdapter: NSObject, GoogleSignInProviding {
             )
         }
 
-        let payload = try JSONDecoder().decode(TokenPayload.self, from: data)
+        let payload = try JSONDecoder().decode(GoogleTokenPayload.self, from: data)
         guard let expirationDate = Calendar.current.date(byAdding: .second, value: payload.expiresIn, to: Date()) else {
             throw GoogleSignInError.invalidTokenResponse
         }
@@ -565,7 +571,8 @@ final class GoogleSignInAdapter: NSObject, GoogleSignInProviding {
         return TokenResponse(
             accessToken: payload.accessToken,
             refreshToken: payload.refreshToken,
-            expirationDate: expirationDate
+            expirationDate: expirationDate,
+            grantedScopes: payload.grantedScopes
         )
     }
 
@@ -703,12 +710,17 @@ private struct StoredGoogleSessionSnapshot: Sendable {
     let generation: UInt64
 }
 
-private struct TokenPayload: Decodable {
+struct GoogleTokenPayload: Decodable {
+    let scope: String?
     let accessToken: String
     let refreshToken: String?
     let expiresIn: Int
 
+    /// OAuth omits scope only when it equals the originally authorized scopes; an explicit empty value grants nothing.
+    var grantedScopes: Set<String>? { scope.map { Set($0.split(whereSeparator: \.isWhitespace).map(String.init)) } }
+
     enum CodingKeys: String, CodingKey {
+        case scope
         case accessToken = "access_token"
         case refreshToken = "refresh_token"
         case expiresIn = "expires_in"
@@ -719,6 +731,7 @@ private struct TokenResponse {
     let accessToken: String
     let refreshToken: String?
     let expirationDate: Date
+    let grantedScopes: Set<String>?
 }
 
 private struct UserInfoPayload: Decodable {

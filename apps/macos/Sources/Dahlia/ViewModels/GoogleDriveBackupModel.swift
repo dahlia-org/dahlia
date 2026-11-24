@@ -14,13 +14,31 @@ final class GoogleDriveBackupModel {
     private let signIn: any GoogleSignInProviding
     private let client: GoogleDriveBackupClient
     private var revision = 0
+    private var listingSession: GoogleSession?
+    private var authObserver: GoogleAuthSessionObserver?
+    private var routeObserver: GoogleAuthSessionObserver?
+    private var refreshTask: Task<Void, Never>?
 
     init(
         signIn: any GoogleSignInProviding = DatabricksProxyGoogleSignInProvider(sessionKind: .drive),
-        client: GoogleDriveBackupClient = GoogleDriveBackupClient()
+        client: GoogleDriveBackupClient = GoogleDriveBackupClient(),
+        routeChangeNotification: Notification.Name = GoogleCalendarProvider.didChange
     ) {
         self.signIn = signIn
         self.client = client
+        authObserver = GoogleAuthSessionObserver(notificationName: signIn.sessionDidChangeNotification) { [weak self] disconnected in
+            self?.sessionChanged(disconnected: disconnected)
+        }
+        routeObserver = GoogleAuthSessionObserver(notificationName: routeChangeNotification) { [weak self] _ in
+            self?.sessionChanged(disconnected: false)
+        }
+    }
+
+    private func sessionChanged(disconnected: Bool) {
+        reset()
+        if !disconnected {
+            refreshTask = Task { [weak self] in await self?.refresh() }
+        }
     }
 
     var usesDatabricksProxy: Bool { (signIn as? DatabricksProxyGoogleSignInProvider)?.isProxyActive == true }
@@ -29,6 +47,9 @@ final class GoogleDriveBackupModel {
 
     func reset() {
         revision += 1
+        refreshTask?.cancel()
+        refreshTask = nil
+        listingSession = nil
         files = []
         account = nil
         isAuthorized = false
@@ -42,6 +63,10 @@ final class GoogleDriveBackupModel {
         let revision = revision
         isBusy = true
         errorMessage = nil
+        files = []
+        account = nil
+        listingSession = nil
+        isAuthorized = false
         defer { if self.revision == revision { isBusy = false } }
         do {
             let session: GoogleSession
@@ -62,18 +87,20 @@ final class GoogleDriveBackupModel {
             try Task.checkCancellation()
             guard self.revision == revision else { return }
             self.files = files
+            listingSession = session
             account = session.account
             isAuthorized = true
         } catch {
             guard self.revision == revision, !Task.isCancelled else { return }
             files = []
+            account = nil
+            listingSession = nil
             isAuthorized = false
             errorMessage = GoogleAuthErrorFormatter.message(for: error, defaultMessage: L10n.backupDriveDownloadFailed)
         }
     }
 
     func disconnect() async {
-        guard !isBusy else { return }
         reset()
         let revision = revision
         isBusy = true
@@ -86,11 +113,16 @@ final class GoogleDriveBackupModel {
 
     func importBackup(_ file: GoogleDriveBackupFile, using service: BackupService) async throws -> BackupGeneration {
         let revision = revision
-        guard !isBusy, isAuthorized, files.contains(file) else { throw GoogleSignInError.noPreviousSignIn }
+        guard !isBusy, isAuthorized, files.contains(file), let listingSession else { throw GoogleSignInError.noPreviousSignIn }
         isBusy = true
         defer { if self.revision == revision { isBusy = false } }
-        guard let session = try await signIn.refreshCurrentSession(), session.hasScopes(GoogleOAuthScope.drive),
-              self.revision == revision else { throw GoogleSignInError.noPreviousSignIn }
+        let current = try await signIn.refreshCurrentSession()
+        guard self.revision == revision else { throw CancellationError() }
+        guard let session = current, session.hasScopes(GoogleOAuthScope.drive),
+              session.account.id == listingSession.account.id, session.apiBaseURL == listingSession.apiBaseURL else {
+            reset()
+            throw GoogleSignInError.noPreviousSignIn
+        }
         let download = try await client.download(file, session: session)
         defer { try? FileManager.default.removeItem(at: download) }
         try Task.checkCancellation()

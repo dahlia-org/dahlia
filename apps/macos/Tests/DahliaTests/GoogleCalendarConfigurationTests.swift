@@ -68,6 +68,21 @@ import Security
             #expect(Set(scopes.split(separator: " ").map(String.init)) == GoogleOAuthScope.base.union(GoogleOAuthScope.calendar))
         }
 
+        @Test(arguments: [nil, "", "https://www.googleapis.com/auth/calendar.events.readonly"] as [String?])
+        func tokenPayloadPreservesActualPartialAndOmittedGrants(scope: String?) throws {
+            var response: [String: Any] = ["access_token": "test", "expires_in": 3600]
+            response["scope"] = scope
+            let payload = try JSONDecoder().decode(GoogleTokenPayload.self, from: JSONSerialization.data(withJSONObject: response))
+            #expect(payload.grantedScopes == scope.map { $0.isEmpty ? [] : Set([$0]) })
+            if let grants = payload.grantedScopes {
+                let session = GoogleSession(
+                    account: GoogleCalendarAccount(id: "test", displayName: "Test", email: ""),
+                    accessToken: "test", grantedScopes: grants
+                )
+                #expect(!session.hasScopes(GoogleOAuthScope.drive))
+            }
+        }
+
         @Test
         func pendingDisconnectBlocksAutomaticSessionRestore() {
             #expect(GoogleSignInAdapter.shouldRestoreStoredSession(disconnectPending: true, hasStoredSession: true) == false)

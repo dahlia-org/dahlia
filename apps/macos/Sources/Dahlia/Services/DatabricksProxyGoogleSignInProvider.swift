@@ -146,6 +146,7 @@ final class DatabricksProxyGoogleSignInProvider: GoogleSignInProviding {
         // The Google grant stays in Databricks; revoke it on the connection page.
         userDefaults.set(true, forKey: Self.disconnectedKey(for: connection, sessionKind: sessionKind))
         cachedAccount = nil
+        NotificationCenter.default.post(name: sessionDidChangeNotification, object: nil)
     }
 
     private func markConnected(_ session: GoogleSession, for connection: DatabricksConnection) -> GoogleSession {

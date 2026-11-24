@@ -7,6 +7,7 @@ actor TestPiTransport: CodexAppServerTransport {
     typealias Reply = @Sendable (_ command: [String: JSONValue]) -> [JSONValue]
 
     private let reply: Reply
+    private let onClose: @Sendable () async -> Void
     private var lines: [Data] = []
     private var receiver: CheckedContinuation<Data?, Never>?
     typealias Match = @Sendable ([String: JSONValue]) -> Bool
@@ -16,6 +17,12 @@ actor TestPiTransport: CodexAppServerTransport {
 
     init(reply: @escaping Reply = TestPiTransport.acknowledge) {
         self.reply = reply
+        onClose = {}
+    }
+
+    init(onClose: @escaping @Sendable () async -> Void, reply: @escaping Reply) {
+        self.reply = reply
+        self.onClose = onClose
     }
 
     func sendLine(_ data: Data) async throws {
@@ -39,11 +46,13 @@ actor TestPiTransport: CodexAppServerTransport {
     }
 
     func close() async {
+        guard !isClosed else { return }
         isClosed = true
         receiver?.resume(returning: nil)
         receiver = nil
         commandWaiters.forEach { $0.1.resume(returning: [:]) }
         commandWaiters.removeAll()
+        await onClose()
     }
 
     func emit(_ record: JSONValue) {
@@ -147,6 +156,7 @@ struct TestPiRuntime {
 
     init(
         tokenResolver: @escaping PiRuntimeService.TokenResolver = { _ in "test-token" },
+        dahliaCatalog: @escaping @Sendable (URL, String) async throws -> JSONValue = { _, _ in .object(["data": .array([])]) },
         modelChoices: @escaping @Sendable () -> [String: Bool] = {
             // Runtime fixtures explicitly enable their synthetic and legacy models, like a user's saved choices.
             Dictionary(uniqueKeysWithValues: [
@@ -162,7 +172,9 @@ struct TestPiRuntime {
         let rootURL = FileManager.default.temporaryDirectory
             .appending(path: "dahlia-pi-test-\(UUID().uuidString)", directoryHint: .isDirectory)
         let contextStore = PiRuntimeContextStore()
-        contextStore.apply()
+        contextStore.apply(providers:
+            (ProviderAccountDirectory.connections ?? []).map { .databricks(connectionID: $0.id) }
+                + (ProviderAccountDirectory.dahliaConnections?.first.map { [.dahlia(connectionID: $0)] } ?? []))
         let launches = LaunchLog()
         self.rootURL = rootURL
         self.launches = launches
@@ -184,6 +196,7 @@ struct TestPiRuntime {
                 return transport(options)
             },
             tokenResolver: tokenResolver,
+            dahliaCatalog: dahliaCatalog,
             modelChoices: modelChoices,
             gatewayWorkspaces: gatewayWorkspaces
         )
