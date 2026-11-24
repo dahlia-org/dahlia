@@ -504,6 +504,59 @@ import Foundation
             #expect(client.fetchEventsCallCount == 0)
         }
 
+        @Test(arguments: [false, true])
+        func successfulListOnlyUpdatesUseTheRefreshInterval(hasCalendars: Bool) async {
+            var currentDate = fixtureNow
+            let defaults = isolatedUserDefaults()
+            let client = ControllableGoogleCalendarAPIClient(initialEvents: [fixtureEvent])
+            client.calendarListResult = .success(hasCalendars ? [primaryCalendar] : [])
+            let store = GoogleCalendarStore(
+                signInProvider: MockGoogleCalendarSignInProvider(hasPreviousSignIn: true), apiClient: client,
+                userDefaults: defaults, now: { currentDate }, refreshInterval: 300
+            )
+            await store.restoreSessionIfNeeded()
+            let expectedState: GoogleCalendarStore.State = hasCalendars ? .needsCalendarSelection : .loaded
+            #expect(store.state == expectedState)
+            var loadingCount = 0
+            let observation = store.$state.sink { if $0 == .loading { loadingCount += 1 } }
+            for _ in 0 ..< 3 {
+                await store.refreshIfNeeded()
+            }
+            #expect(client.fetchCalendarListCallCount == 1)
+            #expect(loadingCount == 0)
+            #expect(client.fetchEventsCallCount == 0)
+            await store.refreshIfNeeded(force: true)
+            #expect(client.fetchCalendarListCallCount == 2)
+            currentDate = currentDate.addingTimeInterval(301)
+            await store.refreshIfNeeded()
+            #expect(client.fetchCalendarListCallCount == 3)
+            if hasCalendars {
+                store.setCalendarSelection(["primary"])
+                #expect(await pollUntil { client.fetchEventsCallCount == 1 })
+                #expect(client.fetchCalendarListCallCount == 4)
+                #expect(await pollUntil { store.state == .loaded })
+            }
+            withExtendedLifetime(observation) {}
+        }
+
+        @Test
+        func aListOnlyFailureCanRetryBeforeThePriorSuccessExpires() async {
+            let client = ControllableGoogleCalendarAPIClient(initialEvents: [])
+            let store = GoogleCalendarStore(
+                signInProvider: MockGoogleCalendarSignInProvider(hasPreviousSignIn: true), apiClient: client,
+                userDefaults: isolatedUserDefaults(), now: { fixtureNow }, refreshInterval: 300
+            )
+            await store.restoreSessionIfNeeded()
+            client.calendarListResult = .failure(CalendarRefreshTestError.requestFailed)
+            await store.refreshIfNeeded(force: true)
+            #expect(store.state == .failed)
+            client.calendarListResult = .success([primaryCalendar])
+            await store.refreshIfNeeded()
+            #expect(client.fetchCalendarListCallCount == 3)
+            #expect(client.fetchEventsCallCount == 0)
+            #expect(store.state == .needsCalendarSelection)
+        }
+
         @Test
         func disconnectDropsTheCachedEvents() async {
             let defaults = isolatedUserDefaults()

@@ -271,7 +271,7 @@ final class GoogleCalendarStore: ObservableObject {
             return
         }
 
-        if !force,
+        if !force, state != .failed,
            let lastRefreshAt,
            now().timeIntervalSince(lastRefreshAt) < refreshInterval {
             recomputeStateIfNeeded()
@@ -348,7 +348,7 @@ final class GoogleCalendarStore: ObservableObject {
     private func refreshEvents(session: GoogleSession, generation: UInt64) async {
         guard !selectedCalendarIDs.isEmpty else {
             if !upcomingEvents.isEmpty { upcomingEvents = [] }
-            lastRefreshAt = nil
+            lastRefreshAt = now()
             recomputeState()
             return
         }
