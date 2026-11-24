@@ -3,10 +3,8 @@ import SwiftUI
 /// The Always-on tab: the inbox and request field, the switch, guidance and work settings, the Sources intake reads,
 /// and the events it recorded.
 struct AgentAlwaysOnSettingsView: View {
-    @State private var model: AgentAlwaysOnSettingsModel
+    @State private var model = AgentAlwaysOnSettingsModel()
     @State private var deleting: AgentSourceRecord?
-
-    init(account: CodexRuntimeProvider) { _model = State(initialValue: AgentAlwaysOnSettingsModel(account: account)) }
 
     var body: some View {
         Form {

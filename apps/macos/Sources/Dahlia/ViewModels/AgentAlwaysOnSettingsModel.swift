@@ -18,7 +18,6 @@ final class AgentAlwaysOnSettingsModel {
 
     static let intervals = [5, 15, 30, 60]
 
-    let account: CodexRuntimeProvider
     var sources: [AgentSourceRecord] = []
     var events: [AgentEventRecord] = []
     var servers: [String] = []
@@ -37,25 +36,24 @@ final class AgentAlwaysOnSettingsModel {
     var error: String?
     var isBusy = false
 
-    init(account: CodexRuntimeProvider, defaults: UserDefaults = .standard) {
-        self.account = account
+    init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
-        guidance = AgentBotSettings.guidance(for: account, defaults: defaults)
-        workServers = Set(AgentBotSettings.workServers(for: account, defaults: defaults))
-        webSearch = AgentBotSettings.webSearch(for: account, defaults: defaults)
+        guidance = AgentBotSettings.guidance(for: AppAccount.key, defaults: defaults)
+        workServers = Set(AgentBotSettings.workServers(for: AppAccount.key, defaults: defaults))
+        webSearch = AgentBotSettings.webSearch(for: AppAccount.key, defaults: defaults)
     }
 
     private let defaults: UserDefaults
 
     func saveGuidance() {
         guidance = String(guidance.prefix(AgentBotSettings.guidanceLimit))
-        defaults.set(guidance, forKey: AgentBotSettings.guidanceKey(for: account))
+        defaults.set(guidance, forKey: AgentBotSettings.guidanceKey(for: AppAccount.key))
     }
 
     func setWorkServer(_ server: String, allowed: Bool) {
         guard let id = connections[server] else { return }
         if allowed { workServers.insert(id) } else { workServers.remove(id) }
-        defaults.set(workServers.sorted(), forKey: AgentBotSettings.workServersKey(for: account))
+        defaults.set(workServers.sorted(), forKey: AgentBotSettings.workServersKey(for: AppAccount.key))
     }
 
     func isWorkServerAllowed(_ server: String) -> Bool {
@@ -64,13 +62,13 @@ final class AgentAlwaysOnSettingsModel {
 
     func setWebSearch(_ enabled: Bool) {
         webSearch = enabled
-        defaults.set(enabled, forKey: AgentBotSettings.webSearchKey(for: account))
+        defaults.set(enabled, forKey: AgentBotSettings.webSearchKey(for: AppAccount.key))
     }
 
     /// Opens the user's conversation with the secretary, making it the first time.
     func openHome() async {
         do {
-            let id = try await PiChatService.shared.botHomeThread(provider: account)
+            let id = try await PiChatService.shared.botHomeThread()
             NotificationCenter.default.post(name: AgentLearningSettings.openThread, object: id)
         } catch { self.error = error.localizedDescription }
     }
@@ -93,11 +91,11 @@ final class AgentAlwaysOnSettingsModel {
 
     func refresh() async {
         do {
-            let loaded = try await PiChatService.shared.loadAlwaysOnSettings(account: account.accountKey)
+            let loaded = try await PiChatService.shared.loadAlwaysOnSettings(account: AppAccount.key)
             (sources, events, paused) = loaded
-            (items, taskThreads) = try await PiChatService.shared.loadBotInbox(account: account.accountKey)
+            (items, taskThreads) = try await PiChatService.shared.loadBotInbox(account: AppAccount.key)
             // Only servers with a sign-in reach mcp.json, so only they can be read.
-            let settings = AgentMCPSettings.load(for: account)
+            let settings = AgentMCPSettings.load()
             servers = settings.piServers.keys.sorted()
             connections = Dictionary(uniqueKeysWithValues: servers.compactMap { name in settings.connectionID(for: name).map { (name, $0) } })
         } catch { self.error = error.localizedDescription }
@@ -136,7 +134,7 @@ final class AgentAlwaysOnSettingsModel {
             return
         }
         var source = AgentSourceRecord(
-            id: existing?.id ?? UUID.v7().uuidString, accountID: account.accountKey, name: name, server: draft.server,
+            id: existing?.id ?? UUID.v7().uuidString, accountID: AppAccount.key, name: name, server: draft.server,
             instructions: instructions, intervalMinutes: draft.intervalMinutes, sieve: draft.sieve,
             allowedSenders: String(decoding: (try? JSONEncoder().encode(senders)) ?? Data("[]".utf8), as: UTF8.self),
             cursor: existing?.cursor, enabled: existing?.enabled ?? true,
@@ -169,7 +167,7 @@ final class AgentAlwaysOnSettingsModel {
         isBusy = true
         defer { isBusy = false }
         do {
-            try await PiChatService.shared.updateAlwaysOnSettings(account: account.accountKey, change: change)
+            try await PiChatService.shared.updateAlwaysOnSettings(account: AppAccount.key, change: change)
             error = nil
         } catch { self.error = error.localizedDescription }
         await refresh()

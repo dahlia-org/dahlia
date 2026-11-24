@@ -8,10 +8,10 @@
 
     @Suite(.timeLimit(.minutes(1)))
     struct SkillCuratorRuntimeTests {
-        // Every case uses the app's one account, whose curator setting lives in the shared defaults.
+        /// Every case uses the app's one account, whose curator setting lives in the shared defaults.
         @Test(.serialized, arguments: [
             "unauthorized", "errorAfterIntermediate", "messageAbort", "settledAbort", "emptyFinal", "success",
-            "budget", "noMessage", "eof", "consolidationOff", "drainDuringTransitions", "drainDuringConsolidation", "accountRemoved",
+            "budget", "noMessage", "eof", "consolidationOff", "drainDuringTransitions", "drainDuringConsolidation", "historyRemoved",
         ])
         func consolidationRecordsTerminalOutcome(scenario: String) async throws {
             let script = events(scenario)
@@ -49,7 +49,10 @@
             }
             defer { try? FileManager.default.removeItem(at: pi.rootURL) }
             let account = AppAccount.key
-            UserDefaults.standard.set(!["consolidationOff", "drainDuringTransitions"].contains(scenario), forKey: SkillCuratorSettings.consolidateKey(account))
+            UserDefaults.standard.set(
+                !["consolidationOff", "drainDuringTransitions"].contains(scenario),
+                forKey: SkillCuratorSettings.consolidateKey(account)
+            )
             defer { UserDefaults.standard.removeObject(forKey: SkillCuratorSettings.consolidateKey(account)) }
             let locator = PiAgentDirectoryLocator(applicationSupportURL: pi.rootURL)
             let root = try locator.agentURL().appending(path: "skills/sample")
@@ -77,10 +80,10 @@
                 await service.drainLearningWork()
                 #expect(await transport.isClosed)
             }
-            if scenario == "accountRemoved" {
+            if scenario == "historyRemoved" {
                 let transport = await transports.transport(at: 0)
                 _ = await transport.command { $0["type"]?.stringValue == "prompt" && $0["message"]?.stringValue != "/hermes-curator" }
-                try await MeetingRepository(dbQueue: db).deleteDahliaAccountConnection(id: #require(UUID(uuidString: account)))
+                try await db.write { try $0.execute(sql: "DELETE FROM agent_system_runs") }
                 await transport.emit(TestPiTransport.assistantEnd("Finished after removal."))
                 await transport.emit(TestPiTransport.settled())
             }
@@ -91,7 +94,7 @@
             }
             await run.value
             let saved = try await db.read { try AgentSystemRunRecord.fetchOne($0) }
-            if scenario == "accountRemoved" {
+            if scenario == "historyRemoved" {
                 #expect(saved == nil)
                 #expect(await transports.allClosed())
                 return

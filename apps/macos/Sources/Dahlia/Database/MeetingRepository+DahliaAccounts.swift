@@ -28,22 +28,7 @@ extension MeetingRepository {
             // Deleting the account removes its chats with its agent directory; sign-out keeps both.
             try db.execute(sql: "DELETE FROM chat_threads WHERE accountID = ?", arguments: [id.uuidString.lowercased()])
             try db.execute(sql: "DELETE FROM agent_system_runs WHERE accountID = ?", arguments: [id.uuidString.lowercased()])
-            for table in [
-                "agent_user_inbox",
-                "agent_worker_deliveries",
-                "agent_event_inbox",
-                "agent_timers",
-                "agent_action_outbox",
-                "agent_event_topics",
-                "agent_tasks",
-                "agent_event_sources",
-                "agent_action_policies",
-                "agent_always_on_settings",
-            ] {
-                try db.execute(sql: "DELETE FROM \(table) WHERE accountID = ?", arguments: [id.uuidString.lowercased()])
-            }
         }
-        AgentBotSettings.remove(accountKey: id.uuidString.lowercased())
     }
 
 }

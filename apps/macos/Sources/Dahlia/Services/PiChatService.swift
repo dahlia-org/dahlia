@@ -622,7 +622,7 @@ actor PiChatService: CodexChatServicing {
         }
         do {
             // The secretary's Home thread hears the open tasks and inbox first, in Pi only; the history keeps the user's words.
-            let context = run.origin == "user" ? botHomeContext(threadID: threadID, provider: session.provider) : nil
+            let context = run.origin == "user" ? botHomeContext(threadID: threadID) : nil
             let accepted = try await connection.request("prompt", PiRuntimeService.prompt(Self.textJoined((context.map { [$0] } ?? []) + inputs)))
             // Pi handled the text itself (for example a `/skill:` expansion error) and starts no run.
             if accepted.objectValue?["disposition"]?.stringValue == "handled", sessions[threadID]?.turn?.id == turn.id {
@@ -877,10 +877,10 @@ actor PiChatService: CodexChatServicing {
         try PiProviderConfiguration.writeMCPServers(mcpServers, agentURL: agentLocator.agentURL())
         let profile = PiExecutionProfile(rawValue: scheduledRuns[threadID]?.profile ?? "interactive") ?? .interactive
         // A Dahlia Bot Worker reads only its Task's servers; the secretary's Home thread is an ordinary chat with one more tool.
-        let workerServers = try profile == .worker ? inboxService().task(threadID: threadID, account: provider.accountKey).map {
-            Self.workerServerNames($0, settings: mcp, allowedWorkConnections: Set(AgentBotSettings.workServers(for: provider)))
+        let workerServers = try profile == .worker ? inboxService().task(threadID: threadID, account: AppAccount.key).map {
+            Self.workerServerNames($0, settings: mcp, allowedWorkConnections: Set(AgentBotSettings.workServers(for: AppAccount.key)))
         } ?? [] : nil
-        let isBotHome = profile == .interactive && AgentBotSettings.homeThread(for: provider) == threadID
+        let isBotHome = profile == .interactive && AgentBotSettings.homeThread(for: AppAccount.key) == threadID
         let serverNames = ["dahlia"] + (workerServers ?? mcpServers.keys.sorted())
         // `--no-extensions` also drops Pi's MCP extension; explicitly enable it and the tools chat may call.
         let isChild = (try? history().thread(id: threadID, accountID: AppAccount.key).parentThreadID) != nil
@@ -892,7 +892,7 @@ actor PiChatService: CodexChatServicing {
         let agentURL = try agentLocator.agentURL()
         // A scheduled run only reads approved sources. Pi reads a missing web search setting as on, Dahlia as off.
         let webAccessURL = AgentWebAccessSettings.entryURL(agentURL: agentURL)
-        let webAccess = (profile == .interactive || (profile == .worker && AgentBotSettings.webSearch(for: provider)))
+        let webAccess = (profile == .interactive || (profile == .worker && AgentBotSettings.webSearch(for: AppAccount.key)))
             && FileManager.default.fileExists(atPath: webAccessURL.path) && (try? AgentWebAccessSettings.writeDefault(agentURL: agentURL)) != nil
         let tools = profile.fileTools + learningTools + (profile == .interactive ? ["dah_create_backup"] + threadTools : [])
             + (profile == .worker ? PiExecutionProfile.workerTools : []) + (isBotHome ? PiExecutionProfile.homeTools : [])
@@ -910,7 +910,7 @@ actor PiChatService: CodexChatServicing {
         if !instructions.isEmpty {
             arguments += ["--append-system-prompt", instructions]
         }
-        arguments += Self.botPromptArguments(profile: profile, isHome: isBotHome, provider: provider)
+        arguments += Self.botPromptArguments(profile: profile, isHome: isBotHome)
         if profile != .worker {
             arguments += ["--append-system-prompt", HermesLearning.prompts["skills_guidance"] ?? ""]
             for skill in PiBundle.presetSkillURLs() {

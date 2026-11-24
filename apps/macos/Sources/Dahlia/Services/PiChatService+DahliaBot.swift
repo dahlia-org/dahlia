@@ -56,9 +56,9 @@ extension PiChatService {
     """
 
     /// A Worker's and the Home thread's own prompt, then the user's guidance; nothing for any other chat.
-    nonisolated static func botPromptArguments(profile: PiExecutionProfile, isHome: Bool, provider: CodexRuntimeProvider) -> [String] {
+    nonisolated static func botPromptArguments(profile: PiExecutionProfile, isHome: Bool) -> [String] {
         guard profile == .worker || isHome else { return [] }
-        let guidance = AgentBotSettings.guidance(for: provider).trimmingCharacters(in: .whitespacesAndNewlines)
+        let guidance = AgentBotSettings.guidance(for: AppAccount.key).trimmingCharacters(in: .whitespacesAndNewlines)
         return ["--append-system-prompt", profile == .worker ? workerSystemPrompt : homeSystemPrompt]
             + (guidance.isEmpty ? [] : ["--append-system-prompt", guidancePrompt(guidance)])
     }
@@ -86,13 +86,13 @@ extension PiChatService {
     }
 
     /// Starts the Router when events nobody decided on wait, and queues a Worker run for each Task with deliveries.
-    func startBotRuns(routing: AgentInboxService.Routing, provider: CodexRuntimeProvider, now: Date) throws {
+    func startBotRuns(routing: AgentInboxService.Routing, now: Date) throws {
         let inbox = try inboxService()
-        let account = provider.accountKey
+        let account = AppAccount.key
         if routerTask == nil, routing.routerNeeded, routerRetryAt.map({ $0 <= now }) ?? true {
-            routerTask = Task { await self.runRouter(provider: provider) }
+            routerTask = Task { await self.runRouter() }
         }
-        let registered = mcpSettings(provider)
+        let registered = mcpSettings()
         let sourceServers = try Dictionary(uniqueKeysWithValues: inbox.sources(account: account).map {
             ($0.id, $0.server + (registered.connectionID(for: $0.server) == $0.connectionID ? "" : " (original connection unavailable)"))
         })
@@ -105,7 +105,7 @@ extension PiChatService {
         if queued { Task { await self.scheduleRuns(accountID: account) } }
     }
 
-    /// Closes the Router when it must stop now: a pause, a recording, or another account. Worker runs stop with the
+    /// Closes the Router when it must stop now: a pause or a recording. Worker runs stop with the
     /// chat queue's own account and recording rules.
     func closeBotRuns(account: String, stop: Bool) async {
         if let activeRouter, stop || activeRouter.account != account {
@@ -123,9 +123,9 @@ extension PiChatService {
     }
 
     /// Servers a Worker may read for work: those the user allowed that are still registered with a sign-in.
-    func allowedWorkServers(_ provider: CodexRuntimeProvider) -> [String] {
-        let registered = mcpSettings(provider)
-        return AgentBotSettings.workServers(for: provider).compactMap { registered.serverName(for: $0) }.sorted()
+    func allowedWorkServers() -> [String] {
+        let registered = mcpSettings()
+        return AgentBotSettings.workServers(for: AppAccount.key).compactMap { registered.serverName(for: $0) }.sorted()
     }
 
     nonisolated static func workerServerNames(
@@ -137,18 +137,18 @@ extension PiChatService {
     }
 
     /// The secretary's Home thread, made the first time the user opens it.
-    func botHomeThread(provider: CodexRuntimeProvider) throws -> String {
-        try history().dbQueue.write { try AgentInboxService.homeThread(account: provider.accountKey, now: .now, in: $0) }
+    func botHomeThread() throws -> String {
+        try history().dbQueue.write { try AgentInboxService.homeThread(account: AppAccount.key, now: .now, in: $0) }
     }
 
     // MARK: - Router
 
-    private func runRouter(provider: CodexRuntimeProvider) async {
+    private func runRouter() async {
         defer {
             routerTask = nil
             activeRouter = nil
         }
-        let account = provider.accountKey
+        let account = AppAccount.key
         await recordSystemRun(task: "router", account: account) {
             let inbox = try self.inboxService()
             let (events, tasks, items) = try inbox.routerInput(account: account)
@@ -156,9 +156,9 @@ extension PiChatService {
                 let sources = try Dictionary(uniqueKeysWithValues: inbox.sources(account: account).map { ($0.id, $0.name) })
                 let prompt = Self.routerPrompt(
                     events: events, tasks: tasks, items: items, sources: sources,
-                    servers: self.allowedWorkServers(provider), webSearch: AgentBotSettings.webSearch(for: provider)
+                    servers: self.allowedWorkServers(), webSearch: AgentBotSettings.webSearch(for: AppAccount.key)
                 )
-                try await self.launchRouter(provider: provider, prompt: prompt)
+                try await self.launchRouter(prompt: prompt)
                 self.routerRetryAt = try inbox.routerInput(account: account).events.isEmpty
                     ? nil : Date().addingTimeInterval(Self.botRetryInterval)
                 return L10n.agentBotRouterSummary(events.count)
@@ -225,21 +225,20 @@ extension PiChatService {
     }
 
     /// Runs the Router to the end. It loads no MCP server and has only its own tools.
-    private func launchRouter(provider: CodexRuntimeProvider, prompt: String) async throws {
-        let account = provider.accountKey
-        try validateBotActivity(provider: provider)
+    private func launchRouter(prompt: String) async throws {
+        let account = AppAccount.key
+        try validateBotActivity()
         var arguments = ["--no-session", "--tools", PiExecutionProfile.routerTools.joined(separator: ","), "--system-prompt", Self.routerSystemPrompt]
-        let guidance = AgentBotSettings.guidance(for: provider).trimmingCharacters(in: .whitespacesAndNewlines)
+        let guidance = AgentBotSettings.guidance(for: AppAccount.key).trimmingCharacters(in: .whitespacesAndNewlines)
         if !guidance.isEmpty { arguments += ["--append-system-prompt", Self.guidancePrompt(guidance)] }
         let connection = try await runtime.connect(
             .init(
-                mode: .chat, cwd: agentLocator.agentURL(for: provider), arguments: arguments,
+                mode: .chat, cwd: agentLocator.agentURL(), arguments: arguments,
                 environment: ["DAHLIA_PI_MEMORY_ENABLED": "0"], profile: .router
-            ),
-            provider: provider
+            )
         ) { [weak self] method, payload in
             guard let self else { throw CancellationError() }
-            return try await self.routerBotTool(method, payload: payload, provider: provider)
+            return try await self.routerBotTool(method, payload: payload)
         }
         activeRouter = ActiveBotRun(account: account, connection: connection)
         let timer = Task { try? await Task.sleep(for: Self.routerTimeout)
@@ -247,7 +246,7 @@ extension PiChatService {
         }
         defer { timer.cancel() }
         do {
-            try validateBotActivity(provider: provider)
+            try validateBotActivity()
             _ = try await connection.request("prompt", PiRuntimeService.prompt([.text(prompt)]))
             _ = try await awaitSettled(connection, label: "Router") { self.activeRouter?.connection === connection }
             await runtime.close(connection)
@@ -291,27 +290,27 @@ extension PiChatService {
 
     // MARK: - Tools
 
-    private func routerBotTool(_ method: String, payload: JSONValue, provider: CodexRuntimeProvider) throws -> JSONValue {
-        let account = provider.accountKey
+    private func routerBotTool(_ method: String, payload: JSONValue) throws -> JSONValue {
+        let account = AppAccount.key
         let name = payload.objectValue?["name"]?.stringValue ?? ""
         guard method == "botTool", activeRouter?.account == account, PiExecutionProfile.router.allows(name),
               !AgentBackgroundActivity.isRecording else { throw CancellationError() }
-        return try botToolCall(name, args: payload.objectValue?["args"]?.objectValue ?? [:], caller: .router, provider: provider)
+        return try botToolCall(name, args: payload.objectValue?["args"]?.objectValue ?? [:], caller: .router)
     }
 
     /// A Worker's tools act for its own Task, and the Home thread's for the user; the Thread decides which, not the model.
     func threadBotTool(_ payload: JSONValue, threadID: String, processID: UUID) async throws -> JSONValue {
         guard let session = sessions[threadID], session.processID == processID, let turn = session.turn, !turn.stopRequested,
               !AgentBackgroundActivity.isRecording else { throw CancellationError() }
-        let account = session.provider.accountKey
+        let account = AppAccount.key
         let name = payload.objectValue?["name"]?.stringValue ?? ""
         let args = payload.objectValue?["args"]?.objectValue ?? [:]
         if session.profile == .worker, turn.run.origin == "task", PiExecutionProfile.worker.allows(name),
            let task = try inboxService().task(threadID: threadID, account: account) {
-            return try botToolCall(name, args: args, caller: .worker(taskID: task.id, runID: turn.run.id), provider: session.provider)
+            return try botToolCall(name, args: args, caller: .worker(taskID: task.id, runID: turn.run.id))
         }
         guard session.profile == .interactive, PiExecutionProfile.homeTools.contains(name),
-              AgentBotSettings.homeThread(for: session.provider) == threadID else { throw CancellationError() }
+              AgentBotSettings.homeThread(for: AppAccount.key) == threadID else { throw CancellationError() }
         do {
             try inboxService().request(args["request"]?.stringValue ?? "", taskID: args["task_id"]?.stringValue?.nilIfBlank, account: account)
             Task { await self.drainAlwaysOn() }
@@ -321,11 +320,11 @@ extension PiChatService {
         }
     }
 
-    private func botToolCall(_ name: String, args: [String: JSONValue], caller: AgentInboxService.Caller, provider: CodexRuntimeProvider) throws
+    private func botToolCall(_ name: String, args: [String: JSONValue], caller: AgentInboxService.Caller) throws
         -> JSONValue {
-        let account = provider.accountKey
-        guard runtime.isSelectedProvider(provider) else { throw CancellationError() }
-        if caller == .router { try validateBotActivity(provider: provider) }
+        let account = AppAccount.key
+        guard runtime.isConfigured else { throw CancellationError() }
+        if caller == .router { try validateBotActivity() }
         func text(_ key: String) -> String { args[key]?.stringValue ?? "" }
         func list(_ key: String) -> [String] { args[key]?.arrayValue?.compactMap(\.stringValue) ?? [] }
         let inbox = try inboxService()
@@ -333,8 +332,8 @@ extension PiChatService {
             switch name {
             case "task_create", "task_suggest":
                 guard let title = text("title").nilIfBlank else { throw AgentInboxService.Failure(message: "A task needs a title.") }
-                let allowed = Set(allowedWorkServers(provider))
-                let settings = mcpSettings(provider)
+                let allowed = Set(allowedWorkServers())
+                let settings = mcpSettings()
                 let servers = list("servers").filter(allowed.contains).compactMap { settings.connectionID(for: $0) }
                 if name == "task_suggest" {
                     let item = try inbox.suggestTask(
@@ -383,9 +382,9 @@ extension PiChatService {
 
     /// What the Home thread's next turn starts with: the open tasks and inbox, only when they changed since its last turn,
     /// as Orca adds a bot's live work. Titles come from mail the Router read, so they are data, not instructions.
-    func botHomeContext(threadID: String, provider: CodexRuntimeProvider) -> CodexAppServerInput? {
-        guard AgentBotSettings.homeThread(for: provider) == threadID, let inbox = try? inboxService(),
-              let (_, tasks, items) = try? inbox.routerInput(account: provider.accountKey) else { return nil }
+    func botHomeContext(threadID: String) -> CodexAppServerInput? {
+        guard AgentBotSettings.homeThread(for: AppAccount.key) == threadID, let inbox = try? inboxService(),
+              let (_, tasks, items) = try? inbox.routerInput(account: AppAccount.key) else { return nil }
         let lines = tasks.map { "task:\($0.id) \"\(Self.inline($0.title))\"" }
             + items.map { "item:\($0.id) \($0.kind) \"\(Self.inline($0.title))\"" + ($0.taskID.map { " task:\($0)" } ?? "") }
         let key = lines.joined(separator: "\n")

@@ -55,11 +55,12 @@
             let settings = try settings()
             let id = try #require(settings.connectionID(for: "gmail"))
             let task = try await Task.detached {
+                let account = UUID.v7().uuidString
                 let service = try AgentInboxService(dbQueue: AppDatabaseManager(path: ":memory:").dbQueue)
                 let suggestion = try service.suggestTask(
-                    title: "Read", instructions: "Read", eventIDs: [], servers: [id], caller: .router, account: "local"
+                    title: "Read", instructions: "Read", eventIDs: [], servers: [id], caller: .router, account: account
                 )
-                #expect(try service.answer(itemID: suggestion.id, revision: 1, answer: "Yes", account: "local"))
+                #expect(try service.answer(itemID: suggestion.id, revision: 1, answer: "Yes", account: account))
                 return try service.dbQueue.read { try #require(try AgentTaskRecord.fetchOne($0)) }
             }.value
             #expect(PiChatService.workerServerNames(task, settings: settings, allowedWorkConnections: [id]) == ["gmail"])
@@ -70,10 +71,10 @@
             let suite = "AgentConnectionBindingTests.\(UUID.v7().uuidString)"
             let defaults = try #require(UserDefaults(suiteName: suite))
             defer { defaults.removePersistentDomain(forName: suite) }
-            let provider = CodexRuntimeProvider.local
+            let provider = AppAccount.key
             let settings = try settings()
             let original = try #require(settings.connectionID(for: "gmail"))
-            let model = AgentAlwaysOnSettingsModel(account: provider, defaults: defaults)
+            let model = AgentAlwaysOnSettingsModel(defaults: defaults)
             model.connections = ["gmail": original]
             model.setWorkServer("gmail", allowed: true)
             #expect(model.isWorkServerAllowed("gmail"))

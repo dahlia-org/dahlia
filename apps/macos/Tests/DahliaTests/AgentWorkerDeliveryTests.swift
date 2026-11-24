@@ -10,7 +10,7 @@
             let inbox: AgentInboxService
             let task: AgentTaskRecord
             let eventID: String
-            let account = "local"
+            var account: String { task.accountID }
             var store: ChatThreadStore { ChatThreadStore(dbQueue: inbox.dbQueue) }
             func queue() throws -> ChatRunRecord {
                 try #require(try inbox.queueWorker(
@@ -30,10 +30,11 @@
         }
 
         private func fixture() throws -> Fixture {
+            let account = UUID.v7().uuidString
             let inbox = try AgentInboxService(dbQueue: AppDatabaseManager(path: ":memory:").dbQueue)
-            try inbox.request("Original", account: "local")
-            let event = try #require(try inbox.routerInput(account: "local").events.first)
-            let task = try inbox.createTask(title: "Work", instructions: "Read", eventIDs: [event.id], caller: .router, account: "local")
+            try inbox.request("Original", account: account)
+            let event = try #require(try inbox.routerInput(account: account).events.first)
+            let task = try inbox.createTask(title: "Work", instructions: "Read", eventIDs: [event.id], caller: .router, account: account)
             return Fixture(inbox: inbox, task: task, eventID: event.id)
         }
 

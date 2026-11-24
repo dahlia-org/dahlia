@@ -53,14 +53,15 @@ extension PiChatService {
     }
 
     /// Rechecked after asynchronous preparation, immediately before autonomous work is published.
-    func validateBotActivity(provider: CodexRuntimeProvider, source: AgentSourceRecord? = nil) throws {
+    func validateBotActivity(source: AgentSourceRecord? = nil) throws {
         try Task.checkCancellation()
         let inbox = try inboxService()
-        guard runtime.isSelectedProvider(provider), !AgentBackgroundActivity.isRecording,
-              try !inbox.isPaused(account: provider.accountKey) else { throw CancellationError() }
+        guard runtime.isConfigured, !AgentBackgroundActivity.isRecording,
+              try !inbox.isPaused(account: AppAccount.key) else { throw CancellationError() }
         if let source {
-            guard !source.connectionID.isEmpty, mcpSettings(provider).connectionID(for: source.server) == source.connectionID,
-                  try inbox.sources(account: provider.accountKey).contains(where: {
+            guard source.accountID == AppAccount.key, !source.connectionID.isEmpty,
+                  mcpSettings().connectionID(for: source.server) == source.connectionID,
+                  try inbox.sources(account: AppAccount.key).contains(where: {
                       $0.id == source.id && $0.enabled && $0.revision == source.revision
                   }) else { throw CancellationError() }
         }
@@ -105,19 +106,19 @@ extension PiChatService {
         try change(inboxService(), account)
     }
 
-    /// Housekeeping chore for the selected account. Recording stops new work and closes an intake in progress.
+    /// Housekeeping chore for the app account. Recording stops new work and closes an intake in progress.
     func drainAlwaysOn(now: Date = .now) async {
         do {
-            let provider = try await runtime.currentProvider()
-            let account = provider.accountKey
+            try await runtime.requireConfigured()
+            let account = AppAccount.key
             let inbox = try inboxService()
             let paused = try inbox.isPaused(account: account)
-            let stop = paused || AgentBackgroundActivity.isRecording || !runtime.isSelectedProvider(provider)
+            let stop = paused || AgentBackgroundActivity.isRecording || !runtime.isConfigured
             let sources = try inbox.sources(account: account)
             if let activeIntake, activeIntake.account != account || stop
                 || !sources.contains(where: {
                     $0.id == activeIntake.sourceID && $0.enabled && $0.revision == activeIntake.revision
-                        && mcpSettings(provider).connectionID(for: $0.server) == $0.connectionID
+                        && mcpSettings().connectionID(for: $0.server) == $0.connectionID
                 }) {
                 await runtime.close(activeIntake.connection)
             }
@@ -125,20 +126,20 @@ extension PiChatService {
             guard !stop else { return }
             try inbox.fireTimers(account: account, now: now)
             let routing = try inbox.route(account: account, now: now)
-            try startBotRuns(routing: routing, provider: provider, now: now)
+            try startBotRuns(routing: routing, now: now)
             guard intakeTask == nil else { return }
             let due = try inbox.dueSources(account: account, now: now).first { source in
                 intakeAttempts[source.id].map { $0.addingTimeInterval(Double(source.intervalMinutes) * 60) <= now } ?? true
             }
             guard let due else { return }
             intakeAttempts[due.id] = now
-            intakeTask = Task { await self.runIntake(due, provider: provider) }
+            intakeTask = Task { await self.runIntake(due) }
         } catch {
-            // Missing selected-account authentication is a waiting condition; no other account is substituted.
+            // An unconfigured runtime waits until provider setup completes.
         }
     }
 
-    private func runIntake(_ source: AgentSourceRecord, provider: CodexRuntimeProvider) async {
+    private func runIntake(_ source: AgentSourceRecord) async {
         defer {
             intakeTask = nil
             activeIntake = nil
@@ -151,13 +152,13 @@ extension PiChatService {
         do {
             let initial = run
             try await history().dbQueue.write { try initial.insert($0) }
-            try validateBotActivity(provider: provider, source: source)
-            let servers = mcpSettings(provider).piServers
+            try validateBotActivity(source: source)
+            let servers = mcpSettings().piServers
             guard servers[source.server] != nil else { throw AgentInboxService.Failure(message: "MCP server \(source.server) is not registered.") }
-            try PiProviderConfiguration.writeMCPServers(servers, agentURL: agentLocator.agentURL(for: provider))
+            try PiProviderConfiguration.writeMCPServers(servers, agentURL: agentLocator.agentURL())
             let connection = try await runtime.connect(
                 .init(
-                    mode: .chat, cwd: agentLocator.agentURL(for: provider),
+                    mode: .chat, cwd: agentLocator.agentURL(),
                     arguments: [
                         "--no-session", "-e", "builtin:mcp", "--tools", "event_record,mcp__\(source.server)__*",
                         "--system-prompt", Self.intakeSystemPrompt,
@@ -165,13 +166,12 @@ extension PiChatService {
                     // The only server intake may call; the extension blocks the rest and every tool that is not read-only.
                     environment: ["DAHLIA_PI_MEMORY_ENABLED": "0", "DAHLIA_PI_MCP_SERVERS": HermesLearning.json([source.server])],
                     profile: .intake
-                ),
-                provider: provider
+                )
             ) { [weak self] method, payload in
                 guard let self else { throw CancellationError() }
-                return try await self.intakeTool(method, payload: payload, source: source, provider: provider)
+                return try await self.intakeTool(method, payload: payload, source: source)
             }
-            let service = mcpSettings(provider).servers.first { $0.name == source.server }?.service
+            let service = mcpSettings().servers.first { $0.name == source.server }?.service
             activeIntake = ActiveIntake(
                 sourceID: source.id, revision: source.revision, account: source.accountID, connection: connection,
                 isGmail: service == "system.ai.gmail"
@@ -183,7 +183,7 @@ extension PiChatService {
             do {
                 // shortcut: the range is a time the code sets, and the model pages through it. Only results that list
                 // their items (Gmail's) are checked item by item; see `listedItemIDs` in event-tools.ts.
-                try validateBotActivity(provider: provider, source: source)
+                try validateBotActivity(source: source)
                 let since = source.cursor ?? ISO8601DateFormatter().string(from: startedAt.addingTimeInterval(-86400))
                 let prompt = "Source: \(source.name)\nWhat to read: \(source.instructions)\nRead the items that arrived since \(since)."
                 _ = try await connection.request("prompt", PiRuntimeService.prompt([.text(prompt)]))
@@ -193,7 +193,7 @@ extension PiChatService {
                 await runtime.close(connection)
                 throw error
             }
-            try validateBotActivity(provider: provider, source: source)
+            try validateBotActivity(source: source)
             guard activeIntake?.readFailed == false, activeIntake?.readSucceeded == true,
                   activeIntake?.pages.isComplete == true
             else { throw AgentInboxService.Failure(message: "The Source read did not complete. The read position was kept.") }
@@ -229,11 +229,11 @@ extension PiChatService {
         try? await history().dbQueue.write { try finished.update($0) }
     }
 
-    private func intakeTool(_ method: String, payload: JSONValue, source: AgentSourceRecord, provider: CodexRuntimeProvider) throws -> JSONValue {
+    private func intakeTool(_ method: String, payload: JSONValue, source: AgentSourceRecord) throws -> JSONValue {
         guard ["eventRecord", "intakeSeen", "intakeReadFailed"].contains(method), activeIntake?.sourceID == source.id,
               !AgentBackgroundActivity.isRecording
         else { throw CancellationError() }
-        try validateBotActivity(provider: provider, source: source)
+        try validateBotActivity(source: source)
         if method == "intakeReadFailed" {
             activeIntake?.readFailed = true
             return .bool(true)

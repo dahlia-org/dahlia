@@ -222,46 +222,10 @@
             _ = try await database.dbQueue.write { try DahliaAccountConnectionRecord.deleteOne($0, key: databricks.id) }
             #expect(try store.thread(id: signedOut.id, accountID: signedOut.accountID).id == signedOut.id)
 
-            let ownedProvider = CodexRuntimeProvider.databricks(connectionID: account.id)
-            let otherProvider = CodexRuntimeProvider.databricks(connectionID: databricks.id)
-            UserDefaults.standard.set("private guidance", forKey: AgentBotSettings.guidanceKey(for: ownedProvider))
-            UserDefaults.standard.set(["gmail"], forKey: AgentBotSettings.workServersKey(for: ownedProvider))
-            UserDefaults.standard.set(true, forKey: AgentBotSettings.webSearchKey(for: ownedProvider))
-            UserDefaults.standard.set(owned.id, forKey: AgentBotSettings.homeThreadKey(for: ownedProvider))
-            UserDefaults.standard.set("other guidance", forKey: AgentBotSettings.guidanceKey(for: otherProvider))
-            defer {
-                AgentBotSettings.remove(accountKey: ownedProvider.accountKey)
-                AgentBotSettings.remove(accountKey: otherProvider.accountKey)
-            }
             try await MeetingRepository(dbQueue: database.dbQueue).deleteDahliaAccountConnection(id: account.id)
-            #expect(AgentBotSettings.guidance(for: ownedProvider).isEmpty)
-            #expect(AgentBotSettings.workServers(for: ownedProvider).isEmpty)
-            #expect(!AgentBotSettings.webSearch(for: ownedProvider) && AgentBotSettings.homeThread(for: ownedProvider) == nil)
-            #expect(AgentBotSettings.guidance(for: otherProvider) == "other guidance")
             #expect(try store.listItems(threadID: owned.id).isEmpty)
             #expect(throws: (any Error).self) { try store.thread(id: owned.id, accountID: owned.accountID) }
             #expect(try store.thread(id: local.id, accountID: "local").id == local.id)
-        }
-
-        @Test
-        func failedAccountDeletionKeepsTheSecretarySettings() async throws {
-            let database = try AppDatabaseManager(path: ":memory:")
-            let account = DahliaAccountConnectionRecord(id: .v7(), origin: "https://example.test", clientID: "test", createdAt: .now)
-            try await database.dbQueue.write { db in
-                try account.insert(db)
-                try db
-                    .execute(
-                        sql: "CREATE TRIGGER reject_account_deletion BEFORE DELETE ON \(DahliaAccountConnectionRecord.databaseTableName) BEGIN SELECT RAISE(ABORT, 'test failure'); END"
-                    )
-            }
-            let provider = CodexRuntimeProvider.databricks(connectionID: account.id)
-            UserDefaults.standard.set("Keep me", forKey: AgentBotSettings.guidanceKey(for: provider))
-            defer { AgentBotSettings.remove(accountKey: provider.accountKey) }
-            await #expect(throws: (any Error).self) {
-                try await MeetingRepository(dbQueue: database.dbQueue).deleteDahliaAccountConnection(id: account.id)
-            }
-            #expect(AgentBotSettings.guidance(for: provider) == "Keep me")
-            #expect(try await database.dbQueue.read { try DahliaAccountConnectionRecord.fetchOne($0, key: account.id) } != nil)
         }
 
         @Test

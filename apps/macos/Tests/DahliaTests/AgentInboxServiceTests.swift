@@ -6,7 +6,7 @@
     @testable import Dahlia
 
     struct AgentInboxServiceTests {
-        private let account = "local"
+        private let account = UUID.v7().uuidString
 
         private func inbox(sieve: String = "candidate", allowedSenders: [String] = []) throws -> (AgentInboxService, String) {
             let queue = try AppDatabaseManager(path: ":memory:").dbQueue
