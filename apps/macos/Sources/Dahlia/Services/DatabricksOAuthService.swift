@@ -285,6 +285,7 @@ actor DatabricksOAuthService {
 
     private func login(_ connection: DatabricksConnection) async throws -> DatabricksOAuthCredential {
         let endpoints = try await discover(workspace: connection.host)
+        try Task.checkCancellation()
         let verifier = Self.randomString(byteCount: 64)
         let challenge = Self.base64URL(Data(SHA256.hash(data: Data(verifier.utf8))))
         let state = Self.randomString(byteCount: 32)
@@ -401,7 +402,10 @@ actor DatabricksOAuthService {
         let (server, redirectURI) = try await makeCallbackServer()
         try Task.checkCancellation()
         let url = try authorizationURL(redirectURI)
-        let opened = await MainActor.run { NSWorkspace.shared.open(url) }
+        let opened = try await MainActor.run {
+            try Task.checkCancellation()
+            return NSWorkspace.shared.open(url)
+        }
         guard opened else { throw DahliaCloudError.browserCouldNotOpen }
         return try await (callbackURL(from: server), redirectURI)
     }

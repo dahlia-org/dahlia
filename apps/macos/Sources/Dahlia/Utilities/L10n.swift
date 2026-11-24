@@ -1601,11 +1601,14 @@ enum L10n { // swiftlint:disable:this type_body_length
         bundle: bundle
     ) }
     static var googleDriveOAuthDisclosureAccess: String { String(
-        localized: "Google grants read-only access to Drive files. Dahlia uses folder and file metadata to find Dahlia/Backup and downloads the backups you select.",
+        localized: "Google grants read-only access to all Drive files. Dahlia uses metadata to find Dahlia/Backup and downloads only the backups you select.",
         bundle: bundle
     ) }
     static var googleDriveOAuthDisclosureUseAndStorage: String { String(
-        localized: "Downloaded backups are stored on this Mac and validated before restore. The authorization token is stored in Keychain separately from Google Calendar.",
+        localized: """
+        Downloaded backups are stored on this Mac and validated before restore. \
+        Calendar and Drive share the registered Google account’s Keychain credential.
+        """,
         bundle: bundle
     ) }
     static var googleDriveOAuthDisclosureExternalSharing: String { String(
@@ -2140,7 +2143,11 @@ enum L10n { // swiftlint:disable:this type_body_length
         bundle: bundle
     ) }
     static var googleProviderSignInDescription: String { String(
-        localized: "Add your Google account using your name and email. Calendar and Drive ask for access when you use them. Adding this account does not change your calendar provider.",
+        localized: "Allow read-only access to Calendar and all Drive files. Dahlia reads selected Dahlia/Backup backups. Enable each feature in Settings. Drive access is optional.",
+        bundle: bundle
+    ) }
+    static var googleProviderAuthorizeBoth: String { String(
+        localized: "Authorize Calendar and Drive",
         bundle: bundle
     ) }
 
@@ -2278,7 +2285,8 @@ enum L10n { // swiftlint:disable:this type_body_length
     static var googleOAuthDisclosureManageAndDelete: String { String(localized: "Manage and Delete", bundle: bundle) }
     static var googleCalendarOAuthDisclosureDeletion: String { String(
         localized: """
-        Disconnecting Calendar removes only its local OAuth session and saved calendar selection identifiers. \
+        Disconnecting Calendar stops its use in Dahlia and clears its calendar selection. The shared Google credential remains for Drive. \
+        Sign out of the provider to remove it from this Mac. \
         Delete linked meetings to remove saved calendar details from the active database, and delete database backups separately.
         """,
         bundle: bundle

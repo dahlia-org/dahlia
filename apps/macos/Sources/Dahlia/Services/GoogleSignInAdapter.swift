@@ -96,6 +96,7 @@ enum GoogleSignInError: LocalizedError {
     case notConfigured
     case missingPresentingWindow
     case noPreviousSignIn
+    case reauthenticationRequired
     case invalidAuthorizationResponse
     case authorizationTimedOut
     case invalidTokenResponse
@@ -111,7 +112,7 @@ enum GoogleSignInError: LocalizedError {
             L10n.googleAccountClientIDMissingMessage
         case .missingPresentingWindow:
             L10n.googleAccountMissingPresentingWindow
-        case .noPreviousSignIn:
+        case .noPreviousSignIn, .reauthenticationRequired:
             L10n.googleAccountNoPreviousSession
         case .authorizationTimedOut:
             L10n.googleAccountAuthorizationTimedOut
@@ -273,6 +274,7 @@ final class GoogleSignInAdapter: NSObject, GoogleSignInProviding {
             loginHint: previousSessionLookup?.session.account.email
         )
 
+        try Task.checkCancellation()
         window.orderFrontRegardless()
         NSApp.activate(ignoringOtherApps: true)
         guard NSWorkspace.shared.open(authorizationURL) else {
@@ -503,11 +505,8 @@ final class GoogleSignInAdapter: NSObject, GoogleSignInProviding {
             return storedSession
         }
 
-        guard let clientID = GoogleCalendarConfiguration.clientID,
-              let refreshToken = storedSession.refreshToken
-        else {
-            return storedSession
-        }
+        guard let clientID = GoogleCalendarConfiguration.clientID else { throw GoogleSignInError.notConfigured }
+        guard let refreshToken = storedSession.refreshToken else { throw GoogleSignInError.reauthenticationRequired }
 
         let clientSecret = await Self.loadClientSecret()
         let tokenResponse = try await refreshAccessToken(
@@ -587,9 +586,8 @@ final class GoogleSignInAdapter: NSObject, GoogleSignInProviding {
         }
 
         guard (200 ..< 300).contains(httpResponse.statusCode) else {
-            let detail = Self.responseDetail(from: data) ?? L10n.googleAccountUnexpectedResponse
-            throw GoogleSignInError.authorizationFailed(
-                L10n.googleAccountHTTPError(httpResponse.statusCode, detail)
+            throw Self.tokenRequestError(
+                statusCode: httpResponse.statusCode, data: data, grantType: body["grant_type"]
             )
         }
 
@@ -604,6 +602,16 @@ final class GoogleSignInAdapter: NSObject, GoogleSignInProviding {
             expirationDate: expirationDate,
             grantedScopes: payload.grantedScopes
         )
+    }
+
+    static func tokenRequestError(statusCode: Int, data: Data, grantType: String?) -> GoogleSignInError {
+        if statusCode == 400, grantType == "refresh_token",
+           let payload = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+           payload["error"] as? String == "invalid_grant" {
+            return .reauthenticationRequired
+        }
+        let detail = responseDetail(from: data) ?? L10n.googleAccountUnexpectedResponse
+        return .authorizationFailed(L10n.googleAccountHTTPError(statusCode, detail))
     }
 
     private func fetchAccount(accessToken: String) async throws -> GoogleCalendarAccount {

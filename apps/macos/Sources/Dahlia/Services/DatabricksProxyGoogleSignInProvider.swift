@@ -34,6 +34,10 @@ final class DatabricksProxyGoogleSignInProvider: GoogleSignInProviding {
     }
 
     private var registeredSessionObserver: AnyCancellable?
+    private var routeChangeObserver: AnyCancellable?
+    private var observedRoute: String?
+    private var routeRevision: UInt64 = 0
+    private var connectTasks: [UUID: Task<GoogleSession, Error>] = [:]
     private let oauth: DatabricksOAuthService
     private let storage: DatabricksOAuthStorage
     private let driveClient: GoogleDriveBackupClient
@@ -66,6 +70,18 @@ final class DatabricksProxyGoogleSignInProvider: GoogleSignInProviding {
         self.apiClient = apiClient
         self.driveClient = driveClient
         self.userDefaults = userDefaults
+        observedRoute = userDefaults.string(forKey: GoogleCalendarProvider.userDefaultsKey)
+        routeChangeObserver = NotificationCenter.default.publisher(for: GoogleCalendarProvider.didChange)
+            .sink { [weak self] _ in
+                guard let self, configuredProvider == nil else { return }
+                let current = userDefaults.string(forKey: GoogleCalendarProvider.userDefaultsKey)
+                guard current != observedRoute else { return }
+                observedRoute = current
+                routeRevision &+= 1
+                for task in connectTasks.values {
+                    task.cancel()
+                }
+            }
         if let direct {
             directObserver = GoogleAuthSessionObserver(notificationName: direct.sessionDidChangeNotification) { [weak self] _ in
                 guard let self, !isProxyActive else { return }
@@ -149,19 +165,66 @@ final class DatabricksProxyGoogleSignInProvider: GoogleSignInProviding {
     }
 
     func signIn(withPresentingWindow window: NSWindow, requestedScopes: Set<String>) async throws -> GoogleSession {
+        try Task.checkCancellation()
+        let id = UUID()
+        let task = Task { try await connect(withPresentingWindow: window, requestedScopes: requestedScopes) }
+        connectTasks[id] = task
+        defer { connectTasks[id] = nil }
+        return try await withTaskCancellationHandler {
+            let result = await task.result
+            guard !task.isCancelled else { throw CancellationError() }
+            return try result.get()
+        } onCancel: {
+            task.cancel()
+        }
+    }
+
+    private func connect(withPresentingWindow window: NSWindow, requestedScopes: Set<String>) async throws -> GoogleSession {
+        try Task.checkCancellation()
+        let selected = selectedProvider
+        let revision = routeRevision
         guard let connection else {
             guard let direct else { throw GoogleSignInError.noPreviousSignIn }
-            let selected = selectedProvider
-            let session = try await direct.signIn(withPresentingWindow: window, requestedScopes: requestedScopes)
-            userDefaults.removeObject(forKey: directDisconnectedKey(for: selected))
+            var restored: GoogleSession?
+            do {
+                restored = await direct.hasPreviousSignIn ? try await direct.restorePreviousSignIn() : nil
+            } catch GoogleSignInError.reauthenticationRequired {
+                restored = nil
+            }
+            if let session = restored, session.hasScopes(requestedScopes) {
+                do {
+                    if sessionKind == .drive {
+                        _ = try await driveClient.fetchAccount(session: session)
+                    } else {
+                        _ = try await apiClient.fetchCalendarList(session: session)
+                    }
+                } catch GoogleCalendarAPIError.httpError(statusCode: 401, detail: _) {
+                    restored = nil
+                }
+            }
+            try checkCurrentRoute(selected, revision: revision)
+            let session = if let restored, restored.hasScopes(requestedScopes) {
+                restored
+            } else {
+                try await direct.signIn(withPresentingWindow: window, requestedScopes: requestedScopes)
+            }
+            try checkCurrentRoute(selected, revision: revision)
+            let key = directDisconnectedKey(for: selected)
+            let wasDisconnected = userDefaults.bool(forKey: key)
+            userDefaults.removeObject(forKey: key)
+            if wasDisconnected {
+                NotificationCenter.default.post(name: sessionDidChangeNotification, object: nil)
+            }
             return session
         }
         // Only this pre-check may open the Databricks login; every later token use is unattended.
         // Only a missing Google credential opens the page; any other error surfaces, and Settings then offers the page.
         if let session = try await proxySessionIfAuthorized(for: connection, interactive: true) {
+            try checkCurrentRoute(selected, revision: revision)
             return markConnected(session, for: connection)
         }
 
+        try checkCurrentRoute(selected, revision: revision)
         window.orderFrontRegardless()
         guard NSWorkspace.shared.open(Self.signInPageURL(for: connection, sessionKind: sessionKind)) else {
             throw DahliaCloudError.browserCouldNotOpen
@@ -171,11 +234,17 @@ final class DatabricksProxyGoogleSignInProvider: GoogleSignInProviding {
         for _ in 0 ..< 60 {
             try await Task.sleep(for: .seconds(3))
             if let session = try await proxySessionIfAuthorized(for: connection) {
+                try checkCurrentRoute(selected, revision: revision)
                 NSApp.activate(ignoringOtherApps: true)
                 return markConnected(session, for: connection)
             }
         }
         throw GoogleSignInError.authorizationTimedOut
+    }
+
+    private func checkCurrentRoute(_ selected: GoogleCalendarProvider, revision: UInt64) throws {
+        try Task.checkCancellation()
+        guard selectedProvider == selected, routeRevision == revision else { throw CancellationError() }
     }
 
     func refreshCurrentSession() async throws -> GoogleSession? {
