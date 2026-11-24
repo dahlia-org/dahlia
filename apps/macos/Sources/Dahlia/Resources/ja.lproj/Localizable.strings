@@ -1802,7 +1802,7 @@
 
 "Dahlia reads backups from My Drive/Dahlia/Backup. This connection does not upload or delete files." = "Dahlia はマイドライブの Dahlia/Backup からバックアップを読み取ります。この接続ではアップロードや削除を行いません。";
 
-"Google grants read-only access to Drive files. Dahlia uses folder and file metadata to find Dahlia/Backup and downloads the backups you select." = "Google Drive のファイルへの読み取り専用権限を取得します。フォルダとファイルの情報で Dahlia/Backup を検索し、選択したバックアップをダウンロードします。";
+"Google grants read-only access to all Drive files. Dahlia uses metadata to find Dahlia/Backup and downloads only the backups you select." = "Google Drive 内のすべてのファイルへの読み取り専用権限を取得します。ファイル情報で Dahlia/Backup を検索し、選択したバックアップだけをダウンロードします。";
 
 "Downloaded backups are stored on this Mac and validated before restore. The authorization token is stored in Keychain separately from Google Calendar." = "ダウンロードしたバックアップはこの Mac に保存し、復元前に検証します。認証トークンは Google Calendar とは分けてキーチェーンに保存します。";
 
@@ -2096,7 +2096,7 @@
 
 "settings.agents.optimization.agentLegacyReviewRuns" = "以前の共通履歴";
 
-"Add your Google account with read-only access to calendars, events, and Drive backup files. Choose where to use this account in each feature’s settings." = "カレンダーと Drive の読み取り権限で Google アカウントを追加します。カレンダーではカレンダー一覧と予定を、Drive では取り込むバックアップファイルを読み取ります。利用先は各機能の設定で選択します。";
+"Google sign-in requests read-only access to calendars, events, and all Drive files. Dahlia uses Drive to find and read Dahlia/Backup backups." = "Google サインインでは、カレンダー・予定と Drive 内のすべてのファイルへの読み取り権限を要求します。Dahlia は Drive で Dahlia/Backup を検索し、選択したバックアップを読み取ります。";
 
 "Disconnect this Google account from Calendar and Drive in Dahlia? Databricks connections are not affected." = "この Google アカウントを Dahlia のカレンダーと Drive から切断しますか？ Databricks の接続には影響しません。";
 

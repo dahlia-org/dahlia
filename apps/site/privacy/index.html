@@ -38,7 +38,7 @@
         <header class="legal-heading">
           <p class="section-index">PRIVACY</p>
           <h1>Privacy Policy</h1>
-          <p class="legal-effective-date">Effective August 10, 2026</p>
+          <p class="legal-effective-date">Effective November 24, 2026</p>
           <p>
             Dahlia is a macOS meeting transcription and note-taking application. This policy explains what data Dahlia
             accesses, how it is used and stored, when it leaves your Mac, and how you can manage or delete it.
@@ -63,16 +63,20 @@
           </p>
           <h3>Google account and Calendar data</h3>
           <p>
-            If you connect Google Calendar, Dahlia accesses your Google account identifier, display name, email address,
-            calendar list, and upcoming events from calendars you select. Event data can include the title, description,
+            When you add a Google provider account, Dahlia requests your account identifier, display name, email address,
+            and read-only Calendar and Drive permissions together. You choose which features use that account.
+            When you enable Calendar, Dahlia reads your
+            calendar list and upcoming events from calendars you select. Event data can include the title, description,
             start and end times, attendance status, event type, calendar and event identifiers, conference link, and
             Google Calendar link. Calendar access is read-only; Dahlia does not create, edit, or delete calendar events.
           </p>
           <h3>Google Drive data</h3>
           <p>
-            If you connect Google Drive, Dahlia creates and manages a <q>Meeting Notes</q> folder and Google Docs exported
-            by Dahlia. Access is limited to files and folders created by, or explicitly used with, Dahlia. Dahlia does not
-            request access to unrelated Drive files.
+            The Google Drive permission (drive.readonly) allows reading all files in your Drive, including files unrelated
+            to Dahlia. Dahlia uses folder and file metadata to find <q>My Drive/Dahlia/Backup</q> and downloads only the
+            backups you select for restore. This connection does not create, upload, edit, or delete Drive files.
+            Backup uploads and Google Docs exports through Dahlia AI use a separately configured MCP connection and
+            its permissions, subject to the approval settings for that AI connection.
           </p>
           <h3>Diagnostics</h3>
           <p>
@@ -114,7 +118,7 @@
             <li>recording, transcribing, organizing, searching, and displaying your meetings;</li>
             <li>showing your selected upcoming calendars and preparing a meeting from an event;</li>
             <li>associating an event with a meeting and using that context in a summary or AI chat you initiate; and</li>
-            <li>exporting a summary to a Google Doc when you request it.</li>
+            <li>finding and downloading selected Google Drive backups for restore. Google Docs exports through AI use your separately configured MCP connection.</li>
           </ul>
           <p>
             Dahlia also uses the anonymous usage analytics and sanitized technical diagnostics described above to measure
@@ -131,9 +135,9 @@
           <ul>
             <li>
               OAuth access and refresh tokens, Google account identifier, display name, and email address are stored as an
-              OAuth session in the macOS Keychain until Google access is disconnected.
+              OAuth session in the macOS Keychain until that provider account is signed out or removed.
             </li>
-            <li>Upcoming Google Calendar events are cached in memory while Dahlia is running.</li>
+            <li>Upcoming Google Calendar events are cached in memory and in a local snapshot for each app account and provider. Disconnecting that calendar removes its snapshot.</li>
             <li>
               When you associate an event with a saved meeting, the event title, description, times, identifiers, and
               links are stored in Dahlia's active local meeting database and in any database backups you create. The active
@@ -141,9 +145,8 @@
               meeting is deleted. Existing backups retain their earlier copy until you delete the backup.
             </li>
             <li>
-              Selected calendar identifiers and the Drive export folder and account identifiers are stored in local
-              settings. Exported document URLs and identifiers are stored with the related meeting in the local database
-              and in any database backups you create.
+              Selected provider and calendar identifiers are stored in local settings. Downloaded backups are used to
+              restore data on your Mac; restored meetings and retained local backups remain until you delete them.
             </li>
             <li>Exported Google Docs remain in your Google Drive until you delete them there.</li>
             <li>
@@ -169,8 +172,9 @@
             not send Google Calendar data to an AI service merely because you connected your account or viewed your schedule.
           </p>
           <p>
-            When you export to Google Docs, the rendered summary and included images are sent directly from Dahlia on your
-            Mac to Google Drive. Outside the user-facing features described in this policy, Dahlia does not disclose Google
+            Drive backup reads are sent to Google, directly or through the Databricks connection you select. If you ask
+            Dahlia AI to upload a backup or export to Google Docs, the configured MCP connection sends the requested
+            content to Google under its own permissions. Outside the user-facing features described in this policy, Dahlia does not disclose Google
             user data except as necessary for security purposes or to comply with applicable law.
           </p>
         </section>
@@ -179,11 +183,11 @@
           <h2>5. Manage and delete your Google data</h2>
           <ol>
             <li>
-              <strong>Stop future access:</strong> In Dahlia, open Calendar or Export settings and choose
-              <q>Disconnect</q>. Dahlia removes both locally stored Google OAuth sessions and attempts to revoke all Google
-              access granted to Dahlia. Google revocation applies to the whole OAuth project, so disconnecting Calendar or
-              Drive disconnects both services. Dahlia also clears saved Calendar and Drive selection identifiers. If
-              revocation cannot be completed, remove Dahlia from your Google Account's third-party connections page.
+              <strong>Stop future access:</strong> Disable or disconnect Calendar or Drive to stop that feature's use
+              of the account. In provider settings, sign out or remove a Google account to delete its locally stored
+              credential and stop both Calendar and Drive for that registration. Other Google registrations, Databricks
+              connections, and separately configured MCP connections are not disconnected. To revoke Google's grant,
+              remove Dahlia from your Google Account's third-party connections page.
             </li>
             <li>
               <strong>Delete saved calendar details:</strong> Delete the meetings linked to those events. Dahlia removes a
@@ -192,9 +196,8 @@
               not remove backups you exported elsewhere.
             </li>
             <li>
-              <strong>Delete exported documents:</strong> Disconnecting does not delete documents already exported to
-              Google Drive. Delete those documents or the <q>Meeting Notes</q> folder in Google Drive. Delete the related
-              meeting and database backups to remove locally stored document URLs and identifiers.
+              <strong>Delete Drive files and backups:</strong> Disconnecting does not delete files or backups in
+              Google Drive. Delete them in Google Drive, and delete imported meetings and local backups separately.
             </li>
             <li>
               <strong>Review Google access:</strong> You can also remove Dahlia from your Google Account's third-party

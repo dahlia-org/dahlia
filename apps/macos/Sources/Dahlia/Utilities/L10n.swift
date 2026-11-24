@@ -1601,7 +1601,7 @@ enum L10n { // swiftlint:disable:this type_body_length
         bundle: bundle
     ) }
     static var googleDriveOAuthDisclosureAccess: String { String(
-        localized: "Google grants read-only access to Drive files. Dahlia uses folder and file metadata to find Dahlia/Backup and downloads the backups you select.",
+        localized: "Google grants read-only access to all Drive files. Dahlia uses metadata to find Dahlia/Backup and downloads only the backups you select.",
         bundle: bundle
     ) }
     static var googleDriveOAuthDisclosureUseAndStorage: String { String(
@@ -2140,7 +2140,7 @@ enum L10n { // swiftlint:disable:this type_body_length
         bundle: bundle
     ) }
     static var googleProviderSignInDescription: String { String(
-        localized: "Add your Google account with read-only access to calendars, events, and Drive backup files. Choose where to use this account in each feature’s settings.",
+        localized: "Google sign-in requests read-only access to calendars, events, and all Drive files. Dahlia uses Drive to find and read Dahlia/Backup backups.",
         bundle: bundle
     ) }
 

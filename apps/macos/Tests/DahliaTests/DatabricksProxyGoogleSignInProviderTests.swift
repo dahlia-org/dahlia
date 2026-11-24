@@ -162,6 +162,52 @@ import Synchronization
             #expect(state.downloads == 0)
         }
 
+        @Test(arguments: [200, 401], [false, true])
+        func changingDriveRouteInvalidatesASuspendedConnectProbe(statusCode: Int, returnsToOriginal: Bool) async throws {
+            let defaults = makeDefaults()
+            let account = GoogleProviderAccount(id: .v7(), account: .init(id: "google-user", displayName: "Google", email: "me@example.com"))
+            try await ProviderAccountDirectory.$googleAccounts.withValue([account]) {
+                let route = GoogleCalendarProvider.google(accountID: account.id)
+                GoogleCalendarProvider.save(route, defaults: defaults)
+                let host = "suspended-\(UUID().uuidString.lowercased()).example"
+                let configuration = URLSessionConfiguration.ephemeral
+                configuration.protocolClasses = [DirectDriveIdentityURLProtocol.self]
+                let transport = URLSession(configuration: configuration)
+                defer { transport.invalidateAndCancel() }
+                let direct = FakeDirectProvider(hasPreviousSignIn: true)
+                direct.session = GoogleSession(
+                    account: account.account, accessToken: "suspended", grantedScopes: GoogleOAuthScope.drive,
+                    apiBaseURL: URL(string: "https://\(host)")!
+                )
+                let provider = DatabricksProxyGoogleSignInProvider(
+                    sessionKind: .drive, direct: direct, storage: DatabricksTestStorage(connection: nil).storage,
+                    driveClient: GoogleDriveBackupClient(urlSession: transport), userDefaults: defaults
+                )
+                try await provider.disconnect()
+                _ = NSApplication.shared
+                let window = NSWindow()
+                let connect = Task {
+                    do {
+                        _ = try await provider.signIn(withPresentingWindow: window, requestedScopes: GoogleOAuthScope.drive)
+                        return false
+                    } catch is CancellationError {
+                        return true
+                    } catch {
+                        Issue.record("Unexpected connect failure: \(error)")
+                        return false
+                    }
+                }
+                #expect(await pollUntil { DirectDriveIdentityURLProtocol.pending.withLock { $0[host] != nil } })
+                let probe = try #require(DirectDriveIdentityURLProtocol.pending.withLock { $0.removeValue(forKey: host) })
+                GoogleCalendarProvider.save(.unassigned, defaults: defaults)
+                if returnsToOriginal { GoogleCalendarProvider.save(route, defaults: defaults) }
+                probe(statusCode)
+                #expect(await connect.value)
+                #expect(direct.signInCallCount == 0)
+                #expect(defaults.bool(forKey: "googleCapabilityDisconnected.\(route.storageKey).drive"))
+            }
+        }
+
         @Test
         func fixedCalendarRoutesIgnoreTheIndependentDriveChoiceAndDisconnectOnlyThemselves() async throws {
             let other = DatabricksConnection(id: .v7(), host: "https://other.cloud.databricks.com")
@@ -627,16 +673,28 @@ import Synchronization
     }
 
     private final class DirectDriveIdentityURLProtocol: URLProtocol, @unchecked Sendable {
+        static let pending = Mutex<[String: @Sendable (Int) -> Void]>([:])
         override static func canInit(with _: URLRequest) -> Bool { true }
         override static func canonicalRequest(for request: URLRequest) -> URLRequest { request }
         override func startLoading() {
             let url = request.url!
             #expect(url.path == "/drive/v3/about")
+            if request.value(forHTTPHeaderField: "Authorization") == "Bearer suspended" {
+                let host = url.host!
+                let complete: @Sendable (Int) -> Void = { [self] status in self.complete(statusCode: status) }
+                Self.pending.withLock { $0[host] = complete }
+                return
+            }
             let status = Int(request.value(forHTTPHeaderField: "Authorization")?.replacingOccurrences(of: "Bearer ", with: "") ?? "") ?? 200
+            complete(statusCode: status)
+        }
+
+        func complete(statusCode: Int) {
+            let url = request.url!
             let body = #"{"user":{"displayName":"Drive","emailAddress":"drive@example.com","permissionId":"drive-user"}}"#
             client?.urlProtocol(
                 self,
-                didReceive: HTTPURLResponse(url: url, statusCode: status, httpVersion: nil, headerFields: nil)!,
+                didReceive: HTTPURLResponse(url: url, statusCode: statusCode, httpVersion: nil, headerFields: nil)!,
                 cacheStoragePolicy: .notAllowed
             )
             client?.urlProtocol(self, didLoad: Data(body.utf8))
