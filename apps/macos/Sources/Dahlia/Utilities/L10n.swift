@@ -2662,6 +2662,8 @@ enum L10n { // swiftlint:disable:this type_body_length
     static var addProviderTitle: String { String(localized: "settings.agents.addProviderTitle", bundle: bundle) }
     static var agentProvidersEmpty: String { String(localized: "settings.agents.providersEmpty", bundle: bundle) }
     static var signInAgain: String { String(localized: "settings.agents.signInAgain", bundle: bundle) }
+    static var providerRegistered: String { String(localized: "settings.providers.registered", bundle: bundle) }
+    static var registeredProviderSignInAgainHint: String { String(localized: "settings.providers.registeredSignInAgainHint", bundle: bundle) }
     static var mcpServiceSignedIn: String { String(localized: "settings.agents.mcpServiceSignedIn", bundle: bundle) }
     static var mcpServiceSignInRequired: String { String(localized: "settings.agents.mcpServiceSignInRequired", bundle: bundle) }
     static var mcpServiceSignInUnknown: String { String(localized: "settings.agents.mcpServiceSignInUnknown", bundle: bundle) }

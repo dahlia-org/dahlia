@@ -51,14 +51,14 @@ struct AppearanceSettingsView: View {
         }
     }
 
+    @ViewBuilder
     private var generalSection: some View {
         Section {
-            DahliaMenuPicker(
-                title: L10n.appearance,
-                selection: $settings.appAppearance,
-                options: AppAppearance.allCases,
-                label: \.displayName
-            )
+            AppearanceSelectionView(selection: $settings.appAppearance)
+        } header: {
+            Text(L10n.appearance).font(.dahliaSectionHeader)
+        }
+        Section {
             DahliaMenuPicker(
                 title: L10n.appLanguage,
                 selection: $settings.appLanguage,

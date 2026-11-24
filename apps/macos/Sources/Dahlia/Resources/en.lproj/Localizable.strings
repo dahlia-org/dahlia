@@ -1642,6 +1642,8 @@
 "settings.agents.addProviderTitle" = "Add Provider";
 "settings.agents.providersEmpty" = "No providers yet.";
 "settings.agents.signInAgain" = "Sign In Again";
+"settings.providers.registered" = "Registered";
+"settings.providers.registeredSignInAgainHint" = "Databricks is registered. To renew its sign-in, finish setup, then choose Sign In Again in Settings > Providers. You can add another workspace here.";
 "settings.agents.providerAdded %@" = "%@ (added)";
 "settings.agents.mcpSearchPrompt" = "Search connectors";
 "settings.agents.mcpNoProviders" = "Add a Databricks workspace under Providers on the Models tab to turn on its Unity AI Gateway MCPs here.";

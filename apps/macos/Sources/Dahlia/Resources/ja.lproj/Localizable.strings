@@ -1642,6 +1642,8 @@
 "settings.agents.addProviderTitle" = "プロバイダーを追加";
 "settings.agents.providersEmpty" = "プロバイダーはまだありません。";
 "settings.agents.signInAgain" = "サインインし直す";
+"settings.providers.registered" = "登録済み";
+"settings.providers.registeredSignInAgainHint" = "Databricks は登録済みです。再認証するには、初期設定の完了後に設定の「プロバイダー」で「サインインし直す」を選んでください。ここでは別のワークスペースを追加できます。";
 "settings.agents.providerAdded %@" = "%@（追加済み）";
 "settings.agents.mcpSearchPrompt" = "コネクタを検索";
 "settings.agents.mcpNoProviders" = "「モデル」の「プロバイダー」で Databricks ワークスペースを追加すると、その Unity AI Gateway の MCP をここでオンにできます。";

@@ -131,6 +131,13 @@ struct AgentProviderRegistrationView: View {
             .clipShape(.rect(cornerRadius: DahliaDesign.Card.regularCornerRadius))
             .dahliaCardSurface()
 
+            if isEmbedded, !workspaceSettings.databricksConnections.isEmpty {
+                Text(L10n.registeredProviderSignInAgainHint)
+                    .font(.dahliaSecondary)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
             if let errorMessage {
                 Label(errorMessage, systemImage: "exclamationmark.triangle.fill")
                     .foregroundStyle(.orange)
@@ -197,7 +204,7 @@ struct AgentProviderRegistrationView: View {
     @ViewBuilder
     private func trailing(_ choice: Kind, isAdded: Bool) -> some View {
         if isAdded {
-            Label(L10n.codexSignedIn, systemImage: "checkmark.circle.fill")
+            Label(choice == .databricks ? L10n.providerRegistered : L10n.codexSignedIn, systemImage: "checkmark.circle.fill")
                 .foregroundStyle(.secondary)
                 .labelStyle(.titleAndIcon)
         } else if signingIn == choice || subscriptions.contains(where: { choice == .subscription($0.subscription) && $0.isBusy }) {
@@ -251,7 +258,7 @@ struct AgentProviderRegistrationView: View {
     private func signInButton(_ choice: Kind) -> some View {
         Button(L10n.dahliaSignIn) { signIn(choice) }
             .buttonStyle(.dahlia(.primary))
-            .keyboardShortcut(.defaultAction)
+            .keyboardShortcut(isEmbedded ? nil : .defaultAction)
             .disabled(!canSignIn(choice))
     }
 

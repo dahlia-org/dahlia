@@ -132,9 +132,9 @@ struct SetupTourView: View {
                 onContinue: continueTour
             )
         }
-        .task { await model.checkPi() }
         .task {
-            guard model.mode == .initial else { return }
+            await model.checkPi()
+            guard !Task.isCancelled, model.mode == .initial else { return }
             _ = await prepareInitialWorkspace()
         }
         .id(settings.appLanguage)

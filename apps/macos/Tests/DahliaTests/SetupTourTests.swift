@@ -6,6 +6,42 @@
 
     @MainActor
     struct SetupTourTests {
+        @Test(arguments: [false, true])
+        func workspacePreparationPersistsUnfinishedTourBeforeCreatingDefault(piAvailable: Bool) async throws {
+            let suiteName = "SetupBeforeWorkspace-\(UUID())"
+            let defaults = try #require(UserDefaults(suiteName: suiteName))
+            defer { defaults.removePersistentDomain(forName: suiteName) }
+            let model = SetupTourModel(mode: .initial, currentWorkspace: nil, progressDefaults: defaults)
+            await model.checkPi { piAvailable }
+            let expectedStep = model.currentStep
+            let workspace = WorkspaceRecord(id: .v7(), name: "Default", createdAt: .now, lastOpenedAt: .distantPast)
+
+            _ = await model.prepareInitialWorkspace {
+                #expect(SetupTourPresentationPolicy.restoredStep(in: defaults) == expectedStep)
+                return workspace
+            }
+
+            #expect(SetupTourPresentationPolicy.shouldPresentAutomatically(
+                storedVersion: 0, hasLoadedWorkspaces: true, hasRegisteredWorkspaces: true,
+                hasSavedProgress: SetupTourPresentationPolicy.hasSavedProgress(in: defaults)
+            ))
+            let restored = SetupTourModel(mode: .initial, currentWorkspace: nil, progressDefaults: defaults)
+            #expect(restored.currentStep == expectedStep)
+        }
+
+        @Test
+        func manualTourDoesNotPersistInitialProgressOrCreateDefault() async throws {
+            let suiteName = "ManualSetupProgress-\(UUID())"
+            let defaults = try #require(UserDefaults(suiteName: suiteName))
+            defer { defaults.removePersistentDomain(forName: suiteName) }
+            let model = SetupTourModel(mode: .manual, currentWorkspace: nil, progressDefaults: defaults)
+            _ = await model.prepareInitialWorkspace {
+                Issue.record("Manual setup must not prepare an initial workspace")
+                return nil
+            }
+            #expect(!SetupTourPresentationPolicy.hasSavedProgress(in: defaults))
+        }
+
         @Test
         func piCheckBlocksTheFirstStepUntilItFinishes() async {
             let model = SetupTourModel(mode: .manual, currentWorkspace: nil)

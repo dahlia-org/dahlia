@@ -73,15 +73,7 @@ struct ContentView: View {
                         SettingsSidebarView(
                             selection: $mainWindowNavigation.settingsCategory,
                             onReturnToApp: mainWindowNavigation.dismissSettings
-                        ) {
-                            MainSidebarBottomArea(
-                                viewModel: viewModel,
-                                sidebarViewModel: sidebarViewModel,
-                                recordingCoordinator: recordingCoordinator,
-                                updateController: updateController,
-                                onShowUnprocessedRecordings: showUnprocessedRecordings
-                            )
-                        }
+                        )
                     }
                 } detail: {
                     MainWindowPaneContent(isShowingSettings: isShowingSettings) {

@@ -78,6 +78,8 @@ final class SetupTourModel {
         resolve: @escaping @MainActor () async -> WorkspaceRecord?
     ) async -> WorkspaceRecord? {
         guard mode == .initial else { return nil }
+        // Creating Default must not make an unfinished tour disappear on the next launch.
+        persistProgress()
         let task: Task<WorkspaceRecord?, Never>
         if let preparationTask {
             task = preparationTask
