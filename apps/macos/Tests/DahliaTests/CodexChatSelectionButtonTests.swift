@@ -6,19 +6,25 @@
 
     @MainActor
     struct CodexChatSelectionButtonTests {
+        @Observable
+        final class ModelPanelPresentation {
+            var isPresented = false
+        }
+
         @Test(arguments: [false, true], ["left", "right", "top", "bottom"])
-        func paddingOpensTheSelectionPanel(isApproval: Bool, edge: String) async throws {
+        func paddingTogglesTheSelectionPanel(isApproval: Bool, edge: String) async throws {
             let session = CodexChatSessionModel(service: TestCodexChatService(mode: .complete))
-            var modelPanelPresented = false
+            let presentation = ModelPanelPresentation()
+            let modelPresentation = Binding(
+                get: { presentation.isPresented },
+                set: { presentation.isPresented = $0 }
+            )
             var buttonSize = CGSize.zero
             let button = Group {
                 if isApproval {
                     CodexChatApprovalMethodButton(session: session)
                 } else {
-                    CodexChatConfigurationButton(session: session, externalPresentation: Binding(
-                        get: { modelPanelPresented },
-                        set: { modelPanelPresented = $0 }
-                    ))
+                    CodexChatConfigurationButton(session: session, externalPresentation: modelPresentation)
                 }
             }
             let host = NSHostingView(rootView: button
@@ -27,7 +33,12 @@
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
                 .padding(40)
-                .background(Color.black))
+                .background(Color.black)
+                .overlay {
+                    if !isApproval {
+                        CodexChatConfigurationOverlay(session: session, isPresented: modelPresentation)
+                    }
+                })
             host.frame = CGRect(x: 0, y: 0, width: 700, height: 500)
             let window = NSWindow(contentRect: host.frame, styleMask: .titled, backing: .buffered, defer: false)
             window.isReleasedWhenClosed = false
@@ -38,7 +49,7 @@
             try #require(await pollUntil { buttonSize.width > 0 })
             let size = buttonSize
 
-            let panelRegion = host.convert(CGRect(x: 60, y: 100, width: 20, height: 20), from: nil)
+            let panelRegion = host.convert(CGRect(x: isApproval ? 60 : 640, y: 100, width: 20, height: 20), from: nil)
             let before = try snapshot(host, in: panelRegion)
             let point = switch edge {
             case "left": CGPoint(x: 42, y: 40 + size.height / 2)
@@ -51,12 +62,29 @@
                     with: type, location: point, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
                     windowNumber: window.windowNumber, context: nil, eventNumber: 1, clickCount: 1, pressure: type == .leftMouseDown ? 1 : 0
                 ))
-                window.sendEvent(event)
+                NSApplication.shared.sendEvent(event)
             }
             #expect(await pollUntil(timeout: .seconds(2)) {
-                if !isApproval { return modelPanelPresented }
                 guard let after = try? snapshot(host, in: panelRegion) else { return false }
                 return after != before
+            })
+
+            for type in [NSEvent.EventType.leftMouseDown, .leftMouseUp] {
+                let event = try #require(NSEvent.mouseEvent(
+                    with: type, location: point, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+                    windowNumber: window.windowNumber, context: nil, eventNumber: 2, clickCount: 1, pressure: type == .leftMouseDown ? 1 : 0
+                ))
+                NSApplication.shared.sendEvent(event)
+                if type == .leftMouseDown {
+                    #expect(!(await pollUntil(timeout: .milliseconds(100)) {
+                        guard let after = try? snapshot(host, in: panelRegion) else { return false }
+                        return after == before
+                    }))
+                }
+            }
+            #expect(await pollUntil(timeout: .seconds(2)) {
+                guard let after = try? snapshot(host, in: panelRegion) else { return false }
+                return after == before
             })
         }
 
