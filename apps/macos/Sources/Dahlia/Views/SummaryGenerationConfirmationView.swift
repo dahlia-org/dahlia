@@ -112,8 +112,7 @@ struct SummaryGenerationConfirmationView: View {
                     SummaryGenerationOptionsControls(
                         detailLevel: $detailLevel,
                         exportsToWorkspace: $exportsToWorkspace,
-                        isEnabled: true,
-                        usesServerSummary: false
+                        isEnabled: true
                     )
                 } header: {
                     Text(L10n.summaryAndExport)

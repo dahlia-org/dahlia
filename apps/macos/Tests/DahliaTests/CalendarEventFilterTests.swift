@@ -45,17 +45,14 @@ import Foundation
             let suiteName = "CalendarEventFilterTests.\(UUID().uuidString)"
             let defaults = try #require(UserDefaults(suiteName: suiteName))
             defer { defaults.removePersistentDomain(forName: suiteName) }
-            let databricks = CodexRuntimeProvider.databricks(connectionID: UUID())
 
-            #expect(AppSettings.enabledCalendarSources(for: .local, in: defaults) == CalendarSource.defaultEnabledSources)
+            #expect(AppSettings.enabledCalendarSources(in: defaults) == CalendarSource.defaultEnabledSources)
             defaults.set("macOS", forKey: "calendarSource")
-            #expect(AppSettings.enabledCalendarSources(for: .local, in: defaults) == [.macOS])
+            #expect(AppSettings.enabledCalendarSources(in: defaults) == [.macOS])
             defaults.set("[\"google\",\"macOS\"]", forKey: CalendarSource.enabledSourcesUserDefaultsKey)
-            #expect(AppSettings.enabledCalendarSources(for: databricks, in: defaults) == [.google, .macOS])
-            defaults.set("[\"google\"]", forKey: CalendarSource.enabledSourcesUserDefaultsKey(for: databricks))
-
-            #expect(AppSettings.enabledCalendarSources(for: databricks, in: defaults) == [.google])
-            #expect(AppSettings.enabledCalendarSources(for: .local, in: defaults) == [.google, .macOS])
+            #expect(AppSettings.enabledCalendarSources(in: defaults) == [.google, .macOS])
+            defaults.set("[\"google\"]", forKey: CalendarSource.accountEnabledSourcesUserDefaultsKey)
+            #expect(AppSettings.enabledCalendarSources(in: defaults) == [.google])
         }
 
         @Test

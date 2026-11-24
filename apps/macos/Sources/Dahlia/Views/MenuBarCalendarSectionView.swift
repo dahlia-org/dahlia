@@ -11,14 +11,14 @@ struct MenuBarCalendarSectionView: View {
     let onOpenCalendarSettings: (SettingsCategory) -> Void
 
     @ObservedObject private var settings = AppSettings.shared
-    @ObservedObject private var googleCalendarStore = GoogleCalendarStore.shared
+    @ObservedObject private var googleCalendarStore = CalendarProviderCollection.shared
     @ObservedObject private var macCalendarStore = MacCalendarStore.shared
     @ObservedObject private var calendarAutoRecordingStore = CalendarAutoRecordingStore.shared
 
     var body: some View {
         Section {
             if !settings.enabledCalendarSources.isEmpty, !agenda.events.isEmpty {
-                ForEach(agenda.events) { event in
+                ForEach(agenda.events, id: \.displayID) { event in
                     MenuBarCalendarEventRow(
                         event: event,
                         now: now,

@@ -157,7 +157,6 @@ final class CaptionViewModel: ObservableObject {
     @Published var isFinalizingRecording = false {
         didSet {
             updateCanBeginRecording()
-            if oldValue, !isFinalizingRecording { refreshObservedMeetingContent() }
         }
     }
 
@@ -294,56 +293,9 @@ final class CaptionViewModel: ObservableObject {
     @Published var requestShowSummaryTab = false
     @Published var requestOpenScreenshotID: UUID?
 
-    func screenshotOCRState(id: UUID, refresh: Bool = false, contentProvider: MeetingContentProvider = .shared) async -> ScreenshotOCRState {
+    func screenshotOCRState(id: UUID) async -> ScreenshotOCRState {
         guard let dbQueue = currentDbQueue else { return .pending }
         let analysisEnabled = WorkspaceAISettingsModel.shared.generationSettings.imageAnalysis.enabled
-        if let fileId = try? await dbQueue.read({ db in
-            try UUID.fetchOne(
-                db,
-                sql: """
-                SELECT a.fileId FROM meeting_attachments a JOIN files f ON f.id = a.fileId
-                JOIN sync_content_state c ON c.entity = 'file' AND c.entityId = f.id
-                JOIN workspaces v ON v.id = f.workspace_id
-                LEFT JOIN sync_entity_state s ON s.workspace_id = v.id AND s.entity = 'file' AND s.entityId = f.id
-                WHERE a.id = ? AND (v.accountConnectionId IS NULL OR s.confirmedRevision > 0) AND NOT (
-                    v.accountConnectionId IS NULL AND c.complete = 1 AND (f.remoteReference IS NULL OR f.localReference IS NOT NULL)
-                    AND EXISTS(SELECT 1 FROM jobs_background j WHERE j.indexKind = 'fts'
-                        AND j.targetKind = 'screenshotAnalysis' AND j.targetKey = a.id)
-                )
-                """,
-                arguments: [id]
-            )
-        }) {
-            do {
-                return try await contentProvider.withFileContent(id: fileId, dbQueue: dbQueue, refresh: refresh) {
-                    try await dbQueue.read { db in
-                        guard try FileRecord.fetchOne(db, key: fileId) != nil else { return .remote(ocrText: nil, caption: nil, state: .deleted) }
-                        let text = try TextContentAccess.cachedFileText(fileId: fileId, in: db)
-                        var state = try TextContentAccess.availability(entity: .file, id: fileId, in: db).state
-                        if analysisEnabled, state == .ready, text?.ocrText == nil || text?.caption?.nilIfBlank == nil,
-                           let job = try Row.fetchOne(db, sql: """
-                           SELECT attempts FROM jobs_background
-                           WHERE indexKind = 'fts' AND targetKind = 'screenshotAnalysis' AND targetKey = ?
-                           """, arguments: [id]) {
-                            let attempts: Int = job["attempts"]
-                            state = attempts >= 5 ? .failed : .loading
-                        }
-                        return .remote(ocrText: text?.ocrText, caption: text?.caption, state: state)
-                    }
-                }
-            } catch {
-                return await (try? dbQueue.read { db in
-                    guard try FileRecord.fetchOne(db, key: fileId) != nil else { return .remote(ocrText: nil, caption: nil, state: .deleted) }
-                    let text = try TextContentAccess.cachedFileText(fileId: fileId, in: db)
-                    let state = try TextContentAccess.availability(entity: .file, id: fileId, in: db).state
-                    return .remote(
-                        ocrText: text?.ocrText,
-                        caption: text?.caption,
-                        state: state == .stale ? .stale : (error as? TextContentError == .changed ? .loading : .failed)
-                    )
-                }) ?? .remote(ocrText: nil, caption: nil, state: .failed)
-            }
-        }
         return await (try? dbQueue.read { db in
             if let row = try Row.fetchOne(
                 db,
@@ -379,7 +331,6 @@ final class CaptionViewModel: ObservableObject {
     // MARK: - Screenshot State
 
     let screenshotStore = ScreenshotStore()
-    let conversationMetricsStore = MeetingConversationMetricsStore()
 
     @Published private(set) var isDeletingScreenshots = false {
         didSet {
@@ -606,36 +557,6 @@ final class CaptionViewModel: ObservableObject {
             ?? ((isListening || isFinalizingRecording) ? currentMeetingId : nil)
     }
 
-    var isCurrentMeetingConversationAnalysisPending: Bool {
-        Self.conversationAnalysisIsPending(
-            currentMeetingId: currentMeetingId,
-            recordingMeetingId: recordingMeetingId,
-            isListening: isListening,
-            isFinalizingRecording: isFinalizingRecording,
-            isBatchTranscriptionPending: batchTranscriptionState?.blocksSummaryGeneration == true,
-            failedPersistenceMeetingId: failedPersistenceMeetingId
-        )
-    }
-
-    nonisolated static func conversationAnalysisIsPending(
-        currentMeetingId: UUID?,
-        recordingMeetingId: UUID?,
-        isListening: Bool,
-        isFinalizingRecording: Bool,
-        isBatchTranscriptionPending: Bool,
-        failedPersistenceMeetingId: UUID?
-    ) -> Bool {
-        if isBatchTranscriptionPending {
-            return true
-        }
-        if let currentMeetingId, failedPersistenceMeetingId == currentMeetingId {
-            return true
-        }
-        guard let currentMeetingId,
-              isListening || isFinalizingRecording else { return false }
-        return recordingMeetingId == currentMeetingId
-    }
-
     /// 録音中かつ録音対象とは別のトランスクリプトを閲覧中。
     var isViewingOtherWhileRecording: Bool {
         isListening && recordingContext != nil
@@ -718,16 +639,6 @@ final class CaptionViewModel: ObservableObject {
     private var audioRetentionOperationTask: Task<Void, Never>?
     private var meetingLoadTask: Task<Void, Never>?
     private var meetingLoadGeneration: UInt64 = 0
-    @Published private(set) var meetingSyncState: MeetingSyncState?
-    @Published private(set) var textContentState: TextContentAvailability.State?
-    private var textContentTask: Task<Void, Never>?
-    private var textContentLease: (UUID, any DatabaseWriter, Task<Void, Never>)?
-    private var meetingSyncObservation: AnyDatabaseCancellable?
-    @Published private(set) var recordingArchiveState: String?
-    private var meetingSyncSnapshot: MeetingSyncSnapshot?
-    private var appliedMeetingSyncSnapshot: MeetingSyncSnapshot?
-    private var meetingSyncGeneration: UInt64 = 0
-    private var meetingRefreshTask: Task<Void, Never>?
     private var summaryReloadTask: Task<Void, Never>?
     private var summaryProjectionGeneration: UInt64 = 0
     private var isSynchronizingLiveSubtitleLocale = false
@@ -758,7 +669,7 @@ final class CaptionViewModel: ObservableObject {
         audioHardwareQueryService: AudioHardwareQueryService = .shared,
         automaticScreenshotCapture: any AutomaticScreenshotCapturing = AutomaticScreenshotCaptureService(),
         summaryGenerationRunner: @escaping SummaryGenerationRunner = { input in
-            try await CodexRuntimeContextStore.shared.waitUntilActive(input.generationSettings.runtimeProvider)
+            try await PiRuntimeContextStore.shared.waitUntilActive()
             return try await SummaryService.generateSummary(
                 promptContext: input.promptContext,
                 transcriptText: input.transcriptText,
@@ -1229,11 +1140,10 @@ final class CaptionViewModel: ObservableObject {
             sessionId: sessionId,
             meetingId: meetingId,
             suggestedLocaleIdentifier: preferences.localeIdentifier,
-            initialLanguageSelection: details.usesServerSummary ? .recorded : .automatic,
+            initialLanguageSelection: .automatic,
             automaticLanguageCandidateSnapshot: preferences.automaticLanguageCandidateSnapshot,
             purpose: .retranscription(sessionIds: sessionIds),
             initiallyGeneratesSummary: false,
-            usesServerSummary: details.usesServerSummary,
             summaryGenerationOptions: details.summaryGenerationOptions,
             projectSelection: details.projectSelection
         )
@@ -1266,7 +1176,6 @@ final class CaptionViewModel: ObservableObject {
 
     private struct BatchTranscriptionConfirmationDetails {
         var workspace: WorkspaceRecord?
-        var usesServerSummary = false
         let summaryGenerationOptions: SummaryGenerationOptions
         let projectSelection: BatchTranscriptionProjectSelection
         let meetingName: String
@@ -1295,7 +1204,6 @@ final class CaptionViewModel: ObservableObject {
             }
             return BatchTranscriptionConfirmationDetails(
                 workspace: snapshot.2,
-                usesServerSummary: false,
                 summaryGenerationOptions: .init(
                     exportOptions: AppSettings.shared.batchSummaryGenerationOptions().exportOptions,
                     detailLevel: snapshot.2.map { AccountInferenceSettings(workspace: $0).summary.detailLevel }
@@ -1484,7 +1392,6 @@ final class CaptionViewModel: ObservableObject {
             purpose: confirmation.purpose,
             initiallyGeneratesSummary: resolvedGeneratesSummary,
             processingMethod: confirmation.processingMethod,
-            usesServerSummary: confirmation.usesServerSummary,
             summaryGenerationOptions: summaryGenerationOptions,
             projectSelection: makeBatchTranscriptionConfirmationDetails(
                 meetingId: confirmation.meetingId,
@@ -1824,7 +1731,6 @@ final class CaptionViewModel: ObservableObject {
         }
         await updatePendingBatchSummaryProgress(for: update)
         guard case .completed = update.state else { return }
-        conversationMetricsStore.invalidate(meetingId: update.meetingId)
         if isVisibleMeeting, canReloadMeetingAfterBatchCompletion(update.meetingId) {
             await reloadCurrentMeetingAfterBatchCompletion(meetingId: update.meetingId)
         }
@@ -2012,7 +1918,6 @@ final class CaptionViewModel: ObservableObject {
     }()
 
     private struct LoadedMeetingData {
-        let syncSnapshot: MeetingSyncSnapshot?
         let projectId: UUID?
         let projectContext: (url: URL?, name: String)?
         let recordingStartedAt: Date?
@@ -2034,8 +1939,6 @@ final class CaptionViewModel: ObservableObject {
         workspaceURL: URL?
     ) throws -> LoadedMeetingData {
         let repo = MeetingRepository(dbQueue: dbQueue)
-        // Read the revision first so a concurrent later commit is always detected after the load.
-        let syncSnapshot = try dbQueue.read { try MeetingRepository.fetchMeetingSyncSnapshot(meetingId: meetingId, in: $0) }
         let detail = try repo.fetchMeetingDetail(id: meetingId)
         let recordingSessions = detail.recordingSessions.map(RecordingSessionTimeline.init)
         let initialTranscriptPage = try [.ready, .stale, .empty].contains(detail.transcriptContent.state) ? repo.fetchTranscriptPage(
@@ -2061,7 +1964,6 @@ final class CaptionViewModel: ObservableObject {
         )
 
         return try LoadedMeetingData(
-            syncSnapshot: syncSnapshot,
             projectId: detail.meeting?.projectId,
             projectContext: Self.projectContext(projectId: detail.meeting?.projectId, dbQueue: dbQueue, workspaceURL: workspaceURL),
             recordingStartedAt: detail.meeting?.effectiveRecordingStartedAt,
@@ -2137,25 +2039,6 @@ final class CaptionViewModel: ObservableObject {
         meetingId: UUID,
         db: Database
     ) throws -> [UUID] {
-        guard let workspace = try MeetingRecord.fetchOne(db, key: meetingId)
-            .flatMap({ try WorkspaceRecord.fetchOne(db, key: $0.workspaceId) }) else { return [] }
-        if workspace.accountConnectionId != nil {
-            let sessions = try RecordingSessionRecord
-                .filter(Column("meetingId") == meetingId)
-                .filter(Column("transcriptionMode") == TranscriptionMode.batch.rawValue)
-                .filter(Column("batchDiscardedAt") == nil)
-                .filter(sql: """
-                NOT EXISTS (
-                    SELECT 1 FROM recording_archives
-                    WHERE sessionId = recording_sessions.id AND state = 'expired'
-                )
-                """)
-                .order(Column("startedAt").asc)
-                .fetchAll(db)
-            guard !sessions.isEmpty,
-                  try sessions.allSatisfy({ try RecordingArchiveRecord.isAvailable(sessionId: $0.id, in: db) }) else { return [] }
-            return sessions.map(\.id)
-        }
         let local = try UUID.fetchAll(
             db,
             sql: """
@@ -2198,18 +2081,15 @@ final class CaptionViewModel: ObservableObject {
                 RecordingAudioSegmentState.ready.rawValue,
             ]
         )
-        let remote = try UUID.fetchAll(db, sql: """
+        // A recording kept on this Mac as an archive can be transcribed again too.
+        let archived = try UUID.fetchAll(db, sql: """
         SELECT a.sessionId FROM recording_archives a
-        JOIN workspaces v ON v.id = a.workspace_id
         JOIN recording_sessions s ON s.id = a.sessionId
-        WHERE a.meetingId = ?
-          AND ((a.connectionId IS NULL AND v.accountConnectionId IS NULL AND a.state = 'saved' AND a.preparedJSON <> '{}')
-            OR (a.number IS NOT NULL AND a.audioJSON <> '{}' AND v.accountConnectionId = a.connectionId AND v.syncConfirmedConnectionId = a.connectionId))
-          AND (v.accountConnectionId IS NULL OR v.syncRole IN ('admin', 'editor')) AND v.syncRecoveryState IS NULL
+        WHERE a.meetingId = ? AND a.connectionId IS NULL AND a.state = 'saved' AND a.preparedJSON <> '{}'
           AND s.batchDiscardedAt IS NULL
         ORDER BY s.startedAt
         """, arguments: [meetingId])
-        return local + remote.filter { !local.contains($0) }
+        return local + archived.filter { !local.contains($0) }
     }
 
     // MARK: - Meeting Loading
@@ -2278,22 +2158,6 @@ final class CaptionViewModel: ObservableObject {
         )
     }
 
-    func loadCurrentMeetingConversationMetrics() async {
-        if conversationMetricsStore.target == nil {
-            await prepareCurrentMeetingConversationMetrics()
-        } else {
-            await conversationMetricsStore.load()
-        }
-    }
-
-    func prepareCurrentMeetingConversationMetrics() async {
-        guard let meetingID = currentMeetingId, let dbQueue = currentDbQueue else {
-            conversationMetricsStore.disable()
-            return
-        }
-        await conversationMetricsStore.prepare(meetingID: meetingID, dbQueue: dbQueue)
-    }
-
     private func startMeetingLoad(
         meetingId: UUID,
         dbQueue: any DatabaseWriter,
@@ -2344,9 +2208,7 @@ final class CaptionViewModel: ObservableObject {
                 loaded,
                 expectedProjectionGeneration: projectionGeneration
             )
-            self.appliedMeetingSyncSnapshot = loaded.syncSnapshot
             self.generatePendingBatchSummaryIfReady(meetingId: meetingId)
-            self.refreshObservedMeetingContent()
         }
     }
 
@@ -2376,11 +2238,6 @@ final class CaptionViewModel: ObservableObject {
         do {
             try dbQueue.write { db in
                 try record.insert(db)
-                try SyncTransactionRecorder.record(
-                    workspaceId: workspaceId,
-                    operations: [SyncInitialSnapshotBuilder.meetingOperation(record, action: .create, in: db)],
-                    in: db
-                )
             }
         } catch {
             errorMessage = error.localizedDescription
@@ -2501,11 +2358,6 @@ final class CaptionViewModel: ObservableObject {
                     calendarEventRecurrenceId: calendarEventKey?.recurrenceId
                 )
                 try record.insert(db)
-                try SyncTransactionRecorder.record(
-                    workspaceId: workspace.id,
-                    operations: [SyncInitialSnapshotBuilder.meetingOperation(record, action: .create, in: db)],
-                    in: db
-                )
                 return assignedProjectId
             }
         } catch {
@@ -2542,7 +2394,6 @@ final class CaptionViewModel: ObservableObject {
     func clearCurrentMeeting() {
         guard !isFinalizingRecording else { return }
         if case .starting = recordingLifecycle { return }
-        stopMeetingSyncObservation()
         meetingLoadTask?.cancel()
         meetingLoadGeneration &+= 1
 
@@ -2564,7 +2415,6 @@ final class CaptionViewModel: ObservableObject {
         draftMeeting = nil
         batchTranscriptionState = nil
         retranscribableBatchSessionIds = []
-        conversationMetricsStore.reset(for: nil)
     }
 
     /// Project 管理へ移る際に、保存済み Meeting の表示だけを解除する。
@@ -2589,14 +2439,10 @@ final class CaptionViewModel: ObservableObject {
         currentProjectName = ctx.projectName
         currentWorkspaceURL = ctx.workspaceURL
         currentDbQueue = ctx.dbQueue
-        if let meetingId = ctx.meetingId, let dbQueue = ctx.dbQueue {
-            startMeetingSyncObservation(meetingId: meetingId, dbQueue: dbQueue)
-        }
         replaceVisibleScreenshots(meetingID: ctx.meetingId, records: [])
         batchTranscriptionState = ctx.batchTranscriptionState
         retranscribableBatchSessionIds = []
         draftMeeting = nil
-        conversationMetricsStore.reset(for: ctx.meetingId)
 
         store = ctx.store
         recordingContext = nil
@@ -2742,7 +2588,6 @@ final class CaptionViewModel: ObservableObject {
 
     /// UI 状態をリセットし、次の文字起こし読み込みに備える。
     private func resetMeetingState() {
-        stopMeetingSyncObservation()
         saveNoteImmediately()
         meetingLoadTask?.cancel()
         meetingLoadGeneration &+= 1
@@ -2753,7 +2598,6 @@ final class CaptionViewModel: ObservableObject {
         draftMeeting = nil
         batchTranscriptionState = nil
         retranscribableBatchSessionIds = []
-        conversationMetricsStore.reset(for: nil)
     }
 
     private func resetSummaryState() {
@@ -2781,177 +2625,10 @@ final class CaptionViewModel: ObservableObject {
         currentProjectName = projectName
         currentWorkspaceURL = workspaceURL
         currentDbQueue = dbQueue
-        conversationMetricsStore.reset(for: id)
         screenshotStore.replace(meetingID: id, records: [])
         draftMeeting = nil
         resetSummaryState()
         setupNoteAutoSave()
-        startMeetingSyncObservation(meetingId: id, dbQueue: dbQueue)
-    }
-
-    func retryTextContent() {
-        guard let id = currentMeetingId, let queue = currentDbQueue else { return }
-        textContentTask?.cancel()
-        textContentTask = Task {
-            await MeetingContentProvider.shared.ensureMeeting(id: id, dbQueue: queue, refresh: true)
-        }
-    }
-
-    private func stopMeetingSyncObservation() {
-        let previousContentTask = textContentTask
-        previousContentTask?.cancel()
-        textContentTask = nil
-        if let (id, queue, acquisition) = textContentLease {
-            Task {
-                await acquisition.value
-                await previousContentTask?.value
-                for entity in [TextContentEntity.summary, .transcript] {
-                    await MeetingContentProvider.shared.release(entity: entity, id: id, dbQueue: queue)
-                }
-            }
-        }
-        textContentLease = nil
-        textContentState = nil
-        meetingSyncGeneration &+= 1
-        meetingSyncObservation?.cancel()
-        meetingSyncObservation = nil
-        meetingRefreshTask?.cancel()
-        meetingRefreshTask = nil
-        meetingSyncSnapshot = nil
-        recordingArchiveState = nil
-
-        appliedMeetingSyncSnapshot = nil
-        meetingSyncState = nil
-    }
-
-    func retryRecordingArchive() {
-        guard let meetingId = currentMeetingId, let dbQueue = currentDbQueue else { return }
-        Task {
-            do {
-                try await MeetingRepository(dbQueue: dbQueue).retryRecordingArchives(meetingId: meetingId)
-            } catch { self.errorMessage = L10n.recordingArchiveFailed }
-        }
-    }
-
-    private func startMeetingSyncObservation(meetingId: UUID, dbQueue: any DatabaseWriter) {
-        stopMeetingSyncObservation()
-        let generation = meetingSyncGeneration
-        let acquisition = Task {
-            for entity in [TextContentEntity.summary, .transcript] {
-                await MeetingContentProvider.shared.retain(entity: entity, id: meetingId, dbQueue: dbQueue)
-            }
-        }
-        textContentLease = (meetingId, dbQueue, acquisition)
-        textContentTask = Task {
-            await acquisition.value
-            guard !Task.isCancelled else { return }
-            await MeetingContentProvider.shared.ensureMeeting(id: meetingId, dbQueue: dbQueue)
-        }
-        meetingSyncObservation = ValueObservation.tracking { db in
-            try MeetingRepository.fetchMeetingSyncSnapshot(meetingId: meetingId, in: db)
-        }
-        .removeDuplicates()
-        .start(
-            in: dbQueue,
-            onError: { [weak self] _ in
-                guard let self, self.meetingSyncGeneration == generation else { return }
-                self.meetingSyncState = nil
-            },
-            onChange: { [weak self] snapshot in
-                guard let self, self.meetingSyncGeneration == generation,
-                      self.currentMeetingId == meetingId else { return }
-                self.meetingSyncSnapshot = snapshot
-                // Every transcript commit re-runs this observation; publish only real changes so the window is not re-evaluated.
-                if self.recordingArchiveState != snapshot?.recordingArchiveState {
-                    self.recordingArchiveState = snapshot?.recordingArchiveState
-                }
-                if self.meetingSyncState != snapshot?.state {
-                    self.meetingSyncState = snapshot?.state
-                }
-                let states = snapshot?.content.filter { $0.entity != "file" } ?? []
-                let textContentState: TextContentAvailability.State? = states.isEmpty ? nil
-                    : states.contains(where: { $0.fetchError == "deleted" }) ? .deleted
-                    : states.contains(where: { $0.fetchError == "loading" }) ? .loading
-                    : states.contains(where: { !$0.complete && $0.fetchError != nil }) ? .failed
-                    : states.contains(where: { !$0.complete && $0.present }) ? .missing
-                    : states
-                    .contains(where: { content in
-                        snapshot?.revisions
-                            .contains(where: {
-                                $0.entity == content.entity && $0.entityId == content.entityId && $0.confirmedRevision != content.residentRevision
-                            }) == true
-                    }) ? .stale
-                    : states.allSatisfy { !$0.present || ($0.entity == "transcript" && $0.complete && $0.contentCount == 0) } ? .empty : .ready
-                if self.textContentState != textContentState {
-                    self.textContentState = textContentState
-                }
-                self.refreshObservedMeetingContent()
-            }
-        )
-    }
-
-    /// Canonical changes refresh only reloadable projections, never the note editor or live capture.
-    private func refreshObservedMeetingContent() {
-        guard let meetingId = currentMeetingId, let dbQueue = currentDbQueue,
-              !store.isLoadingInitialPage,
-              !(isListening && recordingMeetingId == meetingId),
-              !isFinalizingRecording else { return }
-        guard appliedMeetingSyncSnapshot?.revisions != meetingSyncSnapshot?.revisions
-            || appliedMeetingSyncSnapshot?.connectionId != meetingSyncSnapshot?.connectionId
-            || appliedMeetingSyncSnapshot?.content != meetingSyncSnapshot?.content
-            || appliedMeetingSyncSnapshot?.recordingArchiveState != meetingSyncSnapshot?.recordingArchiveState else { return }
-        meetingRefreshTask?.cancel()
-        let generation = meetingSyncGeneration
-        let connectionId = meetingSyncSnapshot?.connectionId
-        let projectionGeneration = summaryProjectionGeneration
-        let workspaceURL = currentWorkspaceURL
-        meetingRefreshTask = Task { [weak self] in
-            do {
-                let loaded = try await Task.detached(priority: .userInitiated) {
-                    try Self.fetchLoadedMeetingData(meetingId: meetingId, dbQueue: dbQueue, workspaceURL: workspaceURL)
-                }.value
-                guard let self, !Task.isCancelled,
-                      self.meetingSyncGeneration == generation,
-                      self.currentMeetingId == meetingId,
-                      self.meetingSyncSnapshot?.connectionId == connectionId,
-                      !(self.isListening && self.recordingMeetingId == meetingId),
-                      !self.isFinalizingRecording else { return }
-                self.replaceVisibleScreenshots(meetingID: meetingId, records: loaded.screenshots)
-                self.applyLoadedSummary(loaded, expectedProjectionGeneration: projectionGeneration)
-                self.currentMeetingHasTranscriptSegments = loaded.hasTranscriptSegments
-                self.currentProjectId = loaded.projectId
-                self.currentProjectURL = loaded.projectContext?.url
-                self.currentProjectName = loaded.projectContext?.name
-                self.retranscribableBatchSessionIds = Self.retryableBatchSessionIds(
-                    state: self.batchTranscriptionState,
-                    sessions: loaded.recordingSessionRecords,
-                    eligibleSessionIds: loaded.eligibleBatchAudioSessionIds
-                )
-                let oldTranscript = self.appliedMeetingSyncSnapshot?.content.first(where: { $0.entity == "transcript" })
-                let newTranscript = loaded.syncSnapshot?.content.first(where: { $0.entity == "transcript" })
-                if oldTranscript?.residentRevision != newTranscript?.residentRevision || oldTranscript?.complete != newTranscript?.complete {
-                    self.conversationMetricsStore.invalidate(meetingId: meetingId)
-                }
-                self.appliedMeetingSyncSnapshot = loaded.syncSnapshot
-                self.store.recordingStartTime = loaded.recordingStartedAt
-                self.store.loadRecordingSessions(loaded.recordingSessions)
-                if loaded.syncSnapshot?.content.first(where: { $0.entity == "transcript" })?.complete != false {
-                    await self.store.reloadVisible()
-                } else {
-                    self.store.configurePaging(
-                        meetingId: meetingId,
-                        loader: TranscriptPageLoader(dbQueue: dbQueue),
-                        initialPage: loaded.initialTranscriptPage
-                    )
-                }
-                self.refreshObservedMeetingContent()
-            } catch is CancellationError {
-                return
-            } catch {
-                // Keep the last readable working copy. A later sync change retries the projection.
-                captionViewModelLogger.error("Meeting refresh failed")
-            }
-        }
     }
 
     private nonisolated static func projectContext(
@@ -3397,9 +3074,6 @@ final class CaptionViewModel: ObservableObject {
     }
 
     private func completePersistenceStart(existingMeetingId: UUID?, activeDraftMeeting: DraftMeeting?) {
-        if let currentMeetingId, let currentDbQueue {
-            startMeetingSyncObservation(meetingId: currentMeetingId, dbQueue: currentDbQueue)
-        }
         guard existingMeetingId == nil else { return }
         if let activeDraftMeeting, let currentMeetingId {
             pendingDraftMaterializations.append(DraftMeetingMaterialization(
@@ -3702,7 +3376,6 @@ final class CaptionViewModel: ObservableObject {
                 }
             }
             pendingRealtimeRecognitionFailure = nil
-            await MeetingEventRecorder.recordStarted(sessionId: recordingSessionId, dbQueue: dbQueue)
         } catch {
             await handleRecordingStartFailure(
                 error,
@@ -3843,9 +3516,6 @@ final class CaptionViewModel: ObservableObject {
         }
         persistenceService = nil
         recordingContext = nil
-        if persistenceResult.succeeded, let meetingId = context.meetingId {
-            conversationMetricsStore.invalidate(meetingId: meetingId)
-        }
         firstFailureMessage = firstFailureMessage ?? persistenceResult.failureMessage
         if let firstFailureMessage {
             errorMessage = firstFailureMessage
@@ -3932,7 +3602,6 @@ final class CaptionViewModel: ObservableObject {
 
     private func retryFailedPersistenceIfNeeded() async -> Bool {
         guard let failedPersistenceService else { return true }
-        let meetingId = failedPersistenceService.meetingId
         let result = await failedPersistenceService.stop()
         guard result.succeeded else {
             errorMessage = result.failureMessage
@@ -3942,7 +3611,6 @@ final class CaptionViewModel: ObservableObject {
         self.failedPersistenceService = nil
         failedPersistenceMeetingId = nil
         failedTranscriptionEventPipeline = nil
-        conversationMetricsStore.invalidate(meetingId: meetingId)
         return true
     }
 
@@ -3952,7 +3620,6 @@ final class CaptionViewModel: ObservableObject {
             return await summaryPersistenceRecoveryTask.value
         }
         guard let failedPersistenceService else { return nil }
-        let meetingId = failedPersistenceService.meetingId
         let failedTranscriptionEventPipeline = failedTranscriptionEventPipeline
         let recoveryTask = Task { () -> String? in
             let result = await failedPersistenceService.stop()
@@ -3969,7 +3636,6 @@ final class CaptionViewModel: ObservableObject {
             self.failedPersistenceService = nil
             failedPersistenceMeetingId = nil
             self.failedTranscriptionEventPipeline = nil
-            conversationMetricsStore.invalidate(meetingId: meetingId)
         }
         return failureMessage
     }
@@ -4066,7 +3732,6 @@ final class CaptionViewModel: ObservableObject {
             automaticLanguageCandidateSnapshot: preferences.automaticLanguageCandidateSnapshot,
             initiallyGeneratesSummary: processing != nil || AppSettings.shared.generateSummaryAfterBatchTranscription,
             processingMethod: processing?.method,
-            usesServerSummary: false,
             summaryGenerationOptions: processing?.options ?? details.summaryGenerationOptions,
             projectSelection: details.projectSelection
         )
@@ -4307,7 +3972,6 @@ final class CaptionViewModel: ObservableObject {
         func hasSamePersistenceContext(as other: PendingBatchSummaryRequest) -> Bool {
             dbQueue === other.dbQueue
                 && workspaceURL?.standardizedFileURL == other.workspaceURL?.standardizedFileURL
-                && generationSettings.runtimeProvider == other.generationSettings.runtimeProvider
         }
 
         @MainActor
@@ -4354,7 +4018,7 @@ final class CaptionViewModel: ObservableObject {
         let workspaces = try await dbQueue.read { db in
             try meetingIDs.map { meetingID -> WorkspaceRecord in
                 guard let meeting = try MeetingRecord.fetchOne(db, key: meetingID),
-                      let workspace = try WorkspaceRecord.fetchOne(db, key: meeting.workspaceId), workspace.allowsCanonicalEdits else {
+                      let workspace = try WorkspaceRecord.fetchOne(db, key: meeting.workspaceId) else {
                     throw SummaryGenerationPreparationError.meetingUnavailable
                 }
                 return workspace
@@ -4363,37 +4027,25 @@ final class CaptionViewModel: ObservableObject {
         guard Set(workspaces.map(\.id)).count == 1, let workspace = workspaces.first else {
             throw SummaryGenerationPreparationError.meetingUnavailable
         }
-        let connectionID = workspace.accountConnectionId
         let settings = AccountInferenceSettings(workspace: workspace).generationSettings(outputLanguage: workspace.generationSettings.outputLanguage)
         do {
-            if connectionID != nil {
-                for meetingID in meetingIDs {
-                    try await MeetingContentProvider.shared.ensure(entity: .transcript, id: meetingID, dbQueue: dbQueue, refresh: false)
-                }
-            }
             var availability = try await SummaryGenerationSourceAvailability.load(
                 meetingIDs: meetingIDs,
                 supportedSources: [.transcript],
-                usesServer: false,
                 dbQueue: dbQueue
             )
-            availability.accountConnectionID = connectionID
             availability.generationSettings = settings
-            availability.hasServerConnection = connectionID != nil
             return availability
         } catch {
             if error is CancellationError { throw error }
             try Task.checkCancellation()
             return SummaryGenerationSourceAvailability(
-                accountConnectionID: connectionID,
                 generationSettings: settings,
-                hasServerConnection: connectionID != nil,
                 sourceCheckFailed: true,
                 meetingCount: meetingIDs.count,
                 transcriptCount: 0,
                 audioCount: 0,
-                supportedSources: [],
-                usesServer: false
+                supportedSources: []
             )
         }
     }
@@ -4592,9 +4244,7 @@ final class CaptionViewModel: ObservableObject {
                 && request.job.recordingSessionID == nil
                 && request.allowsCoalescing
                 && precedingAutomaticRequest.dbQueue === request.dbQueue
-                && precedingAutomaticRequest.workspaceURL?.standardizedFileURL == request.workspaceURL?.standardizedFileURL
-                && precedingAutomaticRequest.generationSettings.runtimeProvider
-                == request.generationSettings.runtimeProvider {
+                && precedingAutomaticRequest.workspaceURL?.standardizedFileURL == request.workspaceURL?.standardizedFileURL {
                 request.mergeOptions(precedingAutomaticRequest.options)
             }
         }
@@ -4612,7 +4262,6 @@ final class CaptionViewModel: ObservableObject {
             completedRequests.first { request in
                 precedingRequest.dbQueue === request.dbQueue
                     && precedingRequest.workspaceURL?.standardizedFileURL == request.workspaceURL?.standardizedFileURL
-                    && precedingRequest.generationSettings.runtimeProvider == request.generationSettings.runtimeProvider
             }
         } ?? completedRequests.first
         guard let first else { return }
@@ -4764,17 +4413,11 @@ final class CaptionViewModel: ObservableObject {
         guard let workspace = try await request.dbQueue.read({ db -> WorkspaceRecord? in
             guard let meeting = try MeetingRecord.fetchOne(db, key: meetingID) else { return nil }
             return try WorkspaceRecord.fetchOne(db, key: meeting.workspaceId)
-        }), workspace.allowsCanonicalEdits else { throw SummaryGenerationPreparationError.meetingUnavailable }
+        }) else { throw SummaryGenerationPreparationError.meetingUnavailable }
         if let capturedID = request.generationSettings.workspaceID {
-            guard capturedID == workspace.id,
-                  request.generationSettings.sourceAccountConnectionID == workspace.accountConnectionId else {
-                throw ServerSummaryService.Failure.unavailable
-            }
+            guard capturedID == workspace.id else { throw SummaryGenerationPreparationError.meetingUnavailable }
         } else {
             request.generationSettings = SummaryGenerationSettings.current(workspace: workspace).applying(options: request.options)
-        }
-        guard request.generationSettings.runtimeProvider == CodexRuntimeProvider(workspace: workspace) else {
-            throw AIConfigurationError.accountNotReady
         }
         return request
     }
@@ -4788,18 +4431,7 @@ final class CaptionViewModel: ObservableObject {
             finishSummaryGeneration(request, job: job)
             return
         }
-        let retainedEntities: [TextContentEntity] = job.transcriptionOnly ? [.transcript] : [.summary, .transcript]
-        for entity in retainedEntities {
-            await MeetingContentProvider.shared.retain(entity: entity, id: request.meetingId, dbQueue: request.dbQueue)
-        }
-        defer {
-            finishSummaryGeneration(request, job: job)
-            Task {
-                for entity in retainedEntities {
-                    await MeetingContentProvider.shared.release(entity: entity, id: request.meetingId, dbQueue: request.dbQueue)
-                }
-            }
-        }
+        defer { finishSummaryGeneration(request, job: job) }
 
         if request.retriesFailedPersistence {
             if let message = await recoverFailedPersistenceForSummary() {
@@ -4818,13 +4450,8 @@ final class CaptionViewModel: ObservableObject {
                 return saved
             }
             isTranscriptionOnly = job.transcriptionOnly
-            guard preparedRequest.options.source != .audio else { throw ServerSummaryService.Failure.unavailable }
-            if preparedRequest.generationSettings.sourceAccountConnectionID != nil {
-                try await MeetingContentProvider.shared.ensure(
-                    entity: .transcript, id: preparedRequest.meetingId, dbQueue: preparedRequest.dbQueue,
-                    refreshIfStale: preparedRequest.options.useSavedTranscript != true
-                )
-            }
+            // Summarizing the audio itself needed a Dahlia Server.
+            guard preparedRequest.options.source != .audio else { throw SummaryGenerationPreparationError.meetingUnavailable }
             try Task.checkCancellation()
             let request = preparedRequest
             let jobID = job.id
@@ -4961,9 +4588,8 @@ final class CaptionViewModel: ObservableObject {
                         return
                     }
                     processing.summaryMode = .local
-                    processing.serverRequest = nil
                     processing.generationSettings = SummaryGenerationSettings.current(workspace: workspace).applying(options: processing.options)
-                    processing.prepareRetry(serverJob: nil)
+                    processing.prepareRetry()
                     let captured = processing
                     try await dbQueue.write { db in
                         guard let current = try RecordingProcessing.load(sessionID: sessionID, in: db),
@@ -5036,12 +4662,9 @@ final class CaptionViewModel: ObservableObject {
         job.showStage("summarizing")
 
         let documents = DocumentPersistence.shared(dbQueue: request.dbQueue)
-        let documentSync = DocumentSyncService.shared(dbQueue: request.dbQueue)
-        let documentText: String
-        if case nil = savedResult {
-            try await documentSync.flush(meetingID: meetingId)
-            documentText = try await documents.prepare(meetingID: meetingId).projection.text
-        } else { documentText = "" }
+        let documentText: String = if case nil = savedResult {
+            try await documents.prepare(meetingID: meetingId).projection.text
+        } else { "" }
         let generatedSummary: SummaryService.GeneratedSummary = if let savedResult {
             // A saved result may come from an earlier app version, so its Markdown can embed screenshots the
             // way that version exported them. Re-render it to embed the current originals.

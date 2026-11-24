@@ -50,8 +50,8 @@ Pi の更新時に `test-pi-extension.py` で確かめる。ユーザーの `~/.
 
 ## Process と境界
 
-Pi の agent directory はアカウントごとに `Application Support/Dahlia/accounts/<local または accounts.id>/pi`（0700）。ユーザーの `~/.pi` は使わない。
-Local Account は `local`、Databricks アカウントと Dahlia account は `accounts` テーブルの ID を使う。`PI_OFFLINE`・`PI_SKIP_VERSION_CHECK`・`PI_TELEMETRY=0` と、
+Pi の agent directory は `Application Support/Dahlia/agent`（0700）。Pi 以外のエージェントでも使えるよう、名前に Pi もアカウントも含めない。Dahlia Server のアカウントだけは `accounts/<provider_accounts.id>/pi` を使う。ユーザーの `~/.pi` は使わない。
+アカウント別の設定と DB の `accountID` は、アプリのアカウントでは `local`、Dahlia account では `provider_accounts` テーブルの ID を使う。`PI_OFFLINE`・`PI_SKIP_VERSION_CHECK`・`PI_TELEMETRY=0` と、
 extension・context file・theme・project trust の自動読込を無効化して起動する。チャットでは標準 skill、アカウントの `pi/skills` に保存した skill、追加したパッケージの skill・prompt template を読み込む（2026-11-12 ユーザー承認）。要約・画像解析・通常の control は skill・prompt template も無効にする。「スキル」タブ専用の一覧プロセスは同じ resource loader で読み込み、モデル・MCP・tool を実行せず `get_commands` の認識結果を一覧にする。スキル名と最大2行の説明を表示し、保存先はフォルダを開く操作に使う。詳細はアプリ内モーダルで説明と SKILL.md を表示し、ファイル読込と Markdown 解析は MainActor 外で行う。追加・変更は新しいチャットプロセスから反映する。
 内蔵 `skill-creator` はチャットから Pi 向け skill の作成・更新・検証を支援する。`/skill:skill-creator <依頼>` でも呼び出せる。
 保存先は system prompt に渡した現在のアカウントの `pi/skills/<skill-name>/SKILL.md` とし、アカウント内の Workspace 間で共有する。
@@ -116,7 +116,7 @@ Pi の codemode（未有効）の script は Pi の process 内の QuickJS で�
 - 要約は一時的な作業フォルダ（temporary cwd）で動き、生成の結果にかかわらず削除する。
 - 画像非対応・能力不明のモデルには画像を渡さず、テキストで続ける。
 - Dahlia は RPC の extension UI（`ctx.ui.input("dahlia:<method>")`）でだけ extension と通信する。token は要求ごとに stdin で渡し、config・環境変数・log に残さない。
-- Databricks アカウントと Dahlia account の provider（`DAHLIA_PI_BRIDGED_PROVIDERS`）は、extension が pi-ai の `createProvider` で認証だけを持つ provider として登録し、使うたびに bridge の `token` で credential を解決する（モデルは `models.json` を重ねる。session 開始前の利用可否の確認には要求に使わない仮の値を返す）。`models.json` に key は書かない。
+- Databricks アカウントと Dahlia account の provider（`DAHLIA_PI_BRIDGED_PROVIDERS`）は、extension が pi-ai の `createProvider` で認証だけを持つ provider として登録し、使うたびに bridge の `token` で起動時の接続 ID に結び付いた credential を解決する。RPC の初期化応答までに設定が変わった起動は閉じてやり直す。別の接続へ切り替わった古い要求は拒否し、モデル一覧の取得先と credential も同じ接続に固定する。切り替え前に始めた一覧は新しい設定へ保存しない（モデルは `models.json` を重ねる。session 開始前の利用可否の確認には要求に使わない仮の値を返す）。`models.json` に key は書かない。
 - Unity AI Gateway の sign-in は、extension が OAuth の provider として登録する（[Unity AI Gateway の MCP](#unity-ai-gateway-の-mcp)）。モデルは Dahlia が `models.json` に書く。`mcp.json` の項目は `auth.provider` でその credential を要求ごとに使う（Pi の文書にない項目で、Pi 更新時に回帰確認する）。
 
 ### stdio
@@ -132,17 +132,15 @@ Pi の codemode（未有効）の script は Pi の process 内の QuickJS で�
 Local Account は OpenAI と Anthropic に別々にサインインでき、サインイン済みの両方のモデルをまとめて一覧に出す。サインインは
 「Dahlia AI」>「モデル」の「プロバイダー」で行う（セットアップツアーにも残す）。「プロバイダー」には、アカウント自身のサインインと、
 サインイン済みのサブスクリプション、追加した Databricks を並べ、それぞれに使い道（「モデル」「MCP」）のバッジを付ける（Databricks は両方）。サブスクリプションと
-Databricks は「プロバイダーを追加」のモーダルで選んで追加する（サブスクリプションは Local Account だけ）。設定のモーダルは窓全体に重ねる。Databricks アカウント（接続した workspace ごとに1つ）は
-自分の agent directory を持ち、実行アカウント `databricks(connectionID:)` として、その workspace の Gateway のモデルを一覧に出す。どのモデルを出すかは実行アカウントの provider ID で決まり（[アカウント](accounts.md#実行アカウントの-context)）、
-どのアカウントでも「プロバイダー」に追加した Databricks の workspace（ID がホスト名でドットを含む provider）のモデルも加わる。
+Databricks は「プロバイダーを追加」のモーダルで選んで追加する。設定のモーダルは窓全体に重ねる。追加はアプリ側のサインイン（アカウントメニューのサインインと同じ）で、接続は `provider_accounts` の行になり、Keychain が認証を持つ。アプリのアカウントは、Pi のサブスクリプションと、すべての接続の Gateway のモデルを一覧に出す。接続の provider ID はその workspace のホスト名（ドットを含む）である。接続の追加・削除では Pi のプロセスを止めない。`models.json` を書き直し、新しく起動するプロセスから使う。待機中のチャットは閉じて次の送信で開き直し、実行中のチャットはそのターンが終わってから閉じる。
 表示名は Pi の名前に合わせる（`openai` は「OpenAI (ChatGPT subscription)」）。Dahlia account は自分の Server の provider だけを使う。
 
 | 表示名 | Pi provider | 認証 |
 | --- | --- | --- |
 | OpenAI (ChatGPT subscription) | `openai`（Sign in with ChatGPT、agent 名 `Dahlia`） | Pi の OAuth。端末 ID は Local agent directory |
 | Anthropic (Claude Pro/Max) | `anthropic` | Pi の OAuth |
-| Databricks | `databricks`（各モデルが Unity AI Gateway の経路を持つ: Claude は anthropic、GPT は codex、GLM・Kimi は mlflow、Gemini は gemini） | その Databricks アカウントの Desktop OAuth を bridge |
-| Unity Gateway (ホスト名) | 追加した workspace のホスト名（経路は `databricks` と同じ。モデル名にホスト名の先頭の部分を付ける） | Pi の OAuth（[Unity AI Gateway の MCP](#unity-ai-gateway-の-mcp) と同じ sign-in） |
+| Databricks | 接続の workspace のホスト名（各モデルが Unity AI Gateway の経路を持つ: Claude は anthropic、GPT は codex、GLM・Kimi は mlflow、Gemini は gemini）。接続ごとに別の provider になり、複数を同時に使える | `provider_accounts` の接続の Desktop OAuth を bridge |
+| Unity Gateway (ホスト名) | 接続がプロバイダーアカウントになる前に追加した workspace のホスト名（経路は Databricks と同じ。モデル名にホスト名の先頭の部分を付ける）。同じホストの接続を追加すると、その接続の bridge が優先される | Pi の OAuth（[Unity AI Gateway の MCP](#unity-ai-gateway-の-mcp)） |
 | Dahlia account | `dahlia`（Server の `/api/v1/responses`） | Dahlia token を bridge |
 
 Databricks のモデル一覧は Unity Catalog の `/api/2.1/unity-catalog/model-services?parent=schemas/system.ai` から作るので、
@@ -314,7 +312,7 @@ Codex の web search、`request_user_input` は Pi にないため提供しな�
 開いているアカウントに、「Dahlia AI」>「モデル」の「プロバイダー」で Databricks の workspace（sign-in）を追加し、「コネクタ」タブで
 その workspace の MCP server を登録する（2026-11-09 ユーザー承認）。「プロバイダー」には、アカウント自身のモデルのサインインも並べる。モデルの
 workspace と MCP の workspace が異なることが多いため、MCP 用の workspace はアカウントとは別にサインインする。Databricks アカウントでは、
-モデルと同じアカウント自身の workspace の MCP も選べ、その server は `auth.provider` にアカウントの bridged provider（`databricks`）を指定して
+モデルと同じプロバイダーアカウントの workspace の MCP も選べ、その server は `auth.provider` にその接続の bridged provider（ホスト名）を指定して
 アカウントの token を使う。一覧も `/databricks-mcp-services <URL> --provider databricks` でその token で取り、ここではサインインもサインアウトも
 しない。この workspace は最初の server と一緒に保存し、最後の server を外すと消す。登録は Local Account・Databricks
 アカウント・Dahlia account のどれでもでき、アカウントごとに app defaults（`agentMCPs.<local またはアカウント ID>`）に保存する。

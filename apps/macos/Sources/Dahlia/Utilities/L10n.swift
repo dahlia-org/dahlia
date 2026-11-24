@@ -347,24 +347,12 @@ enum L10n { // swiftlint:disable:this type_body_length
     static var thisMac: String { String(localized: "settings.processing.thisMac", bundle: bundle) }
     static var thisMacSettingsDescription: String { String(localized: "settings.processing.thisMacDescription", bundle: bundle) }
     static var transcriptFullTranscriptionUnavailable: String { String(localized: "transcript.fullTranscriptionUnavailable", bundle: bundle) }
-    static var serverSearchPendingUnavailable: String { String(localized: "search.server.pendingUnavailable", bundle: bundle) }
-    static var serverSearchRanked: String { String(localized: "search.server.ranked", bundle: bundle) }
-    static var serverSearchTopResults: String { String(localized: "search.server.top", bundle: bundle) }
-    static var serverSearchLocalFallback: String { String(localized: "search.server.localFallback", bundle: bundle) }
-    static var serverSearchPending: String { String(localized: "search.server.pending", bundle: bundle) }
     static var serverSearchKind: String { String(localized: "search.server.kind", bundle: bundle) }
     static var serverSearchAllKinds: String { String(localized: "search.server.allKinds", bundle: bundle) }
-    static var serverSearchPendingProjects: String { String(localized: "search.server.pendingProjects", bundle: bundle) }
-    static var serverSearchPendingImages: String { String(localized: "search.server.pendingImages", bundle: bundle) }
     static var serverSummaryMethod: String { String(localized: "serverSummaryMethod", bundle: bundle) }
     static var serverSummaryAudio: String { String(localized: "serverSummaryAudio", bundle: bundle) }
     static var serverSummaryTranscript: String { String(localized: "serverSummaryTranscript", bundle: bundle) }
-    static var serverSummaryDescription: String { String(localized: "serverSummaryDescription", bundle: bundle) }
     static var serverSummaryAccountDefault: String { String(localized: "serverSummaryAccountDefault", bundle: bundle) }
-    static var serverSummaryUnavailable: String { String(localized: "serverSummaryUnavailable", bundle: bundle) }
-    static var serverSummarySyncPending: String { String(localized: "serverSummarySyncPending", bundle: bundle) }
-    static var serverSummaryInputChanged: String { String(localized: "serverSummaryInputChanged", bundle: bundle) }
-    static var serverSummaryModelListFailed: String { String(localized: "serverSummaryModelListFailed", bundle: bundle) }
     static var serverSummaryChooseModel: String { String(localized: "serverSummaryChooseModel", bundle: bundle) }
     static var serverSummaryNoModels: String { String(localized: "serverSummaryNoModels", bundle: bundle) }
     static var serverSummaryReloadModels: String { String(localized: "serverSummaryReloadModels", bundle: bundle) }
@@ -372,9 +360,7 @@ enum L10n { // swiftlint:disable:this type_body_length
     static var initialTranscription: String { String(localized: "transcription.initial", bundle: bundle) }
     static var retranscription: String { String(localized: "transcription.retranscription", bundle: bundle) }
     static var retranscriptionAppleSpeech: String { String(localized: "transcription.retranscription.appleSpeech", bundle: bundle) }
-    static var retranscriptionGemini: String { String(localized: "transcription.retranscription.gemini", bundle: bundle) }
     static var localRetranscriptionPolicyDescription: String { String(localized: "transcription.retranscription.localDescription", bundle: bundle) }
-    static var serverRetranscriptionPolicyDescription: String { String(localized: "transcription.retranscription.serverDescription", bundle: bundle) }
     static var retranscriptionKeepsSummary: String { String(localized: "transcription.retranscription.keepsSummary", bundle: bundle) }
     static var serverRetranscriptionCheckFailed: String { String(localized: "transcription.retranscription.checkFailed", bundle: bundle) }
     static var serverRetranscriptionUnsupported: String { String(localized: "transcription.retranscription.unsupported", bundle: bundle) }
@@ -383,9 +369,7 @@ enum L10n { // swiftlint:disable:this type_body_length
     static var imageAnalysisLanguages: String { String(localized: "account.settings.imageLanguages", bundle: bundle) }
     static var serverAccountSettingsDescription: String { String(localized: "account.settings.description", bundle: bundle) }
     static var serverAccountSettingsNotLoaded: String { String(localized: "account.settings.notLoaded", bundle: bundle) }
-    static var serverAccountSettingsUnavailable: String { String(localized: "account.settings.unavailable", bundle: bundle) }
     static var textContentSearchMore: String { String(localized: "text.content.searchMore", bundle: bundle) }
-    static var textContentServerMatch: String { String(localized: "text.content.serverMatch", bundle: bundle) }
     static var textContentMissing: String { String(localized: "text.content.missing", bundle: bundle) }
     static var textContentLoading: String { String(localized: "text.content.loading", bundle: bundle) }
     static var textContentFailed: String { String(localized: "text.content.failed", bundle: bundle) }
@@ -394,14 +378,8 @@ enum L10n { // swiftlint:disable:this type_body_length
     static var textContentEmpty: String { String(localized: "text.content.empty", bundle: bundle) }
     static var textContentDeleted: String { String(localized: "text.content.deleted", bundle: bundle) }
     static var textContentSearchLocal: String { String(localized: "text.content.searchLocal", bundle: bundle) }
-    static var textContentSearchLoading: String { String(localized: "text.content.searchLoading", bundle: bundle) }
     static var textContentSearchComplete: String { String(localized: "text.content.searchComplete", bundle: bundle) }
     static var textContentSearchFailed: String { String(localized: "text.content.searchFailed", bundle: bundle) }
-    static var screenshotCacheLimit: String { String(localized: "screenshot.cache.limit", bundle: bundle) }
-    static var screenshotCacheDescription: String { String(localized: "screenshot.cache.description", bundle: bundle) }
-    static var serverContentRetention: String { String(localized: "server.content.retention", bundle: bundle) }
-    static var serverContentRetentionDays: String { String(localized: "server.content.retention.days", bundle: bundle) }
-    static var serverContentRetentionDescription: String { String(localized: "server.content.retention.description", bundle: bundle) }
     /// キャッシュ済みの Bundle と、その生成元の言語 rawValue。
     /// 言語設定が変わらない限り Bundle を再生成しない。
     private nonisolated(unsafe) static var cachedBundle: Bundle = .appModule
@@ -427,99 +405,13 @@ enum L10n { // swiftlint:disable:this type_body_length
         return resolved
     }
 
-    static var meetingSyncLocalSaved: String { String(localized: "meetingSync.local", bundle: bundle) }
-    static var meetingSyncPending: String { String(localized: "meetingSync.pending", bundle: bundle) }
-    static var meetingSyncSynced: String { String(localized: "meetingSync.synced", bundle: bundle) }
-    static var meetingSyncRelocationPaused: String { String(localized: "meetingSync.relocationPaused", bundle: bundle) }
-    static var meetingSyncAuthorization: String { String(localized: "meetingSync.authorization", bundle: bundle) }
-    static var meetingSyncValidation: String { String(localized: "meetingSync.validation", bundle: bundle) }
-
-    static var syncSyncing: String { String(localized: "sync.syncing", bundle: bundle) }
-    static var syncSynced: String { String(localized: "sync.synced", bundle: bundle) }
-    static var syncProgress: String { String(localized: "sync.progress", bundle: bundle) }
-    static var syncPreparing: String { String(localized: "sync.preparing", bundle: bundle) }
-    static var syncText: String { String(localized: "sync.text", bundle: bundle) }
-    static var syncTransferringAttachments: String { String(localized: "sync.transferringAttachments", bundle: bundle) }
-    static var syncFetching: String { String(localized: "sync.fetching", bundle: bundle) }
-    static var syncRetrying: String { String(localized: "sync.retrying", bundle: bundle) }
-    static var syncAttention: String { String(localized: "sync.attention", bundle: bundle) }
     static var syncServerError: String { String(localized: "sync.serverError", bundle: bundle) }
-    static var syncMeetingContents: String { String(localized: "sync.meetingContents", bundle: bundle) }
-    static var syncFiles: String { String(localized: "sync.files", bundle: bundle) }
-    static var syncAttachments: String { String(localized: "sync.attachments", bundle: bundle) }
-    static var syncOtherChanges: String { String(localized: "sync.otherChanges", bundle: bundle) }
-    static var syncRemainingFormat: String { String(localized: "sync.remainingFormat", bundle: bundle) }
-    static var syncProgressUnavailable: String { String(localized: "sync.unavailable", bundle: bundle) }
-    static var syncRecoveryBusy: String { String(localized: "sync.recoveryBusy", bundle: bundle) }
-    static var syncNextRetry: String { String(localized: "sync.nextRetry", bundle: bundle) }
-    static var syncRetryBackoffDescription: String { String(localized: "sync.retryBackoffDescription", bundle: bundle) }
-    static var syncErrorCode: String { String(localized: "sync.errorCode", bundle: bundle) }
-    static var syncHTTPStatus: String { String(localized: "sync.httpStatus", bundle: bundle) }
-    static var syncTargetRecord: String { String(localized: "sync.targetRecord", bundle: bundle) }
-    static var syncPermissionRequired: String { String(localized: "sync.permissionRequired", bundle: bundle) }
-    static var syncRetryAfterPermission: String { String(localized: "sync.retryAfterPermission", bundle: bundle) }
-    static var syncDiscardFile: String { String(localized: "sync.discardFile", bundle: bundle) }
-    static func syncDiscardFileConfirmation(_ workspaceName: String) -> String {
-        String(format: String(localized: "sync.discardFileConfirmation", bundle: bundle), workspaceName)
-    }
-
-    static var syncDiscardFollowing: String { String(localized: "sync.discardFollowing", bundle: bundle) }
-    static var syncOpenServer: String { String(localized: "sync.openServer", bundle: bundle) }
-    static var syncCheckServer: String { String(localized: "sync.checkServer", bundle: bundle) }
-    static var syncOpenServerFailed: String { String(localized: "sync.openServerFailed", bundle: bundle) }
-    static var syncDiscoveryFailed: String { String(localized: "sync.discoveryFailed", bundle: bundle) }
-    static var syncPayloadGuidance: String { String(localized: "sync.payloadGuidance", bundle: bundle) }
-    static var syncSnapshotPendingChanges: String { String(localized: "sync.snapshotPendingChanges", bundle: bundle) }
-    static var syncCopyDiagnostics: String { String(localized: "sync.copyDiagnostics", bundle: bundle) }
-    static var syncFetchSnapshot: String { String(localized: "sync.fetchSnapshot", bundle: bundle) }
-    static var syncPullFailed: String { String(localized: "sync.pullFailed", bundle: bundle) }
-    static var syncLocalValidationFailed: String { String(localized: "sync.localValidationFailed", bundle: bundle) }
-    static var syncDiscardWarning: String { String(localized: "sync.discardWarning", bundle: bundle) }
-    static var syncMeeting: String { String(localized: "sync.record.meeting", bundle: bundle) }
-    static var syncFile: String { String(localized: "sync.record.file", bundle: bundle) }
-    static var syncAttachment: String { String(localized: "sync.record.attachment", bundle: bundle) }
-    static var syncRecording: String { String(localized: "sync.record.recording", bundle: bundle) }
-    static var syncEvent: String { String(localized: "sync.record.event", bundle: bundle) }
-
-    static func syncRecordingArchiveFailure(_ meetingName: String) -> String {
-        String(format: String(localized: "sync.recordingArchiveFailure", bundle: bundle), meetingName)
-    }
-
-    static var syncRecordingArchiveAskEditor: String { String(localized: "sync.recordingArchiveAskEditor", bundle: bundle) }
-
-    static func syncUseServerConfirmation(_ workspaceName: String) -> String {
-        String(format: String(localized: "sync.useServerConfirmation", bundle: bundle), workspaceName)
-    }
-
-    static func syncDiscardConfirmation(_ workspaceName: String) -> String {
-        String(format: String(localized: "sync.discardConfirmation", bundle: bundle), workspaceName)
-    }
-
-    static func syncDiscardImpact(
-        transactions: Int,
-        operations: Int,
-        records: Int,
-        localBodies: Int,
-        meetings: Int
-    ) -> String {
-        String(
-            format: String(localized: "sync.discardImpact", bundle: bundle),
-            transactions,
-            operations,
-            records,
-            localBodies,
-            meetings
-        )
-    }
 
     // MARK: - Common
 
     static var delete: String { String(localized: "Delete", bundle: bundle) }
     static var removeProjectAssignment: String { String(localized: "Remove from Project", bundle: bundle) }
     static var rename: String { String(localized: "Rename", bundle: bundle) }
-    static var recordingArchiveSaved: String { String(localized: "Recording Audio Saved", bundle: bundle) }
-    static var recordingArchivePending: String { String(localized: "Recording Audio Save Pending", bundle: bundle) }
-    static var recordingArchiveFailed: String { String(localized: "Recording Audio Save Failed", bundle: bundle) }
     static var retry: String { String(localized: "Retry", bundle: bundle) }
     static var create: String { String(localized: "Create", bundle: bundle) }
     static var auto: String { String(localized: "Auto", bundle: bundle) }
@@ -1391,7 +1283,6 @@ enum L10n { // swiftlint:disable:this type_body_length
     static var summary: String { String(localized: "Summary", bundle: bundle) }
     static var notes: String { String(localized: "Notes", bundle: bundle) }
     static var documentSavedLocally: String { String(localized: "documentSavedLocally", bundle: bundle) }
-    static var documentSynced: String { String(localized: "documentSynced", bundle: bundle) }
     static var documentPrivateRecoverySaved: String { String(localized: "document.privateRecoverySaved", bundle: bundle) }
     static var documentKeepLocal: String { String(localized: "document.keepLocal", bundle: bundle) }
     static var documentRecoveryTitle: String { String(localized: "document.recovery.title", bundle: bundle) }
@@ -1400,17 +1291,11 @@ enum L10n { // swiftlint:disable:this type_body_length
     static var documentHistoryNext: String { String(localized: "documentHistoryNext", bundle: bundle) }
     static var documentHistoryFullText: String { String(localized: "documentHistoryFullText", bundle: bundle) }
     static var documentRestore: String { String(localized: "document.restore", bundle: bundle) }
-    static var documentEditing: String { String(localized: "document.editing", bundle: bundle) }
     static var documentSaving: String { String(localized: "documentSaving", bundle: bundle) }
-    static var documentSyncFailed: String { String(localized: "documentSyncFailed", bundle: bundle) }
     static var documentSaveFailed: String { String(localized: "documentSaveFailed", bundle: bundle) }
     static var documentUnsupportedSchema: String { String(localized: "documentUnsupportedSchema", bundle: bundle) }
     static var documentTooLarge: String { String(localized: "documentTooLarge", bundle: bundle) }
     static var documentPrivateLegacy: String { String(localized: "documentPrivateLegacy", bundle: bundle) }
-    static var documentPublishTitle: String { String(localized: "documentPublishTitle", bundle: bundle) }
-    static var documentPublishAudience: String { String(localized: "documentPublishAudience", bundle: bundle) }
-    static var documentPublishConflict: String { String(localized: "documentPublishConflict", bundle: bundle) }
-    static var documentMigrationPrivate: String { String(localized: "documentMigrationPrivate", bundle: bundle) }
     static var notesPlaceholder: String { String(localized: "NotesPlaceholder", bundle: bundle) }
     static var screenshots: String { String(localized: "Screenshots", bundle: bundle) }
     static var transcript: String { String(localized: "Transcript", bundle: bundle) }
@@ -1618,11 +1503,6 @@ enum L10n { // swiftlint:disable:this type_body_length
     // MARK: - Settings
 
     static var general: String { String(localized: "General", bundle: bundle) }
-    static var betaFeatures: String { String(localized: "Beta Features", bundle: bundle) }
-    static var betaFeaturesDescription: String { String(
-        localized: "Turn on a beta feature to show its entry points in the Dahlia toolbar and menus. Beta features may change without notice.",
-        bundle: bundle
-    ) }
     static var permissions: String { String(localized: "Permissions", bundle: bundle) }
     static var permissionGuideDescription: String { String(
         localized: "Review the macOS permissions Dahlia uses. Each permission controls a different feature and can be changed at any time.",
@@ -2005,10 +1885,6 @@ enum L10n { // swiftlint:disable:this type_body_length
     static var accountsAndWorkspaces: String { String(localized: "Accounts and Workspaces", bundle: bundle) }
     static var dahliaAccount: String { String(localized: "Dahlia Account", bundle: bundle) }
     static var addAccount: String { String(localized: "Add Account", bundle: bundle) }
-    static var hideLocalAccount: String { String(localized: "Hide Local Account", bundle: bundle) }
-    static var hideLocalAccountDescription: String {
-        String(localized: "Hide the Local Account from account lists. Its workspaces and data stay on this Mac.", bundle: bundle)
-    }
 
     static var localAccount: String { String(localized: "Local Account", bundle: bundle) }
     static var continueWithLocalAccount: String { String(localized: "Continue with Local Account", bundle: bundle) }
@@ -2017,7 +1893,6 @@ enum L10n { // swiftlint:disable:this type_body_length
         bundle: bundle
     ) }
     static var orContinueWithoutSigningIn: String { String(localized: "Or continue without signing in", bundle: bundle) }
-    static var connected: String { String(localized: "Connected", bundle: bundle) }
     static var switchingAIAccount: String { String(localized: "Switching AI account…", bundle: bundle) }
     static var workspaceAIAccountDescription: String { String(
         localized: "Choose the AI account used by this Workspace.",
@@ -2058,20 +1933,10 @@ enum L10n { // swiftlint:disable:this type_body_length
         localized: "Sign in with the same Dahlia account, or add a new connection.",
         bundle: bundle
     ) }
-    static var dahliaAccountPendingServerDeletion: String { String(
-        localized: "Resolve this connection's Server Workspaces before removing it.",
-        bundle: bundle
-    ) }
-    static var dahliaAccountWorkspaceDispositionRequired: String { String(
-        localized: "Choose what to do with this account's local Workspaces before signing out.",
-        bundle: bundle
-    ) }
     static func dahliaAccountCount(_ count: Int) -> String { String(
         localized: "\(count) Dahlia accounts",
         bundle: bundle
     ) }
-    static var reauthenticate: String { String(localized: "Sign In Again", bundle: bundle) }
-    static var signInRequired: String { String(localized: "Sign-in required", bundle: bundle) }
 
     static func signOutDahliaConnection(_ name: String) -> String {
         String(format: String(localized: "Sign out of %@?", bundle: bundle), name)
@@ -2082,18 +1947,6 @@ enum L10n { // swiftlint:disable:this type_body_length
         bundle: bundle
     ) }
 
-    static var moveWorkspacesToLocalAndSignOut: String { String(
-        localized: "Move Workspaces to Local Account and Sign Out",
-        bundle: bundle
-    ) }
-    static var deleteLocalWorkspacesAndSignOut: String { String(
-        localized: "Delete Local Workspaces and Sign Out",
-        bundle: bundle
-    ) }
-    static var signOutWorkspaceDispositionDescription: String { String(
-        localized: "The Server Workspaces will remain unchanged. Moving keeps the working copies on this Mac; deleting removes them from this Mac.",
-        bundle: bundle
-    ) }
     static var moveWorkspaceToServer: String { String(localized: "Move to Server", bundle: bundle) }
     static var reconnectServerWorkspace: String { String(localized: "Reconnect Server Workspace", bundle: bundle) }
     static var keepLocalAccount: String { String(localized: "Keep in Local Account", bundle: bundle) }
@@ -2150,20 +2003,8 @@ enum L10n { // swiftlint:disable:this type_body_length
 
     static var loadingWorkspaces: String { String(localized: "Loading Workspaces…", bundle: bundle) }
     static var removingWorkspace: String { String(localized: "Deleting Workspace…", bundle: bundle) }
-    static var workspaceSyncConflict: String { String(localized: "Sync conflict", bundle: bundle) }
-    static var workspaceSyncRecovering: String { String(localized: "Retrieving latest data…", bundle: bundle) }
-    static var workspaceSyncRecoveryPending: String { String(localized: "Waiting to retrieve latest data", bundle: bundle) }
-    static var workspaceInitialSyncPending: String { String(localized: "Waiting for initial sync", bundle: bundle) }
-    static var workspaceInitialSyncPendingDescription: String { String(
-        localized: "Server meetings will appear after sync. An internet connection and sign-in are required.",
-        bundle: bundle
-    ) }
-    static var workspaceSyncUpdateRequired: String { String(localized: "Update Dahlia and the Server to resume sync", bundle: bundle) }
     static var retrySync: String { String(localized: "Retry Sync", bundle: bundle) }
-    static var useServerVersion: String { String(localized: "Use Server Version", bundle: bundle) }
-    static var reapplyLocalVersion: String { String(localized: "Reapply Local Version", bundle: bundle) }
     static var chooseLocalFolder: String { String(localized: "Choose Local Folder", bundle: bundle) }
-    static var moveWorkspaceToAccount: String { String(localized: "Move to Account", bundle: bundle) }
     static var localExportFolder: String { String(localized: "Local Export Folder", bundle: bundle) }
     static var noLocalExportFolder: String { String(localized: "No local export folder", bundle: bundle) }
     static var setLocalExportFolder: String { String(localized: "Set Local Export Folder", bundle: bundle) }
@@ -2277,7 +2118,48 @@ enum L10n { // swiftlint:disable:this type_body_length
     ) }
     static var calendarSources: String { String(localized: "Calendar Sources", bundle: bundle) }
     static var calendarSourcesDescription: String { String(
-        localized: "Each account chooses the calendar services that provide its upcoming events. A Databricks account reads Google Calendar through its workspace.",
+        localized: "Turn on registered providers to combine their calendars. Add Google accounts in Providers. Each connection keeps its own calendar selection.",
+        bundle: bundle
+    ) }
+    static var calendarProviderUnassigned: String { String(localized: "No provider selected", bundle: bundle) }
+    static var calendarProviders: String { String(localized: "Calendar Providers", bundle: bundle) }
+    static var renameProviderAccount: String { String(localized: "Rename Provider Account", bundle: bundle) }
+    static var providerAccounts: String { String(localized: "Providers", bundle: bundle) }
+    static var providerAccountsDescription: String { String(
+        localized: "Sign in to the services Dahlia uses. Models, MCP servers, and calendars choose among these providers.",
+        bundle: bundle
+    ) }
+    static var providerAccountSignInToKeep: String { String(localized: "Added earlier · Sign in again", bundle: bundle) }
+    static var manageProviders: String { String(localized: "Manage Providers…", bundle: bundle) }
+    static var googleDrive: String { String(localized: "Google Drive", bundle: bundle) }
+    static var googleProviderAccountMismatch: String { String(
+        localized: "Sign in with the same Google account. To use another account, add a provider.",
+        bundle: bundle
+    ) }
+    static var googleDriveChooseProvider: String { String(
+        localized: "Choose a registered provider here to read Google Drive backups. This choice is independent of Calendar.",
+        bundle: bundle
+    ) }
+    static var googleProviderDisconnectPending: String { String(
+        localized: "Sign-out incomplete. Retry to remove the saved credential.",
+        bundle: bundle
+    ) }
+    static var googleProviderSignOutDescription: String { String(
+        localized: "Disconnect this Google account from Calendar and Drive in Dahlia? Databricks connections are not affected.",
+        bundle: bundle
+    ) }
+    static var googleProviderSignInDescription: String { String(
+        localized: "Add your Google account using your name and email. Calendar and Drive ask for access when you use them. Adding this account does not change your calendar provider.",
+        bundle: bundle
+    ) }
+
+    static var renameProviderAccountDescription: String { String(
+        localized: "The name shows only in Dahlia. Leave it empty to show the account details.",
+        bundle: bundle
+    ) }
+    static var google: String { String(localized: "Google", bundle: bundle) }
+    static var calendarProviderTurnOnToConnect: String { String(
+        localized: "Turn this provider on to connect it.",
         bundle: bundle
     ) }
     static var calendarEventsToInclude: String { String(localized: "Events to Include", bundle: bundle) }
@@ -2570,7 +2452,6 @@ enum L10n { // swiftlint:disable:this type_body_length
         """,
         bundle: bundle
     ) }
-    static var reviewPrivateDocuments: String { String(localized: "Review Private Notes…", bundle: bundle) }
     static var workspaceContentHandling: String { String(localized: "Workspace Content", bundle: bundle) }
     static var transferWorkspaceContent: String { String(localized: "Move content to another workspace", bundle: bundle) }
     static var deleteWorkspaceContent: String { String(localized: "Delete content permanently", bundle: bundle) }
@@ -2801,7 +2682,6 @@ enum L10n { // swiftlint:disable:this type_body_length
     static var agentVariableMakePlain: String { String(localized: "settings.agents.variableMakePlain", bundle: bundle) }
     static var agentVariableNameInvalid: String { String(localized: "settings.agents.variableNameInvalid", bundle: bundle) }
     static var agentProviders: String { String(localized: "settings.agents.providers", bundle: bundle) }
-    static var agentProviderAccountSignIn: String { String(localized: "settings.agents.providerAccountSignIn", bundle: bundle) }
     static var agentProviderModels: String { String(localized: "settings.agents.providerModels", bundle: bundle) }
 
     static var mcpAccountSignInRequired: String { String(localized: "settings.agents.mcpAccountSignInRequired", bundle: bundle) }
@@ -2972,10 +2852,6 @@ enum L10n { // swiftlint:disable:this type_body_length
     ) }
     static var codexAccountConfigurationNotReady: String { String(
         localized: "The selected AI account is not ready. Open Accounts and Workspaces in Settings and finish its configuration.",
-        bundle: bundle
-    ) }
-    static func codexChatProviderChanged(_ provider: String) -> String { String(
-        localized: "This chat uses \(provider). Start a new chat to use the current account.",
         bundle: bundle
     ) }
     static var codexNoModels: String { String(localized: "Pi returned no available models. Try again.", bundle: bundle) }
@@ -3613,126 +3489,13 @@ enum L10n { // swiftlint:disable:this type_body_length
 
     // MARK: - Conversation Analytics
 
-    static var conversationAnalytics: String { String(localized: "Conversation Analytics", bundle: bundle) }
-    static var conversationAnalyticsBeta: String { String(localized: "BETA", bundle: bundle) }
-    static var conversationAnalyticsPending: String { String(localized: "Analysis is waiting for transcription", bundle: bundle) }
     static var conversationAnalyticsAvailableAfterTranscription: String { String(
         localized: "Conversation analytics will be available after recording and transcription finish.",
         bundle: bundle
     ) }
-    static var conversationAnalyticsAvailableAfterSync: String { String(
-        localized: "Conversation analytics will be available after the transcript is synced.",
-        bundle: bundle
-    ) }
-    static var conversationAnalyticsEmpty: String { String(
-        localized: "A confirmed microphone or system-audio transcript is required.",
-        bundle: bundle
-    ) }
-    static var conversationAnalyticsLoadFailed: String { String(localized: "Could Not Load Conversation Analytics", bundle: bundle) }
-    static var conversationAnalyticsAudioUnavailable: String { String(localized: "Recording Audio Unavailable", bundle: bundle) }
-    static var conversationAnalyticsAudioUnavailableDescription: String { String(
-        localized: "The Server does not have all recording audio required for this transcript version.",
-        bundle: bundle
-    ) }
-    static var conversationAnalyticsYou: String { String(localized: "You", bundle: bundle) }
-    static var conversationAnalyticsOtherSide: String { String(localized: "Other Side", bundle: bundle) }
-    static var conversationAnalyticsOverlap: String { String(localized: "Overlap", bundle: bundle) }
-    static var conversationAnalyticsSpeakingPace: String { String(localized: "Speaking Pace", bundle: bundle) }
-    static var conversationAnalyticsPaceTrend: String { String(localized: "Speaking Pace Over Time", bundle: bundle) }
-    static var conversationAnalyticsPaceSeries: String { String(localized: "Pace Series", bundle: bundle) }
-    static var conversationAnalyticsElapsedTime: String { String(localized: "Elapsed Time", bundle: bundle) }
-    static var conversationAnalyticsPaceTrendUnavailable: String { String(
-        localized: "No measurable speaking pace over time.",
-        bundle: bundle
-    ) }
-    static var conversationAnalyticsPaceTrendExcludesUnmeasurable: String { String(
-        localized: "Segments without measurable duration are excluded from the pace-over-time chart.",
-        bundle: bundle
-    ) }
-    static var conversationAnalyticsOccupancy: String { String(localized: "Conversation Occupancy", bundle: bundle) }
-    static var conversationAnalyticsOverlapRate: String { String(localized: "Overlap Rate", bundle: bundle) }
-    static var conversationAnalyticsPeerPaceUnavailable: String { String(
-        localized: "No comparable pace for the other side",
-        bundle: bundle
-    ) }
 
-    static func conversationAnalyticsSpeakingShareSummary(_ share: String) -> String {
-        String(localized: "Your speaking share is \(share)", bundle: bundle)
-    }
-
-    static func conversationAnalyticsPeerPaceComparison(_ pace: String, _ ratio: String) -> String {
-        String(localized: "Other side: \(pace) chars/min · You: \(ratio)×", bundle: bundle)
-    }
-
-    static func conversationAnalyticsPaceTrendDescription(_ minutes: String) -> String {
-        String(
-            localized: "Calculated in \(minutes)-minute windows using merged speech intervals.",
-            bundle: bundle
-        )
-    }
-
-    static func conversationAnalyticsPaceSampleValue(_ start: String, _ end: String, _ pace: String) -> String {
-        String(localized: "From \(start) to \(end): \(pace) chars/min", bundle: bundle)
-    }
-
-    static func conversationAnalyticsSourceFacts(_ characters: String, _ duration: String, _ segments: String) -> String {
-        String(localized: "\(characters) chars · \(duration) · \(segments) segments", bundle: bundle)
-    }
-
-    static var conversationAnalyticsSpeechBalance: String { String(localized: "Speaking-Time Balance", bundle: bundle) }
-    static var conversationAnalyticsMissingSourceNote: String { String(
-        localized: "Only one audio source has confirmed speech.",
-        bundle: bundle
-    ) }
-    static var conversationAnalyticsConversationFlow: String { String(localized: "Conversation Flow", bundle: bundle) }
-    static var conversationAnalyticsActiveSpeech: String { String(localized: "Active Speech", bundle: bundle) }
-    static var conversationAnalyticsSimultaneousSpeech: String { String(localized: "Simultaneous Speech", bundle: bundle) }
-    static var conversationAnalyticsSourceDetails: String { String(localized: "Source Details", bundle: bundle) }
-    static var conversationAnalyticsOverlapCount: String { String(localized: "Overlap Count", bundle: bundle) }
-    static var conversationAnalyticsLongestMonologue: String { String(localized: "Longest Monologue", bundle: bundle) }
-    static var charactersPerMinute: String { String(localized: "chars/min", bundle: bundle) }
-    static func conversationAnalyticsMonologueDetail(_ source: String, _ start: String, _ end: String) -> String {
-        String(localized: "\(source) · \(start)–\(end)", bundle: bundle)
-    }
-
-    static func conversationAnalyticsSpeechGapDescription(_ maximumGap: String) -> String {
-        String(
-            localized: """
-            Transcript gaps up to \(maximumGap) seconds are treated as continuous speech for the timeline, speaking time, ratios, and pace; \
-            short overlaps may include recognition timing differences.
-            """,
-            bundle: bundle
-        )
-    }
-
-    static func conversationAnalyticsMonologueGapDescription(_ maximumGap: String) -> String {
-        String(
-            localized: """
-            The longest monologue joins same-source gaps up to \(maximumGap) seconds, \
-            even when the other side speaks in between.
-            """,
-            bundle: bundle
-        )
-    }
-
-    static var conversationAnalyticsCondensedTimelineNote: String { String(
-        localized: "Dense timelines are condensed for display without changing calculated metrics.",
-        bundle: bundle
-    ) }
     static var conversationAnalyticsLegacyTimelineNote: String { String(
         localized: "Some older transcript segments use an estimated timeline.",
-        bundle: bundle
-    ) }
-    static var conversationAnalyticsEstimatedPaceNote: String { String(
-        localized: "Speaking pace is approximate because some segments have no measurable duration.",
-        bundle: bundle
-    ) }
-    static var conversationAnalyticsSourceCaveat: String { String(
-        localized: "System audio may include multiple participants and audio from other apps.",
-        bundle: bundle
-    ) }
-    static var conversationAnalyticsLanguageCaveat: String { String(
-        localized: "Characters per minute are not directly comparable across different languages or writing systems.",
         bundle: bundle
     ) }
     static var conversationAnalyticsVoiceUnavailable: String { String(localized: "Voice Analysis Unavailable", bundle: bundle) }
@@ -3873,54 +3636,5 @@ extension L10n {
         localized: "Cannot listen on any of localhost ports 8020–8040. Close the other sign-ins and retry.",
         bundle: bundle
     ) }
-    static var workspaceAdmin: String { String(localized: "Workspace Admin", bundle: bundle) }
-    static var workspaceEditor: String { String(localized: "Workspace Editor", bundle: bundle) }
-    static var workspaceImportUnavailable: String { String(
-        localized: "Finish recording and pending sync, then choose a writable Server Workspace.",
-        bundle: bundle
-    ) }
-    static var workspaceImportChanged: String { String(
-        localized: "The Workspace changed during preparation. Your data is preserved. Try again.",
-        bundle: bundle
-    ) }
-    static func workspaceImportSameIdentity(local: String, server: String) -> String {
-        String(format: String(
-            localized: "The local Workspace %@ is the same Workspace as %@ on the Server. After reconnecting, it appears under the Server name.",
-            bundle: bundle
-        ), local, server)
-    }
-
-    static var workspaceImportReconnect: String { String(localized: "Reconnect to existing meetings", bundle: bundle) }
-    static var workspaceReconnectionAudio: String { String(localized: "Local recordings from reconnection", bundle: bundle) }
-
-    static var workspaceImportReconnectDescription: String {
-        String(
-            localized: """
-            Use the Server version. Local data missing from the Server is kept in the backup and is not uploaded. Private Notes stay on this Mac.
-            """,
-            bundle: bundle
-        )
-    }
-
-    static var workspaceImportCollision: String { String(localized: "Some IDs already exist on the Server. No local data was moved.", bundle: bundle)
-    }
-
-    static var workspaceImportDestination: String { String(localized: "Import destination", bundle: bundle) }
-    static var workspaceImportExisting: String { String(localized: "Existing Server Workspace", bundle: bundle) }
-    static var workspaceImportNew: String { String(localized: "New Server Workspace", bundle: bundle) }
-    static var workspaceImportOrganization: String { String(localized: "Organization", bundle: bundle) }
-    static var workspaceImportSelectWorkspace: String { String(localized: "Select a Server Workspace", bundle: bundle) }
-    static var workspaceImportSelectOrganization: String { String(localized: "Select an Organization", bundle: bundle) }
-    static var workspaceImportRefresh: String { String(localized: "Reload destinations", bundle: bundle) }
-    static var workspaceImportDescription: String { String(
-        localized: "A backup is saved before importing. Existing Workspace settings stay unchanged. The original Local Workspace remains available.",
-        bundle: bundle
-    ) }
-    static var workspaceImportStart: String { String(localized: "Import", bundle: bundle) }
-    static var workspaceImportStepDestination: String { String(localized: "Checking the import destination…", bundle: bundle) }
-    static var workspaceImportStepScreenshots: String { String(localized: "Preparing screenshots…", bundle: bundle) }
-    static var workspaceImportStepBackup: String { String(localized: "Creating a backup…", bundle: bundle) }
-    static var workspaceImportStepServer: String { String(localized: "Checking against the Server…", bundle: bundle) }
-    static var workspaceImportStepCommit: String { String(localized: "Finishing the import…", bundle: bundle) }
 
 }

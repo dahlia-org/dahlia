@@ -4,8 +4,6 @@ import SwiftUI
 struct MCPSettingsView: View {
     let workspaces: [WorkspaceRecord]
     let currentWorkspace: WorkspaceRecord?
-    let accountConnections: [DahliaAccountConnection]
-    let databricksAccounts: [DatabricksConnection]
     private let helperURL: URL?
 
     @State private var selectedClient = MCPClient.claude
@@ -19,14 +17,10 @@ struct MCPSettingsView: View {
     init(
         workspaces: [WorkspaceRecord],
         currentWorkspace: WorkspaceRecord?,
-        accountConnections: [DahliaAccountConnection],
-        databricksAccounts: [DatabricksConnection],
         helperURL: URL? = try? DahliaMCPBundle.executableURL()
     ) {
         self.workspaces = workspaces
         self.currentWorkspace = currentWorkspace
-        self.accountConnections = accountConnections
-        self.databricksAccounts = databricksAccounts
         self.helperURL = helperURL
     }
 
@@ -145,19 +139,10 @@ struct MCPSettingsView: View {
         return [currentWorkspace] + workspaces
     }
 
-    private var accounts: [WorkspaceAccountChoice] {
-        var result: [WorkspaceAccountChoice] = [.local]
-        result += databricksAccounts.map { .databricks($0.id) }
-        result += accountConnections.map { .dahlia($0.id) }
-        for workspace in availableWorkspaces {
-            let account = WorkspaceAccountChoice(workspace)
-            if !result.contains(account) { result.append(account) }
-        }
-        return result
-    }
+    private var accounts: [WorkspaceAccountChoice] { [.local] }
 
     private func accountName(_ account: WorkspaceAccountChoice) -> String {
-        account.displayName(connections: accountConnections, databricksAccounts: databricksAccounts)
+        account.displayName
     }
 
     private var accountWorkspaces: [WorkspaceRecord] {

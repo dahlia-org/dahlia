@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import Synchronization
 @testable import Dahlia
@@ -70,6 +71,48 @@ import Synchronization
             }
             #expect(rejected.map(DatabricksProxyGoogleSignInProvider.isNotAuthorized) == true)
             #expect(try await client.fetchCalendarList(session: session(GoogleCalendarAPIClient.googleAPIBaseURL)).isEmpty)
+        }
+
+        @Test(arguments: [false, true], [false, true])
+        func savedSelectionWaitsForEveryCalendarListPage(proxy: Bool, laterPageFails: Bool) async throws {
+            let host = "pages-\(UUID().uuidString.lowercased()).example"
+            let root = try #require(URL(string: "https://\(host)/" + (proxy ? "api/2.0/unity-catalog/connections/calendar/proxy/" : "")))
+            let recorder = RequestRecorderURLProtocol(responseBodiesByPageToken: [
+                "": Data(#"{"items":[],"nextPageToken":"second"}"#.utf8),
+                "second": Data((laterPageFails ? "invalid-json" :
+                        #"{"items":[{"id":"later","summary":"Later"},{"id":"primary","primary":true},{"id":"deleted","deleted":true}]}"#).utf8),
+            ], eventBody: Data(#"{"items":[]}"#.utf8))
+            let transport = makeRecordingSession(recorder: recorder, host: host)
+            defer {
+                transport.invalidateAndCancel()
+                RecordingURLProtocol.recorders.withLock { $0[host] = nil }
+            }
+            let defaults = try #require(UserDefaults(suiteName: "CalendarPages.\(UUID())"))
+            defaults.set("[\"later\"]", forKey: "\(GoogleCalendarStore.accountSelectedCalendarIDsKey).unassigned")
+            let session = GoogleSession(
+                account: GoogleCalendarAccount(id: "test-user", displayName: "Test", email: "test@example.com"),
+                accessToken: "test-token", grantedScopes: GoogleOAuthScope.calendar, apiBaseURL: root
+            )
+            let store = GoogleCalendarStore(
+                signInProvider: CalendarPageSignIn(session: session), apiClient: GoogleCalendarAPIClient(session: transport),
+                userDefaults: defaults, providerChangeNotification: Notification.Name("CalendarPages.\(UUID())")
+            )
+            await store.restoreSessionIfNeeded()
+            #expect(store.selectedCalendarIDs == ["later"])
+            let listRequests = recorder.requests.filter { $0.url?.path.hasSuffix("/calendarList") == true }
+            let query = listRequests.map { URLComponents(url: $0.url!, resolvingAgainstBaseURL: false)?.queryItems ?? [] }
+            #expect(query.map { $0.first { $0.name == "pageToken" }?.value } == [nil, "second"])
+            #expect(query.allSatisfy { $0.filter { $0.name == "minAccessRole" }.map(\.value) == ["reader"] })
+            if laterPageFails {
+                #expect(store.state == .failed)
+                #expect(store.availableCalendars.isEmpty)
+                #expect(recorder.requests.allSatisfy { $0.url?.path.hasSuffix("/calendarList") == true })
+            } else {
+                #expect(store.state == .loaded)
+                #expect(store.availableCalendars.contains { $0.id == "later" })
+                #expect(!store.availableCalendars.contains { $0.id == "deleted" })
+                #expect(recorder.requests.last?.url?.path.hasSuffix("/calendars/later/events") == true)
+            }
         }
 
         @Test
@@ -507,9 +550,11 @@ private final class RequestRecorderURLProtocol: @unchecked Sendable {
     private let lock = NSLock()
     private var storedRequests: [URLRequest] = []
     private let responseBodiesByPageToken: [String: Data]
+    private let eventBody: Data?
 
-    init(responseBodiesByPageToken: [String: Data]) {
+    init(responseBodiesByPageToken: [String: Data], eventBody: Data? = nil) {
         self.responseBodiesByPageToken = responseBodiesByPageToken
+        self.eventBody = eventBody
     }
 
     var requests: [URLRequest] {
@@ -519,6 +564,7 @@ private final class RequestRecorderURLProtocol: @unchecked Sendable {
     /// Records the request and returns the body for its `pageToken`, or for the first page when it has none.
     func record(_ request: URLRequest) -> Data {
         lock.withLock { storedRequests.append(request) }
+        if request.url?.path.hasSuffix("/events") == true, let eventBody { return eventBody }
         let pageToken = request.url
             .flatMap { URLComponents(url: $0, resolvingAgainstBaseURL: false)?.queryItems }?
             .first { $0.name == "pageToken" }?.value
@@ -526,8 +572,8 @@ private final class RequestRecorderURLProtocol: @unchecked Sendable {
     }
 }
 
-private func makeRecordingSession(recorder: RequestRecorderURLProtocol) -> URLSession {
-    RecordingURLProtocol.recorder = recorder
+private func makeRecordingSession(recorder: RequestRecorderURLProtocol, host: String = "www.googleapis.com") -> URLSession {
+    RecordingURLProtocol.recorders.withLock { $0[host] = recorder }
 
     let configuration = URLSessionConfiguration.ephemeral
     configuration.protocolClasses = [RecordingURLProtocol.self]
@@ -590,7 +636,7 @@ private final class GoogleInvalidCredentialURLProtocol: URLProtocol, @unchecked 
 }
 
 private final class RecordingURLProtocol: URLProtocol, @unchecked Sendable {
-    nonisolated(unsafe) static var recorder: RequestRecorderURLProtocol?
+    static let recorders = Mutex<[String: RequestRecorderURLProtocol]>([:])
 
     override static func canInit(with _: URLRequest) -> Bool {
         true
@@ -608,7 +654,8 @@ private final class RecordingURLProtocol: URLProtocol, @unchecked Sendable {
             httpVersion: nil,
             headerFields: ["Content-Type": "application/json"]
         )!
-        let data = Self.recorder?.record(request) ?? Data()
+        let recorder = Self.recorders.withLock { $0[request.url?.host ?? ""] }
+        let data = recorder?.record(request) ?? Data()
 
         client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
         client?.urlProtocol(self, didLoad: data)
@@ -616,4 +663,17 @@ private final class RecordingURLProtocol: URLProtocol, @unchecked Sendable {
     }
 
     override func stopLoading() {}
+}
+
+@MainActor
+private final class CalendarPageSignIn: GoogleSignInProviding {
+    let isConfigured = true
+    let hasPreviousSignIn = true
+    let sessionDidChangeNotification = Notification.Name("CalendarPageSignIn.\(UUID())")
+    let session: GoogleSession
+    init(session: GoogleSession) { self.session = session }
+    func restorePreviousSignIn() async throws -> GoogleSession { session }
+    func refreshCurrentSession() async throws -> GoogleSession? { session }
+    func signIn(withPresentingWindow _: NSWindow, requestedScopes _: Set<String>) async throws -> GoogleSession { session }
+    func disconnect() async throws {}
 }

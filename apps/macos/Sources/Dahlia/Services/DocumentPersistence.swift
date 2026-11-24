@@ -106,7 +106,6 @@ actor DocumentPersistence {
         let workspaceID: UUID
         let meetingID: UUID
         let name: String
-        var connectionID: UUID?
     }
 
     let dbQueue: any DatabaseWriter
@@ -119,8 +118,7 @@ actor DocumentPersistence {
         let legacy = try await dbQueue.read { db -> MeetingNoteRecord? in
             guard try DocumentRecord.notes(in: db, meetingID: meetingID) == nil,
                   let meeting = try MeetingRecord.fetchOne(db, key: meetingID),
-                  let workspace = try WorkspaceRecord.fetchOne(db, key: meeting.workspaceId),
-                  workspace.accountConnectionId == nil else { return nil }
+                  try WorkspaceRecord.exists(db, key: meeting.workspaceId) else { return nil }
             return try MeetingNoteRecord.fetchOne(db, key: meetingID)
         }
         if let legacy {
@@ -128,8 +126,7 @@ actor DocumentPersistence {
             try await dbQueue.write { db in
                 guard try DocumentRecord.notes(in: db, meetingID: meetingID) == nil,
                       let meeting = try MeetingRecord.fetchOne(db, key: meetingID),
-                      let workspace = try WorkspaceRecord.fetchOne(db, key: meeting.workspaceId),
-                      workspace.accountConnectionId == nil else { return }
+                      try WorkspaceRecord.exists(db, key: meeting.workspaceId) else { return }
                 try DocumentRecord(
                     id: .v7(),
                     workspaceId: meeting.workspaceId,
@@ -168,8 +165,6 @@ actor DocumentPersistence {
                   })
             else { throw DocumentCoreError.invalidCommand }
         }
-        let commit = SyncDiagnostics.begin("DocumentLocalCommit")
-        defer { SyncDiagnostics.end("DocumentLocalCommit", commit) }
         while true {
             let cached = baselines
             let source = try await dbQueue.read { db -> (DocumentRecord?, [DocumentUpdateRecord], Int64, (allowed: Bool, after: Int64)) in
@@ -193,13 +188,13 @@ actor DocumentPersistence {
                     }
                 }
                 let meeting = try MeetingRecord.fetchOne(db, key: meetingID)
-                let workspace = try meeting.flatMap { try WorkspaceRecord.fetchOne(db, key: $0.workspaceId) }
-                let moved = orphan.map { $0.workspaceID != meeting?.workspaceId || $0.connectionID != workspace?.accountConnectionId } ?? false
+                let hasWorkspace = try meeting.map { try WorkspaceRecord.exists(db, key: $0.workspaceId) } ?? false
+                let moved = orphan.map { $0.workspaceID != meeting?.workspaceId } ?? false
                 return (
                     record,
                     prerequisite,
                     latest,
-                    (!privateOnly && workspace != nil && (!local || (workspace?.allowsCanonicalEdits == true && !moved)), after)
+                    (!privateOnly && hasWorkspace && (!local || !moved), after)
                 )
             }
             let entries = source.1.compactMap { entry in entry.id.map { DocumentCoreCommand.Pending(sequence: $0, update: entry.payload) } }
@@ -263,10 +258,8 @@ actor DocumentPersistence {
         source: (DocumentRecord?, [DocumentUpdateRecord], Int64, (allowed: Bool, after: Int64))
     ) throws -> Bool {
         let (recovery, automaticRecovery) = recoveries
-        let write = SyncDiagnostics.begin("DocumentDatabaseWrite")
-        defer { SyncDiagnostics.end("DocumentDatabaseWrite", write) }
         guard !privateOnly, let meeting = try MeetingRecord.fetchOne(db, key: meetingID),
-              let workspace = try WorkspaceRecord.fetchOne(db, key: meeting.workspaceId) else {
+              try WorkspaceRecord.exists(db, key: meeting.workspaceId) else {
             guard local, let orphan, orphan.meetingID == meetingID,
                   try WorkspaceRecord.fetchOne(db, key: orphan.workspaceID) != nil else { throw DocumentCoreError.unavailable }
             try db.execute(sql: """
@@ -294,9 +287,9 @@ actor DocumentPersistence {
             }
             return true
         }
-        // An editor opened before a move must never publish its old private CRDT into the new account.
-        let moved = orphan.map { $0.workspaceID != meeting.workspaceId || $0.connectionID != workspace.accountConnectionId } ?? false
-        if local, !workspace.allowsCanonicalEdits || moved {
+        // An editor opened before a move must never publish its old private CRDT into the new workspace.
+        let moved = orphan.map { $0.workspaceID != meeting.workspaceId } ?? false
+        if local, moved {
             try DocumentRetention.archiveBeforeRemoteDeletion(
                 meetingID: meetingID,
                 rejectedUpdate: update,
@@ -331,12 +324,12 @@ actor DocumentPersistence {
             INSERT INTO document_updates(documentId, payload, pending, createdAt)
             SELECT ?, value, ?, ? FROM document_local_archives a, json_each(a.payload, '$.updates')
             WHERE a.id = ? AND a.workspace_id = ? AND a.meetingId = ?
-            """, arguments: [document.id, workspace.accountConnectionId != nil, now, meetingID, orphan.workspaceID, meetingID])
+            """, arguments: [document.id, false, now, meetingID, orphan.workspaceID, meetingID])
         }
         var record = DocumentUpdateRecord(
             documentId: document.id,
             payload: update,
-            pending: local && workspace.accountConnectionId != nil,
+            pending: false,
             createdAt: now
         )
         try record.insert(db)
@@ -346,29 +339,23 @@ actor DocumentPersistence {
                 documentId: document.id,
                 blocksJSON: recovery,
                 reason: "concurrent_delete",
-                pending: workspace.accountConnectionId != nil,
+                pending: false,
                 createdAt: now
             )
             .insert(db)
         }
-        let pendingRecovery = try Bool.fetchOne(
-            db,
-            sql: "SELECT EXISTS(SELECT 1 FROM document_updates WHERE documentId = ? AND pending = 1)",
-            arguments: [document.id]
-        ) == true
-        if let automaticRecovery, local || workspace.accountConnectionId == nil || pendingRecovery {
+        if let automaticRecovery {
             try DocumentRecoveryRecord(
                 id: .v7(),
                 documentId: document.id,
                 blocksJSON: automaticRecovery,
                 reason: local ? "deleted" : "concurrent_delete",
-                pending: workspace.accountConnectionId != nil,
+                pending: false,
                 createdAt: now
             ).insert(db)
         }
         try db.execute(sql: "UPDATE documents SET recoverySequence = ? WHERE id = ?", arguments: [record.id, document.id])
         if local {
-            try WorkspaceTransferFence.recordLocalMutation(workspaceID: workspace.id, in: db)
             try db.execute(
                 sql: "UPDATE documents SET locallyEdited = 1, updatedAt = ?, lastAccessedAt = ? WHERE id = ?",
                 arguments: [now, now, document.id]
@@ -401,8 +388,7 @@ actor DocumentPersistence {
                 let record = try reference.load(in: db)
                 let updates = try DocumentUpdateRecord.filter(Column("documentId") == record?.id)
                     .filter(Column("id") > (record?.checkpointSequence ?? 0)).order(Column("id")).fetchAll(db)
-                let local = try record.flatMap { try WorkspaceRecord.fetchOne(db, key: $0.workspaceId) }?.accountConnectionId == nil
-                return (record, updates, local)
+                return (record, updates, true)
             }
             if let record = source.0, !record.resident { throw DocumentCoreError.unavailable }
             if let record = source.0, record.schemaVersion != 2 { throw DocumentCoreError.unsupportedSchema }
@@ -429,8 +415,7 @@ actor DocumentPersistence {
                       current.checkpoint == record.checkpoint,
                       current.generation == record.generation,
                       current.workspaceId == record.workspaceId,
-                      let workspace = try WorkspaceRecord.fetchOne(db, key: current.workspaceId),
-                      (workspace.accountConnectionId == nil) == source.2 else { return false }
+                      try WorkspaceRecord.exists(db, key: current.workspaceId) else { return false }
                 if purged {
                     let latest = try Int64.fetchOne(db, sql: "SELECT max(id) FROM document_updates WHERE documentId = ?", arguments: [record.id]) ?? 0
                     guard latest <= through else { return false }
@@ -591,45 +576,6 @@ actor DocumentPersistence {
         }
     }
 
-    struct SendingState: Sendable { let vector: String
-        let update: String?
-        let through: Int64?
-        let revision: Int
-    }
-
-    func sendingState(
-        documentID: UUID,
-        serverVector: String?,
-        canWrite: Bool,
-        rejectedThrough: Int64? = nil,
-        rejectedRevision: Int? = nil
-    ) async throws -> SendingState {
-        let cached = baselines
-        let source = try await dbQueue.read { db -> (DocumentRecord, [DocumentUpdateRecord], Int64?, Int64) in
-            guard let record = try DocumentRecord.fetchOne(db, key: documentID) else { throw DocumentCoreError.unavailable }
-            let after = Self.readSequence(record, cached: cached[record.id])
-            let updates = try DocumentUpdateRecord.filter(Column("documentId") == documentID)
-                .filter(Column("id") > after).order(Column("id")).fetchAll(db)
-            let through = canWrite ? try Int64.fetchOne(
-                db,
-                sql: "SELECT max(id) FROM document_updates WHERE documentId = ? AND pending = 1",
-                arguments: [documentID]
-            ) : nil
-            return (record, updates, through, after)
-        }
-        let send = source.2 != nil && !(source.2 == rejectedThrough && source.0.revision == rejectedRevision)
-        var command = runtimeCommand(
-            record: source.0,
-            updates: source.1.compactMap { row in row.id.map { .init(sequence: $0, update: row.payload) } },
-            lightweight: true,
-            after: source.3
-        )
-        command.vector = send ? serverVector : nil
-        command.sending = send
-        let result = try await processReloadingRuntime(command, record: source.0)
-        return SendingState(vector: result.vector, update: send ? result.update : nil, through: source.2, revision: source.0.revision)
-    }
-
     func editorState(meetingID: UUID, vector: String) async throws -> DocumentCoreResult {
         let cached = baselines
         let source = try await dbQueue.read { db -> (DocumentRecord, [DocumentCoreCommand.Pending], Int64) in
@@ -740,43 +686,4 @@ actor DocumentPersistence {
         return result
     }
 
-    func prepareAccountTransfer(workspaceID: UUID) async throws {
-        try await DocumentEditorModel.finishLocalSaves(dbQueue: dbQueue)
-        let ids = try await dbQueue.read { db in
-            try UUID.fetchAll(
-                db,
-                sql: "SELECT id FROM documents WHERE workspace_id = ?",
-                arguments: [workspaceID]
-            )
-        }
-        for id in ids {
-            _ = try await materialize(documentID: id, compact: true)
-        }
-    }
-
-    nonisolated static func preservePrivateCopies(workspaceID: UUID, in db: Database) throws {
-        let documents = try DocumentRecord.fetchAll(
-            db,
-            sql: "SELECT * FROM documents WHERE workspace_id = ?",
-            arguments: [workspaceID]
-        )
-        for document in documents {
-            let latest = try Int64.fetchOne(db, sql: "SELECT max(id) FROM document_updates WHERE documentId = ?", arguments: [document.id]) ?? 0
-            guard latest <= document.checkpointSequence else { throw LocalWorkspaceImportError.changed }
-            try DocumentPrivateCopyRecord(
-                id: .v7(),
-                workspaceId: document.workspaceId,
-                meetingId: document.meetingId,
-                kind: document.kind,
-                title: document.title,
-                checkpoint: document.checkpoint,
-                text: document.text,
-                createdAt: document.createdAt,
-                updatedAt: document.updatedAt
-            ).insert(db)
-            try DocumentRetention.archive(documentID: document.id, in: db)
-            try document.delete(db)
-            try db.execute(sql: "DELETE FROM document_legacy_imports WHERE meetingId = ?", arguments: [document.meetingId])
-        }
-    }
 }

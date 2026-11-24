@@ -4,7 +4,6 @@ import Observation
 @MainActor
 @Observable
 final class PiFileAccessSettingsModel {
-    let account: CodexRuntimeProvider
     private(set) var settings: PiFileAccessSettings
     private(set) var isUpdating = false
     private(set) var defaultAccess = PiSandbox.DefaultFileAccess()
@@ -13,14 +12,12 @@ final class PiFileAccessSettingsModel {
     private let secret: @Sendable (String) -> String?
 
     init(
-        account: CodexRuntimeProvider,
         defaults: UserDefaults = .standard,
         secret: @escaping @Sendable (String) -> String? = { KeychainService.load(key: $0) }
     ) {
-        self.account = account
         self.defaults = defaults
         self.secret = secret
-        settings = PiFileAccessSettings.load(for: account, defaults: defaults)
+        settings = PiFileAccessSettings.load(defaults: defaults)
     }
 
     func add(_ urls: [URL]) async {
@@ -40,12 +37,11 @@ final class PiFileAccessSettingsModel {
     }
 
     func refreshDefaults(workingDirectory: String) async {
-        let account = account
         do {
             let paths = try await Task.detached {
                 let path = workingDirectory.trimmingCharacters(in: .whitespaces).nilIfBlank ?? PiWorkingDirectory.defaultPath
                 let cwd = URL(fileURLWithPath: (path as NSString).expandingTildeInPath, isDirectory: true)
-                return try PiSandbox.defaultFileAccess(cwd: cwd, agentURL: PiAgentDirectoryLocator().agentURL(for: account))
+                return try PiSandbox.defaultFileAccess(cwd: cwd, agentURL: PiAgentDirectoryLocator().agentURL())
             }.value
             guard !Task.isCancelled else { return }
             defaultAccess = paths
@@ -69,9 +65,9 @@ final class PiFileAccessSettingsModel {
     }
 
     func remove(_ id: UUID) {
-        settings = PiFileAccessSettings.load(for: account, defaults: defaults)
+        settings = PiFileAccessSettings.load(defaults: defaults)
         settings.grants.removeAll { $0.id == id }
-        settings.save(for: account, defaults: defaults)
+        settings.save(defaults: defaults)
         errorMessage = nil
     }
 
@@ -80,32 +76,31 @@ final class PiFileAccessSettingsModel {
         isUpdating = true
         errorMessage = nil
         defer { isUpdating = false }
-        let snapshot = PiFileAccessSettings.load(for: account, defaults: defaults)
-        let account = account
+        let snapshot = PiFileAccessSettings.load(defaults: defaults)
         let secret = secret
         let securityVariables = CommandLineToolLocator.discoveryEnvironmentNames + ["HOME", "ZDOTDIR", "XDG_CONFIG_HOME", "BASH_ENV", "ENV"]
-        let launch = PiLaunchSettings(variables: PiLaunchSettings.load(for: account, defaults: defaults).variables.filter {
+        let launch = PiLaunchSettings(variables: PiLaunchSettings.load(defaults: defaults).variables.filter {
             securityVariables.contains($0.name)
         })
-        let workPath = defaults.string(forKey: PiWorkingDirectory.defaultsKey(for: account))?
+        let workPath = defaults.string(forKey: PiWorkingDirectory.defaultsKey())?
             .trimmingCharacters(in: .whitespaces).nilIfBlank ?? PiWorkingDirectory.defaultPath
         do {
             let updated = try await Task.detached {
                 var updated = snapshot
-                let environment = ProcessInfo.processInfo.environment.merging(launch.resolvedEnvironment(for: account, secret: secret)) { $1 }
-                let pi = (try? PiBundle.executableURL(for: account)) ?? URL(fileURLWithPath: "/bin/sh")
+                let environment = ProcessInfo.processInfo.environment.merging(launch.resolvedEnvironment(secret: secret)) { $1 }
+                let pi = (try? PiBundle.executableURL()) ?? URL(fileURLWithPath: "/bin/sh")
                 let cwd = URL(fileURLWithPath: (workPath as NSString).expandingTildeInPath, isDirectory: true)
                 try change(&updated, CommandLineToolLocator.searchPath(for: pi, environment: environment), cwd, environment)
                 return updated
             }.value
-            let current = PiFileAccessSettings.load(for: account, defaults: defaults)
+            let current = PiFileAccessSettings.load(defaults: defaults)
             guard current == snapshot else {
                 settings = current
                 errorMessage = L10n.agentFileAccessChanged
                 return
             }
             settings = updated
-            settings.save(for: account, defaults: defaults)
+            settings.save(defaults: defaults)
         } catch {
             errorMessage = error.localizedDescription
         }

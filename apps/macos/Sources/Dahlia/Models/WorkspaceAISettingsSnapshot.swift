@@ -2,9 +2,6 @@ import Foundation
 
 struct WorkspaceAISettingsSnapshot: Equatable, Sendable {
     let workspaceID: UUID
-    var accountConnectionID: UUID?
-    /// The Databricks account the workspace belongs to; nil for the Local Account.
-    var databricksConnectionID: UUID?
     var localProvider: AIAccountProvider
     var databricksProfile: String
     var generationSettings: WorkspaceGenerationSettings
@@ -23,8 +20,6 @@ extension WorkspaceAISettingsSnapshot {
     init(workspace: WorkspaceRecord, localAccountSettings: LocalAccountAISettings, defaults: UserDefaults = .standard) {
         let account = AccountInferenceSettings(workspace: workspace, defaults: defaults)
         workspaceID = workspace.id
-        accountConnectionID = workspace.accountConnectionId
-        databricksConnectionID = workspace.databricksConnectionId
         localProvider = localAccountSettings.provider
         databricksProfile = localAccountSettings.databricksProfile
         generationSettings = account.generationSettings(outputLanguage: workspace.generationSettings.outputLanguage)

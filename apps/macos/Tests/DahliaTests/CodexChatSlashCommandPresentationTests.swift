@@ -14,7 +14,7 @@
                 .init(name: "skill:meeting-reviewer", description: "Review a meeting", source: "skill"),
                 .init(name: "skill:projects-optimizer", description: "Organize projects", source: "skill"),
             ])
-            let session = CodexChatSessionModel(service: service, runtimeProviderResolver: { .local })
+            let session = CodexChatSessionModel(service: service)
             session.draft = "/"
             let navigation = MainWindowNavigation(openMainWindow: {}, initialSettingsCategory: .general)
             let host = NSHostingView(rootView: VStack(spacing: 0) {

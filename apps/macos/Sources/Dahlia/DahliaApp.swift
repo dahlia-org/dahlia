@@ -17,7 +17,6 @@ private enum MainWindowMetrics {
 }
 
 struct DahliaApp: App {
-    @Environment(\.scenePhase) private var scenePhase
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
     @State private var updateController: AppUpdateController
     @StateObject private var viewModel: CaptionViewModel
@@ -34,10 +33,8 @@ struct DahliaApp: App {
     private let recordingActivityObservation: AnyCancellable
     private let mainWindowNavigation: MainWindowNavigation
     @State private var appDatabase: AppDatabaseManager?
-    @State private var meetingSyncWorker: SyncWorker?
     @State private var startup: AppStartupModel
     @State private var showWorkspacePicker = true
-    @State private var pendingSetupAdoptionWorkspaceID: UUID?
 
     @MainActor
     init() {
@@ -162,14 +159,10 @@ struct DahliaApp: App {
                 if mainWindowNavigation.isShowingDahliaSignIn {
                     // Dahlia Cloud and Server sign-in (`DahliaServerSignInView`) is hidden for now.
                     DatabricksSignInView(
-                        showsLocalAccount: !AppSettings.shared.hideLocalAccount && !workspaceManagementModel.workspaces.contains {
-                            $0.accountConnectionId == nil && $0.databricksConnectionId == nil
-                        },
-                        workspaceManagementModel: workspaceManagementModel,
-                        canTransferWorkspace: viewModel.canSwitchWorkspace,
+                        showsLocalAccount: workspaceManagementModel.workspaces.isEmpty,
                         onCancel: cancelDahliaSignIn,
-                        onContinueWithDatabricks: { continueFromSignIn(databricks: $0) },
-                        onContinueLocally: { continueFromSignIn(databricks: nil) }
+                        onContinueWithDatabricks: { _ in continueFromSignIn() },
+                        onContinueLocally: continueFromSignIn
                     )
                 }
             }
@@ -188,47 +181,6 @@ struct DahliaApp: App {
                 )
             ) {} message: {
                 Text(workspaceManagementModel.errorMessage)
-            }
-            .overlay {
-                if let pending = workspaceManagementModel.pendingServerAdoption {
-                    WorkspaceImportView(
-                        pending: pending, isBusy: workspaceManagementModel.updatingWorkspaceAccountID != nil,
-                        step: workspaceManagementModel.serverAdoptionStep,
-                        onCancel: cancelServerAdoption,
-                        onReload: { await workspaceManagementModel.reloadServerAdoption() },
-                        onImport: { destinationId, organizationId, workspaceName, reconnectExisting in
-                            await confirmServerAdoption(
-                                pending,
-                                destinationId: destinationId,
-                                organizationId: organizationId,
-                                workspaceName: workspaceName,
-                                reconnectExisting: reconnectExisting
-                            )
-                        }
-                    )
-                }
-            }
-            .confirmationDialog(
-                dahliaAccountController.pendingSignOutConnection.map {
-                    L10n.signOutDahliaConnection($0.displayName)
-                } ?? "",
-                isPresented: Binding(
-                    get: { dahliaAccountController.pendingSignOutConnection != nil },
-                    set: { if !$0 { dahliaAccountController.cancelSignOut() } }
-                ),
-                titleVisibility: .visible
-            ) {
-                Button(L10n.moveWorkspacesToLocalAndSignOut) {
-                    dahliaAccountController.confirmSignOut(disposition: .moveToLocalAccount)
-                }
-                Button(L10n.deleteLocalWorkspacesAndSignOut, role: .destructive) {
-                    dahliaAccountController.confirmSignOut(disposition: .deleteLocalCopies)
-                }
-                Button(L10n.cancel, role: .cancel) {
-                    dahliaAccountController.cancelSignOut()
-                }
-            } message: {
-                Text(L10n.signOutWorkspaceDispositionDescription)
             }
             .sheet(item: $viewModel.pendingBatchTranscriptionConfirmation) { confirmation in
                 BatchTranscriptionConfirmationView(
@@ -249,7 +201,6 @@ struct DahliaApp: App {
                     summaryGenerationOptions: confirmation.summaryGenerationOptions,
                     isRetranscription: confirmation.isRetranscription,
                     processingMethod: confirmation.processingMethod,
-                    usesServerSummary: confirmation.usesServerSummary,
                     onStart: { languageSelection, generatesSummary, summaryOptions, projectId in
                         if let error = viewModel.assignPendingBatchTranscriptionProject(projectId) {
                             return error
@@ -273,22 +224,13 @@ struct DahliaApp: App {
                     try await initializeApp()
                 }
             }
-            .onChange(of: scenePhase) { _, phase in
-                guard phase == .active, let meetingSyncWorker else { return }
-                ServerAccountSettingsModel.shared.refreshAll()
-                Task { await meetingSyncWorker.applicationBecameActive() }
-            }
             .onChange(of: hasNoWorkspaces, initial: true) { _, hasNoWorkspaces in
                 if hasNoWorkspaces, mainWindowNavigation.setupTourMode == nil {
                     mainWindowNavigation.presentInitialSetupTour()
                 }
             }
             .onChange(of: dahliaAccountController.connections) {
-                ServerAccountSettingsModel.shared.updateConnections(dahliaAccountController.connections)
-                Task {
-                    await reconcileWorkspacesAfterAccountChange()
-                    await meetingSyncWorker?.applicationBecameActive()
-                }
+                Task { await reconcileWorkspacesAfterAccountChange() }
             }
             .modifier(MainWindowOpenWindowRegistrationModifier())
             .environment(mainWindowNavigation)
@@ -413,6 +355,11 @@ struct DahliaApp: App {
         AppDelegate.backupRestoreOutcome = restoreOutcome
         startup.show(.loadingWorkspaces)
         AccountsDatabase.configure(db.dbQueue)
+        // Account consumers require the completed migration. A failure blocks launch and retries next time.
+        try await SingleAccountMigration.runAtLaunch(dbQueue: db.dbQueue)
+        CalendarAutoRecordingStore.shared.activateAfterAccountMigration()
+        await GoogleProviderAccountsModel.shared.activate()
+        await CalendarProviderCollection.shared.activateAfterAccountMigration()
         DatabricksOAuthStorage.removeLegacyConnections()
         // Accounts are in the database now; listeners such as the Google Calendar proxy re-read them.
         NotificationCenter.default.post(name: .databricksConnectionDidChange, object: nil)
@@ -433,7 +380,7 @@ struct DahliaApp: App {
         ])
         await PiChatService.shared.configureBackup(dbQueue: db.dbQueue)
         await ScreenshotContentProvider.shared.configure(dbQueue: db.dbQueue)
-        await CodexRuntimeContextCoordinator.shared.configure(dbQueue: db.dbQueue)
+        await PiRuntimeContextCoordinator.shared.configure(dbQueue: db.dbQueue)
         do {
             try await workspaceAISettings.inheritLocalAccountSettings(from: db.dbQueue)
             try await MeetingRepository(dbQueue: db.dbQueue)
@@ -444,16 +391,6 @@ struct DahliaApp: App {
         }
         await DahliaCloudCredentialStorage.deleteLegacyCredential()
         await dahliaAccountController.configure(appDatabase: db)
-        ServerAccountSettingsModel.shared.startNetworkMonitoring()
-        ServerAccountSettingsModel.shared.updateConnections(dahliaAccountController.connections)
-        let meetingSyncWorker = SyncWorker(dbQueue: db.dbQueue) {
-            await reconcileWorkspacesAfterAccountChange()
-            await dahliaAccountController.reload()
-        }
-        self.meetingSyncWorker = meetingSyncWorker
-        dahliaAccountController.syncWorker = meetingSyncWorker
-        // Backup restore only changes local workspaces; existing canonical sync resumes normally.
-        await meetingSyncWorker.start()
         do {
             let imageBroker = DahliaImageBrokerServer(dbQueue: db.dbQueue)
             try imageBroker.start()
@@ -466,9 +403,8 @@ struct DahliaApp: App {
         viewModel.configureBatchTranscription(dbQueue: db.dbQueue) { [weak sidebarViewModel] in
             await sidebarViewModel?.refreshUnprocessedRecordings()
         }
-        appDelegate.terminationHandler = { [weak viewModel, weak db, weak imageBroker, weak meetingSyncWorker] in
+        appDelegate.terminationHandler = { [weak viewModel, weak db, weak imageBroker] in
             imageBroker?.stop()
-            await meetingSyncWorker?.stop()
             await db?.searchIndexer.stop()
             return await viewModel?.prepareForTermination()
         }
@@ -523,11 +459,12 @@ struct DahliaApp: App {
         return true
     }
 
-    /// `databricks` is the signed-in workspace's account to open; nil opens the Local Account.
-    private func continueFromSignIn(databricks: UUID?) {
+    /// A Databricks sign-in adds a provider account; no workspace belongs to it, so the open workspace stays.
+    private func continueFromSignIn() {
         mainWindowNavigation.dismissDahliaSignIn()
+        guard AppSettings.shared.currentWorkspace == nil else { return }
         Task {
-            if let workspace = await WorkspaceAISettingsModel.shared.accountWorkspace(databricksConnectionID: databricks) {
+            if let workspace = await WorkspaceAISettingsModel.shared.accountWorkspace() {
                 _ = openWorkspace(workspace)
             }
         }
@@ -536,48 +473,6 @@ struct DahliaApp: App {
     private func cancelDahliaSignIn() {
         dahliaAccountController.cancelAccountTask()
         mainWindowNavigation.dismissDahliaSignIn()
-    }
-
-    private func confirmServerAdoption(
-        _ pending: PendingWorkspaceServerAdoption,
-        destinationId: UUID?,
-        organizationId: UUID?,
-        workspaceName: String?,
-        reconnectExisting: Bool
-    ) async {
-        guard let updated = await workspaceManagementModel.confirmServerAdoption(
-            pending,
-            destinationId: destinationId,
-            organizationId: organizationId,
-            workspaceName: workspaceName,
-            reconnectExisting: reconnectExisting
-        )
-        else {
-            if workspaceManagementModel.pendingServerAdoption == nil {
-                pendingSetupAdoptionWorkspaceID = nil
-            }
-            return
-        }
-        await meetingSyncWorker?.drain()
-        if pendingSetupAdoptionWorkspaceID == pending.workspace.id {
-            pendingSetupAdoptionWorkspaceID = nil
-            guard openWorkspace(updated, recordsLastOpened: false),
-                  await workspaceManagementModel.markWorkspaceOpened(updated)
-            else { return }
-            SetupTourPresentationPolicy.markCompleted()
-            mainWindowNavigation.completeSetupTour()
-            await dahliaAccountController.reload()
-            return
-        }
-        if AppSettings.shared.currentWorkspace?.id == pending.workspace.id || AppSettings.shared.currentWorkspace?.id == updated.id {
-            openWorkspace(updated)
-        }
-        await dahliaAccountController.reload()
-    }
-
-    private func cancelServerAdoption() {
-        pendingSetupAdoptionWorkspaceID = nil
-        workspaceManagementModel.cancelServerAdoption()
     }
 
     private func reconcileWorkspacesAfterAccountChange() async {
@@ -594,18 +489,8 @@ struct DahliaApp: App {
         WorkspaceAISettingsModel.shared.activate(workspace: updated)
     }
 
-    private func completeSetupTour(_ workspace: WorkspaceRecord, accountConnectionID: UUID?) async -> Bool {
-        if let accountConnectionID, workspace.accountConnectionId == nil {
-            guard let connection = dahliaAccountController.connections.first(where: {
-                $0.id == accountConnectionID
-            }) else { return false }
-            await workspaceManagementModel.requestServerAdoption(for: workspace, connection: connection)
-            guard workspaceManagementModel.pendingServerAdoption?.workspace.id == workspace.id else { return false }
-            pendingSetupAdoptionWorkspaceID = workspace.id
-            return true
-        }
-        guard workspace.accountConnectionId == accountConnectionID,
-              openWorkspace(workspace, recordsLastOpened: false),
+    private func completeSetupTour(_ workspace: WorkspaceRecord) async -> Bool {
+        guard openWorkspace(workspace, recordsLastOpened: false),
               await workspaceManagementModel.markWorkspaceOpened(workspace)
         else { return false }
         await dahliaAccountController.reload()
@@ -672,7 +557,7 @@ struct DahliaApp: App {
                     workspaceId: workspace.id
                 ) {
                     sidebarViewModel.selectMeeting(existingMeetingId)
-                    if startTranscription, workspace.allowsCanonicalEdits {
+                    if startTranscription {
                         startTranscriptionForMeeting(
                             existingMeetingId,
                             in: db,
@@ -687,7 +572,6 @@ struct DahliaApp: App {
                 return
             }
 
-            guard workspace.allowsCanonicalEdits else { return }
             sidebarViewModel.clearMeetingSelection()
             viewModel.beginDraftMeeting(
                 from: event,
@@ -706,7 +590,6 @@ struct DahliaApp: App {
             return
         }
 
-        guard workspace.allowsCanonicalEdits else { return }
         guard let meetingId = viewModel.createEmptyMeeting(
             dbQueue: db.dbQueue,
             projectURL: nil,

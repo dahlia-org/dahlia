@@ -52,53 +52,6 @@ import GRDB
             #expect(try BackupService.readAndValidateMetadata(at: url).migrationIdentifier == prior)
         }
 
-        @Test
-        func ineligibleArchivesBackOffWithoutLosingFutureRecovery() async throws {
-            let database = try AppDatabaseManager(path: ":memory:")
-            let workspace = WorkspaceRecord(id: .v7(), path: nil, name: "Preserved", createdAt: .now, lastOpenedAt: .now)
-            let meeting = MeetingRecord(id: .v7(), workspaceId: workspace.id, name: "Preserved", createdAt: .now, updatedAt: .now)
-            let session = RecordingSessionRecord(
-                id: .v7(),
-                meetingId: meeting.id,
-                startedAt: .now,
-                endedAt: .now,
-                offsetSeconds: 0,
-                createdAt: .now,
-                updatedAt: .now
-            )
-            let connection = DahliaAccountConnectionRecord(id: .v7(), origin: "https://test.invalid", clientID: "test", createdAt: .now)
-            try await database.dbQueue.write { db throws in
-                try connection.insert(db)
-                try workspace.insertIntoLegacySchema(db)
-                try meeting.insert(db)
-                try session.insert(db)
-                try RecordingArchiveRecord(
-                    sessionId: session.id,
-                    meetingId: meeting.id,
-                    workspaceId: workspace.id,
-                    connectionId: connection.id,
-                    state: "pending"
-                ).insert(db)
-                try db.execute(sql: "UPDATE search_index_state SET phase = 'failed' WHERE indexKind = 'fts'")
-            }
-            for attempt in 1 ... 6 {
-                try await database.dbQueue.write { db throws in
-                    try db.execute(sql: "UPDATE jobs_background SET availableAt = 0 WHERE indexKind = 'archive'")
-                }
-                await database.searchIndexer.drain()
-                try await database.dbQueue.read { db throws in
-                    #expect(try Int.fetchOne(db, sql: "SELECT attempts FROM jobs_background WHERE indexKind = 'archive'") == attempt)
-                    #expect(try Date.fetchOne(db, sql: "SELECT availableAt FROM jobs_background WHERE indexKind = 'archive'")! > Date.now)
-                }
-            }
-            await database.searchIndexer.drain()
-            try await database.dbQueue.write { db throws in
-                #expect(try Int.fetchOne(db, sql: "SELECT attempts FROM jobs_background WHERE indexKind = 'archive'") == 6)
-                try db.execute(sql: "UPDATE recording_archives SET retryAt = ? WHERE sessionId = ?", arguments: [Date.now, session.id])
-                #expect(try Int.fetchOne(db, sql: "SELECT attempts FROM jobs_background WHERE indexKind = 'archive'") == 0)
-            }
-        }
-
         @Test(arguments: ["v47_orphanedRecordingRecoveryState", "v52_documentsAndSync", "v53_sharedBackgroundJobs"])
         func preservesPriorQueueAndArchiveManifest(prior: String) throws {
             let queue = try DatabaseQueue(configuration: AppDatabaseManager.configuration())

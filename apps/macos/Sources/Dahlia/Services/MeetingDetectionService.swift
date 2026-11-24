@@ -106,7 +106,6 @@ final class MeetingDetectionService: ObservableObject {
 
     private func observeSettings() {
         NotificationCenter.default.publisher(for: UserDefaults.didChangeNotification)
-            .merge(with: NotificationCenter.default.publisher(for: .calendarAccountDidChange))
             .debounce(for: .milliseconds(100), scheduler: DispatchQueue.main)
             .sink { [weak self] _ in
                 Task { @MainActor [weak self] in

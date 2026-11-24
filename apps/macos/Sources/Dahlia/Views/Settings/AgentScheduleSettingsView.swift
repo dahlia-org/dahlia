@@ -4,7 +4,7 @@ struct AgentScheduleSettingsView: View {
     @State private var model: AgentLearningSettingsModel
     @State private var resuming: ChatScheduleRecord?
     @State private var deleting: ChatScheduleRecord?
-    init(account: CodexRuntimeProvider) { _model = State(initialValue: AgentLearningSettingsModel(account: account)) }
+    init() { _model = State(initialValue: AgentLearningSettingsModel()) }
     var body: some View {
         Form {
             Section {

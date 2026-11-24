@@ -1,4 +1,5 @@
 import DahliaMeetingAccess
+import DahliaRuntimeSupport
 import Foundation
 import GRDB
 @testable import Dahlia
@@ -8,6 +9,33 @@ import GRDB
 
     @MainActor
     struct BackupServiceTests {
+        @Test(arguments: [false, true])
+        func incompleteSourceTranscriptCannotBecomeAnEmptyBackup(hasResidentSegment: Bool) async throws {
+            let root = FileManager.default.temporaryDirectory.appending(path: "incomplete-backup-\(UUID())")
+            defer { try? FileManager.default.removeItem(at: root) }
+            let database = try AppDatabaseManager(path: ":memory:")
+            let workspace = WorkspaceRecord(id: .v7(), path: nil, name: "Converted", createdAt: .now, lastOpenedAt: .now)
+            let meeting = MeetingRecord(id: .v7(), workspaceId: workspace.id, name: "Unavailable", createdAt: .now, updatedAt: .now)
+            try await database.dbQueue.write { db in
+                try workspace.insert(db)
+                try meeting.insert(db)
+                if hasResidentSegment {
+                    let segment = TranscriptSegmentRecord(id: .v7(), meetingId: meeting.id, startTime: .now)
+                    try segment.insert(db)
+                    try db.execute(sql: "INSERT INTO transcript_segment_bodies(segmentId, text) VALUES (?, 'partial')", arguments: [segment.id])
+                }
+                try db.execute(sql: """
+                INSERT INTO sync_content_state(workspace_id, entity, entityId, complete, contentCount)
+                VALUES (?, 'transcript', ?, 0, 4)
+                """, arguments: [workspace.id, meeting.id])
+            }
+            let service = BackupService(dbQueue: database.dbQueue, applicationSupportURL: root)
+            await #expect(throws: TextContentError.incomplete) { try await service.createGeneration(workspaceIds: [workspace.id]) }
+            #expect(try await service.listGenerations().isEmpty)
+            #expect(try await database.dbQueue
+                .read { try TextContentAccess.availability(entity: .transcript, id: meeting.id, in: $0).state } == .missing)
+        }
+
         @Test
         func generationFromWALDatabaseCanBeReadAfterMovingIntoPlace() async throws {
             let rootURL = FileManager.default.temporaryDirectory

@@ -53,7 +53,7 @@ import GRDB
     @MainActor
     struct MCPAccountScopeTests {
         @Test
-        func scopesLocalServerAndDatabricksAndExposesRegistrationIDs() throws {
+        func scopesLocalAndServerAndExposesRegistrationIDs() throws {
             let fixture = try Fixture()
             let serverID = UUID.v7()
             let databricksID = UUID.v7()
@@ -65,24 +65,22 @@ import GRDB
                     sql: "UPDATE workspaces SET accountConnectionId = ?, organizationId = ? WHERE id = ?",
                     arguments: [serverID, UUID.v7(), fixture.otherWorkspaceID]
                 )
-                try db.execute(
-                    sql: "UPDATE workspaces SET databricksConnectionId = ? WHERE id = ?",
-                    arguments: [databricksID, fixture.primaryWorkspaceID]
-                )
                 try WorkspaceRecord(id: localWorkspaceID, name: "Local", createdAt: .now, lastOpenedAt: .now).insert(db)
             }
-            for (scope, expectedID) in [
-                (MCPAccountScope.local, localWorkspaceID), (.account(serverID), fixture.otherWorkspaceID),
-                (.account(databricksID), fixture.primaryWorkspaceID),
+            // A Databricks connection is no account of its own, so it scopes nothing.
+            #expect(throws: MCPAccountScope.Failure.accountNotFound) {
+                try DahliaMCPServer(databaseURL: fixture.databaseURL, accountScope: .account(databricksID))
+            }
+            // The Local Account holds every workspace without a Server account, including one a released database linked to a Databricks connection.
+            for (scope, expectedIDs) in [
+                (MCPAccountScope.local, [fixture.primaryWorkspaceID, localWorkspaceID]), (.account(serverID), [fixture.otherWorkspaceID]),
             ] {
                 let server = try DahliaMCPServer(databaseURL: fixture.databaseURL, accountScope: scope)
                 let workspaces = try listedWorkspaces(server)
-                #expect(workspaces.count == 1)
-                #expect((workspaces.first?["id"] as? String)?.lowercased() == expectedID.uuidString.lowercased())
+                #expect(Set(workspaces.compactMap { ($0["id"] as? String)?.lowercased() }) == Set(expectedIDs.map { $0.uuidString.lowercased() }))
                 let grouped = try body(server.executeTool(named: "query_meetings", arguments: [:]))
                 let groups = try #require(grouped["workspaces"] as? [[String: Any]])
-                #expect(groups.count == 1)
-                #expect(groups.first?["workspace_id"] as? String == expectedID.uuidString.lowercased())
+                #expect(Set(groups.compactMap { $0["workspace_id"] as? String }) == Set(expectedIDs.map { $0.uuidString.lowercased() }))
             }
             let unscoped = try DahliaMCPServer(databaseURL: fixture.databaseURL)
             _ = unscoped.handleLine(#"{"jsonrpc":"2.0","id":1,"method":"initialize"}"#)
@@ -94,7 +92,6 @@ import GRDB
             #expect(Set(workspaces.compactMap { $0["account_id"] as? String }) == [
                 "local",
                 serverID.uuidString.lowercased(),
-                databricksID.uuidString.lowercased(),
             ])
             #expect(workspaces.allSatisfy { ($0["id"] as? String)?.hasPrefix("ws_") == true })
         }
@@ -104,10 +101,10 @@ import GRDB
             let fixture = try Fixture()
             let accountID = UUID.v7()
             try fixture.manager.dbQueue.write { db in
-                try insertAccount(accountID, kind: "databricks", in: db)
+                try insertAccount(accountID, kind: "dahlia", in: db)
                 try db.execute(
-                    sql: "UPDATE workspaces SET databricksConnectionId = ? WHERE id = ?",
-                    arguments: [accountID, fixture.primaryWorkspaceID]
+                    sql: "UPDATE workspaces SET accountConnectionId = ?, organizationId = ? WHERE id = ?",
+                    arguments: [accountID, UUID.v7(), fixture.primaryWorkspaceID]
                 )
             }
             let server = try DahliaMCPServer(databaseURL: fixture.databaseURL, accountScope: .account(accountID), allowsWrites: true)
@@ -152,20 +149,23 @@ import GRDB
             #expect(throws: MCPAccountScope.Failure.conflictingScopes) {
                 try DahliaMCPServer(databaseURL: fixture.databaseURL, workspaceID: fixture.primaryWorkspaceID, accountScope: .local)
             }
-            try fixture.manager.dbQueue.write { db in try insertAccount(accountID, kind: "databricks", in: db) }
+            try fixture.manager.dbQueue.write { db in try insertAccount(accountID, kind: "dahlia", in: db) }
             let server = try DahliaMCPServer(databaseURL: fixture.databaseURL, accountScope: .account(accountID), allowsWrites: true)
             #expect(try listedWorkspaces(server).isEmpty)
             try fixture.manager.dbQueue.write { db in
                 try db.execute(
-                    sql: "UPDATE workspaces SET databricksConnectionId = ? WHERE id = ?",
-                    arguments: [accountID, fixture.primaryWorkspaceID]
+                    sql: "UPDATE workspaces SET accountConnectionId = ?, organizationId = ? WHERE id = ?",
+                    arguments: [accountID, UUID.v7(), fixture.primaryWorkspaceID]
                 )
             }
             #expect(try listedWorkspaces(server).count == 1)
             let scopedStore = server.store.scoped(to: fixture.primaryWorkspaceID)
             #expect(try scopedStore.queryProjects().projects.count == 1)
             try fixture.manager.dbQueue.write { db in
-                try db.execute(sql: "UPDATE workspaces SET databricksConnectionId = NULL WHERE id = ?", arguments: [fixture.primaryWorkspaceID])
+                try db.execute(
+                    sql: "UPDATE workspaces SET accountConnectionId = NULL, organizationId = NULL WHERE id = ?",
+                    arguments: [fixture.primaryWorkspaceID]
+                )
             }
             #expect(try listedWorkspaces(server).isEmpty)
             #expect(throws: MeetingAccessError.workspaceNotFound) { try scopedStore.meeting(id: fixture.firstMeetingID) }
@@ -173,7 +173,7 @@ import GRDB
             #expect(throws: MeetingAccessError.workspaceNotFound) {
                 try scopedStore.createProject(name: "Moved", parentProjectID: nil, projectType: nil)
             }
-            try fixture.manager.dbQueue.write { db in try db.execute(sql: "DELETE FROM accounts WHERE id = ?", arguments: [accountID]) }
+            try fixture.manager.dbQueue.write { db in try db.execute(sql: "DELETE FROM provider_accounts WHERE id = ?", arguments: [accountID]) }
             #expect(throws: MCPAccountScope.Failure.accountNotFound) { try listedWorkspaces(server) }
         }
 

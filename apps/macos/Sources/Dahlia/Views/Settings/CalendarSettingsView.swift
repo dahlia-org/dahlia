@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Account calendar sources and Mac-wide event filters. The setup tour shows only source setup.
+/// Calendar providers and Mac-wide event filters. The setup tour shows only source setup.
 struct CalendarSettingsView: View {
     enum Tab: String, CaseIterable, Identifiable {
         case sources
@@ -18,13 +18,12 @@ struct CalendarSettingsView: View {
 
     @Environment(MainWindowNavigation.self) private var navigation
     @ObservedObject private var settings = AppSettings.shared
-    @ObservedObject private var googleCalendarStore = GoogleCalendarStore.shared
+    @ObservedObject private var providers = CalendarProviderCollection.shared
     @ObservedObject private var macCalendarStore = MacCalendarStore.shared
-    @State private var workspaceSettings = WorkspaceAISettingsModel.shared
-    @State private var accountController = DahliaCloudAccountController.shared
+    @State private var googleAccounts = GoogleProviderAccountsModel.shared
+    @State private var expandedProviderIDs: Set<String> = []
     private let calendarSourceCoordinator = CalendarSourceCoordinator.shared
     private let showsOnlySourceSetup: Bool
-    @State private var googleOAuthConsent = GoogleOAuthConsentState()
 
     init(showsOnlySourceSetup: Bool = false) {
         self.showsOnlySourceSetup = showsOnlySourceSetup
@@ -55,168 +54,229 @@ struct CalendarSettingsView: View {
             }
         }
         .task {
-            if showsOnlySourceSetup {
-                settings.enabledCalendarSources = [Self.exclusiveSetupSource(from: settings.enabledCalendarSources)]
-            }
+            await googleAccounts.activate()
+            await providers.reloadConnections()
             await refreshEnabledSources()
         }
         .onChange(of: settings.enabledCalendarSources) { _, _ in
-            Task {
-                await refreshEnabledSources(force: true)
-            }
+            Task { await refreshEnabledSources(force: true) }
         }
-        .sheet(item: $googleOAuthConsent.pendingDisclosure, onDismiss: startGoogleOAuthIfConsented) { disclosure in
-            GoogleOAuthConsentSheet(disclosure: disclosure) {
-                googleOAuthConsent.grantConsent()
-            }
+        .onAppear {
+            if settings.isCalendarSourceEnabled(.macOS) { expandedProviderIDs.insert(CalendarSource.macOS.rawValue) }
+            expandedProviderIDs.formUnion(providers.enabledIDs)
         }
         .font(.dahliaBody)
     }
 
     private var sourceSettings: some View {
         Form {
-            if showsOnlySourceSetup {
-                Section {
-                    HStack(alignment: .top, spacing: 16) {
-                        ForEach([CalendarSource.macOS, .google]) { source in
-                            SetupChoiceCard(
-                                image: source.choiceCardImage,
-                                title: source.displayName,
-                                description: source.choiceCardDescription,
-                                isSelected: settings.enabledCalendarSources == [source]
-                            ) {
-                                settings.enabledCalendarSources = [source]
+            Section {
+                providerRow(
+                    id: CalendarSource.macOS.rawValue, title: L10n.macOSCalendar,
+                    icon: Image(systemName: "calendar"), isOn: calendarSourceBinding(for: .macOS)
+                ) { macCalendarContent }
+                ForEach(providers.connections) { connection in
+                    if let store = providers.stores[connection.id] as? GoogleCalendarStore {
+                        providerRow(
+                            id: connection.id, title: connection.displayName,
+                            icon: connection.provider.databricksConnectionID == nil ? CalendarSource.google.choiceCardImage : .databricksLogo,
+                            isOn: providerBinding(connection.id)
+                        ) {
+                            if providers.enabledIDs.contains(connection.id) {
+                                GoogleCalendarConnectionSettings(googleCalendarStore: store)
+                            } else {
+                                Text(L10n.calendarProviderTurnOnToConnect).foregroundStyle(.secondary)
                             }
                         }
                     }
-                    .fixedSize(horizontal: false, vertical: true)
-                    .frame(maxWidth: .infinity)
                 }
-            } else {
-                Section {
-                    LabeledContent(L10n.appliesToAccount, value: accountName)
-                    ForEach([CalendarSource.macOS, .google]) { source in
-                        Toggle(isOn: calendarSourceBinding(for: source)) {
-                            Text(source.displayName)
-                            Text(calendarSourceDescription(for: source))
-                        }
-                        .toggleStyle(.switch)
-                    }
-                } header: {
-                    Text(L10n.calendarSources)
-                        .font(.dahliaSectionHeader)
-                } footer: {
-                    Text(L10n.calendarSourcesDescription)
-                }
-            }
-
-            if settings.isCalendarSourceEnabled(.macOS) {
-                macCalendarSettings
-            }
-
-            if settings.isCalendarSourceEnabled(.google) {
-                googleCalendarSettings
-            }
-
-            if showsCalendarSelection {
-                Section {
-                    if settings.isCalendarSourceEnabled(.macOS), macCalendarStore.isAuthorized {
-                        CalendarSourceSelectionView(
-                            sourceName: L10n.macOSCalendar,
-                            calendars: macCalendarStore.availableCalendars,
-                            isLoading: macCalendarStore.isBusy,
-                            loadingMessage: L10n.macOSCalendarLoading,
-                            emptyMessage: L10n.macOSCalendarNoCalendars,
-                            selectionBinding: macCalendarSelectionBinding
-                        )
-                    }
-
-                    if settings.isCalendarSourceEnabled(.google), googleCalendarStore.isAuthorized {
-                        CalendarSourceSelectionView(
-                            sourceName: L10n.googleCalendar,
-                            calendars: googleCalendarStore.availableCalendars,
-                            isLoading: googleCalendarStore.isBusy,
-                            loadingMessage: L10n.googleCalendarLoading,
-                            emptyMessage: L10n.googleCalendarNoCalendars,
-                            selectionBinding: googleCalendarSelectionBinding
-                        )
-                    }
-                } header: {
-                    Text(L10n.googleCalendarDisplayCalendars)
-                        .font(.dahliaSectionHeader)
-                } footer: {
-                    Text(L10n.googleCalendarDisplayCalendarsDescription)
-                }
+                Button(L10n.manageProviders) { navigation.openSettings(category: .providers) }
+                    .buttonStyle(.dahlia())
+                if let error = googleAccounts.errorMessage ?? providers.catalogError { calendarErrorMessage(error) }
+            } header: {
+                Text(L10n.calendarProviders).font(.dahliaSectionHeader)
+            } footer: {
+                Text(L10n.calendarSourcesDescription)
             }
         }
         .formStyle(.grouped)
     }
 
-    private var showsCalendarSelection: Bool {
-        settings.isCalendarSourceEnabled(.macOS) && macCalendarStore.isAuthorized
-            || settings.isCalendarSourceEnabled(.google) && googleCalendarStore.isAuthorized
-    }
-
-    private var accountName: String {
-        switch settings.calendarAccount {
-        case .local:
-            L10n.localAccount
-        case let .databricks(connectionID):
-            workspaceSettings.databricksConnections.first { $0.id == connectionID }?.accountLabel ?? L10n.databricks
-        case let .dahlia(connectionID):
-            accountController.connections.first { $0.id == connectionID }?.displayName ?? L10n.dahliaAccount
+    /// One provider, folded like the model and MCP providers: its switch on the row, its connection and calendars inside.
+    private func providerRow(
+        id: String, title: String, icon: Image, isOn: Binding<Bool>, @ViewBuilder content: () -> some View
+    ) -> some View {
+        let content = content()
+        return DisclosureGroup(isExpanded: expansion(of: id)) {
+            content
+        } label: {
+            AgentProviderRow(title: title, icon: icon, uses: []) {
+                Toggle(title, isOn: isOn)
+                    .labelsHidden()
+                    .toggleStyle(.switch)
+            }
+            .contentShape(.rect)
+            .onTapGesture { expansion(of: id).wrappedValue.toggle() }
+            .accessibilityAddTraits(.isButton)
         }
     }
 
-    static func exclusiveSetupSource(from sources: Set<CalendarSource>) -> CalendarSource {
-        sources.count == 1 ? sources.first ?? .google : .google
+    private func expansion(of id: String) -> Binding<Bool> {
+        Binding {
+            expandedProviderIDs.contains(id)
+        } set: { expanded in
+            if expanded { expandedProviderIDs.insert(id) } else { expandedProviderIDs.remove(id) }
+        }
+    }
+
+    @ViewBuilder
+    private var macCalendarContent: some View {
+        macCalendarAccessRow
+        if let message = macCalendarStore.lastErrorMessage {
+            calendarErrorMessage(message)
+        }
+        if settings.isCalendarSourceEnabled(.macOS), macCalendarStore.isAuthorized {
+            macCalendarSelection
+        }
+    }
+
+    private func calendarErrorMessage(_ message: String) -> SettingsStatusMessage {
+        SettingsStatusMessage(text: message, systemImage: "exclamationmark.triangle", tint: .orange)
+    }
+
+    private func providerBinding(_ id: String) -> Binding<Bool> {
+        Binding {
+            providers.enabledIDs.contains(id)
+        } set: { enabled in
+            providers.setEnabled(enabled, for: id)
+            settings.setCalendarSource(.google, isEnabled: !providers.enabledIDs.isEmpty)
+            if enabled { expandedProviderIDs.insert(id) }
+        }
+    }
+
+    private var macCalendarSelection: some View {
+        CalendarSourceSelectionView(
+            sourceName: L10n.googleCalendarDisplayCalendars,
+            calendars: macCalendarStore.availableCalendars,
+            isLoading: macCalendarStore.isBusy,
+            loadingMessage: L10n.macOSCalendarLoading,
+            emptyMessage: L10n.macOSCalendarNoCalendars,
+            selectionBinding: macCalendarSelectionBinding
+        )
+    }
+
+    private var macCalendarAccessRow: some View {
+        LabeledContent {
+            macCalendarActionButton
+        } label: {
+            Text(macCalendarStore.isAuthorized ? L10n.macOSCalendarAccessGranted : L10n.macOSCalendarAccessNotGranted)
+            Text(macCalendarSubtitle)
+        }
+    }
+
+    @ViewBuilder
+    private var macCalendarActionButton: some View {
+        if macCalendarStore.state == .notDetermined {
+            Button(L10n.macOSCalendarAllowAccess) {
+                Task {
+                    await macCalendarStore.requestAccess()
+                }
+            }
+            .buttonStyle(.dahlia(.primary))
+            .disabled(macCalendarStore.isBusy)
+        } else {
+            Button(L10n.googleCalendarRetry) {
+                Task {
+                    await macCalendarStore.refreshIfNeeded(force: true)
+                }
+            }
+            .buttonStyle(.dahlia())
+            .disabled(!macCalendarStore.isAuthorized || macCalendarStore.isBusy)
+        }
+    }
+
+    private var macCalendarSubtitle: String {
+        switch macCalendarStore.state {
+        case .notDetermined:
+            L10n.macOSCalendarConnectDescription
+        case .accessDenied:
+            L10n.macOSCalendarAccessDeniedMessage
+        case .loading:
+            L10n.macOSCalendarLoading
+        case .needsCalendarSelection:
+            L10n.calendarSelectionRequiredMessage
+        case .loaded:
+            L10n.macOSCalendarConnected
+        case .failed:
+            macCalendarStore.lastErrorMessage ?? L10n.macOSCalendarUnexpectedError
+        }
+    }
+
+    private func calendarSourceBinding(for source: CalendarSource) -> Binding<Bool> {
+        Binding {
+            settings.isCalendarSourceEnabled(source)
+        } set: { isEnabled in
+            settings.setCalendarSource(source, isEnabled: isEnabled)
+        }
+    }
+
+    private func macCalendarSelectionBinding(_ id: String) -> Binding<Bool> {
+        Binding {
+            macCalendarStore.selectedCalendarIDs.contains(id)
+        } set: { isSelected in
+            let wasSelected = macCalendarStore.selectedCalendarIDs.contains(id)
+            guard isSelected != wasSelected else { return }
+            macCalendarStore.toggleCalendarSelection(id: id)
+        }
+    }
+
+    private func refreshEnabledSources(force: Bool = false) async {
+        await calendarSourceCoordinator.refreshEnabledSources(settings.enabledCalendarSources, force: force)
+    }
+}
+
+private struct GoogleCalendarConnectionSettings: View {
+    @ObservedObject var googleCalendarStore: GoogleCalendarStore
+    @State private var googleOAuthConsent = GoogleOAuthConsentState()
+
+    var body: some View {
+        Group {
+            googleConnectionRow
+            if let message = googleCalendarStore.lastErrorMessage { googleCalendarError(message) }
+            if googleCalendarStore.isAuthorized { googleCalendarSelection }
+        }
+        .sheet(item: $googleOAuthConsent.pendingDisclosure, onDismiss: startGoogleOAuthIfConsented) { disclosure in
+            GoogleOAuthConsentSheet(disclosure: disclosure) { googleOAuthConsent.grantConsent() }
+        }
+    }
+
+    @ViewBuilder
+    private func googleCalendarError(_ message: String) -> some View {
+        calendarErrorMessage(message)
+        // Whether re-granting fixes the error is the user's call; the connection page is where they can.
+        if let connectionPageURL = googleCalendarStore.databricksConnectionPageURL {
+            Button(L10n.googleCalendarOpenDatabricksConnectionPage) {
+                NSWorkspace.shared.open(connectionPageURL)
+            }
+            .buttonStyle(.dahlia())
+        }
+    }
+
+    private var googleCalendarSelection: some View {
+        CalendarSourceSelectionView(
+            sourceName: L10n.googleCalendarDisplayCalendars,
+            calendars: googleCalendarStore.availableCalendars,
+            isLoading: googleCalendarStore.isBusy,
+            loadingMessage: L10n.googleCalendarLoading,
+            emptyMessage: L10n.googleCalendarNoCalendars,
+            selectionBinding: googleCalendarSelectionBinding
+        )
     }
 
     private func startGoogleOAuthIfConsented() {
         guard googleOAuthConsent.consumeConsent() else { return }
         Task {
             await googleCalendarStore.signIn()
-        }
-    }
-
-    private var googleCalendarSettings: some View {
-        Section {
-            googleConnectionRow
-
-            if let message = googleCalendarStore.lastErrorMessage {
-                calendarErrorMessage(message)
-                // Whether re-granting fixes the error is the user's call; the connection page is where they can.
-                if let connectionPageURL = googleCalendarStore.databricksConnectionPageURL {
-                    Button(L10n.googleCalendarOpenDatabricksConnectionPage) {
-                        NSWorkspace.shared.open(connectionPageURL)
-                    }
-                    .buttonStyle(.dahlia())
-                }
-            }
-        } header: {
-            Text(L10n.googleCalendar)
-                .font(.dahliaSectionHeader)
-        } footer: {
-            if !showsOnlySourceSetup {
-                Text(L10n.googleCalendarSettingsDescription)
-            }
-        }
-    }
-
-    private var macCalendarSettings: some View {
-        Section {
-            macCalendarAccessRow
-
-            if let message = macCalendarStore.lastErrorMessage {
-                calendarErrorMessage(message)
-            }
-        } header: {
-            Text(L10n.macOSCalendar)
-                .font(.dahliaSectionHeader)
-        } footer: {
-            if !showsOnlySourceSetup {
-                Text(L10n.macOSCalendarSettingsDescription)
-            }
         }
     }
 
@@ -292,70 +352,6 @@ struct CalendarSettingsView: View {
         return L10n.googleCalendarConnectDescription
     }
 
-    private var macCalendarAccessRow: some View {
-        LabeledContent {
-            macCalendarActionButton
-        } label: {
-            Text(macCalendarStore.isAuthorized ? L10n.macOSCalendarAccessGranted : L10n.macOSCalendarAccessNotGranted)
-            Text(macCalendarSubtitle)
-        }
-    }
-
-    @ViewBuilder
-    private var macCalendarActionButton: some View {
-        if macCalendarStore.state == .notDetermined {
-            Button(L10n.macOSCalendarAllowAccess) {
-                Task {
-                    await macCalendarStore.requestAccess()
-                }
-            }
-            .buttonStyle(.dahlia(.primary))
-            .disabled(macCalendarStore.isBusy)
-        } else {
-            Button(L10n.googleCalendarRetry) {
-                Task {
-                    await macCalendarStore.refreshIfNeeded(force: true)
-                }
-            }
-            .buttonStyle(.dahlia())
-            .disabled(!macCalendarStore.isAuthorized || macCalendarStore.isBusy)
-        }
-    }
-
-    private var macCalendarSubtitle: String {
-        switch macCalendarStore.state {
-        case .notDetermined:
-            L10n.macOSCalendarConnectDescription
-        case .accessDenied:
-            L10n.macOSCalendarAccessDeniedMessage
-        case .loading:
-            L10n.macOSCalendarLoading
-        case .needsCalendarSelection:
-            L10n.calendarSelectionRequiredMessage
-        case .loaded:
-            L10n.macOSCalendarConnected
-        case .failed:
-            macCalendarStore.lastErrorMessage ?? L10n.macOSCalendarUnexpectedError
-        }
-    }
-
-    private func calendarSourceBinding(for source: CalendarSource) -> Binding<Bool> {
-        Binding {
-            settings.isCalendarSourceEnabled(source)
-        } set: { isEnabled in
-            settings.setCalendarSource(source, isEnabled: isEnabled)
-        }
-    }
-
-    private func calendarSourceDescription(for source: CalendarSource) -> String {
-        switch source {
-        case .google:
-            L10n.googleCalendarSourceDescription
-        case .macOS:
-            L10n.macOSCalendarSourceDescription
-        }
-    }
-
     private func googleCalendarSelectionBinding(_ id: String) -> Binding<Bool> {
         Binding {
             googleCalendarStore.selectedCalendarIDs.contains(id)
@@ -366,19 +362,6 @@ struct CalendarSettingsView: View {
         }
     }
 
-    private func macCalendarSelectionBinding(_ id: String) -> Binding<Bool> {
-        Binding {
-            macCalendarStore.selectedCalendarIDs.contains(id)
-        } set: { isSelected in
-            let wasSelected = macCalendarStore.selectedCalendarIDs.contains(id)
-            guard isSelected != wasSelected else { return }
-            macCalendarStore.toggleCalendarSelection(id: id)
-        }
-    }
-
-    private func refreshEnabledSources(force: Bool = false) async {
-        await calendarSourceCoordinator.refreshEnabledSources(settings.enabledCalendarSources, force: force)
-    }
 }
 
 private struct CalendarSourceSelectionView: View {

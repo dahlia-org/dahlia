@@ -32,27 +32,9 @@ import os
                 try (WorkspaceRecord.fetchOne(db, key: workspace.id), MeetingRecord.fetchOne(db, key: meeting.id))
             }
             try AppDatabaseManager.migrator.migrate(queue)
-            try queue.write { db in
+            try queue.read { db throws in
                 #expect(try WorkspaceRecord.fetchOne(db, key: workspace.id) == before.0)
                 #expect(try MeetingRecord.fetchOne(db, key: meeting.id) == before.1)
-                let organization = UUID.v7()
-                let first = try WorkspaceImportDestinationRecord.prepare(
-                    sourceId: workspace.id,
-                    connection: connection,
-                    organizationId: organization,
-                    name: "Server",
-                    in: db
-                )
-                let retry = try WorkspaceImportDestinationRecord.prepare(
-                    sourceId: workspace.id,
-                    connection: connection,
-                    organizationId: organization,
-                    name: "Server",
-                    in: db
-                )
-                #expect(first.destinationWorkspaceId != workspace.id)
-                #expect(first.destinationWorkspaceId == retry.destinationWorkspaceId)
-                #expect(first.requestJSON == retry.requestJSON)
                 #expect(try Row.fetchAll(db, sql: "PRAGMA foreign_key_check").isEmpty)
             }
         }
@@ -104,23 +86,6 @@ import os
             #expect(manager.dbQueue is DatabasePool)
             #expect(writerMode?.lowercased() == "wal")
             #expect(readerMode?.lowercased() == "wal")
-        }
-
-        @Test
-        func transferFencesAreVisibleOnlyOnTheWriterConnection() async throws {
-            let databaseDirectory = FileManager.default.temporaryDirectory
-                .appending(path: "dahlia-database-fence-\(UUID.v7().uuidString)")
-            defer { try? FileManager.default.removeItem(at: databaseDirectory) }
-            let manager = try AppDatabaseManager(path: databaseDirectory.appending(path: "dahlia.sqlite").path, usesDatabasePool: true)
-            let workspace = WorkspaceRecord(id: .v7(), path: nil, name: "Fence", createdAt: .now, lastOpenedAt: .now)
-            try await manager.dbQueue.write { db in
-                try workspace.insert(db)
-                _ = try WorkspaceTransferFence.create(workspaceIDs: [workspace.id], blockingRemoteChangesIn: [workspace.id], in: db)
-            }
-
-            // Fences live in each connection's temp table, so checks that must see them run in a write transaction.
-            #expect(try await manager.dbQueue.write { try WorkspaceTransferFence.blocksRemoteChanges(workspaceID: workspace.id, in: $0) })
-            #expect(try await !manager.dbQueue.read { try WorkspaceTransferFence.blocksRemoteChanges(workspaceID: workspace.id, in: $0) })
         }
 
         @Test

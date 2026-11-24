@@ -19,14 +19,9 @@ struct SkillSettingsView: View {
         }
     }
 
-    @State private var workspaceSettings = WorkspaceAISettingsModel.shared
     @State private var tab = Tab.manage
 
     var body: some View {
-        let account = CodexRuntimeProvider(
-            accountConnectionID: workspaceSettings.accountConnectionID,
-            databricksConnectionID: workspaceSettings.databricksAccountConnectionID
-        )
         VStack(spacing: 0) {
             // In a grouped form's header, the tabs share the column of the settings title and the sections below.
             Form {
@@ -41,18 +36,16 @@ struct SkillSettingsView: View {
             .fixedSize(horizontal: false, vertical: true)
 
             switch tab {
-            case .manage: AgentSkillSettingsView(account: account)
-            case .readOnly: AgentSkillSettingsView(account: account, readOnly: true)
-            case .curation: SkillCurationSettingsView(account: account)
+            case .manage: AgentSkillSettingsView()
+            case .readOnly: AgentSkillSettingsView(readOnly: true)
+            case .curation: SkillCurationSettingsView()
             }
         }
-        .id(account)
     }
 }
 
 /// Skill updates from conversations, the Hermes Curator with its archived skills, and skill optimization, each with its runs.
 private struct SkillCurationSettingsView: View {
-    let account: CodexRuntimeProvider
     @State private var model: AgentOptimizationSettingsModel
     @State private var models: [CodexModel] = []
     @AppStorage private var consolidationModel: String
@@ -64,10 +57,9 @@ private struct SkillCurationSettingsView: View {
     @AppStorage private var skillReview: Bool
     @AppStorage private var skillInterval: Int
 
-    init(account: CodexRuntimeProvider) {
-        self.account = account
-        let key = account.accountKey
-        _model = State(initialValue: AgentOptimizationSettingsModel(account: account))
+    init() {
+        let key = AppAccount.key
+        _model = State(initialValue: AgentOptimizationSettingsModel())
         _consolidationModel = AppStorage(wrappedValue: "", SkillCuratorSettings.modelKey(key))
         _consolidationEffort = AppStorage(wrappedValue: "", SkillCuratorSettings.effortKey(key))
         _curatorEnabled = AppStorage(wrappedValue: true, SkillCuratorSettings.enabledKey(key))
@@ -89,7 +81,7 @@ private struct SkillCurationSettingsView: View {
                             Text(L10n.agentSkillReviewEvery(count)).font(.dahliaBody).tag(count)
                         }
                     }
-                    AgentReviewModelRows(account: account, kind: .skill, models: models)
+                    AgentReviewModelRows(kind: .skill, models: models)
                 }
                 .disabled(!skillReview)
                 AgentSystemRunRows(model: model, task: "skillReview", title: L10n.agentReviewRuns)
@@ -171,7 +163,7 @@ private struct SkillCurationSettingsView: View {
         .disabled(model.isBusy)
         .task {
             await model.refresh()
-            models = await (try? PiRuntimeService.shared.models(for: account, forceRefresh: false))?.filter { !$0.hidden } ?? []
+            models = await (try? PiRuntimeService.shared.models(forceRefresh: false))?.filter { !$0.hidden } ?? []
         }
         .onChange(of: skillReview) { Task { await PiChatService.shared.drainLearningWork() } }
         .onChange(of: curatorEnabled) { Task { await PiChatService.shared.drainLearningWork() } }

@@ -7,7 +7,7 @@ import os
     import Testing
 
     @MainActor
-    struct CodexAccountControllerTests {
+    struct PiSubscriptionControllerTests {
         /// Sign-in emits Pi's authorization URL and then succeeds; afterwards the provider lists one model.
         private static func runtime(provider: String, signedIn: OSAllocatedUnfairLock<Bool>) -> TestPiRuntime {
             TestPiRuntime { _ in
@@ -41,7 +41,7 @@ import os
             let signedIn = OSAllocatedUnfairLock(initialState: false)
             let pi = Self.runtime(provider: piProvider, signedIn: signedIn)
             let urlOpener = TestCodexLoginURLOpener()
-            let controller = CodexAccountController(subscription: subscription, service: pi.service, urlOpener: urlOpener)
+            let controller = PiSubscriptionController(subscription: subscription, service: pi.service, urlOpener: urlOpener)
 
             await controller.activate()
             #expect(controller.accountStatus?.isAuthenticated == false)
@@ -87,7 +87,7 @@ import os
                 transports.append(transport)
                 return transport
             }
-            let controller = CodexAccountController(subscription: .openai, service: pi.service, urlOpener: TestCodexLoginURLOpener())
+            let controller = PiSubscriptionController(subscription: .openai, service: pi.service, urlOpener: TestCodexLoginURLOpener())
             let signIn = Task { await controller.signIn() }
 
             let deadline = ContinuousClock.now + .seconds(10)
@@ -112,7 +112,7 @@ import os
         @Test
         func browserOpenFailureStopsSignInAndShowsRetryableError() async {
             let pi = Self.runtime(provider: "openai", signedIn: OSAllocatedUnfairLock(initialState: false))
-            let controller = CodexAccountController(subscription: .openai, service: pi.service, urlOpener: TestCodexLoginURLOpener(result: false))
+            let controller = PiSubscriptionController(subscription: .openai, service: pi.service, urlOpener: TestCodexLoginURLOpener(result: false))
 
             await controller.signIn()
 
@@ -124,7 +124,7 @@ import os
         func signOutRefreshesTheAccount() async {
             let signedIn = OSAllocatedUnfairLock(initialState: true)
             let pi = Self.runtime(provider: "openai", signedIn: signedIn)
-            let controller = CodexAccountController(subscription: .openai, service: pi.service, urlOpener: TestCodexLoginURLOpener())
+            let controller = PiSubscriptionController(subscription: .openai, service: pi.service, urlOpener: TestCodexLoginURLOpener())
 
             await controller.activate()
             #expect(controller.accountStatus?.isAuthenticated == true)
@@ -139,8 +139,8 @@ import os
         @Test
         func eachSubscriptionReportsOnlyItsOwnModels() async {
             let pi = Self.runtime(provider: "anthropic", signedIn: OSAllocatedUnfairLock(initialState: true))
-            let openAI = CodexAccountController(subscription: .openai, service: pi.service, urlOpener: TestCodexLoginURLOpener())
-            let anthropic = CodexAccountController(subscription: .anthropic, service: pi.service, urlOpener: TestCodexLoginURLOpener())
+            let openAI = PiSubscriptionController(subscription: .openai, service: pi.service, urlOpener: TestCodexLoginURLOpener())
+            let anthropic = PiSubscriptionController(subscription: .anthropic, service: pi.service, urlOpener: TestCodexLoginURLOpener())
 
             await openAI.activate()
             await anthropic.activate()

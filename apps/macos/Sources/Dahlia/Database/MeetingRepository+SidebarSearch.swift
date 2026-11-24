@@ -53,62 +53,6 @@ extension MeetingRepository {
         }
     }
 
-    nonisolated static func remoteMeetingPage(
-        workspaceId: UUID,
-        criteria: MeetingSearchCriteria,
-        cursor: String?,
-        dbQueue: any DatabaseWriter,
-        contentProvider: MeetingContentProvider = .shared
-    ) async throws -> (items: [MeetingSidebarItem], cursor: String?) {
-        var position = cursor
-        repeat {
-            let page = try await contentProvider.search(
-                workspaceId: workspaceId,
-                query: criteria.text,
-                kind: .meeting,
-                cursor: position,
-                dbQueue: dbQueue
-            )
-            let items = try await dbQueue.read { db in
-                let ids = try filterRemoteSearchMeetingIDs(page.items.map(\.meetingId), workspaceId: workspaceId, criteria: criteria, in: db)
-                let byId = try Dictionary(uniqueKeysWithValues: fetchMeetingSidebarItems(ids: ids, workspaceId: workspaceId, in: db)
-                    .map { ($0.id, $0) })
-                return page.items.compactMap { hit -> MeetingSidebarItem? in
-                    guard var item = byId[hit.id] else { return nil }
-                    item.searchMatchContext = .init(kind: .server, text: hit.snippet)
-                    return item
-                }
-            }
-            position = page.nextCursor
-            if !items.isEmpty || position == nil { return (items, position) }
-            try Task.checkCancellation()
-        } while true
-    }
-
-    /// Filter each bounded server page before deciding whether another page is necessary.
-    nonisolated static func filterRemoteSearchMeetingIDs(
-        _ ids: [UUID], workspaceId: UUID, criteria: MeetingSearchCriteria, in db: Database
-    ) throws -> [UUID] {
-        let unique = Array(Set(ids))
-        guard !unique.isEmpty else { return [] }
-        let placeholders = searchPlaceholders(unique.count)
-        let known = try Int.fetchOne(
-            db,
-            sql: "SELECT count(*) FROM meetings WHERE workspace_id = ? AND id IN (\(placeholders))",
-            arguments: StatementArguments([workspaceId] + unique)
-        )
-        guard known == unique.count else { throw TextContentError.changed }
-        let projects = try includedProjectIDs(for: criteria, workspaceId: workspaceId, in: db)
-        let filter = searchFilters(criteria: criteria, includedProjectIDs: projects)
-        var arguments = StatementArguments([workspaceId] + unique)
-        arguments += filter.arguments
-        return try UUID.fetchAll(
-            db,
-            sql: "SELECT meetings.id FROM meetings WHERE meetings.workspace_id = ? AND meetings.id IN (\(placeholders)) \(filter.condition)",
-            arguments: arguments
-        )
-    }
-
     nonisolated static func withSearchDeadline<Result: Sendable>(
         _ operation: @escaping @Sendable () async throws -> Result
     ) async throws -> Result {
@@ -463,8 +407,7 @@ extension MeetingRepository {
     ) -> (condition: String, arguments: StatementArguments) {
         var conditions: [String] = []
         var arguments: StatementArguments = []
-        if criteria.pendingOnly { conditions.append(pendingSearchMeetingSQL) }
-        let dateSQL = criteria.pendingOnly ? "meetings.createdAt" : sidebarRecordingStartedAtSQL
+        let dateSQL = sidebarRecordingStartedAtSQL
         if let start = criteria.startDate {
             conditions.append("\(dateSQL) >= ?")
             arguments += [start]

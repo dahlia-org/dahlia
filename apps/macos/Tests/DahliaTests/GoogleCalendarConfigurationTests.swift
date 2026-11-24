@@ -42,17 +42,21 @@ import Security
             #expect(body["grant_type"] == "refresh_token")
         }
 
+        /// Google is one provider account: Calendar and Drive share its sign-in, and each hears the other's changes.
         @Test
-        func calendarSessionKeepsItsStoredKeyAndNotification() {
-            #expect(GoogleAuthSessionKind.calendar.keychainKey == "googleCalendarOAuthSession")
-            #expect(GoogleAuthSessionKind.calendar.sessionDidChangeNotification == .googleCalendarSessionDidChange)
+        func calendarAndDriveShareOneSignIn() {
+            #expect(GoogleAuthSessionKind.calendar.keychainKey == GoogleAuthSessionKind.drive.keychainKey)
+            #expect(GoogleAuthSessionKind.calendar.sessionDidChangeNotification == GoogleAuthSessionKind.drive.sessionDidChangeNotification)
+            #expect(!GoogleAuthSessionKind.retiredKeychainKeys.contains(GoogleAuthSessionKind.keychainKey))
+            #expect(GoogleSignInAdapter.disconnectPendingUserDefaultsKey(for: .calendar)
+                == GoogleSignInAdapter.disconnectPendingUserDefaultsKey(for: .drive))
         }
 
         @Test
         func authorizationRequestsOnlyCalendarScopesWithoutEarlierGrants() throws {
-            let url = GoogleSignInAdapter.makeAuthorizationURL(
+            let url = try GoogleSignInAdapter.makeAuthorizationURL(
                 clientID: "client-id",
-                redirectURL: try #require(URL(string: "http://127.0.0.1:8080/callback")),
+                redirectURL: #require(URL(string: "http://127.0.0.1:8080/callback")),
                 codeChallenge: "challenge",
                 state: "state",
                 scopes: GoogleOAuthScope.authorizationScopes(for: GoogleOAuthScope.calendar)
@@ -62,6 +66,21 @@ import Security
             #expect(!items.contains { $0.name == "include_granted_scopes" })
             let scopes = try #require(items.first { $0.name == "scope" }?.value)
             #expect(Set(scopes.split(separator: " ").map(String.init)) == GoogleOAuthScope.base.union(GoogleOAuthScope.calendar))
+        }
+
+        @Test(arguments: [nil, "", "https://www.googleapis.com/auth/calendar.events.readonly"] as [String?])
+        func tokenPayloadPreservesActualPartialAndOmittedGrants(scope: String?) throws {
+            var response: [String: Any] = ["access_token": "test", "expires_in": 3600]
+            response["scope"] = scope
+            let payload = try JSONDecoder().decode(GoogleTokenPayload.self, from: JSONSerialization.data(withJSONObject: response))
+            #expect(payload.grantedScopes == scope.map { $0.isEmpty ? [] : Set([$0]) })
+            if let grants = payload.grantedScopes {
+                let session = GoogleSession(
+                    account: GoogleCalendarAccount(id: "test", displayName: "Test", email: ""),
+                    accessToken: "test", grantedScopes: grants
+                )
+                #expect(!session.hasScopes(GoogleOAuthScope.drive))
+            }
         }
 
         @Test
@@ -89,6 +108,19 @@ import Security
             let committed = await worker.performIfCurrent(for: .calendar, generation: generation) {}
 
             #expect(!committed)
+        }
+
+        @Test
+        func sharedGoogleSignInRejectsAnOlderRefreshFromEitherService() async {
+            let worker = GoogleKeychainWorker()
+            let (_, previous) = await worker.snapshot(for: .calendar) {}
+            #expect(await worker.performIfCurrent(for: .drive, generation: previous, replacingSession: true) {})
+            #expect(await worker.performIfCurrent(for: .calendar, generation: previous) {} == false)
+            #expect(await worker.performIfCurrent(for: .drive, generation: previous) {} == false)
+            let (_, current) = await worker.snapshot(for: .calendar) {}
+            #expect(await worker.performIfCurrent(for: .calendar, generation: current) {})
+            await worker.beginDisconnect(for: .drive)
+            #expect(await worker.performIfCurrent(for: .calendar, generation: current, replacingSession: true) {} == false)
         }
 
         @Test

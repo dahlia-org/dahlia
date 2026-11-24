@@ -25,11 +25,4 @@ enum ScreenshotStorageMaintenance {
         }
     }
 
-    static func reclaimIncrementally(dbQueue: any DatabaseWriter) async throws {
-        try await dbQueue.writeWithoutTransaction { db in
-            guard try Int.fetchOne(db, sql: "PRAGMA auto_vacuum") == 2,
-                  try Bool.fetchOne(db, sql: "SELECT EXISTS(SELECT 1 FROM recording_sessions WHERE endedAt IS NULL)") != true else { return }
-            _ = try Row.fetchAll(db, sql: "PRAGMA incremental_vacuum(256)")
-        }
-    }
 }

@@ -99,9 +99,6 @@
                     meetingId: fixture.meeting.id,
                     defaultSessionId: session.id
                 ).insert(db)
-                var acknowledged = first
-                acknowledged.version = 1
-                try TranscriptRecord.applyCanonical(meetingId: fixture.meeting.id, info: acknowledged, in: db)
                 #expect(try TranscriptRecord.fetchOne(db, key: fixture.meeting.id)?.sessionId == session.id)
                 try TranscriptRecord.finishLive(meetingId: fixture.meeting.id, sessionId: session.id, at: fixture.now, in: db)
                 #expect(try TranscriptRecord.current(fixture.meeting.id, in: db)?.id == first.id)
@@ -191,72 +188,6 @@
                 #expect(try fetchTranscriptContent(id: new.id, in: db)?.text == "new")
                 #expect(try TranscriptRecord.current(fixture.meeting.id, in: db)?.metadata?.request.model == "apple-speech")
                 #expect(try TranscriptRecord.current(fixture.meeting.id, in: db)?.id != prior.id)
-            }
-        }
-
-        @Test
-        func batchAppendFreezesFullBodiesAndConflictReapplyCreatesANewVersion() async throws {
-            let fixture = try BatchAudioTestFixture(name: "TranscriptSnapshots", endedAt: Date())
-            defer { fixture.removeFiles() }
-            let connection = DahliaAccountConnectionRecord(id: .v7(), origin: "https://snapshot.invalid", clientID: "test", createdAt: .now)
-            try await fixture.database.dbQueue.write { db in
-                try connection.insert(db)
-                try db.execute(
-                    sql: """
-                    UPDATE workspaces SET accountConnectionId = ?, organizationId = COALESCE(organizationId, id),
-                    syncRole = COALESCE(syncRole, 'admin'), syncConfirmedConnectionId = ? WHERE id = ?
-                    """,
-                    arguments: [connection.id, connection.id, fixture.meeting.workspaceId]
-                )
-            }
-            let first = TranscriptContent(
-                from: TranscriptSegment(startTime: fixture.now, text: "first", isConfirmed: true),
-                meetingId: fixture.meeting.id,
-                defaultSessionId: fixture.session.id
-            )
-            try BatchTranscriptionPersistence.complete(
-                sessionId: fixture.session.id,
-                meetingId: fixture.meeting.id,
-                records: [first],
-                completedAt: .now,
-                dbQueue: fixture.database.dbQueue
-            )
-            let firstInfo = try await fixture.database.dbQueue.read { try #require(try TranscriptRecord.current(fixture.meeting.id, in: $0)) }
-            var nextSession = fixture.session
-            nextSession.id = .v7()
-            let next = nextSession
-            try await fixture.database.dbQueue.write { try next.insert($0) }
-            let second = TranscriptContent(
-                from: TranscriptSegment(startTime: fixture.now, text: "second", isConfirmed: true),
-                meetingId: fixture.meeting.id,
-                defaultSessionId: next.id
-            )
-            try BatchTranscriptionPersistence.complete(
-                sessionId: next.id,
-                meetingId: fixture.meeting.id,
-                records: [second],
-                completedAt: .now,
-                dbQueue: fixture.database.dbQueue,
-                expectedTranscriptId: firstInfo.id
-            )
-            let secondInfo = try await fixture.database.dbQueue.write { db in
-                let counts = try Int.fetchAll(db, sql: """
-                SELECT count(*) FROM sync_transcript_patch_items p JOIN sync_operations o ON o.id = p.operationId
-                JOIN sync_transactions t ON t.id = o.transactionId GROUP BY o.id ORDER BY t.sequence
-                """)
-                #expect(counts == [1, 2])
-                #expect(try TranscriptSegmentRecord.fetchCount(db) == 2)
-                try db
-                    .execute(
-                        sql: "UPDATE sync_transactions SET blockedReason = 'conflict' WHERE sequence = (SELECT MIN(sequence) FROM sync_transactions)"
-                    )
-                return try #require(try TranscriptRecord.current(fixture.meeting.id, in: db))
-            }
-            try await SyncTransactionQueue.reapplyLocalVersion(workspaceId: fixture.meeting.workspaceId, dbQueue: fixture.database.dbQueue)
-            try await fixture.database.dbQueue.read { db throws in
-                #expect(try TranscriptRecord.current(fixture.meeting.id, in: db)?.id != secondInfo.id)
-                #expect(try Int.fetchOne(db, sql: "SELECT count(*) FROM sync_operations WHERE entity = 'transcript'") == 1)
-                #expect(try Int.fetchOne(db, sql: "SELECT count(*) FROM sync_transcript_patch_items") == 2)
             }
         }
 

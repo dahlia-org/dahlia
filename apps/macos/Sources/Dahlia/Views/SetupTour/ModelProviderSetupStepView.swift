@@ -5,7 +5,7 @@ import SwiftUI
 /// sign-in; each subscription signs in independently, so any number can be signed in. Signing out stays in Settings >
 /// Agents, so a click on a signed-in card does nothing.
 struct ModelProviderSetupStepView: View {
-    @State private var controllers = PiSubscription.allCases.map { CodexAccountController(subscription: $0) }
+    @State private var controllers = PiSubscription.allCases.map { PiSubscriptionController(subscription: $0) }
     @State private var actionTasks: [PiSubscription: Task<Void, Never>] = [:]
 
     var body: some View {
@@ -64,7 +64,7 @@ struct ModelProviderSetupStepView: View {
         }
     }
 
-    private func startOrCancelSignIn(_ controller: CodexAccountController) {
+    private func startOrCancelSignIn(_ controller: PiSubscriptionController) {
         let subscription = controller.subscription
         if controller.isSigningIn {
             actionTasks[subscription]?.cancel()

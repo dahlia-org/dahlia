@@ -31,12 +31,6 @@ struct WorkspaceGenerationSettings: Codable, Equatable, Sendable {
         var detailLevel: SummaryDetailLevel { style.detailLevel }
     }
 
-    struct GenerationPreferences: Codable, Equatable, Sendable {
-        var processing: Processing
-        var summary: Summary
-        var outputLanguage: SummaryLanguage
-    }
-
     struct ImageAnalysis: Codable, Equatable, Sendable {
         var enabled = true
         var model: String?
@@ -143,7 +137,4 @@ struct WorkspaceGenerationSettings: Codable, Equatable, Sendable {
         if processing.location == .local { processing.remote.reasoningEffort = nil }
     }
 
-    var generationPreferences: GenerationPreferences {
-        .init(processing: processing, summary: summary, outputLanguage: outputLanguage)
-    }
 }

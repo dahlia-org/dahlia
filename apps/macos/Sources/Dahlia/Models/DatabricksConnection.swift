@@ -6,6 +6,8 @@ struct DatabricksConnection: Codable, Hashable, Identifiable, Sendable {
     /// The signed-in user and workspace ID, fetched after sign-in. Older saved connections have neither until then.
     var email: String?
     var workspaceID: String?
+    /// The name the user gave the connection, a provider account; nil shows its workspace and email.
+    var name: String?
 
     /// The workspace's host name without the cloud domain, such as `dbc-a5d4177a-49dc`.
     var workspaceName: String {
@@ -21,5 +23,10 @@ struct DatabricksConnection: Codable, Hashable, Identifiable, Sendable {
     /// "workspace (email)", or the workspace alone until the user is known.
     var accountLabel: String {
         email.map { "\(workspaceName) (\($0))" } ?? workspaceName
+    }
+
+    /// The name the user gave it, or else its workspace and email.
+    var displayName: String {
+        name?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfBlank ?? accountLabel
     }
 }

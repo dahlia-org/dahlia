@@ -24,14 +24,14 @@
                 AgentMCPService(name: "system.ai.dbsql", comment: "Run SQL queries."),
                 AgentMCPService(name: "system.ai.web_search", comment: "Search the public web."),
             ]
-            AgentMCPSettings(providers: [provider]).save(for: .local, defaults: defaults)
+            AgentMCPSettings(providers: [provider]).save(defaults: defaults)
             let list = try String(decoding: JSONEncoder().encode(services), as: UTF8.self)
             let runtime = TestPiRuntime { _ in
                 TestPiTransport { _ in
                     [TestPiTransport.notify("databricks:mcp_services \(list)")]
                 }
             }
-            let model = AgentMCPSettingsModel(account: .local, service: runtime.service, defaults: defaults)
+            let model = AgentMCPSettingsModel(service: runtime.service, defaults: defaults)
             try model.setService("system.ai.github", enabled: true, of: provider)
             try model.setService("system.ai.atlassian", enabled: true, of: provider)
             try model.setService("system.ai.sandbox", enabled: true, of: provider)

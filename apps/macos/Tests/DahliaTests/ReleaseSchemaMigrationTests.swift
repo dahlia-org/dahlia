@@ -72,7 +72,7 @@
             try queue.read { db in
                 let workspace = try #require(try WorkspaceRecord.fetchOne(db, key: id))
                 #expect(workspace.name == "Preserved")
-                #expect(workspace.personalUserId == nil)
+                #expect(try UUID.fetchOne(db, sql: "SELECT personalUserId FROM workspaces WHERE id = ?", arguments: [id]) == nil)
             }
         }
 
@@ -326,11 +326,15 @@
             try queue.read { db in
                 let workspace = try #require(try WorkspaceRecord.fetchOne(db, key: workspaceID))
                 #expect(workspace.path == "/tmp/released-workspace" && workspace.summaryModelID == "saved-model")
-                #expect(workspace.accountConnectionId == nil && workspace.organizationId == nil && workspace.syncRole == nil && workspace
-                    .syncConfirmedConnectionId == nil)
+                let sync = try #require(try Row.fetchOne(db, sql: """
+                SELECT accountConnectionId, organizationId, syncRole, syncConfirmedConnectionId, syncPullErrorJSON
+                FROM workspaces WHERE id = ?
+                """, arguments: [workspaceID]))
+                #expect(sync["accountConnectionId"] as UUID? == nil && sync["organizationId"] as UUID? == nil)
+                #expect(sync["syncRole"] as String? == nil && sync["syncConfirmedConnectionId"] as UUID? == nil)
                 let connection = try #require(try DahliaAccountConnectionRecord.fetchOne(db, key: connectionID))
                 #expect(connection.kind == DahliaAccountConnectionRecord.dahliaKind)
-                #expect(workspace.syncPullErrorJSON == nil)
+                #expect(sync["syncPullErrorJSON"] as String? == nil)
                 #expect(try Int.fetchOne(db, sql: "SELECT syncMutationGeneration FROM workspaces WHERE id = ?", arguments: [workspaceID]) == 0)
                 #expect(try Int.fetchOne(db, sql: "SELECT syncMeetingEventsVersion FROM workspaces WHERE id = ?", arguments: [workspaceID]) == 0)
                 let segment = try #require(try fetchTranscriptContent(id: segmentID, in: db))
@@ -458,6 +462,7 @@
                 "v64_agentLearning",
                 "v65_chatRunPresentation",
                 "v66_skillCurator",
+                "v67_providerAccounts",
             ])
             try database.dbQueue.read { db throws in
                 #expect(try Row.fetchAll(db, sql: "PRAGMA foreign_key_check").isEmpty)
@@ -489,7 +494,8 @@
             try queue.write { db in
                 let workspace = try #require(try WorkspaceRecord.fetchOne(db, key: id))
                 #expect(workspace.name == "Preserved" && workspace.chatModelID == "model")
-                #expect(workspace.accountConnectionId == nil && workspace.databricksConnectionId == nil)
+                #expect(try UUID.fetchOne(db, sql: "SELECT accountConnectionId FROM workspaces WHERE id = ?", arguments: [id]) == nil)
+                #expect(try UUID.fetchOne(db, sql: "SELECT databricksConnectionId FROM workspaces WHERE id = ?", arguments: [id]) == nil)
                 let connection = try #require(try DahliaAccountConnectionRecord.fetchOne(db, key: connectionID))
                 #expect(connection.origin == "https://server.example.com" && connection.kind == DahliaAccountConnectionRecord.dahliaKind)
                 try Self.expectNoReferenceToTheConnectionsTable(in: db)
@@ -498,9 +504,10 @@
                     DatabricksConnection(id: .v7(), host: "https://dbc-1.cloud.databricks.com"), createdAt: .now
                 )
                 try databricks.insert(db)
-                try WorkspaceRecord(
-                    id: .v7(), path: nil, name: "New", createdAt: .now, lastOpenedAt: .now, databricksConnectionId: databricks.id
-                ).insert(db)
+                try db.execute(
+                    sql: "INSERT INTO workspaces (id, name, createdAt, lastOpenedAt, databricksConnectionId) VALUES (?, 'New', ?, ?, ?)",
+                    arguments: [UUID.v7(), Date.now, Date.now, databricks.id]
+                )
                 #expect(try AppDatabaseManager.hasExpectedCurrentSchema(db))
             }
         }
@@ -538,6 +545,47 @@
             }
         }
 
+        @Test
+        func providerAccountsMigrationKeepsConnectionsAndTheirReferences() throws {
+            let queue = try DatabaseQueue(configuration: AppDatabaseManager.configuration())
+            try AppDatabaseManager.migrator.migrate(queue, upTo: "v66_skillCurator")
+            let databricks = DahliaAccountConnectionRecord(
+                DatabricksConnection(id: .v7(), host: "https://dbc-1.cloud.databricks.com", email: "me@example.com"),
+                createdAt: .now
+            )
+            let workspaceID = UUID.v7()
+            try queue.write { db in
+                try db.execute(
+                    sql: "INSERT INTO accounts (id, origin, clientID, createdAt, kind, email) VALUES (?, ?, ?, ?, ?, ?)",
+                    arguments: [databricks.id, databricks.origin, databricks.clientID, databricks.createdAt, databricks.kind, databricks.email]
+                )
+                try db.execute(
+                    sql: "INSERT INTO workspaces (id, name, createdAt, lastOpenedAt, databricksConnectionId) VALUES (?, 'Preserved', ?, ?, ?)",
+                    arguments: [workspaceID, Date.now, Date.now, databricks.id]
+                )
+            }
+
+            try AppDatabaseManager.migrator.migrate(queue)
+
+            try queue.write { db in
+                #expect(try !db.tableExists("accounts"))
+                let connection = try #require(try DahliaAccountConnectionRecord.fetchOne(db, key: databricks.id))
+                #expect(connection.origin == databricks.origin && connection.kind == DahliaAccountConnectionRecord.databricksKind)
+                #expect(connection.email == "me@example.com" && connection.name == nil)
+                #expect(try UUID.fetchOne(db, sql: "SELECT databricksConnectionId FROM workspaces WHERE id = ?", arguments: [workspaceID]) == databricks.id)
+                // Every foreign key names the renamed table, so the reference still holds and still clears on delete.
+                #expect(try String.fetchAll(db, sql: #"SELECT name FROM sqlite_master WHERE sql LIKE '%REFERENCES "accounts"%'"#).isEmpty)
+                #expect(try Row.fetchAll(db, sql: "PRAGMA foreign_key_check").isEmpty)
+                var named = connection
+                named.name = "Work"
+                try named.update(db)
+                #expect(try DahliaAccountConnectionRecord.fetchOne(db, key: databricks.id)?.name == "Work")
+                _ = try DahliaAccountConnectionRecord.deleteOne(db, key: databricks.id)
+                #expect(try UUID.fetchOne(db, sql: "SELECT databricksConnectionId FROM workspaces WHERE id = ?", arguments: [workspaceID]) == nil)
+                #expect(try AppDatabaseManager.hasExpectedCurrentSchema(db))
+            }
+        }
+
         private static func expectNoReferenceToTheConnectionsTable(in db: Database) throws {
             #expect(try String.fetchAll(db, sql: "SELECT name FROM sqlite_master WHERE sql LIKE '%dahlia_account_connections%'").isEmpty)
         }
@@ -550,10 +598,7 @@
                 id: .v7(), origin: "https://server.example.com", clientID: "desktop", createdAt: .now
             )
             let local = WorkspaceRecord(id: .v7(), path: nil, name: "Local", createdAt: .now, lastOpenedAt: .now)
-            let server = WorkspaceRecord(
-                id: .v7(), path: nil, name: "Server", createdAt: .now, lastOpenedAt: .now,
-                accountConnectionId: connection.id, organizationId: .v7(), syncRole: "admin"
-            )
+            let server = WorkspaceRecord(id: .v7(), path: nil, name: "Server", createdAt: .now, lastOpenedAt: .now)
             let localMeeting = MeetingRecord(
                 id: .v7(), workspaceId: local.id, projectId: nil, name: "Local", description: "", createdAt: .now, updatedAt: .now
             )
@@ -578,6 +623,10 @@
                 )
                 try local.insertIntoLegacySchema(db)
                 try server.insertIntoLegacySchema(db)
+                try db.execute(
+                    sql: "UPDATE workspaces SET accountConnectionId = ?, organizationId = ?, syncRole = 'admin' WHERE id = ?",
+                    arguments: [connection.id, UUID.v7(), server.id]
+                )
                 try localMeeting.insert(db)
                 try serverMeeting.insert(db)
                 for shot in [localShot, serverShot, dirtyCaptionShot] {

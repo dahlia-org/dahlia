@@ -10,7 +10,10 @@ enum BackupFileFormat {
 }
 
 struct BackupSettingsView: View {
+    @Environment(MainWindowNavigation.self) private var navigation
     @State private var drive = GoogleDriveBackupModel()
+    @ObservedObject private var providers = CalendarProviderCollection.shared
+    @State private var driveProvider = GoogleCalendarProvider.current()
     @State private var googleConsent = GoogleOAuthConsentState()
     @State private var model: BackupSettingsViewModel
     @State private var pendingDeleteGeneration: BackupGeneration?
@@ -115,8 +118,7 @@ struct BackupSettingsView: View {
         }
         .formStyle(.grouped)
         .font(.dahliaBody)
-        .task(id: settings.calendarAccount) {
-            drive.resetForAccount()
+        .task {
             await drive.refresh()
         }
         .overlay {
@@ -170,6 +172,26 @@ struct BackupSettingsView: View {
 
     private var driveSection: some View {
         Section {
+            Picker(L10n.providerAccounts, selection: Binding(
+                get: { driveProvider },
+                set: { route in
+                    googleConsent.pendingDisclosure = nil
+                    driveProvider = route
+                    drive.reset()
+                    GoogleCalendarProvider.save(route)
+                }
+            )) {
+                Text(L10n.calendarProviderUnassigned).font(.dahliaBody).tag(GoogleCalendarProvider.unassigned)
+                ForEach(providers.connections) { connection in
+                    if let route = connection.googleRoute {
+                        Text(connection.displayName).font(.dahliaBody).tag(route)
+                    }
+                }
+            }
+            .task { await providers.reloadConnections() }
+            .onReceive(NotificationCenter.default.publisher(for: GoogleCalendarProvider.didChange)) { _ in
+                driveProvider = GoogleCalendarProvider.current()
+            }
             LabeledContent("Google Drive") {
                 HStack {
                     if let account = drive.account { Text(account.displayName) }
@@ -196,7 +218,10 @@ struct BackupSettingsView: View {
                     }
                 }
             }
-            if !drive.isConfigured {
+            if driveProvider == .unassigned {
+                Text(L10n.googleDriveChooseProvider).foregroundStyle(.secondary)
+                Button(L10n.manageProviders) { navigation.openSettings(category: .providers) }.buttonStyle(.dahlia())
+            } else if !drive.isConfigured {
                 Text(L10n.googleAccountClientIDMissingMessage).foregroundStyle(.secondary)
             }
             if let error = drive.errorMessage {

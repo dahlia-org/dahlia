@@ -24,7 +24,7 @@ import Foundation
             var options = PiRuntimeService.LaunchOptions(mode: .chat, cwd: work)
             options.environment["DAHLIA_PI_WEB_ACCESS"] = AgentWebAccessSettings.entryURL(agentURL: agent).path
             let environment = try PiRuntimeService.launchEnvironment(
-                options, provider: .local, agentURL: agent, executableURL: pi, launch: launch, secret: { _ in nil }
+                options, agentURL: agent, executableURL: pi, launch: launch, secret: { _ in nil }
             )
             #expect(environment["DAHLIA_PI_WEB_NODE"] == PiSandbox.realPath(node))
             let sandbox = try JSONDecoder().decode([String].self, from: Data(#require(environment["DAHLIA_PI_WEB_SANDBOX"]).utf8))
@@ -34,7 +34,7 @@ import Foundation
             for profile in [PiExecutionProfile.scheduled, .review] {
                 options.profile = profile
                 let background = try PiRuntimeService.launchEnvironment(
-                    options, provider: .local, agentURL: agent, executableURL: pi, launch: launch, secret: { _ in nil }
+                    options, agentURL: agent, executableURL: pi, launch: launch, secret: { _ in nil }
                 )
                 #expect(background["DAHLIA_PI_WEB_SANDBOX"] == nil)
                 #expect(background["DAHLIA_PI_WEB_NODE"] == nil)
@@ -49,8 +49,7 @@ import Foundation
             let launch = PiLaunchSettings(variables: [.init(id: UUID(), name: "PATH", value: path + ":/usr/bin:/bin")])
             #expect(throws: PiRuntimeError.launchFailed(L10n.agentSkillsPathConflict)) {
                 try PiRuntimeService.launchEnvironment(
-                    .init(mode: mode, cwd: root.appending(path: "work")),
-                    provider: .local, agentURL: agent,
+                    .init(mode: mode, cwd: root.appending(path: "work")), agentURL: agent,
                     executableURL: URL(fileURLWithPath: "/usr/bin/true"), launch: launch, secret: { _ in nil }
                 )
             }
@@ -69,31 +68,29 @@ import Foundation
             var options = PiRuntimeService.LaunchOptions(mode: .control, cwd: agent)
             #expect(throws: PiRuntimeError.launchFailed(L10n.agentSkillsPathConflict)) {
                 try PiRuntimeService.launchEnvironment(
-                    options, provider: .local, agentURL: agent, executableURL: URL(fileURLWithPath: "/usr/bin/true"),
+                    options, agentURL: agent, executableURL: URL(fileURLWithPath: "/usr/bin/true"),
                     launch: launch, secret: { _ in alias.appending(path: "missing/bin").path }
                 )
             }
             options.environment["PATH"] = "skills/bin"
             #expect(throws: PiRuntimeError.launchFailed(L10n.agentSkillsPathConflict)) {
                 try PiRuntimeService.launchEnvironment(
-                    options, provider: .local, agentURL: agent, executableURL: URL(fileURLWithPath: "/usr/bin/true"),
+                    options, agentURL: agent, executableURL: URL(fileURLWithPath: "/usr/bin/true"),
                     launch: launch, secret: { _ in "/usr/bin:/bin" }
                 )
             }
         }
 
         @Test
-        func settingsAreLocalToEachAccountAndRemovalPersists() throws {
+        func settingsPersistAndRemovalPersists() throws {
             let defaults = try #require(UserDefaults(suiteName: "PiFileAccessSettingsTests.\(UUID())"))
-            let other = CodexRuntimeProvider(accountConnectionID: .v7(), databricksConnectionID: nil)
             var settings = PiFileAccessSettings(grants: [.init(path: "/Users/test/.desk.toml", isDirectory: false, access: .readWrite)])
-            #expect(PiFileAccessSettings.load(for: .local, defaults: defaults).grants.isEmpty)
-            settings.save(for: .local, defaults: defaults)
-            #expect(PiFileAccessSettings.load(for: .local, defaults: defaults) == settings)
-            #expect(PiFileAccessSettings.load(for: other, defaults: defaults).grants.isEmpty)
+            #expect(PiFileAccessSettings.load(defaults: defaults).grants.isEmpty)
+            settings.save(defaults: defaults)
+            #expect(PiFileAccessSettings.load(defaults: defaults) == settings)
             settings.grants.removeAll()
-            settings.save(for: .local, defaults: defaults)
-            #expect(PiFileAccessSettings.load(for: .local, defaults: defaults).grants.isEmpty)
+            settings.save(defaults: defaults)
+            #expect(PiFileAccessSettings.load(defaults: defaults).grants.isEmpty)
         }
 
         @Test
@@ -187,14 +184,14 @@ import Foundation
             try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
             defer { try? FileManager.default.removeItem(at: folder) }
             let variable = PiLaunchSettings.Variable(id: .v7(), name: "ZDOTDIR", isSecret: true)
-            PiLaunchSettings(variables: [variable]).save(for: .local, defaults: defaults)
-            let key = PiLaunchSettings.secretKey(for: .local, id: variable.id)
-            let model = PiFileAccessSettingsModel(account: .local, defaults: defaults, secret: { $0 == key ? folder.path : nil })
+            PiLaunchSettings(variables: [variable]).save(defaults: defaults)
+            let key = PiLaunchSettings.secretKey(id: variable.id)
+            let model = PiFileAccessSettingsModel(defaults: defaults, secret: { $0 == key ? folder.path : nil })
             await model.add([folder])
             let grant = try #require(model.settings.grants.first)
             await model.setAccess(.readWrite, for: grant.id)
             #expect(model.errorMessage != nil)
-            #expect(PiFileAccessSettings.load(for: .local, defaults: defaults).grants.first?.access == .readOnly)
+            #expect(PiFileAccessSettings.load(defaults: defaults).grants.first?.access == .readOnly)
         }
 
         @Test
@@ -204,14 +201,14 @@ import Foundation
             try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
             defer { try? FileManager.default.removeItem(at: folder) }
             let variable = PiLaunchSettings.Variable(id: .v7(), name: "PATH", isSecret: true)
-            PiLaunchSettings(variables: [variable]).save(for: .local, defaults: defaults)
-            let key = PiLaunchSettings.secretKey(for: .local, id: variable.id)
-            let model = PiFileAccessSettingsModel(account: .local, defaults: defaults, secret: { $0 == key ? folder.path : nil })
+            PiLaunchSettings(variables: [variable]).save(defaults: defaults)
+            let key = PiLaunchSettings.secretKey(id: variable.id)
+            let model = PiFileAccessSettingsModel(defaults: defaults, secret: { $0 == key ? folder.path : nil })
             await model.add([folder])
             let grant = try #require(model.settings.grants.first)
             await model.setAccess(.readWrite, for: grant.id)
             #expect(model.errorMessage != nil)
-            #expect(PiFileAccessSettings.load(for: .local, defaults: defaults).grants.first?.access == .readOnly)
+            #expect(PiFileAccessSettings.load(defaults: defaults).grants.first?.access == .readOnly)
         }
 
         @Test(arguments: [false, true])
@@ -219,7 +216,6 @@ import Foundation
             let suite = "PiFileAccessSettingsTests.\(UUID())"
             let defaults = try #require(UserDefaults(suiteName: suite))
             defer { defaults.removePersistentDomain(forName: suite) }
-            let account = CodexRuntimeProvider.dahlia(connectionID: UUID())
             let root = FileManager.default.temporaryDirectory.appending(path: suite)
             let nvm = root.appending(path: "custom-nvm")
             let bins = ["v22.16.0", "v24.22.1"].map { nvm.appending(path: "versions/node/\($0)/bin") }
@@ -232,22 +228,22 @@ import Foundation
             defer { try? FileManager.default.removeItem(at: root) }
             let variable = PiLaunchSettings.Variable(id: .v7(), name: "NVM_DIR", isSecret: isSecret, value: isSecret ? nil : nvm.path)
             let launch = PiLaunchSettings(variables: [variable])
-            launch.save(for: account, defaults: defaults)
-            let key = PiLaunchSettings.secretKey(for: account, id: variable.id)
-            let model = PiFileAccessSettingsModel(account: account, defaults: defaults, secret: { $0 == key ? nvm.path : nil })
+            launch.save(defaults: defaults)
+            let key = PiLaunchSettings.secretKey(id: variable.id)
+            let model = PiFileAccessSettingsModel(defaults: defaults, secret: { $0 == key ? nvm.path : nil })
             await model.add(bins)
             #expect(model.errorMessage == nil)
             #expect(model.settings.grants.count == bins.count)
             for grant in model.settings.grants {
                 await model.setAccess(.readWrite, for: grant.id)
                 #expect(model.errorMessage != nil)
-                #expect(PiFileAccessSettings.load(for: account, defaults: defaults).grants.first { $0.id == grant.id }?.access == .readOnly)
+                #expect(PiFileAccessSettings.load(defaults: defaults).grants.first { $0.id == grant.id }?.access == .readOnly)
             }
 
             var options = PiRuntimeService.LaunchOptions(mode: .chat, cwd: work)
             options.fileAccess = model.settings
             let environment = try PiRuntimeService.launchEnvironment(
-                options, provider: account, agentURL: root.appending(path: "agent"), executableURL: URL(fileURLWithPath: "/bin/sh"),
+                options, agentURL: root.appending(path: "agent"), executableURL: URL(fileURLWithPath: "/bin/sh"),
                 launch: launch, secret: { $0 == key ? nvm.path : nil }
             )
             for bin in bins {
@@ -257,7 +253,7 @@ import Foundation
             options.fileAccess.grants = [.init(id: grant.id, path: grant.path, isDirectory: true, access: .readWrite)]
             #expect(throws: (any Error).self) {
                 try PiRuntimeService.launchEnvironment(
-                    options, provider: account, agentURL: root.appending(path: "agent"), executableURL: URL(fileURLWithPath: "/bin/sh"),
+                    options, agentURL: root.appending(path: "agent"), executableURL: URL(fileURLWithPath: "/bin/sh"),
                     launch: launch, secret: { $0 == key ? nvm.path : nil }
                 )
             }
@@ -271,17 +267,17 @@ import Foundation
             try Data("setting".utf8).write(to: file)
             defer { try? FileManager.default.removeItem(at: file) }
             let grant = PiFileAccessSettings.Grant(path: file.path, isDirectory: false)
-            PiFileAccessSettings(grants: [grant]).save(for: .local, defaults: defaults)
-            PiLaunchSettings(variables: [.init(id: .v7(), name: "PATH", isSecret: true)]).save(for: .local, defaults: defaults)
-            let model = PiFileAccessSettingsModel(account: .local, defaults: defaults, secret: { _ in
+            PiFileAccessSettings(grants: [grant]).save(defaults: defaults)
+            PiLaunchSettings(variables: [.init(id: .v7(), name: "PATH", isSecret: true)]).save(defaults: defaults)
+            let model = PiFileAccessSettingsModel(defaults: defaults, secret: { _ in
                 // A newer Settings instance revoked permission while this instance was waiting for Keychain.
                 if let current = UserDefaults(suiteName: suite) {
-                    PiFileAccessSettings().save(for: .local, defaults: current)
+                    PiFileAccessSettings().save(defaults: current)
                 }
                 return nil
             })
             await model.setAccess(.readWrite, for: grant.id)
-            #expect(PiFileAccessSettings.load(for: .local, defaults: defaults).grants.isEmpty)
+            #expect(PiFileAccessSettings.load(defaults: defaults).grants.isEmpty)
             #expect(model.settings.grants.isEmpty)
             #expect(model.errorMessage != nil)
         }
@@ -291,11 +287,11 @@ import Foundation
             let defaults = try #require(UserDefaults(suiteName: "PiFileAccessSettingsTests.\(UUID())"))
             let first = PiFileAccessSettings.Grant(path: "/tmp/first", isDirectory: false)
             let second = PiFileAccessSettings.Grant(path: "/tmp/second", isDirectory: false)
-            PiFileAccessSettings(grants: [first]).save(for: .local, defaults: defaults)
-            let model = PiFileAccessSettingsModel(account: .local, defaults: defaults)
-            PiFileAccessSettings(grants: [first, second]).save(for: .local, defaults: defaults)
+            PiFileAccessSettings(grants: [first]).save(defaults: defaults)
+            let model = PiFileAccessSettingsModel(defaults: defaults)
+            PiFileAccessSettings(grants: [first, second]).save(defaults: defaults)
             model.remove(first.id)
-            #expect(PiFileAccessSettings.load(for: .local, defaults: defaults).grants == [second])
+            #expect(PiFileAccessSettings.load(defaults: defaults).grants == [second])
         }
 
         @Test
@@ -308,11 +304,11 @@ import Foundation
             defer { try? FileManager.default.removeItem(at: root) }
             let variable = PiLaunchSettings.Variable(id: .v7(), name: "PATH", isSecret: true)
             let launch = PiLaunchSettings(variables: [variable])
-            let key = PiLaunchSettings.secretKey(for: .local, id: variable.id)
+            let key = PiLaunchSettings.secretKey(id: variable.id)
             var pathValue = commands.path
             func environment(_ options: PiRuntimeService.LaunchOptions) throws -> [String: String] {
                 try PiRuntimeService.launchEnvironment(
-                    options, provider: .local, agentURL: root.appending(path: "agent"), executableURL: URL(fileURLWithPath: "/bin/sh"),
+                    options, agentURL: root.appending(path: "agent"), executableURL: URL(fileURLWithPath: "/bin/sh"),
                     launch: launch, secret: { $0 == key ? pathValue : nil }
                 )
             }
@@ -352,7 +348,7 @@ import Foundation
             let file = FileManager.default.temporaryDirectory.appending(path: "PiFileAccessSettingsTests-\(UUID()).toml")
             try Data("setting".utf8).write(to: file)
             defer { try? FileManager.default.removeItem(at: file) }
-            let model = PiFileAccessSettingsModel(account: .local, defaults: defaults)
+            let model = PiFileAccessSettingsModel(defaults: defaults)
             await model.add([file, file])
             #expect(model.errorMessage == nil)
             #expect(model.settings.grants.count == 1)
@@ -360,7 +356,7 @@ import Foundation
             #expect(grant.access == .readOnly && !grant.isDirectory)
             await model.setAccess(.readWrite, for: grant.id)
             #expect(model.settings.grants.first?.access == .readWrite)
-            #expect(PiFileAccessSettings.load(for: .local, defaults: defaults) == model.settings)
+            #expect(PiFileAccessSettings.load(defaults: defaults) == model.settings)
             await model.add([URL(fileURLWithPath: NSHomeDirectory())])
             let home = try #require(model.settings.grants.last)
             await model.setAccess(.readWrite, for: home.id)
@@ -368,7 +364,7 @@ import Foundation
             #expect(model.settings.grants.last?.access == .readOnly)
             model.remove(grant.id)
             model.remove(home.id)
-            #expect(PiFileAccessSettings.load(for: .local, defaults: defaults).grants.isEmpty)
+            #expect(PiFileAccessSettings.load(defaults: defaults).grants.isEmpty)
         }
     }
 #endif

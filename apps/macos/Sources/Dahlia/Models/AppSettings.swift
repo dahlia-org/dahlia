@@ -52,8 +52,8 @@ enum CalendarSource: String, CaseIterable, Identifiable {
     /// The app-wide choice saved before sources became per account; read only as each account's default.
     nonisolated static let enabledSourcesUserDefaultsKey = "enabledCalendarSources"
 
-    nonisolated static func enabledSourcesUserDefaultsKey(for account: CodexRuntimeProvider) -> String {
-        "\(enabledSourcesUserDefaultsKey).\(account.accountKey)"
+    nonisolated static var accountEnabledSourcesUserDefaultsKey: String {
+        "\(enabledSourcesUserDefaultsKey).\(AppAccount.key)"
     }
 
     var id: String { rawValue }
@@ -123,7 +123,6 @@ final class AppSettings: ObservableObject {
     nonisolated static let batchAudioRetentionPeriodUserDefaultsKey = "batchAudioRetentionPeriodDays"
     private nonisolated static let legacyRetainAudioAfterBatchTranscriptionUserDefaultsKey =
         "retainAudioAfterBatchTranscription"
-    nonisolated static let conversationAnalyticsBetaEnabledUserDefaultsKey = "conversationAnalyticsBetaEnabled"
     nonisolated static let automaticMeetingEndRecordingStopUserDefaultsKey = "automaticMeetingEndRecordingStopEnabled"
     nonisolated static let meetingSearchRankingWeightsUserDefaultsKey = "meetingSearchRankingWeights"
     nonisolated static let meetingSearchJudgmentsUserDefaultsKey = "meetingSearchBenchmarkJudgmentsV2"
@@ -133,15 +132,11 @@ final class AppSettings: ObservableObject {
     nonisolated static let zoomMeetingLinkOpenTargetUserDefaultsKey = "zoomMeetingLinkOpenTarget"
     nonisolated static let teamsMeetingLinkOpenTargetUserDefaultsKey = "teamsMeetingLinkOpenTarget"
     nonisolated static let slackMeetingLinkOpenTargetUserDefaultsKey = "slackMeetingLinkOpenTarget"
-    nonisolated static let defaultConversationAnalyticsBetaEnabled = false
     fileprivate nonisolated static let defaultAutomaticScreenshotIntervalSeconds = 20
     fileprivate nonisolated static let defaultAutomaticScreenshotChangeThresholdPercent = 5
 
     nonisolated static let chatDeliveryModeUserDefaultsKey = "chatDeliveryMode"
     @AppStorage(AppSettings.chatDeliveryModeUserDefaultsKey) var chatDeliveryMode: CodexChatDeliveryMode = .queue
-
-    nonisolated static let hideLocalAccountUserDefaultsKey = "hideLocalAccount"
-    @AppStorage(AppSettings.hideLocalAccountUserDefaultsKey) var hideLocalAccount = false
 
     init(
         meetingSettingsDefaults: UserDefaults = .standard,
@@ -149,7 +144,6 @@ final class AppSettings: ObservableObject {
         generalDefaults: UserDefaults = .standard
     ) {
         _chatDeliveryMode = AppStorage(wrappedValue: .queue, Self.chatDeliveryModeUserDefaultsKey, store: generalDefaults)
-        _hideLocalAccount = AppStorage(wrappedValue: false, Self.hideLocalAccountUserDefaultsKey, store: generalDefaults)
         _appAppearanceRawValue = AppStorage(wrappedValue: AppAppearance.system.rawValue, AppAppearance.userDefaultsKey, store: appearanceDefaults)
         self.meetingSettingsDefaults = meetingSettingsDefaults
         Self.migrateCalendarEventFilterSettings(in: .standard)
@@ -182,11 +176,6 @@ final class AppSettings: ObservableObject {
             defaults.removeObject(forKey: key)
         }
     }
-
-    // MARK: - ベータ機能
-
-    @AppStorage(AppSettings.conversationAnalyticsBetaEnabledUserDefaultsKey)
-    var isConversationAnalyticsBetaEnabled = AppSettings.defaultConversationAnalyticsBetaEnabled
 
     // MARK: - 外観
 
@@ -224,16 +213,6 @@ final class AppSettings: ObservableObject {
         BatchTranscriptionStallTimeout.defaultValue.rawValue
     @AppStorage(AppSettings.batchAudioRetentionPeriodUserDefaultsKey) private var batchAudioRetentionPeriodRawValue =
         BatchAudioRetentionPeriod.defaultValue.rawValue
-    @AppStorage(ServerContentRetention.defaultsKey) private var storedServerContentRetentionDays = ServerContentRetention.defaultDays
-
-    var serverContentRetentionDays: Int {
-        get { storedServerContentRetentionDays >= 0 ? storedServerContentRetentionDays : ServerContentRetention.defaultDays }
-        set {
-            objectWillChange.send()
-            storedServerContentRetentionDays = newValue >= 0 ? newValue : ServerContentRetention.defaultDays
-        }
-    }
-
     @AppStorage(AppSettings.generateSummaryAfterBatchTranscriptionUserDefaultsKey) var generateSummaryAfterBatchTranscription = false
     @AppStorage(AppSettings.exportBatchSummaryToWorkspaceUserDefaultsKey) var exportBatchSummaryToWorkspace = true
     @AppStorage(AppSettings.liveSubtitleTranslationEnabledKey) var liveSubtitleTranslationEnabled = true
@@ -363,8 +342,8 @@ final class AppSettings: ObservableObject {
     }
 
     private func switchMeetingSettingsToCurrentAccount() {
-        guard !holdsMeetingSettings, let currentWorkspace else { return }
-        Self.switchMeetingSettings(to: CodexRuntimeProvider(workspace: currentWorkspace), in: meetingSettingsDefaults)
+        guard !holdsMeetingSettings, currentWorkspace != nil else { return }
+        Self.switchMeetingSettings(in: meetingSettingsDefaults)
     }
 
     nonisolated static func meetingSettingsUserDefaultsKey(for accountKey: String) -> String {
@@ -372,15 +351,15 @@ final class AppSettings: ObservableObject {
     }
 
     /// An account opened for the first time starts from the previous account's values.
-    nonisolated static func switchMeetingSettings(to account: CodexRuntimeProvider, in defaults: UserDefaults) {
+    nonisolated static func switchMeetingSettings(in defaults: UserDefaults) {
         let owner = defaults.string(forKey: meetingSettingsAccountUserDefaultsKey)
-        guard owner != account.accountKey else { return }
-        defaults.set(account.accountKey, forKey: meetingSettingsAccountUserDefaultsKey)
+        guard owner != AppAccount.key else { return }
+        defaults.set(AppAccount.key, forKey: meetingSettingsAccountUserDefaultsKey)
         // Before per-account meeting settings, the values belonged to whichever account opens first.
         guard let owner else { return }
         let current = accountMeetingSettingKeys.reduce(into: [String: Any]()) { $0[$1] = defaults.object(forKey: $1) }
         defaults.set(current, forKey: meetingSettingsUserDefaultsKey(for: owner))
-        guard let saved = defaults.dictionary(forKey: meetingSettingsUserDefaultsKey(for: account.accountKey)) else { return }
+        guard let saved = defaults.dictionary(forKey: meetingSettingsUserDefaultsKey(for: AppAccount.key)) else { return }
         for key in accountMeetingSettingKeys {
             defaults.set(saved[key], forKey: key)
         }
@@ -524,23 +503,7 @@ final class AppSettings: ObservableObject {
     @Published var currentWorkspace: WorkspaceRecord? {
         didSet {
             switchMeetingSettingsToCurrentAccount()
-            postCalendarAccountChange(from: setupTourAccount ?? CodexRuntimeProvider(workspace: oldValue))
         }
-    }
-
-    /// The account the setup tour is setting up. Its calendar step applies to that account before its workspace opens.
-    @Published var setupTourAccount: CodexRuntimeProvider? {
-        didSet { postCalendarAccountChange(from: oldValue ?? CodexRuntimeProvider(workspace: currentWorkspace)) }
-    }
-
-    /// The account whose calendar sources and Google Calendar route apply: the open one, or the one being set up.
-    var calendarAccount: CodexRuntimeProvider {
-        setupTourAccount ?? CodexRuntimeProvider(workspace: currentWorkspace)
-    }
-
-    private func postCalendarAccountChange(from previous: CodexRuntimeProvider) {
-        guard previous != calendarAccount else { return }
-        NotificationCenter.default.post(name: .calendarAccountDidChange, object: nil)
     }
 
     /// 現在のワークスペースの URL。ワークスペース未選択時は nil。
@@ -665,18 +628,18 @@ final class AppSettings: ObservableObject {
     /// The open account's calendar sources. An account that has not chosen yet keeps the choice this Mac made before
     /// sources became per account (`enabledCalendarSources`, or the older single `calendarSource`).
     var enabledCalendarSources: Set<CalendarSource> {
-        get { Self.enabledCalendarSources(for: calendarAccount, in: .standard) }
+        get { Self.enabledCalendarSources(in: .standard) }
         set {
             objectWillChange.send()
             UserDefaults.standard.set(
                 Self.encodeCalendarSources(newValue),
-                forKey: CalendarSource.enabledSourcesUserDefaultsKey(for: calendarAccount)
+                forKey: CalendarSource.accountEnabledSourcesUserDefaultsKey
             )
         }
     }
 
-    nonisolated static func enabledCalendarSources(for account: CodexRuntimeProvider, in defaults: UserDefaults) -> Set<CalendarSource> {
-        for key in [CalendarSource.enabledSourcesUserDefaultsKey(for: account), CalendarSource.enabledSourcesUserDefaultsKey] {
+    nonisolated static func enabledCalendarSources(in defaults: UserDefaults) -> Set<CalendarSource> {
+        for key in [CalendarSource.accountEnabledSourcesUserDefaultsKey, CalendarSource.enabledSourcesUserDefaultsKey] {
             if let json = defaults.string(forKey: key), let sources = decodeCalendarSources(from: json) {
                 return sources
             }
@@ -976,6 +939,5 @@ extension UserDefaults {
 }
 
 extension Notification.Name {
-    /// The open workspace moved to another account, so calendar sources and the Google Calendar route may change.
-    static let calendarAccountDidChange = Notification.Name("CalendarAccountDidChangeNotification")
+    // The open workspace moved to another account, so calendar sources and the Google Calendar route may change.
 }

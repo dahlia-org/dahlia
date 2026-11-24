@@ -10,14 +10,11 @@ import Foundation
             let suite = "AgentAutoReviewSettingsTests.\(UUID.v7())"
             let defaults = try #require(UserDefaults(suiteName: suite))
             defer { defaults.removePersistentDomain(forName: suite) }
-            let server = CodexRuntimeProvider.dahlia(connectionID: .v7())
-            #expect(AgentAutoReviewSettings.model(for: .local, defaults: defaults).isEmpty)
-            #expect(AgentAutoReviewSettings.model(for: server, defaults: defaults).isEmpty)
-            defaults.set("reviewer/fast", forKey: AgentAutoReviewSettings.defaultsKey(for: .local))
-            #expect(AgentAutoReviewSettings.model(for: .local, defaults: defaults) == "reviewer/fast")
-            #expect(AgentAutoReviewSettings.model(for: server, defaults: defaults).isEmpty)
-            defaults.set("", forKey: AgentAutoReviewSettings.defaultsKey(for: .local))
-            #expect(AgentAutoReviewSettings.model(for: .local, defaults: defaults).isEmpty)
+            #expect(AgentAutoReviewSettings.model(defaults: defaults).isEmpty)
+            defaults.set("reviewer/fast", forKey: AgentAutoReviewSettings.defaultsKey())
+            #expect(AgentAutoReviewSettings.model(defaults: defaults) == "reviewer/fast")
+            defaults.set("", forKey: AgentAutoReviewSettings.defaultsKey())
+            #expect(AgentAutoReviewSettings.model(defaults: defaults).isEmpty)
         }
 
         @Test
@@ -25,13 +22,11 @@ import Foundation
             let suite = "AgentAutoReviewSettingsTests.\(UUID.v7())"
             let defaults = try #require(UserDefaults(suiteName: suite))
             defer { defaults.removePersistentDomain(forName: suite) }
-            let server = CodexRuntimeProvider.dahlia(connectionID: .v7())
-            #expect(!AgentAutoReviewSettings.triageEnabled(for: .local, defaults: defaults))
-            defaults.set(true, forKey: AgentAutoReviewSettings.triageDefaultsKey(for: .local))
-            #expect(AgentAutoReviewSettings.triageEnabled(for: .local, defaults: defaults))
-            #expect(!AgentAutoReviewSettings.triageEnabled(for: server, defaults: defaults))
-            defaults.set(false, forKey: AgentAutoReviewSettings.triageDefaultsKey(for: .local))
-            #expect(!AgentAutoReviewSettings.triageEnabled(for: .local, defaults: defaults))
+            #expect(!AgentAutoReviewSettings.triageEnabled(defaults: defaults))
+            defaults.set(true, forKey: AgentAutoReviewSettings.triageDefaultsKey())
+            #expect(AgentAutoReviewSettings.triageEnabled(defaults: defaults))
+            defaults.set(false, forKey: AgentAutoReviewSettings.triageDefaultsKey())
+            #expect(!AgentAutoReviewSettings.triageEnabled(defaults: defaults))
         }
 
         @Test

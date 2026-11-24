@@ -6,9 +6,76 @@ import Synchronization
 #if canImport(Testing)
     import Testing
 
+    /// The Databricks connection the app's account uses for Google Calendar and Drive in these tests.
+    private let proxyConnectionID = UUID()
+
     @MainActor
+    @Suite(.providerAccounts([.init(id: proxyConnectionID, workspaceURL: URL(string: "https://example.cloud.databricks.com")!)]))
     struct DatabricksProxyGoogleSignInProviderTests {
-        private let connection = DatabricksConnection(id: UUID(), host: "https://example.cloud.databricks.com")
+        private let connection = DatabricksConnection(id: proxyConnectionID, host: "https://example.cloud.databricks.com")
+
+        @Test(arguments: [false, true])
+        func driveImportResolvesTheCurrentGoogleUserOnTheSameProxy(identityFails: Bool) async throws {
+            let host = "grant-\(UUID().uuidString.lowercased()).example"
+            let connection = DatabricksConnection(id: proxyConnectionID, host: "https://\(host)")
+            ChangingDriveGrantURLProtocol.states.withLock { $0[host] = .init() }
+            defer { ChangingDriveGrantURLProtocol.states.withLock { $0[host] = nil } }
+            let configuration = URLSessionConfiguration.ephemeral
+            configuration.protocolClasses = [ChangingDriveGrantURLProtocol.self]
+            let transport = URLSession(configuration: configuration)
+            defer { transport.invalidateAndCancel() }
+            let memory = DatabricksTestStorage(connection: connection)
+            memory.state.withLock { $0.credentials[connection.id] = Self.credential }
+            let client = GoogleDriveBackupClient(urlSession: transport)
+            let provider = DatabricksProxyGoogleSignInProvider(
+                sessionKind: .drive, direct: FakeDirectProvider(),
+                oauth: DatabricksOAuthService(storage: memory.storage) { _ in throw CancellationError() },
+                storage: memory.storage, driveClient: client, userDefaults: makeDefaults(),
+                connectionChangeNotification: Notification.Name("DriveConnection.\(UUID())")
+            )
+            let model = GoogleDriveBackupModel(signIn: provider, client: client, routeChangeNotification: Notification.Name("DriveRoute.\(UUID())"))
+            await model.refresh()
+            #expect(model.account?.id == "A")
+            let file = try #require(model.files.first)
+            ChangingDriveGrantURLProtocol.states.withLock {
+                $0[host]?.identity = "B"
+                $0[host]?.fails = identityFails
+            }
+            let database = try AppDatabaseManager(path: ":memory:")
+            let service = BackupService(
+                dbQueue: database.dbQueue, applicationSupportURL: FileManager.default.temporaryDirectory.appending(path: "unused-\(UUID())")
+            )
+            await #expect(throws: (any Error).self) { try await model.importBackup(file, using: service) }
+            #expect(model.files.isEmpty)
+            #expect(!model.isAuthorized)
+            let state = try #require(ChangingDriveGrantURLProtocol.states.withLock { $0[host] })
+            #expect(state.aboutRequests == 2)
+            #expect(state.downloads == 0)
+        }
+
+        @Test
+        func fixedCalendarRoutesIgnoreTheIndependentDriveChoiceAndDisconnectOnlyThemselves() async throws {
+            let other = DatabricksConnection(id: .v7(), host: "https://other.cloud.databricks.com")
+            let memory = DatabricksTestStorage(connection: connection)
+            memory.state.withLock { $0.connections.append(other) }
+            let defaults = makeDefaults()
+            let oauth = DatabricksOAuthService(storage: memory.storage)
+            let first = DatabricksProxyGoogleSignInProvider(
+                provider: .databricks(connectionID: connection.id), oauth: oauth, storage: memory.storage, userDefaults: defaults
+            )
+            let second = DatabricksProxyGoogleSignInProvider(
+                provider: .databricks(connectionID: other.id), oauth: oauth, storage: memory.storage, userDefaults: defaults
+            )
+            defaults.set("unassigned", forKey: GoogleCalendarProvider.userDefaultsKey)
+            #expect(first.connectionPageURL?.host == "example.cloud.databricks.com")
+            #expect(second.connectionPageURL?.host == "other.cloud.databricks.com")
+            #expect(await first.hasPreviousSignIn)
+            #expect(await second.hasPreviousSignIn)
+            try await first.disconnect()
+            #expect(await !(first.hasPreviousSignIn))
+            #expect(await second.hasPreviousSignIn)
+            #expect(GoogleCalendarProvider.current(defaults: defaults) == .unassigned)
+        }
 
         @Test
         func proxyBaseURLUsesAPI20Route() {
@@ -36,7 +103,7 @@ import Synchronization
                 sessionKind: .drive, direct: direct,
                 oauth: DatabricksOAuthService(storage: memory.storage) { _ in throw CancellationError() },
                 storage: memory.storage, driveClient: GoogleDriveBackupClient(urlSession: transport),
-                userDefaults: defaults, openAccount: { .databricks(connectionID: connection.id) }
+                userDefaults: defaults
             )
             let session = try await provider.restorePreviousSignIn()
             #expect(session.grantedScopes == GoogleOAuthScope.drive)
@@ -82,16 +149,65 @@ import Synchronization
             #expect(direct.disconnectCallCount == 1)
         }
 
-        /// The Local and Dahlia accounts sign in to Google directly even when a Databricks account exists on this Mac.
+        /// Google Calendar comes from the provider the user chose: Google itself, or the Databricks connection.
         @Test
-        func otherAccountsUseDirectProviderBesideADatabricksConnection() async throws {
-            for account in [CodexRuntimeProvider.local, .dahlia(connectionID: UUID()), .databricks(connectionID: UUID())] {
-                let direct = FakeDirectProvider(isConfigured: true, hasPreviousSignIn: true)
-                let provider = makeProvider(connection: connection, direct: direct, account: account)
+        func anUnsetChoiceUsesDirectGoogleEvenWhenDatabricksIsAvailable() async throws {
+            let defaults = makeDefaults()
+            defaults.removeObject(forKey: GoogleCalendarProvider.userDefaultsKey)
+            let direct = FakeDirectProvider(isConfigured: true, hasPreviousSignIn: true)
+            let provider = makeProvider(connection: connection, direct: direct, userDefaults: defaults)
+            #expect(!provider.isProxyActive)
+            _ = try await provider.restorePreviousSignIn()
+            #expect(direct.restoreCallCount == 1)
+        }
 
-                #expect(provider.isProxyActive == false)
-                _ = try await provider.restorePreviousSignIn()
-                #expect(direct.restoreCallCount == 1)
+        @Test
+        func disconnectingTheProxyDoesNotPublishADirectGoogleSignOut() async throws {
+            let direct = FakeDirectProvider()
+            let provider = makeProvider(connection: connection, direct: direct)
+            let directChanges = Mutex(0)
+            let observer = NotificationCenter.default.addObserver(forName: direct.sessionDidChangeNotification, object: nil, queue: .main) { _ in
+                directChanges.withLock { $0 += 1 }
+            }
+            defer { NotificationCenter.default.removeObserver(observer) }
+            try await provider.disconnect()
+            #expect(directChanges.withLock { $0 } == 0)
+            #expect(direct.disconnectCallCount == 0)
+        }
+
+        @Test
+        func calendarFollowsTheChosenProviderAndDriveKeepsTheConnection() async throws {
+            let defaults = makeDefaults()
+            let direct = FakeDirectProvider(isConfigured: true, hasPreviousSignIn: true)
+            let calendar = makeProvider(connection: connection, direct: direct, userDefaults: defaults)
+            #expect(calendar.isProxyActive)
+
+            defaults.set("google", forKey: GoogleCalendarProvider.userDefaultsKey)
+            #expect(calendar.isProxyActive == false)
+            _ = try await calendar.restorePreviousSignIn()
+            #expect(direct.restoreCallCount == 1)
+
+            defaults.set(connection.id.uuidString, forKey: GoogleCalendarProvider.userDefaultsKey)
+            #expect(calendar.isProxyActive)
+        }
+
+        @Test
+        func theChoiceNeverAutomaticallySelectsADatabricksConnection() throws {
+            let defaults = makeDefaults()
+            defaults.removeObject(forKey: GoogleCalendarProvider.userDefaultsKey)
+            let id = UUID.v7()
+            try ProviderAccountDirectory.$connections.withValue([.init(
+                id: id,
+                workspaceURL: #require(URL(string: "https://dbc-1.cloud.databricks.com"))
+            )]) {
+                #expect(GoogleCalendarProvider.current(defaults: defaults) == .unassigned)
+                defaults.set("google", forKey: GoogleCalendarProvider.userDefaultsKey)
+                #expect(GoogleCalendarProvider.current(defaults: defaults) == .unassigned)
+                defaults.set(UUID.v7().uuidString, forKey: GoogleCalendarProvider.userDefaultsKey)
+                #expect(GoogleCalendarProvider.current(defaults: defaults) == .unassigned)
+            }
+            ProviderAccountDirectory.$connections.withValue([]) {
+                #expect(GoogleCalendarProvider.current(defaults: defaults) == .unassigned)
             }
         }
 
@@ -184,13 +300,12 @@ import Synchronization
             let direct = FakeDirectProvider()
             let provider = DatabricksProxyGoogleSignInProvider(
                 direct: direct, oauth: service, storage: memory.storage,
-                apiClient: FakeAPIClient(result: .success([])), userDefaults: makeDefaults(),
-                openAccount: { [connection] in .databricks(connectionID: connection.id) }
+                apiClient: FakeAPIClient(result: .success([])), userDefaults: makeDefaults()
             )
             _ = try await provider.restorePreviousSignIn()
             let (posts, continuation) = AsyncStream.makeStream(of: Void.self)
             let token = NotificationCenter.default.addObserver(
-                forName: direct.sessionDidChangeNotification, object: nil, queue: .main
+                forName: provider.sessionDidChangeNotification, object: nil, queue: .main
             ) { _ in continuation.yield() }
             defer { NotificationCenter.default.removeObserver(token) }
 
@@ -229,6 +344,15 @@ import Synchronization
             #expect(apiClient.sessions.first?.apiBaseURL == session.apiBaseURL)
         }
 
+        @Test(arguments: [false, true])
+        func onlyAPrimaryCalendarVerifiesTheProxyGoogleIdentity(hasPrimary: Bool) async throws {
+            let calendar = CalendarListItem(id: "shared@example.com", title: "Shared", colorHex: nil, isPrimary: hasPrimary)
+            let provider = makeProvider(connection: connection, direct: FakeDirectProvider(), apiClient: FakeAPIClient(result: .success([calendar])))
+            let session = try await provider.restorePreviousSignIn()
+            #expect(session.isAccountIdentityVerified == hasPrimary)
+            #expect(session.account.id == calendar.id)
+        }
+
         @Test
         func restoreWithoutDatabricksCredentialNeverOpensTheBrowser() async throws {
             let memory = DatabricksTestStorage(connection: connection)
@@ -239,8 +363,7 @@ import Synchronization
             }
             let provider = DatabricksProxyGoogleSignInProvider(
                 direct: FakeDirectProvider(), oauth: service, storage: memory.storage,
-                apiClient: FakeAPIClient(result: .success([])), userDefaults: makeDefaults(),
-                openAccount: { [connection] in .databricks(connectionID: connection.id) }
+                apiClient: FakeAPIClient(result: .success([])), userDefaults: makeDefaults()
             )
 
             let error = await #expect(throws: GoogleSignInError.self) { try await provider.restorePreviousSignIn() }
@@ -250,7 +373,7 @@ import Synchronization
         }
 
         @Test
-        func refreshReusesTheResolvedAccountWithoutRefetchingCalendars() async throws {
+        func refreshResolvesTheCurrentAccountAgain() async throws {
             let apiClient = FakeAPIClient(result: .success([Self.primaryCalendar]))
             let provider = makeProvider(connection: connection, direct: FakeDirectProvider(), apiClient: apiClient)
 
@@ -258,7 +381,7 @@ import Synchronization
             let refreshed = try await provider.refreshCurrentSession()
 
             #expect(refreshed?.account == restored.account)
-            #expect(apiClient.sessions.count == 1)
+            #expect(apiClient.sessions.count == 2)
         }
 
         @Test
@@ -287,13 +410,16 @@ import Synchronization
         }
 
         @Test
-        func disconnectIsScopedToTheConnection() async {
+        func disconnectIsScopedToTheConnection() async throws {
             let defaults = makeDefaults()
             defaults.set(true, forKey: DatabricksProxyGoogleSignInProvider.disconnectedKey(for: connection))
             let readded = DatabricksConnection(id: UUID(), host: connection.host)
             let provider = makeProvider(connection: readded, direct: FakeDirectProvider(), userDefaults: defaults)
 
-            #expect(await provider.hasPreviousSignIn)
+            // Re-adding a connection does not select it implicitly; choosing it opts in to its new identity.
+            defaults.set(readded.id.uuidString, forKey: GoogleCalendarProvider.userDefaultsKey)
+            let readdedConnections = try [ProviderAccountDirectory.Connection(id: readded.id, workspaceURL: #require(URL(string: readded.host)))]
+            #expect(await ProviderAccountDirectory.$connections.withValue(readdedConnections) { await provider.hasPreviousSignIn })
         }
 
         private static let primaryCalendar = CalendarListItem(id: "me@example.com", title: "me@example.com", colorHex: nil, isPrimary: true)
@@ -324,6 +450,7 @@ import Synchronization
             let suite = "DatabricksProxyGoogleSignInProviderTests.\(UUID().uuidString)"
             let defaults = UserDefaults(suiteName: suite)!
             defaults.removePersistentDomain(forName: suite)
+            defaults.set(proxyConnectionID.uuidString, forKey: GoogleCalendarProvider.userDefaultsKey)
             return defaults
         }
 
@@ -331,10 +458,8 @@ import Synchronization
             connection: DatabricksConnection?,
             direct: FakeDirectProvider,
             userDefaults: UserDefaults? = nil,
-            apiClient: FakeAPIClient = FakeAPIClient(result: .success([])),
-            account: CodexRuntimeProvider? = nil
+            apiClient: FakeAPIClient = FakeAPIClient(result: .success([]))
         ) -> DatabricksProxyGoogleSignInProvider {
-            let account = account ?? connection.map { .databricks(connectionID: $0.id) } ?? .local
             let memory = DatabricksTestStorage(connection: connection)
             if let connection {
                 memory.state.withLock { $0.credentials[connection.id] = Self.credential }
@@ -344,10 +469,52 @@ import Synchronization
                 oauth: DatabricksOAuthService(storage: memory.storage) { _ in throw CancellationError() },
                 storage: memory.storage,
                 apiClient: apiClient,
-                userDefaults: userDefaults ?? makeDefaults(),
-                openAccount: { account }
+                userDefaults: userDefaults ?? makeDefaults()
             )
         }
+    }
+
+    private final class ChangingDriveGrantURLProtocol: URLProtocol, @unchecked Sendable {
+        struct State: Sendable {
+            var identity = "A"
+            var fails = false
+            var aboutRequests = 0
+            var downloads = 0
+        }
+
+        static let states = Mutex<[String: State]>([:])
+        override static func canInit(with _: URLRequest) -> Bool { true }
+        override static func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+        override func startLoading() {
+            let url = request.url!
+            let about = url.path.hasSuffix("/about")
+            let query = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
+            let download = query.contains { $0.name == "alt" && $0.value == "media" }
+            let state = Self.states.withLock { states in
+                if about { states[url.host!]?.aboutRequests += 1 }
+                if download { states[url.host!]?.downloads += 1 }
+                return states[url.host!]!
+            }
+            let status = about && state.fails ? 401 : 200
+            let body: String
+            if about {
+                body = "{\"user\":{\"displayName\":\"Drive\",\"emailAddress\":\"drive@example.com\",\"permissionId\":\"\(state.identity)\"}}"
+            } else {
+                let parent = query.first { $0.name == "q" }?.value ?? ""
+                let id = parent.contains("'root'") ? "dahlia" : parent.contains("'dahlia'") ? "backups" : "backup"
+                let name = id == "backup" ? "backup.tar.gz" : id
+                body = "{\"files\":[{\"id\":\"\(id)\",\"name\":\"\(name)\"}]}"
+            }
+            client?.urlProtocol(
+                self,
+                didReceive: HTTPURLResponse(url: url, statusCode: status, httpVersion: nil, headerFields: nil)!,
+                cacheStoragePolicy: .notAllowed
+            )
+            client?.urlProtocol(self, didLoad: Data(body.utf8))
+            client?.urlProtocolDidFinishLoading(self)
+        }
+
+        override func stopLoading() {}
     }
 
     private final class DriveIdentityURLProtocol: URLProtocol, @unchecked Sendable {

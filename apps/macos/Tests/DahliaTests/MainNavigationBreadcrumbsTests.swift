@@ -39,23 +39,15 @@ import SwiftUI
         }
 
         @Test(arguments: [500.0, 1000.0], [false, true])
-        func longBreadcrumbsKeepHeaderSizeAcrossSyncStates(width: Double, reservesChatControl: Bool) throws {
+        func longBreadcrumbsKeepHeaderSize(width: Double, reservesChatControl: Bool) throws {
             let root = project(name: "01_PCA")
             let child = project(name: "IPF", parentID: root.id)
             let projects = [root.id: root, child.id: child]
             let workspace = WorkspaceRecord(id: UUID(), name: "Test", createdAt: .now, lastOpenedAt: .now)
-            for state: MeetingSyncState? in [nil, .local, .pending, .synced, .blocked(.conflict)] {
-                let textContentState: TextContentAvailability.State? = switch state {
-                case .pending: .loading
-                case .blocked(.conflict): .failed
-                default: nil
-                }
+            do {
                 let header = MainDetailHeader(
                     reservesChatControl: reservesChatControl,
-                    leadingInset: 0,
-                    syncState: state,
-                    textContentState: textContentState,
-                    retryTextContent: {}
+                    leadingInset: 0
                 ) {
                     MainNavigationBreadcrumbs(
                         workspace: workspace,

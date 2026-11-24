@@ -6,23 +6,6 @@
 
     @MainActor
     struct DahliaAccountConnectionTests {
-        @Test
-        func allApisScopeEnablesWorkspaceSync() {
-            let record = makeConnection(origin: "https://dahlia.example.com")
-
-            #expect(DahliaAccountConnection(
-                record: record,
-                account: nil,
-                isCloud: false,
-                grantedScopes: ["all-apis"]
-            ).supportsWorkspaceSync)
-            #expect(!DahliaAccountConnection(
-                record: record,
-                account: nil,
-                isCloud: false,
-                grantedScopes: ["ai-gateway"]
-            ).supportsWorkspaceSync)
-        }
 
         @Test
         func migrationAddsLocalAISettingsAndSetsDeletedConnectionToLocal() async throws {
@@ -47,56 +30,20 @@
             try AppDatabaseManager.migrator.migrate(queue)
 
             let repository = MeetingRepository(dbQueue: queue)
-            var migrated = try #require(try await queue.read { db in try WorkspaceRecord.fetchOne(db, key: workspace.id) })
-            #expect(migrated.accountConnectionId == nil)
+            let migrated = try #require(try await queue.read { db in try WorkspaceRecord.fetchOne(db, key: workspace.id) })
+            let accountConnectionID = {
+                try await queue.read { db in
+                    try UUID.fetchOne(db, sql: "SELECT accountConnectionId FROM workspaces WHERE id = ?", arguments: [workspace.id])
+                }
+            }
+            #expect(try await accountConnectionID() == nil)
             #expect(migrated.localProvider == .chatGPTSubscription)
             #expect(migrated.summaryModelID == "gpt-5.6-luna")
             #expect(!migrated.aiSettingsBackfilled)
 
             try await repository.deleteDahliaAccountConnection(id: connection.id)
 
-            migrated = try #require(try await queue.read { db in try WorkspaceRecord.fetchOne(db, key: workspace.id) })
-            #expect(migrated.accountConnectionId == nil)
-        }
-
-        @Test
-        func staleAISettingsDoNotOverwriteANewerAccountConnection() async throws {
-            let manager = try AppDatabaseManager(path: ":memory:")
-            let repository = MeetingRepository(dbQueue: manager.dbQueue)
-            let connection = makeConnection(origin: "https://server.example.com")
-            let workspace = makeWorkspace(name: "Account")
-            try await repository.insertDahliaAccountConnection(connection)
-            try repository.insertWorkspace(workspace)
-            let transferFence = try await manager.dbQueue.write {
-                try WorkspaceTransferFence.create(workspaceIDs: [workspace.id], in: $0)
-            }
-            var staleSettings = WorkspaceAISettingsSnapshot(
-                workspace: workspace,
-                localAccountSettings: .init(provider: .chatGPTSubscription, databricksProfile: "")
-            )
-            staleSettings.generationSettings.local.model = "new-summary-model"
-
-            _ = try await repository.importIntoEmptyServerWorkspace(
-                id: workspace.id,
-                connectionID: connection.id,
-                serverWorkspace: .init(
-                    workspaceId: workspace.id,
-                    connectionId: connection.id,
-                    organizationId: .v7(),
-                    name: workspace.name,
-                    createdAt: .now,
-                    revision: 1,
-                    role: "admin"
-                ),
-                transferFence: transferFence
-            )
-            _ = try await repository.updateWorkspaceAISettings(staleSettings)
-
-            let stored = try #require(try await manager.dbQueue.read { db in
-                try WorkspaceRecord.fetchOne(db, key: workspace.id)
-            })
-            #expect(stored.accountConnectionId == connection.id)
-            #expect(stored.summaryModelID == workspace.summaryModelID)
+            #expect(try await accountConnectionID() == nil)
         }
 
         @Test
@@ -224,133 +171,6 @@
             #expect(controller.connections.map(\.id) == [server.id])
             let remainingWorkspaces = try await repository.fetchAllWorkspacesAsync()
             #expect(remainingWorkspaces.map(\.id) == [workspace.id])
-        }
-
-        @Test
-        func signOutPreservesPendingServerEditsAndCredentials() async throws {
-            let manager = try AppDatabaseManager(path: ":memory:")
-            let repository = MeetingRepository(dbQueue: manager.dbQueue)
-            let connection = makeConnection(origin: "https://server.example.com")
-            let credential = makeCredential(
-                origin: connection.origin,
-                accountID: "server-user",
-                accessToken: "server-token"
-            )
-            var workspace = makeWorkspace(name: "Server")
-            workspace.accountConnectionId = connection.id
-            if workspace.syncRole == nil { workspace.syncRole = "admin" }
-            if workspace.organizationId == nil { workspace.organizationId = .v7() }
-            workspace.syncConfirmedConnectionId = connection.id
-            workspace.syncRole = "admin"
-            try await repository.insertDahliaAccountConnection(connection)
-            try repository.insertWorkspace(workspace)
-            let queuedWorkspace = workspace
-            try await manager.dbQueue.write { db in
-                try db.execute(
-                    sql: "INSERT INTO sync_entity_state(workspace_id, entity, entityId, confirmedRevision) VALUES (?, 'workspace', ?, 1)",
-                    arguments: [queuedWorkspace.id, queuedWorkspace.id]
-                )
-                try SyncTransactionRecorder.record(
-                    workspaceId: queuedWorkspace.id,
-                    operations: [SyncInitialSnapshotBuilder.workspaceOperation(queuedWorkspace, action: .update)],
-                    in: db
-                )
-            }
-            let store = CredentialStoreFake(values: [connection.id: credential])
-            let controller = makeController(store: store)
-            await controller.configure(appDatabase: manager)
-
-            controller.requestSignOut(connectionID: connection.id)
-            #expect(controller.pendingSignOutConnection?.id == connection.id)
-            #expect(store.credential(for: connection.id) != nil)
-            let signOut = try #require(controller.confirmSignOut(disposition: .moveToLocalAccount))
-            await signOut.value
-
-            let local = try #require(try repository.fetchAllWorkspaces().first)
-            #expect(local.accountConnectionId == connection.id)
-            #expect(local.syncConfirmedConnectionId == connection.id)
-            #expect(local.syncRole == "admin")
-            #expect(store.credential(for: connection.id) != nil)
-            #expect(controller.errorMessage != nil)
-            #expect(try await manager.dbQueue.read { db in
-                try Int.fetchOne(db, sql: "SELECT count(*) FROM sync_transactions")
-            } == 1)
-            #expect(try await manager.dbQueue.read { db in
-                try Int.fetchOne(db, sql: "SELECT count(*) FROM sync_entity_state")
-            } == 1)
-        }
-
-        @Test
-        func signOutCanDeleteOnlyTheLocalWorkspaceCopies() async throws {
-            let manager = try AppDatabaseManager(path: ":memory:")
-            let repository = MeetingRepository(dbQueue: manager.dbQueue)
-            let connection = makeConnection(origin: "https://server.example.com")
-            let credential = makeCredential(
-                origin: connection.origin,
-                accountID: "server-user",
-                accessToken: "server-token"
-            )
-            var workspace = makeWorkspace(name: "Server")
-            workspace.accountConnectionId = connection.id
-            if workspace.syncRole == nil { workspace.syncRole = "admin" }
-            if workspace.organizationId == nil { workspace.organizationId = .v7() }
-            workspace.syncConfirmedConnectionId = connection.id
-            workspace.syncRole = "viewer"
-            try await repository.insertDahliaAccountConnection(connection)
-            try repository.insertWorkspace(workspace)
-            let store = CredentialStoreFake(values: [connection.id: credential])
-            let controller = makeController(store: store)
-            await controller.configure(appDatabase: manager)
-
-            controller.requestSignOut(connectionID: connection.id)
-            let signOut = try #require(controller.confirmSignOut(disposition: .deleteLocalCopies))
-            await signOut.value
-
-            #expect(try repository.fetchAllWorkspaces().isEmpty)
-            #expect(store.credential(for: connection.id) == nil)
-        }
-
-        @Test
-        func signOutDoesNotDeleteAWorkspaceWithAnActiveRecording() async throws {
-            let manager = try AppDatabaseManager(path: ":memory:")
-            let repository = MeetingRepository(dbQueue: manager.dbQueue)
-            let connection = makeConnection(origin: "https://server.example.com")
-            let credential = makeCredential(
-                origin: connection.origin,
-                accountID: "server-user",
-                accessToken: "server-token"
-            )
-            var workspace = makeWorkspace(name: "Server")
-            workspace.accountConnectionId = connection.id
-            if workspace.syncRole == nil { workspace.syncRole = "admin" }
-            if workspace.organizationId == nil { workspace.organizationId = .v7() }
-            workspace.syncConfirmedConnectionId = connection.id
-            workspace.syncRole = "admin"
-            let meeting = MeetingRecord(
-                id: .v7(), workspaceId: workspace.id, projectId: nil, name: "Recording",
-                createdAt: .now, updatedAt: .now
-            )
-            let session = RecordingSessionRecord(
-                id: .v7(), meetingId: meeting.id, startedAt: .now, endedAt: nil,
-                duration: nil, offsetSeconds: 0, createdAt: .now, updatedAt: .now
-            )
-            try await repository.insertDahliaAccountConnection(connection)
-            try repository.insertWorkspace(workspace)
-            try await manager.dbQueue.write { db in
-                try meeting.insert(db)
-                try session.insert(db)
-            }
-            let store = CredentialStoreFake(values: [connection.id: credential])
-            let controller = makeController(store: store)
-            await controller.configure(appDatabase: manager)
-
-            controller.requestSignOut(connectionID: connection.id)
-            let signOut = try #require(controller.confirmSignOut(disposition: .deleteLocalCopies))
-            await signOut.value
-
-            #expect(try repository.fetchAllWorkspaces().map(\.id) == [workspace.id])
-            #expect(store.credential(for: connection.id) != nil)
-            #expect(controller.errorMessage != nil)
         }
 
         @Test

@@ -17,36 +17,37 @@ enum PiSubscription: String, CaseIterable, Identifiable, Sendable {
     }
 }
 
-extension CodexRuntimeProvider {
-    /// Pi provider IDs whose models Dahlia offers for this account. Pi lists only those with credentials.
-    var piProviderIDs: [String] {
-        switch self {
-        case .local: PiSubscription.allCases.map(\.rawValue)
-        case .databricks: PiProviderConfiguration.databricksProviderIDs
-        case .dahlia: ["dahlia"]
-        }
-    }
-
-    /// Providers whose credential is the account's token, which the extension resolves through the bridge for each use.
-    var piBridgedProviderIDs: [String] {
-        switch self {
-        case .local: []
-        case .databricks, .dahlia: piProviderIDs
-        }
-    }
-}
-
 /// Writes the account's `models.json` and `mcp.json`. Subscription providers use Pi's built-in catalog.
 enum PiProviderConfiguration {
-    static let databricksProviderIDs = ["databricks"]
+    /// Pi provider IDs whose models Dahlia offers. Pi lists only those with credentials.
+    static var providerIDs: [String] {
+        PiSubscription.allCases.map(\.rawValue) + bridgedProviderIDs
+    }
+
+    /// Providers whose credential the app holds, which the extension resolves through the bridge for each use.
+    static var bridgedProviderIDs: [String] {
+        ProviderAccountDirectory.modelAccounts.map(\.piProviderID)
+    }
+
+    /// The Pi provider ID every Databricks account used before each connection was named by its host. Saved settings
+    /// that name it move to the host once (`ProviderIDMigration`).
+    static let legacyDatabricksProviderID = "databricks"
     /// Whether a Pi provider ID names a workspace added in Agents settings: its host, the only provider IDs with a dot
     /// (Pi's own and Dahlia's, such as `openai` and `databricks`, have none; Agents settings refuses dotless hosts).
     static func isAddedWorkspace(_ providerID: some StringProtocol) -> Bool {
         providerID.contains(".")
     }
 
-    /// The one model a Databricks account starts with, and its summary and image analysis default.
-    static let databricksDefaultModel = "databricks/system.ai.claude-haiku-5-5"
+    /// Pi's own providers and the account's provider accounts, which model choices prefer over a workspace added
+    /// before every Databricks connection was a provider account.
+    static func isOwnProvider(_ providerID: some StringProtocol) -> Bool {
+        !isAddedWorkspace(providerID)
+            || ProviderAccountDirectory.databricksConnections().contains { $0.piProviderID == String(providerID) }
+    }
+
+    /// The model a Databricks connection starts with, and the image analysis default it offers, by its name in any
+    /// gateway.
+    static let databricksDefaultModel = "system.ai.claude-haiku-5-5"
 
     /// Writes these providers to `models.json`, keeping the others (such as the workspaces added in Agents settings).
     static func write(_ providers: [String: JSONValue], agentURL: URL) throws {
@@ -77,12 +78,15 @@ enum PiProviderConfiguration {
     /// A Unity AI Gateway model that Pi can run, as Agents settings lists it. Only the models turned on go to
     /// `models.json`, which has no per-model switch of its own.
     struct DatabricksModel: Equatable, Sendable {
-        /// The Pi provider: the account's own `databricks`, or a workspace added in Agents settings, by host.
+        /// The Pi provider: the gateway's workspace host.
         let providerID: String
+        /// Whether the app holds the gateway's credential (a provider account), rather than Pi (a workspace added
+        /// before every Databricks connection was a provider account).
+        var isProviderAccount = false
         let id: String
         let name: String
-        /// Every model starts off except the account's own gateway's `onByDefault` one (its first model when the gateway
-        /// does not serve that one, so a Databricks account starts with a model); the account's choice wins.
+        /// Every model starts off except a provider account's `onByDefault` one (its first model when the gateway does
+        /// not serve that one, so a new connection starts with a model); the account's choice wins.
         var isOnByDefault: Bool
         /// The Pi model entry.
         let definition: [String: JSONValue]
@@ -110,7 +114,8 @@ enum PiProviderConfiguration {
     static func databricksModels(
         workspaceURL: URL,
         services: [JSONValue]? = nil,
-        providerID: String = databricksProviderIDs[0]
+        providerID: String,
+        isProviderAccount: Bool = false
     ) throws -> [DatabricksModel] {
         let data = try Data(contentsOf: PiBundle.resourceURL("databricks-models.json"))
         guard let catalog = try JSONDecoder().decode(JSONValue.self, from: data).objectValue,
@@ -150,9 +155,9 @@ enum PiProviderConfiguration {
                   let gatewayAPI = model["gatewayApi"]?.stringValue,
                   service.apiTypes?.contains(gatewayAPI) ?? true
             else { return nil }
-            let isOnByDefault = providerID == databricksProviderIDs[0] && model["onByDefault"]?.boolValue == true
+            let isOnByDefault = isProviderAccount && model["onByDefault"]?.boolValue == true
             let modelName = model["name"]?.stringValue ?? service.id
-            if providerID != databricksProviderIDs[0] {
+            if !isProviderAccount {
                 model["name"] = .string("\(modelName) (\(workspaceURL.host()?.split(separator: ".").first ?? ""))")
             }
             model["baseUrl"] = .string(origin + route)
@@ -161,6 +166,7 @@ enum PiProviderConfiguration {
             }
             return (rank, DatabricksModel(
                 providerID: providerID,
+                isProviderAccount: isProviderAccount,
                 id: service.id,
                 name: modelName,
                 isOnByDefault: isOnByDefault,
@@ -172,33 +178,33 @@ enum PiProviderConfiguration {
             if left != right { return left < right }
             return lhs.model.id.compare(rhs.model.id, options: .numeric) == .orderedDescending
         }.map(\.model)
-        if providerID == databricksProviderIDs[0], !models.isEmpty, !models.contains(where: \.isOnByDefault) {
+        if isProviderAccount, !models.isEmpty, !models.contains(where: \.isOnByDefault) {
             models[0].isOnByDefault = true
         }
         return models
     }
 
-    /// The account's choices with its own gateway kept usable: when none of that gateway's listed models is on (the
-    /// gateway stopped serving the one the account kept on), its default comes back on. Agents settings and
+    /// The account's choices with each provider account's gateway kept usable: when none of a gateway's listed models
+    /// is on (the gateway stopped serving the one the account kept on), its default comes back on. Agents settings and
     /// `models.json` read the same result.
     static func effectiveChoices(_ choices: [String: Bool], for models: [DatabricksModel]) -> [String: Bool] {
-        guard models.first?.providerID == databricksProviderIDs[0], !models.contains(where: { $0.isOn(choices) }),
+        guard models.first?.isProviderAccount == true, !models.contains(where: { $0.isOn(choices) }),
               let fallback = models.first(where: \.isOnByDefault) ?? models.first
         else { return choices }
         return choices.merging([fallback.reference: true]) { $1 }
     }
 
-    /// A Unity AI Gateway provider with the models the account keeps on: the account's own `databricks`, whose
-    /// credential is bridged, or a workspace added in Agents settings, whose OAuth sign-in Pi keeps. Each model names its
-    /// gateway route (Anthropic, codex, MLflow, or Gemini); the provider's `baseUrl` records the workspace.
+    /// A Unity AI Gateway provider with the models the account keeps on: a provider account, whose credential is
+    /// bridged, or a workspace added before, whose OAuth sign-in Pi keeps. Each model names its gateway route
+    /// (Anthropic, codex, MLflow, or Gemini); the provider's `baseUrl` records the workspace.
     static func databricksProviders(
         _ models: [DatabricksModel],
         choices: [String: Bool],
         workspaceURL: URL,
-        providerID: String = databricksProviderIDs[0]
+        providerID: String
     ) -> [String: JSONValue] {
         [providerID: .object([
-            "name": .string(providerID == databricksProviderIDs[0] ? "Databricks" : providerID),
+            "name": .string(providerID),
             "baseUrl": .string(workspaceURL.absoluteString),
             "authHeader": .bool(true),
             "headers": .object(["Databricks-Ai-Gateway-Request-Tags": .string(#"{"source": "dahlia"}"#)]),
@@ -236,11 +242,6 @@ enum PiProviderConfiguration {
         var saved = gatewayServices(agentURL: agentURL)
         saved[providerID] = services
         try write(.object(saved.mapValues(JSONValue.array)), to: agentURL.appending(path: "gateway-models.json"))
-    }
-
-    /// The workspace recorded in the account's `models.json`, if any.
-    static func databricksWorkspaceURL(agentURL: URL) -> URL? {
-        recordedProvider("databricks", agentURL: agentURL)?["baseUrl"]?.stringValue.flatMap(URL.init(string:))
     }
 
     /// The Dahlia Server URL recorded in the account's `models.json`, if any.

@@ -5,9 +5,9 @@ struct AgentChatInstructionsSection: View {
     @AppStorage private var useForSummary: Bool
     @State private var isInfoPresented = false
 
-    init(account: CodexRuntimeProvider, defaults: UserDefaults = .standard) {
-        _instructions = AppStorage(wrappedValue: "", AgentChatInstructions.defaultsKey(for: account), store: defaults)
-        _useForSummary = AppStorage(wrappedValue: false, AgentChatInstructions.summaryEnabledKey(for: account), store: defaults)
+    init(defaults: UserDefaults = .standard) {
+        _instructions = AppStorage(wrappedValue: "", AgentChatInstructions.defaultsKey(), store: defaults)
+        _useForSummary = AppStorage(wrappedValue: false, AgentChatInstructions.summaryEnabledKey(), store: defaults)
     }
 
     var body: some View {

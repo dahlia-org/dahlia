@@ -7,15 +7,20 @@ protocol CalendarEventSourceStore: AnyObject, Sendable {
     var source: CalendarSource { get }
     var upcomingEvents: [CalendarEvent] { get }
     var isLoaded: Bool { get }
+    var loadedEvents: [CalendarEvent] { get }
     var upcomingEventsPublisher: AnyPublisher<[CalendarEvent], Never> { get }
     var statePublisher: AnyPublisher<Bool, Never> { get }
 
     func refreshIfNeeded(force: Bool) async
 }
 
+extension CalendarEventSourceStore {
+    var loadedEvents: [CalendarEvent] { isLoaded ? upcomingEvents : [] }
+}
+
 @MainActor
 final class CalendarSourceCoordinator: ObservableObject {
-    static let shared = CalendarSourceCoordinator(stores: [GoogleCalendarStore.shared, MacCalendarStore.shared])
+    static let shared = CalendarSourceCoordinator(stores: [CalendarProviderCollection.shared, MacCalendarStore.shared])
 
     @Published private(set) var eventsBySource: [CalendarSource: [CalendarEvent]]
     @Published private(set) var loadedSources: Set<CalendarSource>
@@ -66,8 +71,10 @@ final class CalendarSourceCoordinator: ObservableObject {
 
     func events(for enabledSources: Set<CalendarSource>, requiringLoadedSources: Bool = false) -> [CalendarEvent] {
         CalendarSource.allCases
-            .filter { enabledSources.contains($0) && (!requiringLoadedSources || loadedSources.contains($0)) }
-            .flatMap { eventsBySource[$0] ?? [] }
+            .filter { enabledSources.contains($0) }
+            .flatMap { source in
+                requiringLoadedSources ? (storesBySource[source]?.loadedEvents ?? []) : (eventsBySource[source] ?? [])
+            }
             .deduplicatedAcrossSources()
     }
 
@@ -118,13 +125,14 @@ final class CalendarSourceCoordinator: ObservableObject {
 
     private func schedulePersistence() {
         guard let dbQueue, !persistedSources.isEmpty else { return }
-        let snapshot = CalendarSource.allCases
-            .filter { persistedSources.contains($0) && loadedSources.contains($0) }
-            .flatMap { eventsBySource[$0] ?? [] }
-            .deduplicatedAcrossSources(mergingMissingMetadata: false)
         let previousTask = persistenceTask
         persistenceTask = Task {
             await previousTask?.value
+            // Published values have committed by the time this task runs. Each healthy connection contributes
+            // independently; a failed provider's cached projection never refreshes a saved meeting.
+            let snapshot = CalendarSource.allCases
+                .filter { self.persistedSources.contains($0) }
+                .flatMap { self.storesBySource[$0]?.loadedEvents ?? [] }
             do {
                 try await dbQueue.write { db in
                     try CalendarEventRecord.refreshLinked(events: snapshot, now: .now, in: db)
@@ -146,16 +154,14 @@ final class CalendarSourceCoordinator: ObservableObject {
         } else {
             updatedSources.remove(source)
         }
-        guard updatedSources != loadedSources else {
-            objectWillChange.send()
-            return
-        }
+        // A provider can become ready while another provider in the same source category still fails.
+        // Republish readiness so automatic recording can use the newly verified events immediately.
         loadedSources = updatedSources
-        if isLoaded { schedulePersistence() }
+        schedulePersistence()
     }
 }
 
-extension GoogleCalendarStore: CalendarEventSourceStore {
+extension GoogleCalendarStore {
     var source: CalendarSource { .google }
     var isLoaded: Bool { state == .loaded }
     var upcomingEventsPublisher: AnyPublisher<[CalendarEvent], Never> { $upcomingEvents.eraseToAnyPublisher() }

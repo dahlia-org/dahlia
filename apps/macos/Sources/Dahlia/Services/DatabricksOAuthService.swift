@@ -153,8 +153,16 @@ actor DatabricksOAuthService {
         return connection
     }
 
-    func remove(connectionID: UUID) throws {
+    /// Names a connection for display; nil or blank clears the name.
+    func rename(connectionID: UUID, to name: String?) throws {
         _ = try connection(id: connectionID)
+        try storage.renameConnection(connectionID, name?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfBlank)
+    }
+
+    func remove(connectionID: UUID) throws {
+        let connection = try connection(id: connectionID)
+        // A promoted legacy gateway must never fall back to Pi's retained OAuth after its app credential goes.
+        try storage.removeProviderRegistrations(connection)
         generations[connectionID] = UUID()
         pending[connectionID]?.task.cancel()
         pending[connectionID] = nil

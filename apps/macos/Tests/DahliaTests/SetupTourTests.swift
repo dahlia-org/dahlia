@@ -6,32 +6,6 @@
 
     @MainActor
     struct SetupTourTests {
-        @Test(arguments: [false, true])
-        func initialAccountVisibilityIsPersistedAndManualToursPreserveIt(databricks: Bool) throws {
-            let suite = "LocalAccountVisibility-\(UUID())"
-            let defaults = try #require(UserDefaults(suiteName: suite))
-            defer { defaults.removePersistentDomain(forName: suite) }
-            let settings = AppSettings(generalDefaults: defaults)
-            #expect(!settings.hideLocalAccount)
-
-            let initial = SetupTourModel(mode: .initial, currentWorkspace: nil)
-            initial.selectAccountConnection(nil, databricks: databricks ? .v7() : nil)
-            initial.initializeLocalAccountVisibility(in: defaults)
-            #expect(settings.hideLocalAccount == databricks)
-            #expect(AppSettings(generalDefaults: defaults).hideLocalAccount == databricks)
-
-            settings.hideLocalAccount = !databricks
-            initial.initializeLocalAccountVisibility(in: defaults)
-            let manual = SetupTourModel(mode: .manual, currentWorkspace: nil)
-            manual.selectAccountConnection(nil, databricks: databricks ? .v7() : nil)
-            manual.initializeLocalAccountVisibility(in: defaults)
-            #expect(settings.hideLocalAccount == !databricks)
-
-            defaults.removeObject(forKey: AppSettings.hideLocalAccountUserDefaultsKey)
-            manual.initializeLocalAccountVisibility(in: defaults)
-            #expect(defaults.object(forKey: AppSettings.hideLocalAccountUserDefaultsKey) == nil)
-        }
-
         @Test
         func pendingAccountSetupBlocksTourNavigationAndDismissal() async {
             let workspace = WorkspaceRecord(
@@ -45,7 +19,7 @@
             #expect(!model.canContinue)
             #expect(!model.canDismiss)
             model.advance()
-            await model.advanceFromAccount { _ in
+            await model.advanceFromAccount {
                 Issue.record("Pending workspace choice must not advance the original account")
                 return true
             }
@@ -61,28 +35,21 @@
             // Explicit completion releases the lock before advancing with the chosen account.
             model.isAccountSetupInProgress = true
             let connectionID = UUID.v7()
-            model.selectAccountConnection(nil, databricks: connectionID)
+            model.selectAccount(databricks: connectionID)
             #expect(!model.canContinue)
             model.isAccountSetupInProgress = false
-            await model.advanceFromAccount { account in
-                #expect(account == .databricks(connectionID: connectionID))
-                return true
-            }
+            await model.advanceFromAccount { true }
             #expect(model.currentStep == .workingLanguages)
             #expect(model.selectedDatabricksConnectionID == connectionID)
         }
 
         @Test
         func missingPiIsOfferedBeforeProvidersForEveryAccount() async {
-            for account in [CodexRuntimeProvider.local, .databricks(connectionID: .v7()), .dahlia(connectionID: .v7())] {
+            // The Local Account with a Databricks connection selected runs the same Pi as without one, and skips model providers.
+            for databricks in [nil, UUID.v7()] {
                 let model = SetupTourModel(mode: .initial, currentWorkspace: nil)
-                if case let .databricks(connectionID) = account {
-                    model.selectAccountConnection(nil, databricks: connectionID)
-                } else {
-                    model.selectAccountConnection(account.accountConnectionID)
-                }
-                await model.advanceFromAccount { selected in
-                    #expect(selected == account)
+                model.selectAccount(databricks: databricks)
+                await model.advanceFromAccount {
                     #expect(model.isCheckingPi)
                     #expect(!model.canContinue)
                     return false
@@ -91,7 +58,7 @@
                 #expect(model.visibleSteps.prefix(2) == [.account, .pi])
                 #expect(model.canContinue)
                 model.advance()
-                #expect(model.currentStep == (account == .local ? .modelProvider : .workingLanguages))
+                #expect(model.currentStep == (databricks == nil ? .modelProvider : .workingLanguages))
                 model.goBack()
                 #expect(model.currentStep == .pi)
             }
@@ -99,38 +66,34 @@
 
         @Test
         func availablePiSkipsInstallationForEveryAccount() async {
-            for account in [CodexRuntimeProvider.local, .databricks(connectionID: .v7()), .dahlia(connectionID: .v7())] {
+            for databricks in [nil, UUID.v7()] as [UUID?] {
                 let model = SetupTourModel(mode: .manual, currentWorkspace: nil)
-                if case let .databricks(connectionID) = account {
-                    model.selectAccountConnection(nil, databricks: connectionID)
-                } else {
-                    model.selectAccountConnection(account.accountConnectionID)
-                }
-                await model.advanceFromAccount { _ in true }
+                model.selectAccount(databricks: databricks)
+                await model.advanceFromAccount { true }
                 #expect(!model.visibleSteps.contains(.pi))
-                #expect(model.currentStep == (account == .local ? .modelProvider : .workingLanguages))
+                #expect(model.currentStep == (databricks == nil ? .modelProvider : .workingLanguages))
             }
         }
 
         @Test
         func piCheckRejectsAnAccountChangedWhileChecking() async {
             let model = SetupTourModel(mode: .initial, currentWorkspace: nil)
-            model.selectAccountConnection(nil)
-            await model.advanceFromAccount { _ in
-                model.selectAccountConnection(nil, databricks: .v7())
+            model.selectAccount()
+            await model.advanceFromAccount {
+                model.selectAccount(databricks: .v7())
                 return false
             }
             #expect(model.currentStep == .account)
             #expect(!model.isCheckingPi)
-            await model.advanceFromAccount { _ in false }
+            await model.advanceFromAccount { false }
             #expect(model.currentStep == .pi)
         }
 
         @Test
         func workspacePreparationDoesNotInvalidatePiDetection() async {
             let model = SetupTourModel(mode: .initial, currentWorkspace: nil)
-            model.selectAccountConnection(nil)
-            await model.advanceFromAccount { _ in
+            model.selectAccount()
+            await model.advanceFromAccount {
                 _ = await model.prepareInitialWorkspace { nil }
                 return false
             }
@@ -140,9 +103,9 @@
         @Test
         func cancelledPiDetectionStaysOnAccountSelection() async {
             let model = SetupTourModel(mode: .initial, currentWorkspace: nil)
-            model.selectAccountConnection(nil)
+            model.selectAccount()
             let task = Task {
-                await model.advanceFromAccount { _ in
+                await model.advanceFromAccount {
                     withUnsafeCurrentTask { $0?.cancel() }
                     return false
                 }
@@ -158,8 +121,8 @@
             let defaults = try #require(UserDefaults(suiteName: suiteName))
             defer { defaults.removePersistentDomain(forName: suiteName) }
             let model = SetupTourModel(mode: .initial, currentWorkspace: nil, progressDefaults: defaults)
-            model.selectAccountConnection(nil)
-            await model.advanceFromAccount { _ in false }
+            model.selectAccount()
+            await model.advanceFromAccount { false }
             let restored = SetupTourModel(mode: .initial, currentWorkspace: nil, progressDefaults: defaults)
             #expect(restored.currentStep == .pi)
             #expect(restored.visibleSteps.contains(.pi))
@@ -174,14 +137,13 @@
             defer { defaults.removePersistentDomain(forName: suiteName) }
             let databricksID = UUID.v7()
             let model = SetupTourModel(mode: .initial, currentWorkspace: nil, progressDefaults: defaults)
-            model.selectAccountConnection(nil, databricks: databricksID)
+            model.selectAccount(databricks: databricksID)
             model.advance()
             #expect(model.currentStep == .workingLanguages)
 
             let restored = SetupTourModel(mode: .initial, currentWorkspace: nil, progressDefaults: defaults)
             #expect(restored.currentStep == .workingLanguages)
             #expect(restored.selectedDatabricksConnectionID == databricksID)
-            #expect(restored.selectedAccountConnectionID == nil)
             #expect(!restored.visibleSteps.contains(.modelProvider))
         }
 
@@ -202,43 +164,13 @@
         @Test
         func preparationCanRetryWithoutBlockingOtherSteps() async {
             let model = SetupTourModel(mode: .initial, currentWorkspace: nil)
-            model.selectAccountConnection(nil)
+            model.selectAccount()
             model.advance()
             #expect(await model.prepareInitialWorkspace { nil } == nil)
             #expect(model.canContinue)
             #expect(!model.isPreparingWorkspace)
             let workspace = WorkspaceRecord(id: .v7(), name: "Local", createdAt: .now, lastOpenedAt: .distantPast)
             #expect(await model.prepareInitialWorkspace { workspace }?.id == workspace.id)
-        }
-
-        @Test
-        func accountChangeDiscardsDelayedWorkspacePreparation() async throws {
-            let model = SetupTourModel(mode: .initial, currentWorkspace: nil)
-            let connectionID = UUID.v7()
-            model.selectAccountConnection(connectionID)
-            var remote = WorkspaceRecord(id: .v7(), name: "Personal", createdAt: .now, lastOpenedAt: .distantPast)
-            remote.accountConnectionId = connectionID
-            var finish: CheckedContinuation<WorkspaceRecord?, Never>?
-            var preparing: Task<WorkspaceRecord?, Never>?
-            await withCheckedContinuation { started in
-                preparing = Task {
-                    await model.prepareInitialWorkspace {
-                        await withCheckedContinuation {
-                            finish = $0
-                            started.resume()
-                        }
-                    }
-                }
-            }
-            #expect(model.isPreparingWorkspace)
-            #expect(model.canContinue)
-            model.selectAccountConnection(nil)
-            // Returning to the same account must still reject the earlier generation.
-            model.selectAccountConnection(connectionID)
-            try #require(finish).resume(returning: remote)
-            let result = await preparing?.value
-            #expect(result == nil)
-            #expect(!model.isPreparingWorkspace)
         }
 
         @Test
@@ -325,44 +257,13 @@
             defer { defaults.removePersistentDomain(forName: suiteName) }
             let model = SetupTourModel(mode: .initial, currentWorkspace: nil, progressDefaults: defaults)
 
-            model.selectAccountConnection(nil)
+            model.selectAccount()
             model.advance()
             model.advance()
 
             let restoredModel = SetupTourModel(mode: .initial, currentWorkspace: nil, progressDefaults: defaults)
             #expect(restoredModel.currentStep == .workingLanguages)
             #expect(restoredModel.isAccountSelectionConfirmed)
-        }
-
-        @Test
-        func interruptedInitialTourRestoresItsDahliaAccount() throws {
-            let suiteName = "SetupTourAccountProgressTests-\(UUID())"
-            let defaults = try #require(UserDefaults(suiteName: suiteName))
-            defer { defaults.removePersistentDomain(forName: suiteName) }
-            let connectionID = UUID.v7()
-            let model = SetupTourModel(mode: .initial, currentWorkspace: nil, progressDefaults: defaults)
-
-            model.selectAccountConnection(connectionID)
-            model.advance()
-
-            let signedOutRestoredModel = SetupTourModel(
-                mode: .initial,
-                currentWorkspace: nil,
-                progressDefaults: defaults
-            )
-            let restoredModel = SetupTourModel(
-                mode: .initial,
-                currentWorkspace: nil,
-                signedInAccountConnectionIDs: [connectionID],
-                progressDefaults: defaults
-            )
-
-            #expect(signedOutRestoredModel.currentStep == .account)
-            #expect(!signedOutRestoredModel.isAccountSelectionConfirmed)
-            #expect(restoredModel.currentStep == .workingLanguages)
-            #expect(restoredModel.selectedAccountConnectionID == connectionID)
-            #expect(restoredModel.isAccountSelectionConfirmed)
-            #expect(!restoredModel.visibleSteps.contains(.modelProvider))
         }
 
         @Test
@@ -376,16 +277,6 @@
 
             let local = SetupTourModel(mode: .initial, currentWorkspace: nil, progressDefaults: defaults)
             #expect(local.currentStep == .modelProvider)
-
-            let connectionID = UUID.v7()
-            defaults.set(connectionID.uuidString, forKey: SetupTourPresentationPolicy.accountConnectionIDUserDefaultsKey)
-            let dahlia = SetupTourModel(
-                mode: .initial,
-                currentWorkspace: nil,
-                signedInAccountConnectionIDs: [connectionID],
-                progressDefaults: defaults
-            )
-            #expect(dahlia.currentStep == .permissions)
 
             SetupTourPresentationPolicy.saveProgress(step: .permissions, isAccountSelectionConfirmed: true, in: defaults)
             let current = SetupTourModel(mode: .initial, currentWorkspace: nil, progressDefaults: defaults)
@@ -410,7 +301,7 @@
             for mode in [SetupTourMode.initial, .manual] {
                 let model = SetupTourModel(mode: mode, currentWorkspace: nil)
 
-                model.selectAccountConnection(nil)
+                model.selectAccount()
                 model.advance()
 
                 #expect(model.currentStep == .modelProvider)
@@ -429,18 +320,19 @@
             let model = SetupTourModel(mode: .manual, currentWorkspace: workspace)
 
             #expect(model.keepsOriginalWorkspace)
-            model.selectAccountConnection(nil)
+            model.selectAccount()
             #expect(model.keepsOriginalWorkspace)
         }
 
         @Test
-        func choosingADatabricksAccountDoesNotKeepTheLocalWorkspace() {
+        func choosingADatabricksConnectionKeepsTheLocalWorkspace() {
             let workspace = WorkspaceRecord(id: .v7(), path: nil, name: "Default", createdAt: .now, lastOpenedAt: .now)
             let model = SetupTourModel(mode: .manual, currentWorkspace: workspace)
 
-            model.selectAccountConnection(nil, databricks: .v7())
+            // A Databricks connection is used by the app's one account, so the open Local workspace stays.
+            model.selectAccount(databricks: .v7())
 
-            #expect(!model.keepsOriginalWorkspace)
+            #expect(model.keepsOriginalWorkspace)
         }
 
         @Test
@@ -462,7 +354,7 @@
             let model = SetupTourModel(mode: .initial, currentWorkspace: nil)
 
             #expect(!model.canGoBack)
-            model.selectAccountConnection(nil)
+            model.selectAccount()
             model.advance()
             #expect(model.currentStep == .modelProvider)
             #expect(model.canGoBack)
@@ -471,7 +363,7 @@
         @Test
         func navigationMovesSequentiallyAndNeverPastCompletion() {
             let model = SetupTourModel(mode: .initial, currentWorkspace: nil)
-            model.selectAccountConnection(nil)
+            model.selectAccount()
             model.advance()
             model.advance()
             model.advance()
@@ -495,21 +387,6 @@
         }
 
         @Test
-        func dahliaAccountSkipsLocalModelProviderSetup() {
-            let model = SetupTourModel(mode: .initial, currentWorkspace: nil)
-            let connectionID = UUID.v7()
-
-            model.selectAccountConnection(connectionID)
-            model.advance()
-            model.advance()
-            model.advance()
-
-            #expect(model.selectedAccountConnectionID == connectionID)
-            #expect(!model.visibleSteps.contains(.modelProvider))
-            #expect(model.currentStep == .calendar)
-        }
-
-        @Test
         func savedProgressIsDetectedIndependentlyOfItsStep() throws {
             let suiteName = "SetupTourProgressTests-\(UUID())"
             let defaults = try #require(UserDefaults(suiteName: suiteName))
@@ -521,45 +398,9 @@
         }
 
         @Test
-        func signedOutWorkspaceAccountRequiresReauthentication() {
-            let connectionID = UUID.v7()
-            let currentWorkspace = WorkspaceRecord(
-                id: .v7(),
-                path: "/tmp/Current",
-                name: "Current",
-                createdAt: .now,
-                lastOpenedAt: .now,
-                accountConnectionId: connectionID
-            )
-            let signedOutModel = SetupTourModel(mode: .manual, currentWorkspace: currentWorkspace)
-            let signedInModel = SetupTourModel(
-                mode: .manual,
-                currentWorkspace: currentWorkspace,
-                signedInAccountConnectionIDs: [connectionID]
-            )
-
-            #expect(signedOutModel.selectedAccountConnectionID == connectionID)
-            #expect(!signedOutModel.isAccountSelectionConfirmed)
-            #expect(!signedOutModel.canContinue)
-            signedOutModel.advance()
-            #expect(signedOutModel.currentStep == .account)
-
-            #expect(signedInModel.isAccountSelectionConfirmed)
-            #expect(signedInModel.canContinue)
-        }
-
-        @Test
         func setupRequestsOnlyAudioPermissions() {
             #expect(PermissionSetupStepView.permissions == [.screenAndSystemAudio, .microphone])
             #expect(!PermissionSetupStepView.permissions.contains(.calendar))
-        }
-
-        @Test
-        func setupNormalizesCalendarSelectionToOneSource() {
-            #expect(CalendarSettingsView.exclusiveSetupSource(from: [.macOS]) == .macOS)
-            #expect(CalendarSettingsView.exclusiveSetupSource(from: [.google]) == .google)
-            #expect(CalendarSettingsView.exclusiveSetupSource(from: [.macOS, .google]) == .google)
-            #expect(CalendarSettingsView.exclusiveSetupSource(from: []) == .google)
         }
 
         @Test

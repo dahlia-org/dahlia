@@ -12,10 +12,6 @@ struct LocalAccountAISettings: Equatable, Sendable {
     var provider: AIAccountProvider
     var databricksProfile: String
 
-    var runtimeProvider: CodexRuntimeProvider {
-        .local
-    }
-
     init(provider: AIAccountProvider, databricksProfile: String) {
         self.provider = provider
         self.databricksProfile = databricksProfile
@@ -61,14 +57,13 @@ struct AccountInferenceSettings: Codable, Equatable, Sendable {
     var chatModelID = ""
     var chatReasoningEffort = CodexReasoningEffortOption.defaultValue
 
-    /// One key per account: a Dahlia account, a Databricks account (`databricks.<id>`), or the Local Account.
-    static func key(connectionID: UUID?, databricksConnectionID: UUID? = nil) -> String {
-        "accountInferenceSettings." + (connectionID?.uuidString.lowercased()
-            ?? databricksConnectionID.map { "databricks." + $0.uuidString.lowercased() } ?? "local")
+    /// One key per account: a Dahlia account, or the app's account (`local`).
+    static func key(connectionID: UUID?) -> String {
+        "accountInferenceSettings." + (connectionID?.uuidString.lowercased() ?? "local")
     }
 
     init(workspace: WorkspaceRecord, defaults: UserDefaults = .standard) {
-        let key = Self.key(connectionID: workspace.accountConnectionId, databricksConnectionID: workspace.databricksConnectionId)
+        let key = Self.key(connectionID: nil)
         if let data = defaults.data(forKey: key), let saved = try? JSONDecoder().decode(Self.self, from: data) {
             self = saved
             return
@@ -80,16 +75,9 @@ struct AccountInferenceSettings: Codable, Equatable, Sendable {
         liveTranscriptDraft = workspace.generationSettings.liveTranscriptDraft
         chatModelID = workspace.chatModelID
         chatReasoningEffort = workspace.chatReasoningEffort
-        if workspace.accountConnectionId == nil, workspace.databricksConnectionId != nil {
-            // A Databricks account starts with only its gateway's default model on, so its summaries use it. Image
-            // analysis keeps no saved model and prefers the same one (`CodexScreenshotAnalysisService.defaultModel`).
-            if local.model == WorkspaceGenerationSettings.LocalProcessing().model { local.model = PiProviderConfiguration.databricksDefaultModel }
-        }
         // Releases before per-account settings kept the Local Account's summary model in app defaults.
-        if workspace.accountConnectionId == nil, workspace.databricksConnectionId == nil {
-            local.model = defaults.string(forKey: LocalAccountAISettings.summaryModelKey) ?? local.model
-            local.reasoningEffort = defaults.string(forKey: LocalAccountAISettings.summaryReasoningEffortKey) ?? local.reasoningEffort
-        }
+        local.model = defaults.string(forKey: LocalAccountAISettings.summaryModelKey) ?? local.model
+        local.reasoningEffort = defaults.string(forKey: LocalAccountAISettings.summaryReasoningEffortKey) ?? local.reasoningEffort
     }
 
     init(snapshot: WorkspaceAISettingsSnapshot) {
@@ -102,9 +90,9 @@ struct AccountInferenceSettings: Codable, Equatable, Sendable {
         chatReasoningEffort = snapshot.chatReasoningEffort
     }
 
-    func save(connectionID: UUID?, databricksConnectionID: UUID? = nil, defaults: UserDefaults = .standard) {
+    func save(connectionID: UUID?, defaults: UserDefaults = .standard) {
         guard let data = try? JSONEncoder().encode(self) else { return }
-        defaults.set(data, forKey: Self.key(connectionID: connectionID, databricksConnectionID: databricksConnectionID))
+        defaults.set(data, forKey: Self.key(connectionID: connectionID))
     }
 
     func generationSettings(outputLanguage: SummaryLanguage) -> WorkspaceGenerationSettings {

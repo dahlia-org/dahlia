@@ -15,29 +15,12 @@ import GRDB
             let second = try addWorkspace(to: fixture, name: "Same")
             let skipped = try addWorkspace(to: fixture, name: "Same")
             let other = try addWorkspace(to: fixture, name: "Excluded")
-            let databricks = DatabricksConnection(id: .v7(), host: "https://example.cloud.databricks.com")
             try await fixture.database.dbQueue.write { db in
                 try db.execute(sql: "INSERT INTO tags(name, colorHex, createdAt) VALUES ('Shared', '#000000', ?)", arguments: [fixture.now])
                 let tagId = db.lastInsertedRowID
                 for meetingId in [fixture.meeting.id, second.meeting.id] {
                     try db.execute(sql: "INSERT INTO meeting_tags(meetingId, tagId) VALUES (?, ?)", arguments: [meetingId, tagId])
                 }
-                let connection = DahliaAccountConnectionRecord(id: .v7(), origin: "https://example.invalid", clientID: "test", createdAt: fixture.now)
-                try connection.insert(db)
-                // The overwritten workspace belongs to a Databricks account and stays there.
-                try DahliaAccountConnectionRecord(databricks, createdAt: fixture.now).insert(db)
-                try db.execute(
-                    sql: "UPDATE workspaces SET databricksConnectionId = ? WHERE id = ?",
-                    arguments: [databricks.id, fixture.meeting.workspaceId]
-                )
-                try db.execute(
-                    sql: "UPDATE workspaces SET accountConnectionId = ?, organizationId = COALESCE(organizationId, id), syncRole = 'admin', syncPullCursor = 'keep' WHERE id = ?",
-                    arguments: [connection.id, other.workspace.id]
-                )
-                try db.execute(
-                    sql: "INSERT INTO sync_transactions(id, workspace_id, connectionId, createdAt, availableAt) VALUES (?, ?, ?, ?, ?)",
-                    arguments: [UUID.v7(), other.workspace.id, connection.id, fixture.now, fixture.now]
-                )
             }
             // Chats are not in backups; an overwritten Workspace's Threads keep their Project.
             let chatProjectID = UUID.v7()
@@ -69,7 +52,7 @@ import GRDB
                 #expect(try MeetingRecord.fetchCount(db) == 3)
                 #expect(try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM tags") == 1)
                 #expect(try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM meeting_tags") == 2)
-                #expect(try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM accounts") == 0)
+                #expect(try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM provider_accounts") == 0)
                 #expect(try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM sync_transactions") == 0)
             }
             try backup.close()
@@ -97,14 +80,11 @@ import GRDB
             try await result.dbQueue.read { db throws in
                 #expect(try WorkspaceRecord.fetchCount(db) == 5)
                 #expect(try MeetingRecord.fetchOne(db, key: fixture.meeting.id)?.name == fixture.meeting.name)
-                #expect(try WorkspaceRecord.fetchOne(db, key: fixture.meeting.workspaceId)?.databricksConnectionId == databricks.id)
                 #expect(try UUID.fetchOne(db, sql: "SELECT projectID FROM chat_threads WHERE title = 'Linked'") == chatProjectID)
                 for meeting in [second.meeting, skipped.meeting, other.meeting] {
                     #expect(try MeetingRecord.fetchOne(db, key: meeting.id)?.name == "Changed")
                 }
                 #expect(try MeetingRecord.filter(Column("workspace_id") == freshID).fetchOne(db)?.name == second.meeting.name)
-                #expect(try WorkspaceRecord.fetchOne(db, key: other.workspace.id)?.syncPullCursor == "keep")
-                #expect(try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM sync_transactions") == 1)
                 #expect(try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM tags") == 1)
                 #expect(try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM meeting_tags") == 3)
             }
@@ -139,7 +119,7 @@ import GRDB
             }
         }
 
-        @Test(arguments: ["content", "missing", "synced", "safety"], [false, true])
+        @Test(arguments: ["content", "missing", "safety"], [false, true])
         func failedWorkspaceRollsBackWhileOtherWorkspaceSucceeds(failure: String, failingFirst: Bool) async throws {
             let fixture = try BatchAudioTestFixture(name: "BatchFailure", endedAt: .now, batchCompletedAt: .now)
             defer { fixture.removeFiles() }
@@ -183,8 +163,6 @@ import GRDB
             let live = try AppDatabaseManager(path: databaseURL.path)
             try await live.dbQueue.write { db in
                 if failure == "missing" { _ = try WorkspaceRecord.deleteOne(db, key: second.workspace.id) }
-                if failure ==
-                    "synced" { try db.execute(sql: "UPDATE workspaces SET syncRole = 'admin' WHERE id = ?", arguments: [second.workspace.id]) }
             }
             try live.close()
             if failure == "safety" {
@@ -293,12 +271,6 @@ import GRDB
             #expect(!model.canRestore)
             model.restoreSelections[1].name = "Restored"
             #expect(model.canRestore)
-            let overwrittenId = model.restoreSelections[0].id
-            try await fixture.database.dbQueue.write { db in
-                try db.execute(sql: "UPDATE workspaces SET syncRole = 'admin' WHERE id = ?", arguments: [overwrittenId])
-            }
-            await model.refresh()
-            #expect(!model.canRestore)
             model.restoreSelections[0].mode = nil
             #expect(model.canRestore)
         }

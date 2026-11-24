@@ -4,6 +4,7 @@ import Foundation
 enum SettingsCategory: String, CaseIterable, Identifiable {
     case accountsAndWorkspaces
     case accountPreferences
+    case providers
     case agents
     case skills
     case memory
@@ -35,7 +36,6 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
     case mcp
     case dahliaMCP
     case instructions
-    case betaFeatures
     case audioDiagnostics
 
     var id: String { rawValue }
@@ -44,6 +44,7 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
         switch self {
         case .accountsAndWorkspaces: L10n.serverConnections
         case .accountPreferences: L10n.accountPreferences
+        case .providers: L10n.providerAccounts
         case .agents: L10n.agents
         case .skills: L10n.agentSkills
         case .memory: L10n.agentMemory
@@ -70,7 +71,6 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
         case .mcp: L10n.mcp
         case .dahliaMCP: L10n.dahliaMCP
         case .instructions: L10n.instructions
-        case .betaFeatures: L10n.betaFeatures
         case .audioDiagnostics: L10n.diagnostics
         }
     }
@@ -79,6 +79,7 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
         switch self {
         case .accountsAndWorkspaces: "brain"
         case .accountPreferences: "text.badge.star"
+        case .providers: "person.badge.key"
         case .agents: "sparkles"
         case .skills: "book.closed"
         case .memory: "brain.head.profile"
@@ -105,7 +106,6 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
         case .mcp: "network"
         case .dahliaMCP: "point.3.connected.trianglepath.dotted"
         case .instructions: "list.bullet.clipboard"
-        case .betaFeatures: "testtube.2"
         case .audioDiagnostics: "stethoscope"
         }
     }
@@ -141,6 +141,11 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
                 L10n.imageAnalysis,
                 L10n.imageAnalysisEnabled,
                 "AI",
+            ]
+        case .providers:
+            [
+                L10n.addProvider, L10n.renameProviderAccount, L10n.signInAgain, L10n.signOut,
+                "ChatGPT", "OpenAI", "Anthropic", "Claude", "Databricks", L10n.unityGateway, "Google", L10n.googleCalendar, L10n.googleDrive,
             ]
         case .agents:
             // The services Unity AI Gateway commonly offers; a workspace lists its own when a server is added.
@@ -238,15 +243,11 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
                 + Self.accountPreferences.searchTerms + Self.macInference.searchTerms
         case .backups:
             [
-                L10n.screenshotCacheLimit,
                 L10n.backups,
                 L10n.workspace,
                 L10n.createBackup,
                 L10n.importBackup,
                 L10n.restoreBackup,
-                L10n.serverContentRetention,
-                L10n.serverContentRetentionDays,
-                L10n.forever,
                 L10n.batchAudioRetentionPeriod,
                 L10n.batchTranscriptionStallTimeout,
             ]

@@ -6,7 +6,6 @@ import Observation
 @MainActor
 @Observable
 final class PiLaunchSettingsModel {
-    let account: CodexRuntimeProvider
     private(set) var settings: PiLaunchSettings {
         didSet {
             if oldValue.commandDiscovery != settings.commandDiscovery { commandDiscoveryRevision += 1 }
@@ -33,11 +32,10 @@ final class PiLaunchSettingsModel {
         )
     }
 
-    init(account: CodexRuntimeProvider, defaults: UserDefaults = .standard, secrets: Secrets = .keychain) {
-        self.account = account
+    init(defaults: UserDefaults = .standard, secrets: Secrets = .keychain) {
         self.defaults = defaults
         self.secrets = secrets
-        settings = PiLaunchSettings.load(for: account, defaults: defaults)
+        settings = PiLaunchSettings.load(defaults: defaults)
     }
 
     /// Checks which secrets have a stored value, without returning the values.
@@ -115,10 +113,10 @@ final class PiLaunchSettingsModel {
     }
 
     private func secretKey(_ id: UUID) -> String {
-        PiLaunchSettings.secretKey(for: account, id: id)
+        PiLaunchSettings.secretKey(id: id)
     }
 
     private func save() {
-        settings.save(for: account, defaults: defaults)
+        settings.save(defaults: defaults)
     }
 }

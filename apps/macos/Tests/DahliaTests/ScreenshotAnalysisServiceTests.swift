@@ -24,7 +24,6 @@ import Foundation
                     id: screenshotID,
                     imageData: Data([1]),
                     mimeType: "image/png",
-                    runtimeProvider: .local,
                     model: "openai/primary",
                     fallbackModel: "openai/fallback"
                 ),
@@ -51,7 +50,7 @@ import Foundation
             let meetingID = UUID.v7()
             let screenshotID = UUID.v7()
             let analysis = try await CodexScreenshotAnalysisService.codexInputs(for: [
-                ScreenshotAnalysisInput(id: screenshotID, imageData: data, mimeType: "image/webp", runtimeProvider: .local),
+                ScreenshotAnalysisInput(id: screenshotID, imageData: data, mimeType: "image/webp"),
             ])
             let summary = try await SummaryService.makeCodexInputs(.init(
                 promptContext: .init(meetingId: meetingID, recordedAt: .now, calendarEvent: nil, projectName: nil, projectDescription: nil),
@@ -81,9 +80,7 @@ import Foundation
                     ScreenshotAnalysisInput(
                         id: .v7(),
                         imageData: Data([1]),
-                        mimeType: "image/png",
-                        runtimeProvider: .local
-                    ),
+                        mimeType: "image/png"),
                 ])
             }
             preparation.cancel()
@@ -94,14 +91,10 @@ import Foundation
         }
 
         @Test(arguments: [
-            (CodexRuntimeProvider.local, nil as String?, "openai/gpt-6-luna"),
-            (.databricks(connectionID: .v7()), nil, "databricks/system.ai.gpt-6-luna"),
-            (.dahlia(connectionID: .v7()), nil, "dahlia/gpt-6-luna"),
-            (.local, "openai/gpt-5.6-luna", "openai/gpt-5.6-luna"),
-            (.dahlia(connectionID: .v7()), "dahlia/gpt-6-sol", "dahlia/gpt-6-sol"),
+            (nil as String?, "openai/gpt-6-luna"),
+            ("openai/gpt-5.6-luna", "openai/gpt-5.6-luna"),
         ])
         func sendsOneStructuredLunaRequestForOneScreenshot(
-            provider: CodexRuntimeProvider,
             configuredModel: String?,
             expectedModel: String
         ) async throws {
@@ -116,13 +109,12 @@ import Foundation
                 return TestPiTransport.model(provider: parts[0], id: parts[1])
             }
             let log = TestPiTransportLog()
-            let pi = TestPiRuntime.generating(provider: provider, models: models.reversed(), reply: response, log: log)
+            let pi = TestPiRuntime.generating(models: models.reversed(), reply: response, log: log)
             let analyzer = CodexScreenshotAnalysisService(appServer: pi.service)
             let input = ScreenshotAnalysisInput(
                 id: screenshotID,
                 imageData: Data([1]),
-                mimeType: "image/png",
-                runtimeProvider: provider, outputLanguage: .en, model: configuredModel
+                mimeType: "image/png", outputLanguage: .en, model: configuredModel
             )
 
             let results = try await analyzer.analyze([input])
@@ -153,7 +145,7 @@ import Foundation
             let pi = TestPiRuntime.generating(models: [TestPiTransport.model(provider: "openai", id: "gpt-6-luna")], reply: response)
 
             let results = try await CodexScreenshotAnalysisService(appServer: pi.service).analyze([
-                ScreenshotAnalysisInput(id: screenshotID, imageData: Data([1]), mimeType: "image/png", runtimeProvider: .local),
+                ScreenshotAnalysisInput(id: screenshotID, imageData: Data([1]), mimeType: "image/png"),
             ])
 
             #expect(results == [ScreenshotAnalysis(screenshotID: screenshotID, ocrText: "Maps", caption: "A browser window")])
@@ -168,15 +160,11 @@ import Foundation
                     ScreenshotAnalysisInput(
                         id: .v7(),
                         imageData: Data([1]),
-                        mimeType: "image/png",
-                        runtimeProvider: .local
-                    ),
+                        mimeType: "image/png"),
                     ScreenshotAnalysisInput(
                         id: .v7(),
                         imageData: Data([2]),
-                        mimeType: "image/png",
-                        runtimeProvider: .local
-                    ),
+                        mimeType: "image/png"),
                 ])
             }
         }
@@ -197,9 +185,7 @@ import Foundation
                     ScreenshotAnalysisInput(
                         id: screenshotID,
                         imageData: Data([1]),
-                        mimeType: "image/png",
-                        runtimeProvider: .local
-                    ),
+                        mimeType: "image/png"),
                 ])
             }
         }

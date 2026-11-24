@@ -49,59 +49,27 @@ final class MainSearchModel {
     @ObservationIgnored private var activeRankingPolicy: MeetingSearchRankingPolicy?
     @ObservationIgnored private var pendingQualifierText: String?
 
-    private var remoteMeetings: [MeetingSidebarItem] = []
-    private var remoteScreenshots: [ScreenshotSearchResult] = []
-    private var remoteProjects: [ProjectOverviewItem] = []
-    private var localPendingMeetings: [MeetingSidebarItem] = []
-    private var localPendingProjects: [ProjectOverviewItem] = []
-    private var localPendingScreenshots: [ScreenshotSearchResult] = []
-    private var usesServerSearch = false
-    private var serverSearchReady = false
-    private(set) var serverSearchFailed = false
-    private var serverSearchLoading = false
-    private var serverSearchLimited = false
-    private var pendingSearchUnavailable = false
-    private var serverMeetingVisible = 50
-    private var serverScreenshotVisible = 20
-    @ObservationIgnored private var remoteTask: Task<Void, Never>?
-    @ObservationIgnored private var remoteGeneration = 0
-
     var meetings: [MeetingSidebarItem] {
-        guard resultKind.isEmpty || resultKind == "meeting" else { return [] }
-        return serverSearchReady ? Array(remoteMeetings.prefix(serverMeetingVisible)) : localMeetings
+        resultKind.isEmpty || resultKind == "meeting" ? localMeetings : []
     }
 
     var screenshots: [ScreenshotSearchResult] {
-        guard resultKind.isEmpty || resultKind == "screenshot" else { return [] }
-        return serverSearchReady ? Array(remoteScreenshots.prefix(serverScreenshotVisible)) : localScreenshots
+        resultKind.isEmpty || resultKind == "screenshot" ? localScreenshots : []
     }
 
     var projects: [ProjectOverviewItem] {
-        guard resultKind.isEmpty || resultKind == "project" else { return [] }
-        return serverSearchReady ? remoteProjects : localProjects
+        resultKind.isEmpty || resultKind == "project" ? localProjects : []
     }
 
-    var pendingMeetings: [MeetingSidebarItem] { resultKind.isEmpty || resultKind == "meeting" ? localPendingMeetings : [] }
-    var pendingScreenshots: [ScreenshotSearchResult] { resultKind.isEmpty || resultKind == "screenshot" ? localPendingScreenshots : [] }
-    var pendingProjects: [ProjectOverviewItem] { resultKind.isEmpty || resultKind == "project" ? localPendingProjects : [] }
-    var hasMoreMeetings: Bool { serverSearchReady ? remoteMeetings.count > serverMeetingVisible : hasMoreLocalMeetings }
-    var hasMoreScreenshots: Bool { serverSearchReady ? remoteScreenshots.count > serverScreenshotVisible : hasMoreLocalScreenshots }
-    var searchCoverage: String? {
-        if !usesServerSearch { return isRecent ? nil : L10n.textContentSearchLocal }
-        if serverSearchLoading { return L10n.textContentSearchLoading }
-        if serverSearchFailed { return L10n.serverSearchLocalFallback }
-        if pendingSearchUnavailable { return L10n.serverSearchPendingUnavailable }
-        return serverSearchLimited ? L10n.serverSearchTopResults : L10n.serverSearchRanked
-    }
+    var hasMoreMeetings: Bool { hasMoreLocalMeetings }
+    var hasMoreScreenshots: Bool { hasMoreLocalScreenshots }
+    var searchCoverage: String? { isRecent ? nil : L10n.textContentSearchLocal }
 
     var resultIDs: [MainSearchResultID] {
         meetings.map { .meeting($0.id) }
             + presentedScreenshots.map { .screenshot($0.id) }
             + projects.map { .project($0.id) }
             + chats.map { .chat($0.id) }
-            + pendingProjects.map { .project($0.id) }
-            + pendingMeetings.map { .meeting($0.id) }
-            + pendingScreenshots.map { .screenshot($0.id) }
     }
 
     var presentedScreenshots: [ScreenshotSearchResult] {
@@ -109,8 +77,7 @@ final class MainSearchModel {
     }
 
     var hasResults: Bool {
-        !chats.isEmpty || !meetings.isEmpty || !presentedScreenshots.isEmpty || !projects.isEmpty || !pendingMeetings.isEmpty || !pendingScreenshots
-            .isEmpty || !pendingProjects.isEmpty
+        !chats.isEmpty || !meetings.isEmpty || !presentedScreenshots.isEmpty || !projects.isEmpty
     }
 
     func present(using sidebarViewModel: SidebarViewModel) {
@@ -167,26 +134,18 @@ final class MainSearchModel {
         let criteria = searchCriteria(using: sidebarViewModel)
         if criteria != activeMeetingCriteria {
             startSearch(using: sidebarViewModel, delay: nil, appending: false)
-        } else if !serverSearchReady {
+        } else {
             startProjectSearch(criteria: criteria, using: sidebarViewModel)
         }
     }
 
     func loadMore(using sidebarViewModel: SidebarViewModel) {
         guard hasMoreMeetings, !isLoading else { return }
-        if serverSearchReady {
-            serverMeetingVisible += MainSearchDesign.meetingPageSize
-            return
-        }
         startSearch(using: sidebarViewModel, delay: nil, appending: true)
     }
 
     func loadMoreScreenshots(using sidebarViewModel: SidebarViewModel) {
         guard hasMoreScreenshots, !isLoadingScreenshots else { return }
-        if serverSearchReady {
-            serverScreenshotVisible += MainSearchDesign.screenshotPageSize
-            return
-        }
         startScreenshotSearch(
             criteria: activeMeetingCriteria,
             using: sidebarViewModel,
@@ -218,7 +177,6 @@ final class MainSearchModel {
     }
 
     private func resetSearch() {
-        resetRemoteSearch()
         searchTask?.cancel()
         chatSearchTask?.cancel()
         chatGeneration &+= 1
@@ -275,11 +233,6 @@ final class MainSearchModel {
 
         preparePresentation(criteria: criteria, appending: appendsCurrentRanking)
         if !appendsCurrentRanking {
-            resetRemoteSearch()
-            usesServerSearch = sidebarViewModel.currentWorkspace?.accountConnectionId != nil
-                && criteria.tagIDs.isEmpty && criteria.projectIDs.count <= 1
-            serverSearchLoading = usesServerSearch
-            serverMeetingVisible = criteria.isEmpty ? MainSearchDesign.recentResultLimit : MainSearchDesign.meetingPageSize
             startProjectSearch(criteria: criteria, using: sidebarViewModel)
             startChatSearch(criteria: criteria, using: sidebarViewModel, appending: false, delay: delay)
             startScreenshotSearch(
@@ -301,9 +254,6 @@ final class MainSearchModel {
                 if let delay {
                     try await Task.sleep(for: delay)
                 }
-                if !appendsCurrentRanking, let self, self.generation == requestGeneration, self.usesServerSearch {
-                    self.startRemoteSearch(using: sidebarViewModel)
-                }
                 let page = try await MeetingRepository.searchMeetingSidebarPage(
                     workspaceId: workspaceID,
                     criteria: criteria,
@@ -323,8 +273,7 @@ final class MainSearchModel {
             } catch {
                 guard let self, self.generation == requestGeneration else { return }
                 self.isLoading = false
-                if !self.serverSearchReady { self.errorMessage = error.localizedDescription }
-                if self.usesServerSearch { self.hasCompletedInitialMeetingSearch = true }
+                self.errorMessage = error.localizedDescription
             }
         }
     }
@@ -346,22 +295,20 @@ final class MainSearchModel {
         }
         lastChatSearchError = nil
         guard let workspace = sidebarViewModel.currentWorkspace, let dbQueue = sidebarViewModel.dbQueue else { return }
-        let provider = CodexRuntimeProvider(workspace: workspace)
         let offset = chatOffset
         isFetchingChats = true
         chatSearchTask = Task { [weak self] in
             do {
                 if let delay { try await Task.sleep(for: delay) }
                 let page = try await MeetingRepository.searchChatPage(
-                    accountID: provider.accountKey,
+                    accountID: AppAccount.key,
                     criteria: criteria,
                     offset: offset,
                     dbQueue: dbQueue
                 )
                 try Task.checkCancellation()
                 guard let self, self.chatGeneration == requestGeneration,
-                      sidebarViewModel.currentWorkspace?.id == workspace.id,
-                      CodexRuntimeProvider(workspace: sidebarViewModel.currentWorkspace) == provider else { return }
+                      sidebarViewModel.currentWorkspace?.id == workspace.id else { return }
                 // A Thread that moved between pages comes back in a later offset page; list it once.
                 let listed = Set(appending ? self.localChats.map(\.id) : [])
                 let added = page.threads.filter { !listed.contains($0.id) }
@@ -377,77 +324,6 @@ final class MainSearchModel {
                 self.lastChatSearchError = error.localizedDescription
             }
         }
-    }
-
-    private func resetRemoteSearch() {
-        remoteTask?.cancel()
-        remoteTask = nil
-        remoteGeneration &+= 1
-        remoteMeetings = []
-        remoteScreenshots = []
-        remoteProjects = []
-        localPendingProjects = []
-        localPendingMeetings = []
-        localPendingScreenshots = []
-        usesServerSearch = false
-        serverSearchReady = false
-        serverSearchFailed = false
-        serverSearchLoading = false
-        serverSearchLimited = false
-        pendingSearchUnavailable = false
-        serverScreenshotVisible = MainSearchDesign.screenshotPageSize
-    }
-
-    func retryServerSearch(using sidebarViewModel: SidebarViewModel) {
-        startRemoteSearch(using: sidebarViewModel)
-    }
-
-    private func startRemoteSearch(using sidebarViewModel: SidebarViewModel) {
-        guard usesServerSearch, remoteTask == nil,
-              let workspaceId = sidebarViewModel.currentWorkspace?.id, let queue = sidebarViewModel.dbQueue else { return }
-        let expectedGeneration = remoteGeneration
-        let connectionId = sidebarViewModel.currentWorkspace?.accountConnectionId
-        let criteria = activeMeetingCriteria
-        serverSearchLoading = true
-        remoteTask = Task { [weak self] in
-            do {
-                let result = try await MeetingRepository.serverSearch(workspaceId: workspaceId, criteria: criteria, dbQueue: queue)
-                guard let self, !Task.isCancelled, self.remoteGeneration == expectedGeneration,
-                      sidebarViewModel.currentWorkspace?.id == workspaceId,
-                      sidebarViewModel.currentWorkspace?.accountConnectionId == connectionId else { return }
-                self.applyServerSearch(result)
-            } catch {
-                guard let self, !Task.isCancelled, self.remoteGeneration == expectedGeneration else { return }
-                self.serverSearchReady = false
-                self.localPendingProjects = []
-                self.localPendingMeetings = []
-                self.localPendingScreenshots = []
-                self.serverSearchFailed = true
-            }
-            guard let self, self.remoteGeneration == expectedGeneration else { return }
-            self.serverSearchLoading = false
-            self.remoteTask = nil
-        }
-    }
-
-    func applyServerSearch(_ result: ServerSearchProjection) {
-        remoteMeetings = result.meetings
-        remoteScreenshots = result.screenshots
-        remoteProjects = result.projects
-        localPendingProjects = result.pendingProjects
-        localPendingMeetings = result.pendingMeetings
-        localPendingScreenshots = result.pendingScreenshots
-        serverSearchLimited = result.limited
-        pendingSearchUnavailable = result.pendingUnavailable
-        serverSearchReady = true
-        serverSearchFailed = false
-        isLoading = false
-        isLoadingScreenshots = false
-        hasCompletedInitialMeetingSearch = true
-        isProjectCatalogLoading = false
-        projectCatalogLoadFailed = false
-        errorMessage = nil
-        clearInvalidSelection()
     }
 
     private func apply(_ page: MeetingSearchPage, appending: Bool) {
@@ -593,7 +469,6 @@ final class MainSearchModel {
             guard let self, self.projectGeneration == requestGeneration else { return }
             self.localProjects = results
             self.isProjectCatalogLoading = false
-            if self.serverSearchReady { self.projectCatalogLoadFailed = false }
             self.clearInvalidSelection()
         }
     }

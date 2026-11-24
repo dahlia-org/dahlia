@@ -1,58 +1,30 @@
-import DahliaServerAPI
 import Foundation
 import GRDB
 import Observation
-
-struct PendingWorkspaceServerAdoption: Identifiable {
-    let generation = UUID()
-    let workspace: WorkspaceRecord
-    let connection: DahliaAccountConnection
-    let serverWorkspaces: [CloudWorkspaceRecord]
-    let organizations: [Components.Schemas.Organization]
-
-    var id: UUID { workspace.id }
-}
 
 /// 初回起動と設定画面で共有するワークスペースの管理状態。
 @MainActor
 @Observable
 final class WorkspaceManagementModel {
-    typealias CloudWorkspaceFetcher = (DahliaAccountConnectionRecord) async throws -> [CloudWorkspaceRecord]
-    typealias OrganizationFetcher = (DahliaAccountConnectionRecord) async throws -> [Components.Schemas.Organization]
-
-    /// The first workspace of the Local and Databricks accounts.
+    /// The first workspace of the app's account.
     static let initialWorkspaceName = "Default"
 
     static let defaultWorkspaceURL = URL.documentsDirectory
         .appending(path: "Dahlia", directoryHint: .isDirectory)
 
     private(set) var workspaces: [WorkspaceRecord] = []
-    private(set) var blockedSyncWorkspaceIDs: Set<UUID> = []
-    private(set) var pendingServerAdoption: PendingWorkspaceServerAdoption?
     private(set) var errorMessage = ""
     private(set) var isLoading = false
     private(set) var isRemovingWorkspace = false
     private(set) var isUpdatingOutputLanguage = false
     private(set) var isRenamingWorkspace = false
-    private(set) var updatingWorkspaceAccountID: UUID?
-    private(set) var serverAdoptionStep: LocalWorkspaceImport.Step?
     var isShowingError = false
 
     private var appDatabase: AppDatabaseManager?
     private(set) var hasLoadedWorkspaces = false
     private var repository: MeetingRepository?
-    private let cloudWorkspaceFetcher: CloudWorkspaceFetcher?
-    private let organizationFetcher: OrganizationFetcher?
     @ObservationIgnored private var initialLocalWorkspaceTask: Task<WorkspaceRecord?, Never>?
-    private var syncObservation: AnyDatabaseCancellable?
-
-    init(
-        cloudWorkspaceFetcher: CloudWorkspaceFetcher? = nil,
-        organizationFetcher: OrganizationFetcher? = nil
-    ) {
-        self.cloudWorkspaceFetcher = cloudWorkspaceFetcher
-        self.organizationFetcher = organizationFetcher
-    }
+    private var workspaceObservation: AnyDatabaseCancellable?
 
     func configure(appDatabase: AppDatabaseManager?) async {
         if self.appDatabase === appDatabase, hasLoadedWorkspaces {
@@ -62,18 +34,14 @@ final class WorkspaceManagementModel {
         self.appDatabase = appDatabase
         hasLoadedWorkspaces = false
         repository = appDatabase.map { MeetingRepository(dbQueue: $0.dbQueue) }
-        syncObservation?.cancel()
+        workspaceObservation?.cancel()
         if let dbQueue = appDatabase?.dbQueue {
-            syncObservation = ValueObservation.tracking { db in
-                try (
-                    WorkspaceRecord.order(Column("lastOpenedAt").desc).fetchAll(db),
-                    UUID.fetchSet(db, sql: "SELECT DISTINCT workspace_id FROM sync_transactions WHERE blockedReason IS NOT NULL")
-                )
-            }.start(in: dbQueue, onError: { _ in }, onChange: { [weak self] values in
+            workspaceObservation = ValueObservation.tracking { db in
+                try WorkspaceRecord.order(Column("lastOpenedAt").desc).fetchAll(db)
+            }.start(in: dbQueue, onError: { _ in }, onChange: { [weak self] workspaces in
                 Task { @MainActor in
                     guard let self, self.appDatabase?.dbQueue === dbQueue else { return }
-                    self.workspaces = values.0
-                    self.blockedSyncWorkspaceIDs = values.1
+                    self.workspaces = workspaces
                 }
             })
         }
@@ -83,7 +51,6 @@ final class WorkspaceManagementModel {
     func loadWorkspaces() async {
         guard let repository else {
             workspaces = []
-            blockedSyncWorkspaceIDs = []
             hasLoadedWorkspaces = false
             return
         }
@@ -92,7 +59,6 @@ final class WorkspaceManagementModel {
         defer { isLoading = false }
         do {
             workspaces = try await repository.fetchAllWorkspacesAsync()
-            blockedSyncWorkspaceIDs = try await repository.blockedSyncWorkspaceIDs()
             hasLoadedWorkspaces = true
         } catch {
             hasLoadedWorkspaces = false
@@ -101,51 +67,19 @@ final class WorkspaceManagementModel {
         }
     }
 
-    private func fetchCloudWorkspaces(from connection: DahliaAccountConnectionRecord) async throws -> [CloudWorkspaceRecord] {
-        if let cloudWorkspaceFetcher {
-            return try await cloudWorkspaceFetcher(connection)
-        }
-        let token = try await DahliaCloudTokenServiceRegistry.shared.validAccessToken(connectionID: connection.id)
-        return try await CloudWorkspaceDiscovery.fetch(connection: connection, token: token)
-    }
-
     func resolveExistingStartupWorkspace(appDatabase: AppDatabaseManager) async -> WorkspaceRecord? {
         await configure(appDatabase: appDatabase)
         guard hasLoadedWorkspaces else { return nil }
         return workspaces.first(where: { $0.lastOpenedAt != .distantPast })
     }
 
-    func resolveInitialWorkspace(
-        accountConnectionID: UUID?,
-        discover: () async throws -> Void
-    ) async -> WorkspaceRecord? {
-        if let accountConnectionID {
-            do {
-                try await discover()
-                try Task.checkCancellation()
-                await loadWorkspaces()
-                guard hasLoadedWorkspaces else { return nil }
-                return workspaces.filter {
-                    $0.accountConnectionId == accountConnectionID && $0.syncConfirmedConnectionId == accountConnectionID
-                }.min {
-                    let firstIsPersonal = $0.personalUserId != nil
-                    let secondIsPersonal = $1.personalUserId != nil
-                    if firstIsPersonal != secondIsPersonal { return firstIsPersonal }
-                    if $0.createdAt != $1.createdAt { return $0.createdAt < $1.createdAt }
-                    return $0.id.uuidString < $1.id.uuidString
-                }
-            } catch {
-                return nil
-            }
-        }
-        // Keep a committed Local workspace reusable even if account selection changes during creation.
+    func resolveInitialWorkspace() async -> WorkspaceRecord? {
+        // Keep a committed workspace reusable even if the setup tour asks again during creation.
         if let initialLocalWorkspaceTask { return await initialLocalWorkspaceTask.value }
         let task = Task<WorkspaceRecord?, Never> { @MainActor in
             await self.loadWorkspaces()
             guard self.hasLoadedWorkspaces else { return nil }
-            if let existing = self.workspaces.first(where: { $0.accountConnectionId == nil && $0.databricksConnectionId == nil }) {
-                return existing
-            }
+            if let existing = self.workspaces.first { return existing }
             return await self.createWorkspace(named: Self.initialWorkspaceName)
         }
         initialLocalWorkspaceTask = task
@@ -153,7 +87,7 @@ final class WorkspaceManagementModel {
         return await task.value
     }
 
-    func createWorkspace(at url: URL, databricksConnectionID: UUID? = nil) async -> WorkspaceRecord? {
+    func createWorkspace(at url: URL) async -> WorkspaceRecord? {
         do {
             try await Self.createDirectory(at: url)
         } catch {
@@ -161,18 +95,10 @@ final class WorkspaceManagementModel {
             presentError(L10n.workspaceAddFailed, error: error, source: "createWorkspace.directory")
             return nil
         }
-        guard let workspace = await registerWorkspace(at: url, markAsOpened: false, databricksConnectionID: databricksConnectionID)
-        else { return nil }
-        // A folder has one workspace; one of another account is not the workspace this account asked for.
-        guard workspace.accountConnectionId == nil, workspace.databricksConnectionId == databricksConnectionID else {
-            presentError(L10n.workspaceAddFailed, source: "createWorkspace.otherAccount")
-            return nil
-        }
-        return workspace
+        return await registerWorkspace(at: url, markAsOpened: false)
     }
 
-    /// `databricksConnectionID` lists the new workspace under the Databricks account instead of the Local Account.
-    func createWorkspace(named proposedName: String, databricksConnectionID: UUID? = nil) async -> WorkspaceRecord? {
+    func createWorkspace(named proposedName: String) async -> WorkspaceRecord? {
         guard let repository else {
             presentError(L10n.workspaceAddFailed, source: "createWorkspace")
             return nil
@@ -185,8 +111,7 @@ final class WorkspaceManagementModel {
             path: nil,
             name: name,
             createdAt: now,
-            lastOpenedAt: .distantPast,
-            databricksConnectionId: databricksConnectionID
+            lastOpenedAt: .distantPast
         )
         WorkspaceAISettingsModel.shared.snapshot(for: workspace.id).applyAISettings(to: &workspace)
         do {
@@ -199,11 +124,7 @@ final class WorkspaceManagementModel {
         }
     }
 
-    func registerWorkspace(
-        at url: URL,
-        markAsOpened: Bool = true,
-        databricksConnectionID: UUID? = nil
-    ) async -> WorkspaceRecord? {
+    func registerWorkspace(at url: URL, markAsOpened: Bool = true) async -> WorkspaceRecord? {
         guard let repository else {
             presentError(L10n.workspaceAddFailed, source: "registerWorkspace")
             return nil
@@ -222,8 +143,7 @@ final class WorkspaceManagementModel {
             path: normalizedURL.path,
             name: normalizedURL.lastPathComponent,
             createdAt: now,
-            lastOpenedAt: markAsOpened ? now : .distantPast,
-            databricksConnectionId: databricksConnectionID
+            lastOpenedAt: markAsOpened ? now : .distantPast
         )
         WorkspaceAISettingsModel.shared.snapshot(for: workspace.id).applyAISettings(to: &workspace)
 
@@ -300,13 +220,12 @@ final class WorkspaceManagementModel {
 
     func deletionTransferCandidates(for workspace: WorkspaceRecord) -> [WorkspaceRecord] {
         workspaces.filter {
-            $0.id != workspace.id && $0.accountConnectionId == nil && workspace.belongsToSameAccount(as: $0)
+            $0.id != workspace.id
         }
     }
 
     func removeWorkspace(_ workspace: WorkspaceRecord, currentWorkspaceId: UUID?, transferringTo destinationID: UUID? = nil) async -> Bool {
         guard workspace.id != currentWorkspaceId else { return false }
-        guard workspace.accountConnectionId == nil else { return false }
         guard !isRemovingWorkspace else { return false }
         guard let repository else {
             presentError(L10n.workspaceRemoveFailed, source: "removeWorkspace")
@@ -330,7 +249,6 @@ final class WorkspaceManagementModel {
     }
 
     func renameWorkspace(_ workspace: WorkspaceRecord, to proposedName: String, appearance: ProjectAppearance? = nil) async -> WorkspaceRecord? {
-        guard workspace.allowsWorkspaceManagement else { return nil }
         let name = proposedName.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !name.isEmpty else { return nil }
         guard name != workspace.name || (appearance != nil && appearance != workspace.appearance) else { return workspace }
@@ -355,126 +273,6 @@ final class WorkspaceManagementModel {
             presentError(L10n.workspaceRenameFailed, error: error, source: "renameWorkspace")
             return nil
         }
-    }
-
-    func workspaceTransferCandidates(toDatabricks connectionID: UUID) -> [WorkspaceRecord] {
-        workspaces.filter { $0.accountConnectionId == nil && $0.databricksConnectionId != connectionID }
-    }
-
-    /// Moves a local workspace between the Local and Databricks accounts. Its data stays on this Mac either way.
-    func moveWorkspace(_ workspace: WorkspaceRecord, toDatabricks connectionID: UUID?) async -> Bool {
-        guard workspace.accountConnectionId == nil, let repository else { return false }
-        guard workspace.databricksConnectionId != connectionID else { return true }
-        do {
-            guard try await repository.updateWorkspaceDatabricksConnection(id: workspace.id, connectionID: connectionID) else { return false }
-            if let index = workspaces.firstIndex(where: { $0.id == workspace.id }) {
-                workspaces[index].databricksConnectionId = connectionID
-            }
-        } catch {
-            presentError(L10n.workspaceOperationFailed, error: error, source: "moveWorkspaceToDatabricks")
-            return false
-        }
-        return true
-    }
-
-    func requestServerAdoption(for workspace: WorkspaceRecord, connection: DahliaAccountConnection) async {
-        guard updatingWorkspaceAccountID == nil,
-              workspace.accountConnectionId == nil,
-              connection.isSignedIn,
-              connection.supportsWorkspaceSync
-        else { return }
-        updatingWorkspaceAccountID = workspace.id
-        defer { updatingWorkspaceAccountID = nil }
-        do {
-            let serverWorkspaces = try await fetchCloudWorkspaces(from: connection.record)
-            try Task.checkCancellation()
-            let organizations = try await fetchOrganizations(connection.record)
-            try Task.checkCancellation()
-            if let repository {
-                _ = try await MeetingRepository.registerDiscoveredCloudWorkspaces(
-                    serverWorkspaces,
-                    connection: connection.record,
-                    dbQueue: repository.dbQueue
-                )
-                await loadWorkspaces()
-            }
-            try Task.checkCancellation()
-            pendingServerAdoption = PendingWorkspaceServerAdoption(
-                workspace: workspace,
-                connection: connection,
-                serverWorkspaces: serverWorkspaces,
-                organizations: organizations
-            )
-        } catch is CancellationError {
-            return
-        } catch {
-            guard !Task.isCancelled else { return }
-            presentError(L10n.workspaceOperationFailed, error: error, source: "requestServerAdoption")
-        }
-    }
-
-    private func fetchOrganizations(_ connection: DahliaAccountConnectionRecord) async throws -> [Components.Schemas.Organization] {
-        if let organizationFetcher { return try await organizationFetcher(connection) }
-        return try await CloudWorkspaceDiscovery.organizations(connection: connection, api: SyncAPIClient(session: .shared))
-    }
-
-    func reloadServerAdoption() async {
-        guard let pending = pendingServerAdoption else { return }
-        await requestServerAdoption(for: pending.workspace, connection: pending.connection)
-    }
-
-    func confirmServerAdoption(
-        _ pending: PendingWorkspaceServerAdoption,
-        destinationId: UUID?,
-        organizationId: UUID?,
-        workspaceName: String?,
-        reconnectExisting: Bool = false
-    ) async -> WorkspaceRecord? {
-        guard updatingWorkspaceAccountID == nil, let repository else { return nil }
-        updatingWorkspaceAccountID = pending.workspace.id
-        serverAdoptionStep = .destination
-        defer {
-            updatingWorkspaceAccountID = nil
-            serverAdoptionStep = nil
-        }
-        do {
-            let api = SyncAPIClient(session: .shared)
-            let connection = pending.connection.record
-            let backup = BackupService(dbQueue: repository.dbQueue)
-            let destination: CloudWorkspaceRecord
-            if let destinationId {
-                guard let existing = try await fetchCloudWorkspaces(from: connection).first(where: { $0.workspaceId == destinationId })
-                else { throw LocalWorkspaceImportError.unavailable }
-                destination = existing
-            } else {
-                let name = workspaceName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-                guard let organizationId, !name.isEmpty,
-                      try await fetchOrganizations(connection).contains(where: { $0.id == organizationId.uuidString.lowercased() }) else {
-                    throw LocalWorkspaceImportError.unavailable
-                }
-                destination = try await LocalWorkspaceImport.createDestination(
-                    sourceId: pending.workspace.id, organizationId: organizationId, name: name,
-                    connection: connection, dbQueue: repository.dbQueue, api: api
-                )
-            }
-            let updated = try await LocalWorkspaceImport.run(
-                sourceId: pending.workspace.id, destination: destination, dbQueue: repository.dbQueue,
-                backup: backup, api: api, replaceServerImageAnalysis: false,
-                reconnectExisting: reconnectExisting,
-                progress: { [weak self] in self?.serverAdoptionStep = $0 }
-            )
-            pendingServerAdoption = nil
-            await loadWorkspaces()
-            return updated
-        } catch {
-            let message = error is LocalWorkspaceImportError ? error.localizedDescription : L10n.workspaceOperationFailed
-            presentError(message, error: error, source: "confirmServerAdoption")
-            return nil
-        }
-    }
-
-    func cancelServerAdoption() {
-        pendingServerAdoption = nil
     }
 
     func presentFolderSelectionError(_ error: any Error) {

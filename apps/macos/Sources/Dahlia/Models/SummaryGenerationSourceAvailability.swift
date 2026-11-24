@@ -2,15 +2,12 @@ import Foundation
 import GRDB
 
 struct SummaryGenerationSourceAvailability: Equatable, Sendable {
-    var accountConnectionID: UUID?
     var generationSettings: WorkspaceGenerationSettings?
-    var hasServerConnection = false
     var sourceCheckFailed = false
     let meetingCount: Int
     let transcriptCount: Int
     let audioCount: Int
     let supportedSources: Set<SummaryGenerationSource>
-    let usesServer: Bool
 
     func isAvailable(_ source: SummaryGenerationSource) -> Bool {
         supportedSources.contains(source) && availableCount(for: source) == meetingCount
@@ -34,9 +31,6 @@ extension SummaryGenerationSourceAvailability {
     static func load(
         meetingIDs: Set<UUID>,
         supportedSources: Set<SummaryGenerationSource>,
-        usesServer: Bool,
-        serverTranscriptMeetingIDs: Set<UUID> = [],
-        serverAudioMeetingIDs: Set<UUID> = [],
         dbQueue: any DatabaseWriter
     ) async throws -> Self {
         try await dbQueue.read { db in
@@ -44,20 +38,8 @@ extension SummaryGenerationSourceAvailability {
             var audioCount = 0
 
             for meetingID in meetingIDs {
-                let hasTranscript = usesServer
-                    ? serverTranscriptMeetingIDs.contains(meetingID)
-                    : try hasTranscript(meetingID: meetingID, in: db)
-                if hasTranscript { transcriptCount += 1 }
-
-                let hasAudio = if usesServer {
-                    if serverAudioMeetingIDs.contains(meetingID) {
-                        try hasNoPendingServerAudio(meetingID: meetingID, in: db)
-                    } else {
-                        false
-                    }
-                } else {
-                    try Self.hasAudio(meetingID: meetingID, in: db)
-                }
+                if try hasTranscript(meetingID: meetingID, in: db) { transcriptCount += 1 }
+                let hasAudio = try Self.hasAudio(meetingID: meetingID, in: db)
                 if hasAudio {
                     audioCount += 1
                 }
@@ -67,8 +49,7 @@ extension SummaryGenerationSourceAvailability {
                 meetingCount: meetingIDs.count,
                 transcriptCount: transcriptCount,
                 audioCount: audioCount,
-                supportedSources: supportedSources,
-                usesServer: usesServer
+                supportedSources: supportedSources
             )
         }
     }
@@ -91,14 +72,6 @@ extension SummaryGenerationSourceAvailability {
             if text.nilIfBlank != nil { return true }
         }
         return false
-    }
-
-    static func hasNoPendingServerAudio(meetingID: UUID, in db: Database) throws -> Bool {
-        let sessions = try RecordingSessionRecord.filter(Column("meetingId") == meetingID).fetchAll(db)
-        return try sessions.allSatisfy {
-            guard $0.transcriptionMode == .batch, $0.batchDiscardedAt == nil, $0.endedAt != nil else { return false }
-            return try RecordingArchiveRecord.isAvailable(sessionId: $0.id, in: db)
-        }
     }
 
     static func hasAudio(meetingID: UUID, in db: Database) throws -> Bool {

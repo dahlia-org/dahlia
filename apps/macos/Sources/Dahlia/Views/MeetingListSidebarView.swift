@@ -69,7 +69,7 @@ struct MeetingListSidebarView: View {
                         onOpenThread: onOpenChatThread
                     )
                     let aiSettings = WorkspaceAISettingsModel.shared
-                    if aiSettings.isDatabricksAccount, let connectionID = aiSettings.databricksAccountConnectionID {
+                    if let connectionID = aiSettings.providerDatabricksConnectionID {
                         MainSidebarOmnigentSection(
                             connectionID: connectionID,
                             selectedSessionID: omnigentSessionID,
@@ -127,7 +127,7 @@ struct MeetingListSidebarView: View {
     private var upcomingEventsSection: some View {
         MainSidebarUpcomingEventsSection(
             isShowingSchedule: isShowingUpcomingSchedule,
-            openDraftEventID: viewModel.draftMeeting?.linkedCalendarEvent?.id,
+            openDraftEventID: viewModel.draftMeeting?.linkedCalendarEvent?.displayID,
             onSelectEvent: recordingCoordinator.openCalendarEvent,
             onShowSchedule: onShowUpcomingSchedule,
             canStartRecording: recordingCoordinator.canStartNewMeeting,
@@ -241,14 +241,6 @@ struct MeetingListSidebarView: View {
         .overlay {
             if !hasExpandedContent {
                 EmptyView()
-            } else if sidebarViewModel.displayedMeetingItems.isEmpty, sidebarViewModel.projectMeetingGroups.isEmpty,
-                      sidebarViewModel.allWorkspaces.first(where: { $0.id == sidebarViewModel.currentWorkspace?.id })?
-                      .isAwaitingInitialSync == true {
-                ContentUnavailableView {
-                    Label(L10n.workspaceInitialSyncPending, systemImage: "arrow.triangle.2.circlepath")
-                } description: {
-                    Text(L10n.workspaceInitialSyncPendingDescription)
-                }
             } else if mainWindowNavigation.meetingSidebarDisplayMode == .chronological {
                 MeetingListStatusOverlay(
                     isLoaded: sidebarViewModel.isDisplayedMeetingListLoaded,

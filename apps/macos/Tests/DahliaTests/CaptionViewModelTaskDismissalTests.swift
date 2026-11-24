@@ -37,7 +37,7 @@ import GRDB
             #expect(try await fixture.database.dbQueue.read { db in
                 try TranscriptSegmentBodyRecord.fetchAll(db).map(\.text).sorted()
             } == ["first transcript", "second transcript"])
-            saved.prepareRetry(serverJob: nil)
+            saved.prepareRetry()
             #expect(saved.failureDismissed == nil)
         }
     }

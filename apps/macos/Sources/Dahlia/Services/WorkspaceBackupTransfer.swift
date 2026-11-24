@@ -41,6 +41,13 @@ enum WorkspaceBackupTransfer {
     ) throws {
         guard try WorkspaceRecord.fetchOne(db, sql: "SELECT * FROM backup_source.workspaces WHERE id = ?", arguments: [workspaceId]) != nil
         else { throw BackupServiceError.invalidBackup }
+        // Availability state is intentionally not portable; reject missing source content before omitting it.
+        if try Bool.fetchOne(db, sql: """
+        SELECT EXISTS(SELECT 1 FROM backup_source.sync_content_state
+            WHERE workspace_id = ? AND (complete = 0 OR fetchError = 'deleted'))
+        """, arguments: [workspaceId]) == true {
+            throw TextContentError.incomplete
+        }
         try destinationWorkspace.insert(db)
         var mappings: [String: [DatabaseValue: DatabaseValue]] = [
             "workspaces": [workspaceId.databaseValue: destinationWorkspace.id.databaseValue],
@@ -190,8 +197,7 @@ enum WorkspaceBackupTransfer {
     static func portableWorkspace(_ workspace: WorkspaceRecord) -> WorkspaceRecord {
         var result = workspace
         result.path = nil
-        result.moveToLocalAccount()
-        result.syncRecoveryState = nil
+        result.generationSettings.processing.location = .local
         result.databricksProfile = ""
         return result
     }
@@ -245,10 +251,7 @@ enum WorkspaceBackupTransfer {
     }
 
     static func validateLocalTarget(id: UUID, in db: Database) throws -> WorkspaceRecord {
-        guard let workspace = try WorkspaceRecord.fetchOne(db, key: id),
-              workspace.accountConnectionId == nil, workspace.syncRole == nil,
-              workspace.syncConfirmedConnectionId == nil,
-              try Bool.fetchOne(db, sql: "SELECT EXISTS(SELECT 1 FROM sync_transactions WHERE workspace_id = ?)", arguments: [id]) == false else {
+        guard let workspace = try WorkspaceRecord.fetchOne(db, key: id) else {
             throw BackupServiceError.restoreTargetUnavailable
         }
         return workspace

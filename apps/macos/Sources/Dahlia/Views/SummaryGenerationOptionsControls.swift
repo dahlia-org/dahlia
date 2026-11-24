@@ -4,7 +4,6 @@ struct SummaryGenerationOptionsControls: View {
     @Binding var detailLevel: SummaryDetailLevel?
     @Binding var exportsToWorkspace: Bool
     let isEnabled: Bool
-    let usesServerSummary: Bool
 
     var body: some View {
         Picker(selection: $detailLevel) {
@@ -19,15 +18,11 @@ struct SummaryGenerationOptionsControls: View {
         .pickerStyle(.menu)
         .disabled(!isEnabled)
 
-        if !usesServerSummary {
-            Toggle(isOn: $exportsToWorkspace) {
-                Text(L10n.exportBatchSummaryToWorkspace)
-                Text(L10n.exportBatchSummaryToWorkspaceDescription)
-            }
-            .toggleStyle(.checkbox)
-            .disabled(!isEnabled)
-        } else {
-            Text(L10n.serverSummaryDescription).foregroundStyle(.secondary)
+        Toggle(isOn: $exportsToWorkspace) {
+            Text(L10n.exportBatchSummaryToWorkspace)
+            Text(L10n.exportBatchSummaryToWorkspaceDescription)
         }
+        .toggleStyle(.checkbox)
+        .disabled(!isEnabled)
     }
 }

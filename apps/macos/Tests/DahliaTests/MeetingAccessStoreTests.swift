@@ -885,68 +885,6 @@ import ImageIO
         }
 
         @Test
-        func staleTranscriptKeepsItsResidentGenerationUntilHydration() throws {
-            let fixture = try Fixture()
-            let store = try fixture.store(workspaceID: fixture.primaryWorkspaceID)
-            var resident = TranscriptInfo(
-                id: .v7(), startedAt: nil, endedAt: nil,
-                metadata: .init(provider: "apple", model: "apple-speech-live", runs: [.init(startedAt: nil)])
-            )
-            resident.version = 1
-            resident.syncRevision = 1
-            var incoming = TranscriptInfo(
-                id: .v7(), startedAt: nil, endedAt: .now,
-                metadata: .init(provider: "apple", model: "apple-speech", runs: [.init(startedAt: nil)])
-            )
-            incoming.version = 2
-            incoming.syncRevision = 2
-            let observation = try SyncJSON.decoder.decode(SyncCanonicalPayload.self, from: JSONSerialization.data(withJSONObject: [
-                "contentOmitted": true, "contentPresent": true, "contentCount": 2,
-                "transcript": JSONSerialization.jsonObject(with: SyncJSON.encoder.encode(incoming)),
-            ]))
-            try fixture.manager.dbQueue.write { db in
-                try TranscriptRecord(meetingId: fixture.firstMeetingID, info: resident).save(db)
-                try db.execute(sql: """
-                INSERT INTO sync_content_state(workspace_id, entity, entityId, residentRevision, complete, present)
-                VALUES (?, 'transcript', ?, 1, 1, 1);
-                INSERT INTO sync_entity_state(workspace_id, entity, entityId, confirmedRevision)
-                VALUES (?, 'transcript', ?, 2);
-                """, arguments: [fixture.primaryWorkspaceID, fixture.firstMeetingID, fixture.primaryWorkspaceID, fixture.firstMeetingID])
-                _ = try TextContentStore.observe(
-                    entity: .transcript, id: fixture.firstMeetingID, workspaceId: fixture.primaryWorkspaceID, value: observation, in: db
-                )
-                #expect(try TranscriptRecord.current(fixture.firstMeetingID, in: db)?.metadata?.request.model == "apple-speech-live")
-            }
-            let stale = try store.transcript(meetingID: fixture.firstMeetingID)
-            #expect(stale.textContent?.state == .stale)
-            #expect(stale.transcript?.id == resident.id)
-            #expect(stale.transcript?.version == 1)
-            #expect(stale.segments.contains { $0.text == "Original secret body" })
-
-            try fixture.manager.dbQueue.write { db in
-                try db.execute(
-                    sql: "UPDATE transcript_segment_bodies SET text = 'new generation' WHERE segmentId = ?",
-                    arguments: [fixture.firstSegmentID]
-                )
-                let fingerprint = try #require(try TextContentStore.fingerprint(entity: .transcript, id: fixture.firstMeetingID, in: db))
-                var manifest = TextContentManifest(
-                    version: 1, entity: .transcript, entityId: fixture.firstMeetingID, revision: 2,
-                    present: true, count: fingerprint.count, byteCount: fingerprint.bytes, sha256: fingerprint.hash
-                )
-                manifest.transcript = incoming
-                try TextContentStore.markVerified(manifest, source: .init(
-                    workspaceId: fixture.primaryWorkspaceID, connectionId: .v7(), origin: "https://hydration.invalid",
-                    generation: 0, revision: 2, checksum: nil
-                ), accessed: false, in: db)
-            }
-            let hydrated = try store.transcript(meetingID: fixture.firstMeetingID)
-            #expect(hydrated.textContent?.state == .ready)
-            #expect(hydrated.transcript?.id == incoming.id)
-            #expect(hydrated.transcript?.version == 2)
-            #expect(hydrated.segments.contains { $0.text == "new generation" })
-        }
-
-        @Test
         func transcriptEndElapsedSecondsUsesTheSamePrecisionAsStart() throws {
             let fixture = try Fixture()
             let endedAt = Date(timeIntervalSince1970: 1_800_000_007.123_456)

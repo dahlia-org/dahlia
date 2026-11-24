@@ -19,27 +19,40 @@ struct PiLaunchSettings: Codable, Equatable, Sendable {
         Self(variables: variables.filter { CommandLineToolLocator.discoveryEnvironmentNames.contains($0.name) })
     }
 
-    static func defaultsKey(for account: CodexRuntimeProvider) -> String {
-        "piLaunch.\(account.accountKey)"
+    static func defaultsKey() -> String {
+        defaultsKey(accountKey: AppAccount.key)
     }
 
-    static func secretKey(for account: CodexRuntimeProvider, id: UUID, profile: DahliaRuntimeProfile = DahliaApplicationSupport.profile()) -> String {
-        "piEnvironment.\(profile.rawValue).\(account.accountKey).\(id.uuidString.lowercased())"
+    /// By the key of an account, including one that no longer exists, such as a Databricks account moved to the app's.
+    static func defaultsKey(accountKey: String) -> String {
+        "piLaunch.\(accountKey)"
     }
 
-    static func load(for account: CodexRuntimeProvider, defaults: UserDefaults = .standard) -> Self {
-        defaults.data(forKey: defaultsKey(for: account)).flatMap { try? JSONDecoder().decode(Self.self, from: $0) } ?? Self()
+    static func secretKey(id: UUID, profile: DahliaRuntimeProfile = DahliaApplicationSupport.profile()) -> String {
+        secretKey(accountKey: AppAccount.key, id: id, profile: profile)
     }
 
-    func save(for account: CodexRuntimeProvider, defaults: UserDefaults = .standard) {
-        defaults.set(try? JSONEncoder().encode(self), forKey: Self.defaultsKey(for: account))
+    static func secretKey(accountKey: String, id: UUID, profile: DahliaRuntimeProfile = DahliaApplicationSupport.profile()) -> String {
+        "piEnvironment.\(profile.rawValue).\(accountKey).\(id.uuidString.lowercased())"
+    }
+
+    static func load(defaults: UserDefaults = .standard) -> Self {
+        load(accountKey: AppAccount.key, defaults: defaults)
+    }
+
+    static func load(accountKey: String, defaults: UserDefaults = .standard) -> Self {
+        defaults.data(forKey: defaultsKey(accountKey: accountKey)).flatMap { try? JSONDecoder().decode(Self.self, from: $0) } ?? Self()
+    }
+
+    func save(defaults: UserDefaults = .standard) {
+        defaults.set(try? JSONEncoder().encode(self), forKey: Self.defaultsKey())
     }
 
     /// Deletes the account's secret values from the Keychain when the account signs out or is removed. Blocks on the
     /// Keychain, so call it off MainActor.
-    static func removeSecrets(for account: CodexRuntimeProvider, defaults: UserDefaults = .standard) {
-        for variable in load(for: account, defaults: defaults).variables where variable.isSecret {
-            _ = KeychainService.delete(key: secretKey(for: account, id: variable.id))
+    static func removeSecrets(accountKey: String, defaults: UserDefaults = .standard) {
+        for variable in load(accountKey: accountKey, defaults: defaults).variables where variable.isSecret {
+            _ = KeychainService.delete(key: secretKey(accountKey: accountKey, id: variable.id))
         }
     }
 
@@ -60,9 +73,8 @@ struct PiLaunchSettings: Codable, Equatable, Sendable {
 
     /// Resolves secrets off MainActor; use the same values for launch and its access checks.
     func resolvedEnvironment(
-        for account: CodexRuntimeProvider,
         secret: (String) -> String? = { KeychainService.load(key: $0) }
     ) -> [String: String] {
-        environment { secret(Self.secretKey(for: account, id: $0)) }
+        environment { secret(Self.secretKey(id: $0)) }
     }
 }

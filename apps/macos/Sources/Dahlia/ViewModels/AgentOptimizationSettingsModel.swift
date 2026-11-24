@@ -7,7 +7,6 @@ import Observation
 @Observable
 final class AgentOptimizationSettingsModel {
     static let pageSize = 20
-    let account: CodexRuntimeProvider
     let tasks: [String]
     /// The newest runs of each requested task.
     var runs: [String: [AgentSystemRunRecord]] = [:]
@@ -19,8 +18,7 @@ final class AgentOptimizationSettingsModel {
     var isBusy = false
     private var limits: [String: Int] = [:]
 
-    init(account: CodexRuntimeProvider, tasks: [String] = ["skillReview", "curator", "optimizer", "review"]) {
-        self.account = account
+    init(tasks: [String] = ["skillReview", "curator", "optimizer", "review"]) {
         self.tasks = tasks
     }
 
@@ -36,7 +34,7 @@ final class AgentOptimizationSettingsModel {
         do {
             let skills = try await PiChatService.shared.skillService()
             let dbQueue = skills.dbQueue
-            let key = account.accountKey
+            let key = AppAccount.key
             let limits = Dictionary(uniqueKeysWithValues: tasks.map { ($0, self.limits[$0] ?? Self.pageSize) })
             // One extra row tells whether another page exists; the task index keeps this independent of history size.
             let rows = try await dbQueue.read { db in
@@ -52,7 +50,7 @@ final class AgentOptimizationSettingsModel {
             let states = try await skills.curationStates(account: key)
             archived = states.filter { $0.state == "archived" }.map(\.name)
             let locked = Set(states.filter(\.locked).map(\.name))
-            let root = try await PiChatService.shared.skillsRoot(account)
+            let root = try await PiChatService.shared.skillsRoot()
             optimizableSkills = await Task.detached {
                 let names = (try? FileManager.default.contentsOfDirectory(atPath: root.path)) ?? []
                 return names.filter {
@@ -75,8 +73,8 @@ final class AgentOptimizationSettingsModel {
         defer { isBusy = false }
         do {
             let service = try await PiChatService.shared.skillService()
-            let root = try await PiChatService.shared.skillsRoot(account)
-            try await service.restore(name: name, account: account.accountKey, root: root)
+            let root = try await PiChatService.shared.skillsRoot()
+            try await service.restore(name: name, account: AppAccount.key, root: root)
         } catch { self.error = error.localizedDescription }
         await refresh()
     }

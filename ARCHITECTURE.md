@@ -105,14 +105,14 @@ macOS の手動要約は録音中も実行でき、入力読込時点で SQLite 
 
 画像の保持境界はアカウントで分ける。Local Account は原本だけを永続保存し、Server Account は一覧用 metadata を常時保持し、文字起こし原文・サマリー・OCR・caption の本文を部分保持する。
 文字起こし原文・要約・画像解析本文は専用の本文テーブルへ保存し、metadata・翻訳・音声特徴量・端末固有参照から分離する。アプリと MCP の完全な本文読取は共通 `TextContentAccess` が同一 DB snapshot 内で検査・取得する。
-Server Account の画像本体は未送信分も含めて Application Support の共通ファイルストアへ保存し、SQLite には画像と送信 operation の独立したファイル参照を保持する。
-ファイルを検証・確定してから画像 metadata と operation を同じ SQLite transaction で保存する。未送信・再試行・競合中の原本は容量上限の対象外とし、同じ画像の Server 確定後にだけ削除可能とする。
-表示・解析・書き出しは `ScreenshotContentProvider` が 移行待ちの旧 BLOB、共通ファイル、認証付き取得を解決する。
+Desktop のスクリーンショット本体は Application Support の共通ファイルストアへ保存し、SQLite には画像のファイル参照を保持する。
+ファイルを検証・確定してから画像 metadata を SQLite transaction で保存する。
+表示・解析・書き出しは `ScreenshotContentProvider` が移行待ちの旧 BLOB と共通ファイルを解決する。
 一覧用 `thumb_480`（長辺最大480px）、`thumb_1280`（1280px）、プレビュー用 `thumb_1568`（1568px）、`thumb_1920`（1920px）は Node Server が要求時に生成し Volume に永続化する。生成非対応の環境は variant を広告しない。Web の画像リンクは1568px版を開き、原寸リンクも提供する。Desktop はスクリーンショットを長辺1568px以下の WebP で保存し（それ以前のローカル画像は起動後に一度だけ変換する）、要約・OCR・キャプション・MCP には保存済み画像をそのまま渡す。要約前のスクリーンショット選別だけは長辺480pxに縮小して渡す。チャットの添付画像は1280px上限を使う。
-MCP の本文・画像の cache miss は同梱 helper 用 broker でアプリの共通 provider に取得を依頼する。未送信原本は解放しない。Local Account への移動は metadata 同期と全本文取得を完了し、必要な原本をファイルで揃えてから、所属変更とファイル参照を同じ transaction で確定する。バックアップの新規作成は Local Account のワークスペースに限定する。
-`files` は Workspace 所有の原本と metadata、`meeting_attachments` は会議への独立した紐付けを保持する。原本 URI は Volume の絶対パスで、Local Account と未確定の原本は NULL とする。端末の保存先は FileStore/index.sqlite と local/files/{fileId}/original または server/{accountConnectionId}/files/{fileId}/original。
-Desktop の送受信、初期構築、文書交換、録音アーカイブ、画像転送は独立して進む。依存キーと同一 entity の順序を SQLite に保存し、実行可能な通常操作4件に背景1件の機会を与える。未構築の本文と未送信原本は保護する。文書同期は DB ごとの共有サービスと専用 SSE、ローカル commit 後200msの固定送信窓を使う。Server は認可・Workspace lifecycle を共有取得し、会議・file・Project の関係ごとに更新を保護する。canonical 更新後の短い publication 区間だけ Workspace 内で直列化し、sequence・delta・receipt の公開順を守る。Documents は会議 lifecycle を共有し、別会議の更新と文書交換は並行して進む。初期構築は最大8操作・256KiBのバッチ、軽い送信は2枠・背景最大1枠で進める。
-詳細は [同期の仕様](docs/spec/shared/sync.md) を参照する。
+MCP の本文・画像の cache miss は同梱 helper 用 broker でアプリの共通 provider に取得を依頼する。
+`files` は Workspace 所有の原本と metadata、`meeting_attachments` は会議への独立した紐付けを保持する。端末の保存先は FileStore/index.sqlite と local/files/{fileId}/original。
+Desktop は Dahlia Server と同期しない（2026-11-23 にユーザーが承認して削除した）。Server を正本とする Web の同期は Server 側に残る。
+Server 側の契約は [同期の仕様](docs/spec/shared/sync.md) を参照する。
 
 利用テレメトリは録音・永続化の正本から独立した lossy projection である。`CaptionViewModel` などの owner は低頻度の
 workflow 境界で型付き `UsageTelemetryEvent` を生成し、`UsageTelemetryService` が公式 SDK の非ブロッキングキューへ渡す。内蔵 MCP helper も型付きの粗い tool-call event だけを専用 adapter へ渡し、外部 MCP client は計測しない。
@@ -137,10 +137,10 @@ Desktopはemailと表示名だけを保存し、Serverは旧Desktopがattendees�
 廃止した顧客インテリジェンスについて残る制約は[参加者スナップショットの仕様](docs/spec/shared/calendar-attendee-snapshots.md)に書く。
 
 任意の Dahlia Server runtime は内蔵 Pi の provider transport を所有し、macOS の録音・文字起こし critical path には入らない。
-macOS の Dahlia アカウントは Workspace の所有者ではなく、アプリ共有の接続として SQLite に登録する。OAuth credential と remote identity は
-接続 UUID ごとに Keychain が所有し、token 利用側は connection ID を明示する。sign-out は選択した接続の credential を削除し、Server record を残したまま local working copy の削除または Local Account への移動を選ぶ。Workspace は AI provider
-利用のために任意の接続を参照し、接続ごとの private Pi agent directory を使う。サインインだけでは Local Workspace を移さず、Workspace 単位の明示移行を要求する。Server-managed Workspace は常時同期し、独立した同期 toggle は持たない。ローカルアカウントは
-OpenAI (ChatGPT subscription) と Anthropic (Claude Pro/Max)、接続した Databricks workspace ごとの Databricks アカウント（自分の Workspace を持ち同期なし）はその AI Gateway を使い、Dahlia アカウントは接続先の Gateway を使う。この境界は
+macOS アプリのアカウントは 1 つで、Workspace はアカウントに属さない。外部への接続はプロバイダーアカウントとして `provider_accounts` に登録し、OAuth credential と remote identity は
+接続 UUID ごとに Keychain が所有し、token 利用側は接続を指定する。サインアウトは選択した接続の credential を削除し、アカウントの履歴と設定は残す。Pi の agent directory は
+`Application Support/Dahlia/agent` の 1 つで、Pi のプロセスはアカウントに 1 組だけ持つ。モデルは
+OpenAI (ChatGPT subscription) と Anthropic (Claude Pro/Max) のサブスクリプション、Databricks の各接続の AI Gateway、Dahlia account の Server の Gateway から選ぶ。この境界は
 [内蔵 Pi runtime](docs/spec/desktop/pi-runtime.md#provider)を正本とする。
 Better Auth、Gateway 管理 metadata、meeting sync は単一の Drizzle application database を共有する。PostgreSQL は生成済み認証 table を
 `auth`、Dahlia 所有の全テーブルを `app` schema に置き、参照は `app → auth` の方向とする。
@@ -194,7 +194,7 @@ Workers Static Assets が直接配信し、Worker 内から asset binding を呼
 `index.html` へ fallback する一方、API と discovery の未定義 path は Hono の 404 を維持する。
 
 Gateway、認証 store、upstream、storage の停止は Server 操作だけを失敗させる。macOS の起動、録音、音声保存、文字起こし、
-閲覧、検索はこの runtime を待たない。ServerアカウントのWorkspace、Project、meeting、summary、transcript 原文、screenshot、OCR、AI captionはDesktopとWebが共有するServer canonical dataである。Desktop は既存の domain table を offline working-copy record cache とし、ローカル変更と immutable domain transaction の記録を同じ SQLite transaction で確定する。これはローカルからServer copyを作る一方向転送ではない。サインインはローカルWorkspaceを暗黙に関連付けず、明示的にServerへ移したWorkspaceは常時同期する。ログイン済み接続で権限のある既存ServerワークスペースもDesktopが自動発見し、取り込み操作なしで一覧と同期に参加する。サインアウトではServer canonical dataを変更せず、working copyを削除するかLocal Accountへ移す。Server Workspaceの所有主体は変更不能なOrganizationとする。Workspace Adminがuser／Organization／Teamへadmin・editor・viewerを付与し、Admin／Editorは内容を編集、AdminだけがWorkspaceの設定・共有・削除・reset・全内容移管を行う。本人用Workspaceはpersonal_user_idで識別し、本人かつ現在のOrganizationメンバーに限定する。Personal OrganizationとOrganization.kindは廃止した。Header認証では設定されたメールヘッダーを識別に使い、初回登録時だけドメイン組織を作成・参加する。
+閲覧、検索はこの runtime を待たない。ServerアカウントのWorkspace、Project、meeting、summary、transcript 原文、screenshot、OCR、AI captionはDesktopとWebが共有するServer canonical dataである。Desktop はこれを同期しない。Server Workspaceの所有主体は変更不能なOrganizationとする。Workspace Adminがuser／Organization／Teamへadmin・editor・viewerを付与し、Admin／Editorは内容を編集、AdminだけがWorkspaceの設定・共有・削除・reset・全内容移管を行う。本人用Workspaceはpersonal_user_idで識別し、本人かつ現在のOrganizationメンバーに限定する。Personal OrganizationとOrganization.kindは廃止した。Header認証では設定されたメールヘッダーを識別に使い、初回登録時だけドメイン組織を作成・参加する。
 PostgreSQL／LakebaseではBetter Authの機械生成migrationとDahlia application migrationを別ledgerに置き、認証方式によらず
 `auth`、`app`の順で適用する。Header identityは検証直後に`auth.user`へ射影し、Webはaccountsと共通のBetter Authセッション・Organization APIを使う。保護操作では検証済みHeaderを引き続き必須とし、Cookie本人不一致を拒否する。Serverは各identity transactionで
 `app.user_id`だけをtransaction-localに設定する。Workspace/content RLSは`app.workspace_permissions`を評価し、organizationとTeam membershipを
@@ -206,21 +206,17 @@ Server は meeting の名前・説明・summary 表示本文と screenshot の O
 その他の PostgreSQL は pgvector、SQLite は exact cosine を使う。query 時は FTS と vector の上位候補を
 RRF で統合し、embedding の未設定・未完成・障害時は FTS に縮退する。transcript と内部識別子は Server 検索対象に含めず、
 すべての検索 query は `workspace_id` 経由の permission／RLS を通す。D1 adapterは削除し、WorkerはPostgreSQL／Hyperdriveを使用する。
-Desktopで作成した画像はアカウントを問わずMacの内蔵 Pi でOCR・captionを生成し、結果を同期する。Serverは同期や不足データの巡回から画像解析を開始しない。旧版で受付済みのジョブだけ既存の認可・lease・revision検証で処理する。
-AI設定とミーティング設定（文字起こし・ライブ字幕・スクリーンショット）はこのMac内でアカウント別に保存し、Workspaceの既定出力言語だけを共有する。文字起こし・要約の実行場所は[操作元の契約](docs/spec/shared/account-scoped-desktop-inference.md)に従う。Desktopの選択中アカウントだけ Pi を動かし、別アカウントへ切り替えると旧プロセスを停止する。
+Desktopで作成した画像はMacの内蔵 Pi でOCR・captionを生成する。Serverは同期や不足データの巡回から画像解析を開始しない。旧版で受付済みのジョブだけ既存の認可・lease・revision検証で処理する。
+AI設定とミーティング設定（文字起こし・ライブ字幕・スクリーンショット）はこのMacのアプリのアカウントに保存し、Workspaceの既定出力言語だけをWorkspaceに持つ。文字起こし・要約の実行場所は[操作元の契約](docs/spec/shared/account-scoped-desktop-inference.md)に従う。プロバイダーアカウントの追加・削除では Pi を止めず、待機中のチャットから新しい設定で開き直す。
 翻訳文、音声、SQLite file、note、tag、calendar、
 Project は階層参照と meeting 絞り込みのためだけに同期し、Server の全文・vector projection へは含めない。transcript の `audio_source` は `mic`／`system` の収録経路、nullable な `speaker_label` は将来の話者分離ラベルとし、音声特徴量は同期しない。runtime と data boundary の判断は次を正本とする。
 
 - [Server database と認可 identity](docs/spec/server/database-and-identity.md): schema、Workspace permission、content RLS、header user 射影。
 - [Server の Remote MCP](docs/spec/server/remote-mcp.md): DPoP、CIMD、request 上限、ログの扱い。
 - [Databricks upstream identity](docs/spec/server/databricks.md#upstream-identity): Responses と background AI の認証境界。
-- [Canonical sync](docs/spec/shared/sync.md): Workspace／Project、transcript 話者モデル、Desktop／Web の双方向変更、revision、transaction、delta、SSE。
+- [Canonical sync](docs/spec/shared/sync.md): Workspace／Project、transcript 話者モデル、Web からの変更（Desktop は同期しない）、revision、transaction、delta、SSE。
 - [Workspace 共有と管理者](docs/spec/server/sharing-and-administration.md): shared read、Organization／Team 共有、Server 管理者権限。
 - [Server Hybrid 検索](docs/spec/server/search.md#hybrid-検索): 同期済み content の検索 projection。
-
-Desktop SQLite は offline working copy であり、単方向の転送元ではない。Server Account の本文は `sync_content_state` で完全性・保持 revision・検証済み hash・byte 数・利用日時を管理する。metadata-only snapshot / delta は本文取得を待たず進み、`MeetingContentProvider` が SQLite を先に読み、必要時だけ指定 revision の全ページを一時領域へ取得して manifest と照合する。全 Server Account の本文予算は128 MiB、検証済みで再取得できる未使用本文だけを LRU で80%まで解放する。Local Account・queue・復旧・録音・利用中本文は保全し、翻訳・音声特徴量・summary export の参照は残す。詳細は [本文の部分保持](docs/spec/shared/sync.md#テキスト本文)。SSE はデータ本体を運ばない。Server 側採用では未送信変更を破棄して cursor をリセットし、Server の revision 一覧を取得するまで revision 未確定の Workspace 同期行を保持して送信を停止する。この間のローカル変更と確定文字起こしはキューへ保存し、取得した revision で未送信操作を順序どおり補正してから送信を再開する。revision 取得と canonical 本体の適用は区別し、cursor が未設定なら同じ revision でも本体を再取得・適用する。これを初期送信の中断と混同して create を再生成してはならない。local mutation は record cache と operation snapshot を同じ SQLite transaction へ明示的に書き、remote applier は recorder を呼ばない。
-
-通常差分と本文反映の競合判定は同期層の `RemoteChangePolicy` が共有する。録音中も安全な差分は適用し、保留を含むページ以降の永続 cursor は進めず次回に再取得する。本文 provider は同期済み revision の本文だけを取得する。復旧・reset と本文の破棄は通常差分より厳しい保護単位を維持する。詳細は [録音中の通常差分適用](docs/spec/shared/sync.md#受信)。
 
 ### 起動準備と録音開始
 
@@ -231,7 +227,7 @@ DB初期化失敗は起動を止める。復元の失敗・一部失敗は利用
 所有された起動タスクの完了を待ち、その後のワークスペース取得はキャンセルしてサービスを停止する。
 
 Desktop Pi は、会話の run に起点と権限を保存し、Item を run に関連付ける。
-メモリーとスキルの変更記録はアカウント別の Mac 内 GRDB に置き、Server 同期・Workspace バックアップへ含めない。
+メモリーとスキルの変更記録はアプリのアカウントの Mac 内 GRDB に置き、Workspace バックアップへ含めない。
 Hermes のふり返りと Curator の統合パスは utility の独立した1本を共有し、録音中・非選択アカウントでは開始しない。
 時計はアプリの `Housekeeping`（1分刻み）が持ち、予定・ふり返り・Curator は各自の回数間隔で判定する。
 予定の実行は thread 起点と合わせて3本までの既存 queue を通す。
@@ -319,7 +315,7 @@ Desktop の AI チャットは GRDB の `chat_threads`／追記専用 `chat_item
 スレッド管理と自動結果通知の判断・境界・検証状態は[スレッド管理の仕様](docs/spec/desktop/chat-thread-orchestration.md)を参照。
 履歴表示は直近40メッセージを初期取得し、過去分を操作時に追加取得する。タイトルと各メッセージを別々の全文検索文書にし、
 追記では新しいメッセージだけを索引化して結果を Thread ごとにまとめる。推論文・ツール引数／結果・画像は索引化せず、
-実行アカウントで検索結果を絞り、任意の Project で関連付け・絞り込みを行う。Thread は Workspace を直接参照せず、同じアカウント内の Workspace 切替で会話を維持する。辞書の再構築時はチャットも再構築する。チャットとその索引はバックアップ・Server 同期の対象外。
+任意の Project で関連付け・絞り込みを行う。Thread は Workspace を直接参照せず、Workspace を切り替えても会話を維持する。辞書の再構築時はチャットも再構築する。チャットとその索引はバックアップの対象外。
 
 Desktop 検索は旧 Advanced 相当の全文検索に統一し、Simple／Neural とモード切替を廃止した。Gemma 推論、モデル取得、vector worker は実行しない。追加 migration で vector 検索を無効化し、専用 trigger を撤去する。互換性のため旧 schema、既存 vector と job は保持する。起動時に現在のアプリプロファイルの `Models/EmbeddingGemma` だけをバックグラウンド削除し、失敗時は次回起動で再試行する。Server Account の主検索は capabilities の `search: { version: 1 }` により `POST /api/v1/search` の共通順位へ切り替え、未同期の端末内結果を別枠で表示する。オフライン・旧 Server・metadata 同期待ち・タグ指定・複数 Project 指定は端末内検索と明示する。Web と Server MCP は同じ service を使う。上位100件は全件完了としない。旧 GET FTS ページングは local content broker と既存クライアントの全件探索用に維持する。
 

@@ -1,30 +1,22 @@
 import AppKit
 import Combine
+import CryptoKit
 import DahliaRuntimeSupport
 import Foundation
 
 @MainActor
-final class GoogleCalendarStore: ObservableObject {
+final class GoogleCalendarStore: ObservableObject, CalendarConnectionStore {
     /// The selection saved before it became per account; read only as each account's default.
     static let selectedCalendarIDsKey = "googleCalendarSelectedCalendarIDs"
 
     /// Each account reaches Google by its own route, possibly as another Google account, so each keeps its selection.
-    static func selectedCalendarIDsKey(for account: CodexRuntimeProvider) -> String {
-        "\(selectedCalendarIDsKey).\(account.accountKey)"
+    static var accountSelectedCalendarIDsKey: String {
+        "\(selectedCalendarIDsKey).\(AppAccount.key)"
     }
 
-    enum State: Equatable {
-        case unconfigured
-        case signedOut
-        case loading
-        case needsCalendarSelection
-        case loaded
-        case failed
-    }
+    var connectionStatePublisher: AnyPublisher<CalendarConnectionState, Never> { $state.eraseToAnyPublisher() }
 
-    static let shared = GoogleCalendarStore(
-        eventsCacheDirectory: DahliaApplicationSupport.currentDirectoryURL.appending(path: "Caches/GoogleCalendar", directoryHint: .isDirectory)
-    )
+    typealias State = CalendarConnectionState
 
     @Published private(set) var state: State
     @Published private(set) var account: GoogleCalendarAccount?
@@ -59,11 +51,12 @@ final class GoogleCalendarStore: ObservableObject {
     }
 
     private let signInProvider: any GoogleSignInProviding
+    private let configuredProvider: GoogleCalendarProvider?
+    private var currentProvider: GoogleCalendarProvider { configuredProvider ?? GoogleCalendarProvider.current(defaults: userDefaults) }
+    private var isActive: Bool
     private let apiClient: any GoogleCalendarAPIClientProviding
     private let userDefaults: UserDefaults
-    private let openAccount: @MainActor () -> CodexRuntimeProvider
     /// The account whose selection is loaded; a load still running for the previous account saves to it, not the new one.
-    private var selectionAccount: CodexRuntimeProvider
     private let now: () -> Date
     private let refreshInterval: TimeInterval
     private let daysAhead: Int
@@ -74,7 +67,10 @@ final class GoogleCalendarStore: ObservableObject {
     private var isDisconnecting = false
     private var isLoadingAccountData = false
     private var authChangeObserver: GoogleAuthSessionObserver?
-    private var accountChangeObserver: AnyCancellable?
+    private var registeredSignOutObserver: AnyCancellable?
+    private var directSignOutObserver: GoogleAuthSessionObserver?
+    private var providerChangeObserver: AnyCancellable?
+    private var provider: GoogleCalendarProvider?
     private var refreshGeneration: UInt64 = 0
     private var refreshTask: Task<Void, Never>?
     private var refreshTaskID: UUID?
@@ -87,44 +83,89 @@ final class GoogleCalendarStore: ObservableObject {
 
     init(
         signInProvider: any GoogleSignInProviding = DatabricksProxyGoogleSignInProvider(),
+        provider: GoogleCalendarProvider? = nil,
+        initiallyActive: Bool = true,
         apiClient: any GoogleCalendarAPIClientProviding = GoogleCalendarAPIClient(),
         userDefaults: UserDefaults = .standard,
-        openAccount: @escaping @MainActor () -> CodexRuntimeProvider = { AppSettings.shared.calendarAccount },
         now: @escaping () -> Date = Date.init,
         refreshInterval: TimeInterval = 300,
         daysAhead: Int = 7,
         presentingWindowProvider: @escaping @MainActor () -> NSWindow? = { NSApp.keyWindow ?? NSApp.mainWindow },
         eventsCacheDirectory: URL? = nil,
+        providerChangeNotification: Notification.Name = GoogleCalendarProvider.didChange,
+        directSessionChangeNotification: Notification.Name = .googleSessionDidChange,
+        registeredSessionChangeNotification: Notification.Name = GoogleProviderAccount.sessionDidChange,
         cachedEventsLoader: @escaping @Sendable (URL) async -> [CalendarEvent] = GoogleCalendarStore.readCachedEvents
     ) {
         self.eventsCacheDirectory = eventsCacheDirectory
         self.cachedEventsLoader = cachedEventsLoader
         self.signInProvider = signInProvider
+        self.configuredProvider = provider
+        self.isActive = initiallyActive
         self.apiClient = apiClient
         self.userDefaults = userDefaults
-        self.openAccount = openAccount
-        self.selectionAccount = openAccount()
         self.now = now
         self.refreshInterval = refreshInterval
         self.daysAhead = daysAhead
         self.presentingWindowProvider = presentingWindowProvider
         let sessionDidChangeNotification = signInProvider.sessionDidChangeNotification
-        self.selectedCalendarIDs = Self.loadSelectedCalendarIDs(from: userDefaults, account: selectionAccount)
+        self.selectedCalendarIDs = Self.loadSelectedCalendarIDs(
+            from: userDefaults,
+            provider: provider ?? GoogleCalendarProvider.current(defaults: userDefaults),
+            scoped: provider != nil
+        )
         self.state = signInProvider.isConfigured ? .signedOut : .unconfigured
         authChangeObserver = GoogleAuthSessionObserver(notificationName: sessionDidChangeNotification) { [weak self] forceSignOut in
             await self?.handleAuthSessionChanged(forceSignOut: forceSignOut)
         }
-        // Delivered synchronously as the account changes, not queued behind a session change still restoring.
-        accountChangeObserver = NotificationCenter.default.publisher(for: .calendarAccountDidChange)
-            .sink { [weak self] _ in self?.switchToOpenAccountIfChanged() }
+        // Direct identity management is independent of the selected Calendar route.
+        directSignOutObserver = GoogleAuthSessionObserver(notificationName: directSessionChangeNotification) { [weak self] disconnected in
+            guard let self, disconnected else { return }
+            if self.provider == .unassigned {
+                clearRuntimeState(clearSelection: true)
+                didAttemptRestore = false
+                recomputeState()
+            } else {
+                removeEventsCache(for: .unassigned)
+            }
+        }
+        registeredSignOutObserver = NotificationCenter.default.publisher(for: registeredSessionChangeNotification)
+            .sink { [weak self] notification in
+                guard let self, let change = notification.object as? GoogleProviderAccountSessionChange, change.disconnected else { return }
+                let source = GoogleCalendarProvider.google(accountID: change.accountID)
+                if let configuredProvider, configuredProvider != source { return }
+                reloadIfProviderChanged()
+                userDefaults.removeObject(forKey: "\(Self.accountSelectedCalendarIDsKey).google.\(change.accountID.uuidString)")
+                if self.provider == source {
+                    clearRuntimeState(clearSelection: true)
+                    didAttemptRestore = false
+                    recomputeState()
+                } else { removeEventsCache(for: source) }
+            }
+        self.provider = currentProvider
+        providerChangeObserver = NotificationCenter.default.publisher(for: providerChangeNotification)
+            .sink { [weak self] _ in self?.reloadIfProviderChanged() }
+    }
+
+    func setActive(_ active: Bool) {
+        guard isActive != active else { return }
+        isActive = active
+        clearRuntimeState(clearSelection: false)
+        didAttemptRestore = false
+        recomputeState()
     }
 
     func restoreSessionIfNeeded() async {
         await restoreSessionIfNeeded(startedByRefreshTask: false)
     }
 
+    /// Startup constructs the store before the account migration copies its saved calendar selection.
+    func reloadSelectedCalendarsAfterMigration() {
+        selectedCalendarIDs = Self.loadSelectedCalendarIDs(from: userDefaults, provider: currentProvider, scoped: configuredProvider != nil)
+    }
+
     private func restoreSessionIfNeeded(startedByRefreshTask: Bool) async {
-        guard !isDisconnecting, !didAttemptRestore else { return }
+        guard isActive, !isDisconnecting, !didAttemptRestore else { return }
         didAttemptRestore = true
 
         guard isConfigured else {
@@ -132,37 +173,37 @@ final class GoogleCalendarStore: ObservableObject {
             return
         }
 
-        guard await signInProvider.hasPreviousSignIn else {
-            recomputeState()
-            return
-        }
-
         let generation = beginAccountDataLoad(cancelRefreshTask: !startedByRefreshTask)
         defer {
             if isCurrentRefresh(generation) { isLoadingAccountData = false }
         }
-        if upcomingEvents.isEmpty, !selectedCalendarIDs.isEmpty, let url = eventsCacheURL() {
-            let cached = await cachedEventsLoader(url)
-            guard isCurrentRefresh(generation) else { return }
-            cachedEventsSnapshot = cached
-            let currentDate = now()
-            upcomingEvents = cached.filter { $0.endDate > currentDate && selectedCalendarIDs.contains($0.calendarID) }
+        let hasPreviousSignIn = await signInProvider.hasPreviousSignIn
+        guard isCurrentRefresh(generation) else { return }
+        guard hasPreviousSignIn else {
+            clearRuntimeState(clearSelection: false)
+            recomputeState()
+            return
         }
         do {
             let session = try await signInProvider.restorePreviousSignIn()
             guard isCurrentRefresh(generation) else { return }
-            try await loadAccountData(
-                session: session,
-                refreshEvents: true,
-                generation: generation,
-                refreshInCurrentTask: startedByRefreshTask
-            )
+            applySession(session)
+            if session.hasScopes(GoogleOAuthScope.calendar), upcomingEvents.isEmpty, !selectedCalendarIDs.isEmpty,
+               let url = eventsCacheURL() {
+                let cached = await cachedEventsLoader(url)
+                guard isCurrentRefresh(generation) else { return }
+                cachedEventsSnapshot = cached
+                let currentDate = now()
+                upcomingEvents = cached.filter { $0.endDate > currentDate && selectedCalendarIDs.contains($0.calendarID) }
+            }
+            try await loadAccountData(session: session, generation: generation)
         } catch GoogleSignInError.noPreviousSignIn {
             guard isCurrentRefresh(generation) else { return }
             clearRuntimeState(clearSelection: false)
             recomputeState()
         } catch {
             guard isCurrentRefresh(generation) else { return }
+            didAttemptRestore = false
             handle(error)
             clearRuntimeState(clearSelection: false)
             recomputeStateIfNeeded()
@@ -170,6 +211,7 @@ final class GoogleCalendarStore: ObservableObject {
     }
 
     func signIn() async {
+        guard isActive else { return }
         guard !isDisconnecting else { return }
         guard isConfigured else {
             transitionToUnconfiguredState()
@@ -189,7 +231,7 @@ final class GoogleCalendarStore: ObservableObject {
                 requestedScopes: GoogleOAuthScope.calendar
             )
             guard isCurrentRefresh(generation) else { return }
-            try await loadAccountData(session: session, refreshEvents: true, generation: generation)
+            try await loadAccountData(session: session, generation: generation)
         } catch {
             guard isCurrentRefresh(generation) else { return }
             handle(error)
@@ -216,6 +258,7 @@ final class GoogleCalendarStore: ObservableObject {
     }
 
     func refreshIfNeeded(force: Bool = false) async {
+        guard isActive else { return }
         if isLoadingAccountData {
             if let refreshTask {
                 await refreshTask.value
@@ -254,7 +297,7 @@ final class GoogleCalendarStore: ObservableObject {
         }
 
         guard currentSession != nil else {
-            if !didAttemptRestore, await signInProvider.hasPreviousSignIn {
+            if !didAttemptRestore {
                 await restoreSessionIfNeeded(startedByRefreshTask: true)
                 return
             }
@@ -270,14 +313,7 @@ final class GoogleCalendarStore: ObservableObject {
             return
         }
 
-        guard !selectedCalendarIDs.isEmpty else {
-            if !upcomingEvents.isEmpty { upcomingEvents = [] }
-            lastRefreshAt = nil
-            recomputeState()
-            return
-        }
-
-        if !force,
+        if !force, state != .failed,
            let lastRefreshAt,
            now().timeIntervalSince(lastRefreshAt) < refreshInterval {
             recomputeStateIfNeeded()
@@ -288,29 +324,14 @@ final class GoogleCalendarStore: ObservableObject {
         let generation = refreshGeneration
         beginLoadingIfNeeded()
         do {
-            guard let session = try await signInProvider.refreshCurrentSession() ?? currentSession else {
+            guard let session = try await signInProvider.refreshCurrentSession() else {
                 guard isCurrentRefresh(generation) else { return }
                 clearRuntimeState(clearSelection: false)
                 recomputeState()
                 return
             }
             guard isCurrentRefresh(generation) else { return }
-
-            currentSession = session
-            if account != session.account { account = session.account }
-            let selectedCalendars = availableCalendars.filter { selectedCalendarIDs.contains($0.id) }
-            let events = try await apiClient.fetchUpcomingEvents(
-                session: session,
-                calendars: selectedCalendars,
-                now: now(),
-                daysAhead: daysAhead
-            )
-            guard isCurrentRefresh(generation) else { return }
-            if upcomingEvents != events { upcomingEvents = events }
-            writeEventsCache(events)
-            lastRefreshAt = now()
-            if lastErrorMessage != nil { lastErrorMessage = nil }
-            recomputeState()
+            try await loadAccountData(session: session, generation: generation)
         } catch is CancellationError {
             guard isCurrentRefresh(generation) else { return }
             if lastRefreshAt != nil {
@@ -344,15 +365,10 @@ final class GoogleCalendarStore: ObservableObject {
         }
     }
 
-    private func loadAccountData(
-        session: GoogleSession,
-        refreshEvents: Bool,
-        generation: UInt64,
-        refreshInCurrentTask: Bool = false
-    ) async throws {
+    /// Every attempt reads metadata before events; authentication alone never means a list was loaded.
+    private func loadAccountData(session: GoogleSession, generation: UInt64) async throws {
         guard isCurrentRefresh(generation) else { return }
-        currentSession = session
-        if account != session.account { account = session.account }
+        applySession(session)
         if lastErrorMessage != nil { lastErrorMessage = nil }
 
         guard session.hasScopes(GoogleOAuthScope.calendar) else {
@@ -368,20 +384,57 @@ final class GoogleCalendarStore: ObservableObject {
         if availableCalendars != calendars { availableCalendars = calendars }
         pruneSelectedCalendars()
         isLoadingAccountData = false
+        await refreshEvents(session: session, generation: generation)
+    }
 
-        if refreshEvents {
-            if selectedCalendarIDs.isEmpty {
-                if !upcomingEvents.isEmpty { upcomingEvents = [] }
-                lastRefreshAt = nil
-                recomputeState()
-            } else if refreshInCurrentTask {
-                await performRefresh(force: true)
-            } else {
-                await refreshIfNeeded(force: true)
-            }
-        } else {
+    private func refreshEvents(session: GoogleSession, generation: UInt64) async {
+        guard !selectedCalendarIDs.isEmpty else {
+            if !upcomingEvents.isEmpty { upcomingEvents = [] }
+            lastRefreshAt = now()
             recomputeState()
+            return
         }
+
+        do {
+            let selectedCalendars = availableCalendars.filter { selectedCalendarIDs.contains($0.id) }
+            let events = try await apiClient.fetchUpcomingEvents(
+                session: session,
+                calendars: selectedCalendars,
+                now: now(),
+                daysAhead: daysAhead
+            )
+            guard isCurrentRefresh(generation) else { return }
+            if upcomingEvents != events { upcomingEvents = events }
+            writeEventsCache(events)
+            lastRefreshAt = now()
+            if lastErrorMessage != nil { lastErrorMessage = nil }
+            recomputeState()
+        } catch is CancellationError {
+            guard isCurrentRefresh(generation) else { return }
+            if lastRefreshAt != nil {
+                recomputeState()
+            }
+        } catch {
+            guard isCurrentRefresh(generation) else { return }
+            handle(error)
+            recomputeStateIfNeeded()
+        }
+    }
+
+    /// A route can retain its ID while its Google grant changes.
+    private func applySession(_ session: GoogleSession) {
+        let canReuseProjection = session.isAccountIdentityVerified && currentSession?.isAccountIdentityVerified == true
+            && currentSession?.account.id == session.account.id
+        let identityChanged = !canReuseProjection
+        if identityChanged {
+            beginLoading()
+            availableCalendars = []
+            upcomingEvents = []
+            cachedEventsSnapshot = nil
+            lastRefreshAt = nil
+        }
+        currentSession = session
+        if account != session.account { account = session.account }
     }
 
     private func beginLoading() {
@@ -447,6 +500,7 @@ final class GoogleCalendarStore: ObservableObject {
 
     private func clearRuntimeState(clearSelection: Bool) {
         invalidateCurrentRefresh()
+        if clearSelection { writeEventsCache(nil) }
         currentSession = nil
         if account != nil { account = nil }
         if !availableCalendars.isEmpty { availableCalendars = [] }
@@ -455,29 +509,32 @@ final class GoogleCalendarStore: ObservableObject {
 
         if clearSelection {
             updateSelectedCalendarIDs([])
-            writeEventsCache(nil)
         }
     }
 
     /// The route changes with the account: drop the previous account's session, calendars, events, and every load still
     /// running for it before any of them can publish, then restore with the new account's selection and route.
-    private func switchToOpenAccountIfChanged() {
-        let currentAccount = openAccount()
-        guard currentAccount != selectionAccount else { return }
+    /// Another provider reads Google Calendar now: its own sign-in, calendars, and cached events.
+    @discardableResult
+    private func reloadIfProviderChanged() -> Bool {
+        let current = currentProvider
+        guard current != provider else { return false }
+        provider = current
         clearRuntimeState(clearSelection: false)
-        selectionAccount = currentAccount
+        selectedCalendarIDs = Self.loadSelectedCalendarIDs(from: userDefaults, provider: currentProvider, scoped: configuredProvider != nil)
         cachedEventsSnapshot = nil
-        selectedCalendarIDs = Self.loadSelectedCalendarIDs(from: userDefaults, account: selectionAccount)
         didAttemptRestore = false
         recomputeState()
         Task { await restoreSessionIfNeeded() }
+        return true
     }
 
     private func handleAuthSessionChanged(forceSignOut: Bool) async {
-        didAttemptRestore = false
+        if reloadIfProviderChanged() { return }
         guard !isDisconnecting else { return }
-        guard !forceSignOut, await signInProvider.hasPreviousSignIn else {
-            clearRuntimeState(clearSelection: forceSignOut)
+        didAttemptRestore = false
+        if forceSignOut {
+            clearRuntimeState(clearSelection: true)
             recomputeState()
             return
         }
@@ -493,7 +550,7 @@ final class GoogleCalendarStore: ObservableObject {
         }
         guard selectedCalendarIDs != filtered else { return }
         selectedCalendarIDs = filtered
-        Self.persistSelectedCalendarIDs(filtered, to: userDefaults, account: selectionAccount)
+        Self.persistSelectedCalendarIDs(filtered, to: userDefaults, provider: provider ?? currentProvider, scoped: configuredProvider != nil)
     }
 
     private func pruneSelectedCalendars() {
@@ -517,24 +574,48 @@ final class GoogleCalendarStore: ObservableObject {
         await eventsCacheWriteTask?.value
     }
 
-    private func eventsCacheURL() -> URL? {
-        eventsCacheDirectory?.appending(path: "\(selectionAccount.accountKey).json")
+    private func eventsCachePrefix(for provider: GoogleCalendarProvider) -> String {
+        "\(AppAccount.key)-\(provider.storageKey)-"
     }
 
-    /// Writes run in order off MainActor; `nil` removes the file. A lost write only costs the spinner on the next launch.
+    private func eventsCacheURL() -> URL? {
+        guard let session = currentSession, session.isAccountIdentityVerified else { return nil }
+        let accountID = session.account.id
+        let principal = SHA256.hash(data: Data(accountID.utf8)).map { String(format: "%02x", $0) }.joined()
+        return eventsCacheDirectory?.appending(path: "\(eventsCachePrefix(for: provider ?? .unassigned))\(principal).json")
+    }
+
+    /// Writes and route-specific removals share the same ordered lane off MainActor.
     private func writeEventsCache(_ events: [CalendarEvent]?) {
-        guard let url = eventsCacheURL() else { return }
-        if let events, cachedEventsSnapshot == events { return }
+        guard let events else {
+            cachedEventsSnapshot = nil
+            removeEventsCache(for: provider ?? .unassigned)
+            return
+        }
+        guard let directory = eventsCacheDirectory, let url = eventsCacheURL(), cachedEventsSnapshot != events else { return }
         cachedEventsSnapshot = events
+        enqueueEventsCacheOperation {
+            try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            try? JSONEncoder().encode(events).write(to: url, options: .atomic)
+        }
+    }
+
+    private func removeEventsCache(for provider: GoogleCalendarProvider) {
+        guard let directory = eventsCacheDirectory else { return }
+        let prefix = eventsCachePrefix(for: provider)
+        enqueueEventsCacheOperation {
+            let files = (try? FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)) ?? []
+            for file in files where file.lastPathComponent.hasPrefix(prefix) && file.pathExtension == "json" {
+                try? FileManager.default.removeItem(at: file)
+            }
+        }
+    }
+
+    private func enqueueEventsCacheOperation(_ operation: @escaping @Sendable () -> Void) {
         let previousTask = eventsCacheWriteTask
         eventsCacheWriteTask = Task.detached {
             await previousTask?.value
-            guard let events else {
-                try? FileManager.default.removeItem(at: url)
-                return
-            }
-            try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
-            try? JSONEncoder().encode(events).write(to: url, options: .atomic)
+            operation()
         }
     }
 
@@ -547,8 +628,27 @@ final class GoogleCalendarStore: ObservableObject {
         }.value
     }
 
-    private static func loadSelectedCalendarIDs(from userDefaults: UserDefaults, account: CodexRuntimeProvider) -> Set<String> {
-        let json = userDefaults.string(forKey: selectedCalendarIDsKey(for: account)) ?? userDefaults.string(forKey: selectedCalendarIDsKey)
+    private static func selectedCalendarIDsStorageKey(for provider: GoogleCalendarProvider, scoped: Bool) -> String {
+        switch provider {
+        case .unassigned: "\(accountSelectedCalendarIDsKey).unassigned"
+        case let .google(id): "\(accountSelectedCalendarIDsKey).google.\(id.uuidString)"
+        case let .databricks(id): scoped ? "\(accountSelectedCalendarIDsKey).databricks.\(id.uuidString)" : accountSelectedCalendarIDsKey
+        }
+    }
+
+    private static func loadSelectedCalendarIDs(from userDefaults: UserDefaults, provider: GoogleCalendarProvider, scoped: Bool) -> Set<String> {
+        let key = selectedCalendarIDsStorageKey(for: provider, scoped: scoped)
+        // The original account is immutable; the saved Google route now belongs to Drive.
+        if scoped, let original = SingleAccountMigration.originalDatabricksConnectionID(in: userDefaults),
+           provider.databricksConnectionID == original,
+           userDefaults.object(forKey: key) == nil {
+            userDefaults.set(
+                userDefaults.string(forKey: accountSelectedCalendarIDsKey) ?? userDefaults.string(forKey: selectedCalendarIDsKey),
+                forKey: key
+            )
+        }
+        let json = userDefaults.string(forKey: key)
+            ?? (!scoped && provider.databricksConnectionID != nil ? userDefaults.string(forKey: selectedCalendarIDsKey) : nil)
         guard let json,
               let data = json.data(using: .utf8),
               let ids = try? JSONDecoder().decode([String].self, from: data)
@@ -558,13 +658,19 @@ final class GoogleCalendarStore: ObservableObject {
         return Set(ids)
     }
 
-    private static func persistSelectedCalendarIDs(_ ids: Set<String>, to userDefaults: UserDefaults, account: CodexRuntimeProvider) {
+    private static func persistSelectedCalendarIDs(
+        _ ids: Set<String>,
+        to userDefaults: UserDefaults,
+        provider: GoogleCalendarProvider,
+        scoped: Bool
+    ) {
         let sorted = Array(ids).sorted()
         guard let data = try? JSONEncoder().encode(sorted),
               let json = String(data: data, encoding: .utf8)
         else {
             return
         }
-        userDefaults.set(json, forKey: Self.selectedCalendarIDsKey(for: account))
+        let key = selectedCalendarIDsStorageKey(for: provider, scoped: scoped)
+        userDefaults.set(json, forKey: key)
     }
 }

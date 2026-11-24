@@ -12,7 +12,7 @@ extension MeetingRepository {
         dbQueue: any DatabaseWriter
     ) async throws -> ScreenshotSearchPage {
         try await dbQueue.read { db in
-            guard !criteria.text.isEmpty || criteria.pendingOnly else {
+            guard !criteria.text.isEmpty else {
                 return ScreenshotSearchPage(items: [], nextCursor: nil, replacesResults: false)
             }
             var query: String?
@@ -73,49 +73,6 @@ extension MeetingRepository {
         }
     }
 
-    nonisolated static func remoteScreenshotPage(
-        workspaceId: UUID,
-        criteria: MeetingSearchCriteria,
-        cursor: String?,
-        dbQueue: any DatabaseWriter,
-        contentProvider: MeetingContentProvider = .shared
-    ) async throws -> (items: [ScreenshotSearchResult], cursor: String?) {
-        var position = cursor
-        repeat {
-            let page = try await contentProvider.search(
-                workspaceId: workspaceId,
-                query: criteria.text,
-                kind: .screenshot,
-                cursor: position,
-                dbQueue: dbQueue
-            )
-            let items = try await dbQueue.read { db in
-                let allowed = try Set(filterRemoteSearchMeetingIDs(page.items.map(\.meetingId), workspaceId: workspaceId, criteria: criteria, in: db))
-                return try page.items.compactMap { hit -> ScreenshotSearchResult? in
-                    guard allowed.contains(hit.meetingId) else { return nil }
-                    guard let row = try Row.fetchOne(db, sql: """
-                    SELECT s.id, s.meetingId, s.capturedAt, s.mimeType, s.contentHash, m.name, m.description
-                    FROM meeting_images s JOIN meetings m ON m.id = s.meetingId
-                    WHERE s.id = ? AND m.id = ? AND m.workspace_id = ?
-                    """, arguments: [hit.id, hit.meetingId, workspaceId]) else { throw TextContentError.changed }
-                    return ScreenshotSearchResult(
-                        id: hit.id,
-                        meetingID: hit.meetingId,
-                        meetingTitle: row["name"],
-                        meetingDescription: row["description"],
-                        capturedAt: row["capturedAt"],
-                        mimeType: row["mimeType"],
-                        contentHash: row["contentHash"],
-                        snippet: hit.snippet
-                    )
-                }
-            }
-            position = page.nextCursor
-            if !items.isEmpty || position == nil { return (items, position) }
-            try Task.checkCancellation()
-        } while true
-    }
-
     nonisolated static func screenshotImageData(
         id: UUID,
         workspaceID: UUID,
@@ -161,10 +118,7 @@ extension MeetingRepository {
     ) -> (condition: String, arguments: StatementArguments) {
         var conditions: [String] = []
         var arguments: StatementArguments = []
-        if criteria.pendingOnly {
-            conditions.append(pendingSearchScreenshotSQL)
-        }
-        let dateSQL = criteria.pendingOnly ? "meeting_images.capturedAt" : "COALESCE(meetings.recordingStartedAt, meetings.createdAt)"
+        let dateSQL = "COALESCE(meetings.recordingStartedAt, meetings.createdAt)"
         if let startDate = criteria.startDate {
             conditions.append("\(dateSQL) >= ?")
             arguments += [startDate]

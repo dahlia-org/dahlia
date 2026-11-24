@@ -6,14 +6,15 @@ import Testing
 
 struct OmnigentServiceTests {
     @Test
-    func onlyADatabricksAccountThatTurnedItOnHasAWorkspace() throws {
+    func onlyADatabricksConnectionThatTurnedItOnHasAWorkspace() throws {
         let defaults = try #require(UserDefaults(suiteName: "OmnigentServiceTests.\(UUID())"))
         let id = UUID()
-        let account = CodexRuntimeProvider.databricks(connectionID: id)
-        #expect(OmnigentService.connectionID(for: account, defaults: defaults) == nil)
-        defaults.set(true, forKey: OmnigentService.enabledKey(account.accountKey))
-        #expect(OmnigentService.connectionID(for: account, defaults: defaults) == id)
-        #expect(OmnigentService.connectionID(for: .local, defaults: defaults) == nil)
+        let connections: [ProviderAccountDirectory.Connection] = [.init(id: id, workspaceURL: URL(string: "https://dbc.cloud.databricks.com")!)]
+        ProviderAccountDirectory.$connections.withValue(connections) {
+            #expect(OmnigentService.connectionID(defaults: defaults) == nil)
+            defaults.set(true, forKey: OmnigentService.enabledKey(AppAccount.key))
+            #expect(OmnigentService.connectionID(defaults: defaults) == id)
+        }
     }
 
     @Test

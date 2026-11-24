@@ -50,8 +50,6 @@
                     let persisted = try #require(try fetchTranscriptContent(id: segment.id, in: db))
                     #expect(try abs(#require(persisted.createdAt).timeIntervalSince(createdAt)) < 0.001)
                     #expect(abs(persisted.startTime.timeIntervalSince(segment.startTime)) < 0.001)
-                    let patch = SyncTranscriptPatchSegment(persisted)
-                    #expect(patch.createdAt == persisted.createdAt)
                 }
             }
             #expect(batch.startTime == yesterday.addingTimeInterval(13))

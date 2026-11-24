@@ -34,15 +34,12 @@
         }
 
         @Test
-        func databricksAccountStartsWithItsGatewaysDefaultModel() throws {
+        func imageAnalysisPrefersTheGatewaysDefaultModel() throws {
             let suite = "DatabricksDefaults-\(UUID())"
             let defaults = try #require(UserDefaults(suiteName: suite))
             defer { defaults.removePersistentDomain(forName: suite) }
-            let databricks = WorkspaceRecord(
-                id: .v7(), path: nil, name: "Databricks", createdAt: .now, lastOpenedAt: .now, databricksConnectionId: .v7()
-            )
-            let account = AccountInferenceSettings(workspace: databricks, defaults: defaults)
-            #expect(account.local.model == "databricks/system.ai.claude-haiku-5-5")
+            let workspace = WorkspaceRecord(id: .v7(), path: nil, name: "Databricks", createdAt: .now, lastOpenedAt: .now)
+            let account = AccountInferenceSettings(workspace: workspace, defaults: defaults)
             // Image analysis saves no model: it prefers Haiku while Haiku is on, and another listed model once it is off.
             #expect(account.imageAnalysis.model == nil)
             let model = { (reference: String) in
@@ -73,11 +70,11 @@
                 supportedReasoningEfforts: [], defaultReasoningEffort: "low", inputModalities: ["text"]
             )
             #expect(CodexScreenshotAnalysisService.defaultModel(in: [textHaiku, opus]) == opus.model)
-            // With no listed default, the bare preference stays, not a Databricks model another account cannot have.
+            // With no listed default, the bare preference stays, not a gateway model another account cannot have.
             #expect(CodexScreenshotAnalysisService.defaultModel(in: []) == "gpt-6-luna")
 
             // A model the workspace already chose stays, and other accounts keep their defaults.
-            var chosen = databricks
+            var chosen = workspace
             chosen.generationSettings.local.model = "databricks/system.ai.claude-opus-5-5"
             #expect(AccountInferenceSettings(workspace: chosen, defaults: defaults).local.model == "databricks/system.ai.claude-opus-5-5")
             let local = WorkspaceRecord(id: .v7(), path: nil, name: "Local", createdAt: .now, lastOpenedAt: .now)
@@ -117,86 +114,20 @@
         }
 
         @Test
-        func databricksAccountFollowsTheOpenWorkspace() throws {
-            let suiteName = "DatabricksAccountTests-\(UUID())"
-            let defaults = try #require(UserDefaults(suiteName: suiteName))
-            defer { defaults.removePersistentDomain(forName: suiteName) }
-            let model = WorkspaceAISettingsModel(setupDefaults: defaults, activateRuntime: { _ in })
-            let connectionID = UUID()
-            var databricks = makeWorkspace(openedAt: .now)
-            databricks.databricksConnectionId = connectionID
-
-            model.activate(workspace: databricks)
-            #expect(model.isDatabricksAccount)
-            #expect(model.databricksAccountConnectionID == connectionID)
-            let snapshot = try #require(model.snapshot)
-            #expect(CodexRuntimeProvider(
-                accountConnectionID: snapshot.accountConnectionID, databricksConnectionID: snapshot.databricksConnectionID
-            ) == .databricks(connectionID: connectionID))
-            // Each account keeps its own model, so switching never carries a Databricks model to the Local Account.
-            model.summaryModelID = "databricks/system.ai.claude"
-            #expect(defaults.data(forKey: AccountInferenceSettings.key(connectionID: nil, databricksConnectionID: connectionID)) != nil)
-
-            model.activate(workspace: makeWorkspace(openedAt: .now))
-            #expect(!model.isDatabricksAccount)
-            #expect(model.summaryModelID != "databricks/system.ai.claude")
-            model.activate(workspace: databricks)
-            #expect(model.summaryModelID == "databricks/system.ai.claude")
-        }
-
-        @Test
-        func inferenceKeepsServerGatewayAndUsesAccountPreferencesWithSharedLanguage() async throws {
-            let suiteName = "MacInferenceSettingsTests-\(UUID())"
-            let defaults = try #require(UserDefaults(suiteName: suiteName))
-            defer { defaults.removePersistentDomain(forName: suiteName) }
-            let model = WorkspaceAISettingsModel(setupDefaults: defaults, activateRuntime: { _ in })
-            model.localProvider = .databricks
-            model.databricksProfile = "MAC"
-            var server = makeWorkspace(openedAt: .now)
-            server.accountConnectionId = .v7()
-            server.organizationId = server.accountConnectionId == nil ? nil : (server.organizationId ?? .v7())
-            server.summaryModelID = "not-the-mac-model"
-            model.activate(workspace: server)
-            #expect(await model.waitForRuntimeContext())
-            server.generationSettings.summary.style = .concise
-            server.generationSettings.outputLanguage = .fr
-            let captured = SummaryGenerationSettings.current(workspaceAISettings: model, workspace: server)
-            #expect(captured.modelID == "not-the-mac-model")
-            #expect(captured.reasoningEffort == "high")
-            #expect(try captured.runtimeProvider == .dahlia(connectionID: #require(server.accountConnectionId)))
-            #expect(captured.languageDisplayName == SummaryLanguage.fr.displayName)
-            #expect(captured.detailLevelInstruction == SummaryDetailLevel.detailed.instruction)
-            model.activate(workspace: makeWorkspace(openedAt: .now))
-            #expect(await model.waitForRuntimeContext())
-            #expect(SummaryGenerationSettings.current(workspaceAISettings: model, workspace: server).runtimeProvider == captured
-                .runtimeProvider)
-            #expect(captured.applying(detailLevel: .detailed).sourceAccountConnectionID == captured.sourceAccountConnectionID)
-        }
-
-        @Test
         func inheritsTheLatestLocalWorkspaceOnceAndKeepsExplicitChangesAfterRestart() async throws {
             let suiteName = "LocalAccountAISettingsTests-\(UUID())"
             let defaults = try #require(UserDefaults(suiteName: suiteName))
             defer { defaults.removePersistentDomain(forName: suiteName) }
             let database = try AppDatabaseManager(path: ":memory:")
-            let connection = DahliaAccountConnectionRecord(
-                id: .v7(), origin: "https://server.example.com", clientID: "test", createdAt: .now
-            )
             let older = makeWorkspace(openedAt: Date(timeIntervalSince1970: 1))
             var latest = makeWorkspace(openedAt: Date(timeIntervalSince1970: 2))
             latest.localProvider = .databricks
             latest.databricksProfile = "LOCAL"
             latest.summaryModelID = "latest-summary"
             latest.summaryReasoningEffort = "max"
-            var server = makeWorkspace(openedAt: Date(timeIntervalSince1970: 3))
-            server.accountConnectionId = connection.id
-            server.organizationId = server.accountConnectionId == nil ? nil : (server.organizationId ?? .v7())
-            server.databricksProfile = "SERVER"
-            try await database.dbQueue.write { [latest, server] db in
-                try connection.insert(db)
+            try await database.dbQueue.write { [latest] db in
                 try older.insert(db)
                 try latest.insert(db)
-                try server.insert(db)
             }
             let model = WorkspaceAISettingsModel(setupDefaults: defaults, activateRuntime: { _ in })
 
@@ -241,45 +172,6 @@
             #expect(model.localAccountSettings == .init(provider: .databricks, databricksProfile: "LEGACY"))
             #expect(defaults.bool(forKey: LocalAccountAISettings.migrationKey))
             #expect(!defaults.bool(forKey: LocalAccountAISettings.summaryMigrationKey))
-        }
-
-        @Test
-        func providerChangesAreSharedAcrossWorkspacesWithoutActivatingTheHostedRuntime() async throws {
-            let suiteName = "LocalAccountAISettingsTests-\(UUID())"
-            let defaults = try #require(UserDefaults(suiteName: suiteName))
-            defer { defaults.removePersistentDomain(forName: suiteName) }
-            let activations = Mutex<[WorkspaceAISettingsSnapshot]>([])
-            let model = WorkspaceAISettingsModel(setupDefaults: defaults) { snapshot in
-                activations.withLock { $0.append(snapshot) }
-            }
-            var server = makeWorkspace(openedAt: .now)
-            server.accountConnectionId = .v7()
-            server.organizationId = server.accountConnectionId == nil ? nil : (server.organizationId ?? .v7())
-            server.summaryModelID = "hosted-summary"
-            model.activate(workspace: server)
-            #expect(await model.waitForRuntimeContext())
-
-            model.localProvider = .databricks
-            model.databricksProfile = "SHARED"
-            #expect(activations.withLock { $0.count } == 1)
-            #expect(model.accountConnectionID == server.accountConnectionId)
-            #expect(model.summaryModelID == "hosted-summary")
-            #expect(LocalAccountAISettings(defaults: defaults) == model.localAccountSettings)
-
-            var local = makeWorkspace(openedAt: .now)
-            local.summaryModelID = "local-summary"
-            model.activate(workspace: local)
-            #expect(await model.waitForRuntimeContext())
-            #expect(model.summaryModelID == "local-summary")
-            #expect(activations.withLock { $0.last?.localProvider } == .databricks)
-            #expect(activations.withLock { $0.last?.databricksProfile } == "SHARED")
-            model.databricksProfile = "NEW"
-            #expect(await model.waitForRuntimeContext())
-            #expect(activations.withLock { $0.last?.databricksProfile } == "NEW")
-
-            model.activate(workspace: makeWorkspace(openedAt: .now))
-            #expect(await model.waitForRuntimeContext())
-            #expect(model.localAccountSettings == .init(provider: .databricks, databricksProfile: "NEW"))
         }
 
         @Test
@@ -394,7 +286,7 @@
         }
 
         @Test
-        func preferencesAreSharedWithinAnAccountButIsolatedAcrossAccountsAndMacs() async throws {
+        func preferencesAreSharedAcrossWorkspacesButIsolatedAcrossMacs() async throws {
             let suite = "AccountInferenceSettingsTests-\(UUID())"
             let defaults = try #require(UserDefaults(suiteName: suite))
             defer { defaults.removePersistentDomain(forName: suite) }
@@ -406,16 +298,9 @@
             latest.generationSettings.imageAnalysis = .init(enabled: false, model: "local-image", reasoningEffort: "high")
             latest.generationSettings.automaticProcessing = false
             latest.generationSettings.liveTranscriptDraft = true
-            let connection = DahliaAccountConnectionRecord(id: .v7(), origin: "https://account.invalid", clientID: "test", createdAt: .now)
-            var server = makeWorkspace(openedAt: Date(timeIntervalSince1970: 3))
-            server.accountConnectionId = connection.id
-            server.organizationId = .v7()
-            server.generationSettings.imageAnalysis = .init(enabled: false, model: "server-image", reasoningEffort: "low")
-            try await database.dbQueue.write { [latest, server] db in
-                try connection.insert(db)
+            try await database.dbQueue.write { [latest] db in
                 try older.insert(db)
                 try latest.insert(db)
-                try server.insert(db)
             }
             let model = WorkspaceAISettingsModel(setupDefaults: defaults, activateRuntime: { _ in })
             try await model.inheritLocalAccountSettings(from: database.dbQueue)
@@ -440,26 +325,15 @@
             #expect(canonicalDraft == true)
             #expect(model.chatModelID == "changed-chat")
             #expect(model.generationSettings.imageAnalysis == changedImage)
-            model.activate(workspace: server)
-            #expect(model.summaryModelID == server.summaryModelID)
-            #expect(model.generationSettings.imageAnalysis == server.generationSettings.imageAnalysis)
-            #expect(model.generationSettings.automaticProcessing)
-            model.summaryModelID = "server-model"
-            model.generationSettings.liveTranscriptDraft = true
-            model.accountConnectionID = nil
             #expect(AccountInferenceSettings(workspace: older, defaults: defaults).local.model == "changed-model")
             let restored = WorkspaceAISettingsModel(setupDefaults: defaults, activateRuntime: { _ in })
             restored.activate(workspace: older)
             #expect(restored.summaryModelID == "changed-model")
             #expect(restored.generationSettings.imageAnalysis == changedImage)
             #expect(!restored.generationSettings.liveTranscriptDraft)
-            restored.activate(workspace: server)
-            #expect(restored.summaryModelID == "server-model")
-            #expect(restored.generationSettings.imageAnalysis == server.generationSettings.imageAnalysis)
-            #expect(restored.generationSettings.liveTranscriptDraft)
             // Clearing this Mac's preferences exposes the unchanged canonical defaults.
             defaults.removePersistentDomain(forName: suite)
-            #expect(AccountInferenceSettings(workspace: server, defaults: defaults).local.model == server.summaryModelID)
+            #expect(AccountInferenceSettings(workspace: latest, defaults: defaults).local.model == latest.summaryModelID)
         }
 
         private func makeWorkspace(openedAt: Date) -> WorkspaceRecord {

@@ -17,14 +17,11 @@
                 setupDefaults: defaults, activateRuntime: { _ in }, databricksService: service
             )
             await model.reloadDatabricksConnections()
-            let workspace = WorkspaceRecord(
-                id: .v7(), path: nil, name: "Test", createdAt: .now, lastOpenedAt: .now,
-                databricksConnectionId: connection.id
-            )
+            let workspace = WorkspaceRecord(id: .v7(), path: nil, name: "Test", createdAt: .now, lastOpenedAt: .now)
             model.activate(workspace: workspace)
 
             #expect(model.pendingDatabricksSignOut == nil)
-            model.requestDatabricksSignOut()
+            model.requestDatabricksSignOut(connectionID: connection.id)
             #expect(model.pendingDatabricksSignOut == connection)
             #expect(try await service.connections() == [connection])
 
@@ -32,7 +29,7 @@
             #expect(model.pendingDatabricksSignOut == nil)
             await model.confirmDatabricksSignOut()
             #expect(try await service.connections() == [connection])
-            #expect(model.databricksAccountConnectionID == connection.id)
+            #expect(model.providerDatabricksConnectionID == connection.id)
         }
 
         @Test func removesOnlyTheChosenWorkspace() async throws {

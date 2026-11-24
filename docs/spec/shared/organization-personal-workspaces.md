@@ -49,23 +49,19 @@ Organization の名前と slug は既存の更新 API で変更できる。手�
 
 ## UIと互換性
 
-Server のサイドバー上部で Organization を選び、本人用とアクセス可能な通常 Workspace を表示する。各 Workspace の内容は展開時に取得する。未所属 Organization からの共有は別に表示する。検索は Workspace 単位で行い、チャットの所有は変更しない。Desktop も Workspace ID を使い、ローカル Workspace を暗黙に Server へ移さない。
+Server のサイドバー上部で Organization を選び、本人用とアクセス可能な通常 Workspace を表示する。各 Workspace の内容は展開時に取得する。未所属 Organization からの共有は別に表示する。検索は Workspace 単位で行い、チャットの所有は変更しない。Desktop は Server の Workspace を表示しない。
 
 ## 同期と移行
 
 同期台帳と search projection job、暗号鍵の identity は Workspace 単位とする。receipt の user は操作者、summary / image job の user は requester であり、所有者ではない。provider 呼出前と commit 直前に現在の内容書込権限を確認する。差分90日保持、snapshot 復旧、SSE の通知専用性、receipt と pull cursor の分離は維持する。
 
-Local から既存 Server Workspace への取り込みは、バックアップと ID 衝突検査の後、所属変更と通常の送信 operation を1つの SQLite transaction で記録する。Server transfer の relocation primitive を再利用する。録音・本文・画像・参照を維持し、元 Workspace とその設定 / instructions を残す。確定後の編集は通常 queue へ追加し、移行時に固定した operation / blob の完了を追跡して再起動後も再開する。409 や失効時は未送信データを保持し、Server の部分確定を自動 rollback しない。詳細は [同期](sync.md#正本とアカウント境界) に従う。
-
-取り込み中に会議を明示削除する場合、Project 階層の削除も含め、録音 archive が残っている間に削除 operation を記録する。不要になった録音 upload は削除 operation へ変え、その receipt で固定したインポート完了集合を完了させる。
-
-新規 Server Workspace も独立 ID で作成後に共通の取り込み経路を使う。作成の再試行状態と、同じ ID の既存データへの明示的な再接続は [Workspace 再接続](../desktop/workspace-reconnection.md) に従う。通常の取り込みに対する衝突拒否は維持する。
+Desktop は Server と同期しない（[同期](sync.md#正本とアカウント境界)）。Desktop の Workspace を Server Workspace へ取り込む経路と、Server Workspace へ再接続する経路は無い。
 
 ## 配布境界
 
 公開済み backup の復元を維持する。未公開 DB への互換移行や旧 role alias は提供せず、稼働 DB を自動消去しない。新しい DB に適用し、旧 DB の保持が必要な場合は別途移行する。既存 slug は移行しない。Desktop は v46 で nullable なキャッシュ列を追加し、既存行を保持する。同期契約は [同期](sync.md) に従う。
 
-Local Workspace は Organization を推測せず、Server への関連付けは移行画面の明示操作で行う。Server Workspace は organizationId を必須とし、Local Workspace では nil を SQLite CHECK で検証する。公開版 v41 の `accountConnectionId` は AI 利用先の設定で、Server Workspace の所属ではない。
+Server Workspace は organizationId を必須とする。Desktop の Workspace は Organization を持たず、`accountConnectionId` とともに nil であることを SQLite CHECK で検証する（起動時に両方を空にする）。公開版 v41 の `accountConnectionId` は AI 利用先の設定で、Server Workspace の所属ではない。
 
 Server は PostgreSQL / Hyperdrive を使う（Workers を含む）。D1 はサポート対象に含めない。
 

@@ -29,15 +29,6 @@ import GRDB
             #expect(promoted.appearance == style)
             let demoted = try context.service.reparentProject(id: child.id, parentProjectId: parent.id, expectedRevision: promoted.revision)
             #expect(demoted.appearance == nil)
-            var staleChild = demoted
-            staleChild.appearance = style
-            for action in [SyncAction.create, .update] {
-                let operation = try SyncInitialSnapshotBuilder.projectOperation(staleChild, action: action)
-                let payload = try #require(operation.payloadJSON)
-                let body = try #require(JSONSerialization.jsonObject(with: payload) as? [String: Any])
-                #expect(body["icon"] is NSNull)
-                #expect(body["color"] is NSNull)
-            }
             #expect(try context.repository.fetchProject(id: parent.id)?.appearance == style)
         }
 

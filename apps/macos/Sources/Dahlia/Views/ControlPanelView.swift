@@ -14,7 +14,6 @@ enum DetailTab: String, CaseIterable, Identifiable {
     case notes
     case screenshots
     case transcript
-    case conversationAnalytics
 
     var id: String { rawValue }
 
@@ -24,7 +23,6 @@ enum DetailTab: String, CaseIterable, Identifiable {
         case .notes: L10n.notes
         case .screenshots: L10n.screenshots
         case .transcript: L10n.transcript
-        case .conversationAnalytics: L10n.conversationAnalytics
         }
     }
 }
@@ -54,14 +52,6 @@ struct ControlPanelView: View {
     @State private var didTapInsideNotesField = false
     @FocusState private var isMeetingNameFieldFocused: Bool
     @FocusState private var isNotesFieldFocused: Bool
-
-    private var conversationAnalyticsPreparationIdentity: String {
-        [
-            viewModel.currentMeetingId?.uuidString ?? "none",
-            String(appSettings.isConversationAnalyticsBetaEnabled),
-            String(viewModel.conversationMetricsStore.reloadToken),
-        ].joined(separator: ":")
-    }
 
     var body: some View {
         Group {
@@ -116,23 +106,6 @@ struct ControlPanelView: View {
             cancelMeetingRename()
             isSelectingScreenshots = false
             selectedScreenshotIds.removeAll()
-        }
-        .onChange(of: appSettings.isConversationAnalyticsBetaEnabled, initial: true) { _, isEnabled in
-            if !isEnabled, selectedTab == .conversationAnalytics {
-                selectedTab = .transcript
-            }
-        }
-        .onChange(of: viewModel.conversationMetricsStore.isTabAvailable) { _, isAvailable in
-            if !isAvailable, selectedTab == .conversationAnalytics {
-                selectedTab = .transcript
-            }
-        }
-        .task(id: conversationAnalyticsPreparationIdentity) {
-            guard appSettings.isConversationAnalyticsBetaEnabled else {
-                viewModel.conversationMetricsStore.disable()
-                return
-            }
-            await viewModel.prepareCurrentMeetingConversationMetrics()
         }
         .confirmationDialog(
             L10n.deleteCount(selectedScreenshotIds.count),
@@ -233,24 +206,6 @@ struct ControlPanelView: View {
                 )
             }
 
-            if let archiveState = viewModel.recordingArchiveState {
-                HStack {
-                    Label(
-                        archiveState == "saved" ? L10n.recordingArchiveSaved : archiveState == "failed" ? L10n.recordingArchiveFailed : L10n
-                            .recordingArchivePending,
-                        systemImage: archiveState == "saved" ? "checkmark.circle" : "waveform"
-                    )
-                    Spacer()
-                    if archiveState == "failed", sidebarViewModel.canEditCurrentWorkspace {
-                        Button(L10n.retry, action: viewModel.retryRecordingArchive)
-                    }
-                }
-                .font(.dahliaSecondary)
-                .foregroundStyle(.secondary)
-                .padding(.horizontal, DahliaDesign.detailHorizontalPadding)
-                .padding(.vertical, 6)
-            }
-
             // エラー表示
             if let error = viewModel.errorMessage {
                 detailErrorBanner(message: error, tint: .red)
@@ -271,11 +226,6 @@ struct ControlPanelView: View {
                 notesTabContent
             case .transcript, .screenshots:
                 EmptyView()
-            case .conversationAnalytics:
-                ConversationAnalyticsDashboardView(
-                    store: viewModel.conversationMetricsStore,
-                    load: viewModel.loadCurrentMeetingConversationMetrics
-                )
             }
         }
         .frame(maxWidth: .infinity)
@@ -294,7 +244,7 @@ struct ControlPanelView: View {
             document: viewModel.currentSummaryDocument,
             hasSummary: viewModel.hasCurrentMeetingSummary,
             showsHistory: sidebarViewModel.currentWorkspace.map { $0.url == nil } == true,
-            canPromote: sidebarViewModel.currentWorkspace.map { $0.accountConnectionId == nil } == true,
+            canPromote: sidebarViewModel.currentWorkspace != nil,
             onPromoted: { [meetingID = viewModel.currentMeetingId] document in
                 guard let meetingID else { return }
                 viewModel.applyPromotedSummary(document, meetingID: meetingID)
@@ -317,8 +267,7 @@ struct ControlPanelView: View {
                             .init(
                                 workspaceID: workspace.id,
                                 meetingID: id,
-                                name: viewModel.draftMeeting?.title ?? "Notes",
-                                connectionID: workspace.accountConnectionId
+                                name: viewModel.draftMeeting?.title ?? "Notes"
                             )
                         }
                     },

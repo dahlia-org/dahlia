@@ -13,7 +13,7 @@ extension PiChatService {
     ]
 
     func runDidSettle(_ threadID: String, accountID: String? = nil) {
-        guard let account = accountID ?? sessions[threadID]?.provider.accountKey else { return }
+        guard let account = accountID ?? sessions[threadID].map({ _ in AppAccount.key }) else { return }
         Task {
             await scheduleRuns(accountID: account)
             await deliverResults(accountID: account)
@@ -31,15 +31,15 @@ extension PiChatService {
                 sessions[$0.threadID]?.turn == nil && startingTurns[$0.threadID] == nil
                     && ($0.origin != "schedule" || !AgentBackgroundActivity.isRecording)
             }
-            let active = sessions.values.filter { $0.provider.accountKey == accountID && $0.turn != nil && $0.turn?.run.origin != "user" }
+            let active = sessions.values.filter { AppAccount.key == accountID && $0.turn != nil && $0.turn?.run.origin != "user" }
                 .count
             if canReschedule, canStart, active < 3, !stoppingAccounts.contains(accountID) {
                 Task { await self.scheduleRuns(accountID: accountID) }
             }
         }
         do {
-            let provider = try await runtime.currentProvider()
-            guard provider.accountKey == accountID else {
+            try await runtime.requireConfigured()
+            guard AppAccount.key == accountID else {
                 try await history().dbQueue.write {
                     try $0.execute(
                         sql: "UPDATE chat_runs SET status='interrupted' WHERE status='queued' AND origin<>'schedule' AND threadID IN (SELECT id FROM chat_threads WHERE accountID=?)",
@@ -57,7 +57,7 @@ extension PiChatService {
                     guard try scheduleService().validateStart(run, account: accountID) else { continue }
                 }
                 let active = sessions.filter { _, session in
-                    session.provider.accountKey == accountID && session.turn?.run.origin != "user"
+                    AppAccount.key == accountID && session.turn?.run.origin != "user"
                         && session.turn != nil
                 }.count
                 guard active < 3 else { break }
@@ -70,8 +70,7 @@ extension PiChatService {
                         inputs: [.text(run.input)],
                         model: run.model,
                         effort: run.effort,
-                        approvalMethod: CodexChatApprovalMethod(rawValue: run.approvalMethod) ?? .ask,
-                        expectedProvider: provider
+                        approvalMethod: CodexChatApprovalMethod(rawValue: run.approvalMethod) ?? .ask
                     )
                 } catch {
                     scheduledRuns[run.threadID] = nil
@@ -91,7 +90,7 @@ extension PiChatService {
     func deliverResults(accountID: String) async {
         guard !stoppingAccounts.contains(accountID) else { return }
         do {
-            guard try await runtime.currentProvider().accountKey == accountID else {
+            guard runtime.isConfigured, AppAccount.key == accountID else {
                 // Runs that end after their account was switched away never restart a parent when the user returns.
                 try history().suppressRunNotifications(accountID: accountID)
                 return
@@ -159,9 +158,9 @@ extension PiChatService {
         guard let callerSession = sessions[threadID], callerSession.processID == processID,
               let callerTurn = callerSession.turn, !callerTurn.stopRequested, callerSession.profile == .interactive else { throw CancellationError() }
         let store = try history()
-        let account = callerSession.provider.accountKey
+        let account = AppAccount.key
         let caller = try store.thread(id: threadID, accountID: account)
-        guard try await runtime.currentProvider() == callerSession.provider,
+        guard runtime.isConfigured,
               sessions[threadID]?.processID == processID,
               sessions[threadID]?.turn?.id == callerTurn.id,
               sessions[threadID]?.turn?.stopRequested == false else { throw CancellationError() }

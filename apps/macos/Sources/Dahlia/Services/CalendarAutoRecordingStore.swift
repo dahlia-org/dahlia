@@ -16,6 +16,15 @@ final class CalendarAutoRecordingStore: ObservableObject {
         selections = Self.loadSelections(from: userDefaults)
     }
 
+    func activateAfterAccountMigration() {
+        let original = SingleAccountMigration.originalDatabricksConnectionID(in: userDefaults)
+        replaceSelections(Self.loadSelections(from: userDefaults).map {
+            CalendarAutoRecordingSelection(
+                eventID: $0.eventID.retainingLegacyGoogleProvider(original), startDate: $0.startDate, endDate: $0.endDate
+            )
+        })
+    }
+
     var hasSelections: Bool {
         !selections.isEmpty
     }

@@ -45,6 +45,6 @@ extension CodexChatSessionModel {
     }
 
     var isBoundToCurrentAccount: Bool {
-        accountID == CodexRuntimeProvider(workspace: settings.currentWorkspace).accountKey
+        accountID == AppAccount.key
     }
 }

@@ -19,8 +19,8 @@ enum SettingsGroup: CaseIterable, Identifiable {
     var categories: [SettingsCategory] {
         switch self {
         case .app: [.general, .appearance, .permissions, .backups]
-        case .features: [.workspace, .meetings, .agents, .skills, .memory, .dahliaMCP, .calendar, .meetingLinks]
-        case .advanced: [.search, .betaFeatures, .audioDiagnostics]
+        case .features: [.workspace, .meetings, .providers, .agents, .skills, .memory, .dahliaMCP, .calendar, .meetingLinks]
+        case .advanced: [.search, .audioDiagnostics]
         }
     }
 }

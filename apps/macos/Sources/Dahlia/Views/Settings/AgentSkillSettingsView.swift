@@ -3,7 +3,6 @@ import DahliaRuntimeSupport
 import SwiftUI
 
 struct AgentSkillSettingsView: View {
-    let account: CodexRuntimeProvider
     let readOnly: Bool
     @Environment(MainWindowNavigation.self) private var navigation
     @State private var learning: AgentLearningSettingsModel
@@ -15,10 +14,9 @@ struct AgentSkillSettingsView: View {
     @State private var refreshID = 0
     @State private var deleting: String?
 
-    init(account: CodexRuntimeProvider, readOnly: Bool = false) {
-        self.account = account
+    init(readOnly: Bool = false) {
         self.readOnly = readOnly
-        _learning = State(initialValue: AgentLearningSettingsModel(account: account))
+        _learning = State(initialValue: AgentLearningSettingsModel())
     }
 
     var body: some View {
@@ -43,7 +41,7 @@ struct AgentSkillSettingsView: View {
                                     Task {
                                         do {
                                             let service = try await PiChatService.shared.skillService()
-                                            try await service.setPinned(name: entry.name, account: account.accountKey, pinned: !pinned)
+                                            try await service.setPinned(name: entry.name, account: AppAccount.key, pinned: !pinned)
                                             await refresh()
                                         } catch { errorMessage = error.localizedDescription }
                                     }
@@ -57,7 +55,7 @@ struct AgentSkillSettingsView: View {
                                             let service = try await PiChatService.shared.skillService()
                                             try await service.setLocked(
                                                 name: entry.name,
-                                                account: account.accountKey,
+                                                account: AppAccount.key,
                                                 locked: curation[entry.name]?.locked != true
                                             )
                                             await refresh()
@@ -143,7 +141,7 @@ struct AgentSkillSettingsView: View {
     }
 
     private func edit(_ name: String) {
-        navigation.presentSettingsModal(AgentSkillEditor(account: account, name: name, onClose: navigation.dismissSettingsModal) {
+        navigation.presentSettingsModal(AgentSkillEditor(name: name, onClose: navigation.dismissSettingsModal) {
             navigation.dismissSettingsModal()
             refreshID += 1
         })
@@ -154,10 +152,10 @@ struct AgentSkillSettingsView: View {
         Task {
             do {
                 let service = try await PiChatService.shared.skillService()
-                let root = try await PiChatService.shared.skillsRoot(account)
+                let root = try await PiChatService.shared.skillsRoot()
                 let operation: JSONValue = .object(["action": .string("delete"), "name": .string(name)])
                 _ = try await service.manageAccountSkills(
-                    payload: .object(["operations": .array([operation])]), account: account.accountKey, root: root
+                    payload: .object(["operations": .array([operation])]), account: AppAccount.key, root: root
                 )
                 refreshID += 1
             } catch { errorMessage = error.localizedDescription }
@@ -168,7 +166,7 @@ struct AgentSkillSettingsView: View {
         Task {
             do {
                 let service = try await PiChatService.shared.skillService()
-                try await service.setCuratorManaged(name: name, account: account.accountKey, managed: managed)
+                try await service.setCuratorManaged(name: name, account: AppAccount.key, managed: managed)
                 await refresh()
             } catch { errorMessage = error.localizedDescription }
         }
@@ -186,13 +184,13 @@ struct AgentSkillSettingsView: View {
         errorMessage = nil
         defer { isLoading = false }
         do {
-            let result = try await PiRuntimeService.shared.skills(for: account)
+            let result = try await PiRuntimeService.shared.skills()
             guard !Task.isCancelled else { return }
             let service = try await PiChatService.shared.skillService()
             curation = try await Dictionary(
-                service.curationStates(account: account.accountKey).map { ($0.name, $0) }, uniquingKeysWith: { first, _ in first }
+                service.curationStates(account: AppAccount.key).map { ($0.name, $0) }, uniquingKeysWith: { first, _ in first }
             )
-            root = try await PiChatService.shared.skillsRoot(account)
+            root = try await PiChatService.shared.skillsRoot()
             await learning.refresh()
             guard !Task.isCancelled, let root else { return }
             let grouped = try await AgentSkillSettingsEntry.grouped(skills: result, changes: learning.changes, root: root)

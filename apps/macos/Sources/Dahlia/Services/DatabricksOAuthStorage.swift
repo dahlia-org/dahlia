@@ -14,9 +14,12 @@ struct DatabricksOAuthStorage: Sendable {
     /// Connected workspaces, oldest first.
     var loadConnections: @Sendable () throws -> [DatabricksConnection]
     var saveConnections: @Sendable ([DatabricksConnection]) throws -> Void
+    /// Names a connection, or clears its name with nil. Saving connections keeps the name.
+    var renameConnection: @Sendable (UUID, String?) throws -> Void = { _, _ in }
     var loadCredential: @Sendable (UUID) throws -> DatabricksOAuthCredential?
     var saveCredential: @Sendable (UUID, DatabricksOAuthCredential) throws -> Void
     var deleteCredential: @Sendable (UUID) throws -> Void
+    var removeProviderRegistrations: @Sendable (DatabricksConnection) throws -> Void = { _ in }
 
     /// Every storage of one database shares this, so the MainActor views that read it (Calendar's proxy) and each
     /// token request skip SQLite. Only `saveConnections` writes Databricks rows; each save bumps `generation`, so a
@@ -29,7 +32,7 @@ struct DatabricksOAuthStorage: Sendable {
 
     private static let cache = Mutex(ConnectionCache())
 
-    /// Connections live in the app database's `accounts` table, which the app sets once it opens; credentials stay
+    /// Connections live in the app database's `provider_accounts` table, which the app sets once it opens; credentials stay
     /// in the Keychain under the profile.
     static func local(
         profile: DahliaRuntimeProfile = DahliaApplicationSupport.profile(),
@@ -58,9 +61,19 @@ struct DatabricksOAuthStorage: Sendable {
                     let kept = connections.map(\.id)
                     try DahliaAccountConnectionRecord.databricksWorkspaces.filter(!kept.contains(Column("id"))).deleteAll(db)
                     for connection in connections {
-                        let createdAt = try DahliaAccountConnectionRecord.fetchOne(db, key: connection.id)?.createdAt ?? .now
-                        try DahliaAccountConnectionRecord(connection, createdAt: createdAt).save(db)
+                        // A sign-in again keeps when the connection was added and the name the user gave it.
+                        let stored = try DahliaAccountConnectionRecord.fetchOne(db, key: connection.id)
+                        var record = DahliaAccountConnectionRecord(connection, createdAt: stored?.createdAt ?? .now)
+                        record.name = stored?.name
+                        try record.save(db)
                     }
+                }
+                cache.withLock { $0 = ConnectionCache(generation: $0.generation + 1) }
+            },
+            renameConnection: { id, name in
+                guard let dbQueue = database() else { throw DahliaCloudError.credentialStorageFailed }
+                try dbQueue.write { db in
+                    try db.execute(sql: "UPDATE provider_accounts SET name = ? WHERE id = ?", arguments: [name, id])
                 }
                 cache.withLock { $0 = ConnectionCache(generation: $0.generation + 1) }
             },
@@ -74,6 +87,12 @@ struct DatabricksOAuthStorage: Sendable {
             },
             deleteCredential: { id in
                 try KeychainService.deleteOrThrow(key: prefix + "." + id.uuidString)
+            },
+            removeProviderRegistrations: { connection in
+                guard let url = URL(string: connection.host) else { throw AIConfigurationError.invalidDatabricksWorkspaceURL }
+                try AgentMCPSettings.removeProviderAccount(
+                    AgentMCPProvider.id(for: url), agentURL: PiAgentDirectoryLocator().sharedAgentURL
+                )
             }
         )
     }
@@ -120,7 +139,7 @@ enum AccountsDatabase {
 
 extension DatabricksConnection {
     init(_ record: DahliaAccountConnectionRecord) {
-        self.init(id: record.id, host: record.origin, email: record.email, workspaceID: record.workspaceID)
+        self.init(id: record.id, host: record.origin, email: record.email, workspaceID: record.workspaceID, name: record.name)
     }
 }
 

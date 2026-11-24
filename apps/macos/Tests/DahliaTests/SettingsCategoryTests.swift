@@ -9,7 +9,11 @@ import Foundation
     struct SettingsCategoryTests {
         @Test
         func accountAndWorkspacePreferencesHaveSeparateDestinations() {
-            #expect(SettingsGroup.features.categories == [.workspace, .meetings, .agents, .skills, .memory, .dahliaMCP, .calendar, .meetingLinks])
+            #expect(SettingsGroup.features.categories == [.workspace, .meetings, .providers, .agents, .skills, .memory, .dahliaMCP, .calendar, .meetingLinks])
+            // Provider accounts have their own page, found by the services they sign in to.
+            #expect(SettingsNavigation.visibleSelection(.providers) == .providers)
+            #expect(SettingsCategory.providers.matches("Google"))
+            #expect(SettingsCategory.providers.matches("Databricks"))
             // Memory has its own page; its review switch moved there from Dahlia AI.
             #expect(SettingsCategory.memory.matches(L10n.agentMemoryReviewEnabled))
             // Skill optimization and the unattended-run history are a tab of Skills.
@@ -123,20 +127,12 @@ import Foundation
             #expect(SettingsCategory.backups.matches(L10n.batchAudioRetentionPeriod))
             #expect(SettingsCategory.backups.matches(L10n.batchTranscriptionStallTimeout))
             #expect(SettingsCategory.backups.matches(L10n.backups))
-            #expect(SettingsCategory.backups.matches(L10n.screenshotCacheLimit))
-            #expect(!SettingsCategory.meetings.matches(L10n.screenshotCacheLimit))
             #expect(SettingsCategory.meetings.matches(L10n.liveTranscriptDraft))
             #expect(SettingsCategory.meetings.matches(L10n.transcriptionModel))
             #expect(!SettingsCategory.agents.matches(L10n.liveTranscriptDraft))
             #expect(!SettingsCategory.general.matches(L10n.automaticRecordingStop))
             #expect(SettingsCategory.meetings.matches(L10n.automaticMeetingEndRecordingStop))
             #expect(SettingsCategory.general.matches(L10n.externalMicrophoneEchoCancellation))
-            #expect(!SettingsCategory.general.matches(L10n.serverContentRetention))
-            #expect(SettingsCategory.backups.matches(L10n.serverContentRetention))
-            #expect(!SettingsCategory.general.matches(L10n.serverContentRetentionDays))
-            #expect(SettingsCategory.backups.matches(L10n.serverContentRetentionDays))
-            #expect(!SettingsCategory.general.matches(L10n.forever))
-            #expect(SettingsCategory.backups.matches(L10n.forever))
             #expect(SettingsCategory.meetings.matches(L10n.translationTargetLanguage))
             #expect(SettingsCategory.agents.matches("  chatGPT \n "))
             #expect(SettingsCategory.calendar.matches("google"))

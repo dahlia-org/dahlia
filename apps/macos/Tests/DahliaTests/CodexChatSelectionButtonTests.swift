@@ -8,7 +8,7 @@
     struct CodexChatSelectionButtonTests {
         @Test(arguments: [false, true], ["left", "right", "top", "bottom"])
         func paddingOpensTheSelectionPanel(isApproval: Bool, edge: String) async throws {
-            let session = CodexChatSessionModel(service: TestCodexChatService(mode: .complete), runtimeProviderResolver: { .local })
+            let session = CodexChatSessionModel(service: TestCodexChatService(mode: .complete))
             var modelPanelPresented = false
             var buttonSize = CGSize.zero
             let button = Group {

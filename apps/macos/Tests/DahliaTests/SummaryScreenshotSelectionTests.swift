@@ -18,7 +18,7 @@ import Foundation
             )
 
             let selected = try await SummaryScreenshotSelection.select(
-                candidates, settings: settings, runtimeProvider: .local, appServer: pi.service
+                candidates, settings: settings, appServer: pi.service
             )
 
             #expect(selected.map(\.id) == [candidates[1].id])
@@ -70,7 +70,7 @@ import Foundation
             let pi = TestPiRuntime.generating(models: Self.models, reply: #"{"indices":[3,1,3]}"#, log: log)
 
             let selected = try await SummaryScreenshotSelection.select(
-                candidates, settings: Self.settings(), runtimeProvider: .local, appServer: pi.service
+                candidates, settings: Self.settings(), appServer: pi.service
             )
 
             #expect(selected.map(\.id) == [candidates[0].id, candidates[2].id])
@@ -92,7 +92,7 @@ import Foundation
             for (enabled, response) in [(false, #"{"indices":[1]}"#), (true, #"{"indices":[3]}"#)] {
                 let pi = TestPiRuntime.generating(models: Self.models, reply: response)
                 let selected = try await SummaryScreenshotSelection.select(
-                    candidates, settings: Self.settings(enabled: enabled), runtimeProvider: .local, appServer: pi.service
+                    candidates, settings: Self.settings(enabled: enabled), appServer: pi.service
                 )
                 #expect(selected.map(\.id) == (enabled ? candidates.map(\.id) : [candidates[0].id]))
                 #expect(pi.launches.all.contains { $0.mode == .summary })
@@ -106,7 +106,7 @@ import Foundation
             let pi = Self.stalled(log: log)
 
             let selected = try await SummaryScreenshotSelection.select(
-                candidates, settings: Self.settings(), runtimeProvider: .local, appServer: pi.service,
+                candidates, settings: Self.settings(), appServer: pi.service,
                 timeout: .milliseconds(200)
             )
 
@@ -121,7 +121,7 @@ import Foundation
             let pi = Self.stalled(log: log)
             let selection = Task {
                 try await SummaryScreenshotSelection.select(
-                    candidates, settings: Self.settings(), runtimeProvider: .local, appServer: pi.service
+                    candidates, settings: Self.settings(), appServer: pi.service
                 )
             }
 

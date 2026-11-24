@@ -33,30 +33,25 @@ import Foundation
                     try Data("#!/bin/sh\n".utf8).write(to: url)
                     try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: url.path)
                 }
-                let accounts: [CodexRuntimeProvider] = [.local, .databricks(connectionID: UUID()), .dahlia(connectionID: UUID())]
-                for account in accounts {
-                    PiLaunchSettings(variables: [.init(id: UUID(), name: "PATH", value: directory.path)])
-                        .save(for: account, defaults: defaults)
-                    #expect(!PiBundle.usesManagedPi(for: account, defaults: defaults))
-                    defaults.set("/old/custom/pi", forKey: "piExecutablePath.\(account.accountKey)")
-                    #expect(try PiBundle.executableURL(for: account, defaults: defaults, managedExecutableURL: managedPi) == pathPi)
-                }
-                let key = PiBundle.useManagedPiDefaultsKey(for: accounts[1])
+                PiLaunchSettings(variables: [.init(id: UUID(), name: "PATH", value: directory.path)]).save(defaults: defaults)
+                #expect(!PiBundle.usesManagedPi(defaults: defaults))
+                defaults.set("/old/custom/pi", forKey: "piExecutablePath.\(AppAccount.key)")
+                #expect(try PiBundle.executableURL(defaults: defaults, managedExecutableURL: managedPi) == pathPi)
+                let key = PiBundle.useManagedPiDefaultsKey()
                 defaults.set(true, forKey: key)
-                #expect(try PiBundle.executableURL(for: accounts[1], defaults: defaults, managedExecutableURL: managedPi) == managedPi)
-                #expect(try PiBundle.executableURL(for: .local, defaults: defaults, managedExecutableURL: managedPi) == pathPi)
+                #expect(try PiBundle.executableURL(defaults: defaults, managedExecutableURL: managedPi) == managedPi)
 
                 // Managed mode must fail when missing or a directory, even with a working pi on PATH.
                 try FileManager.default.removeItem(at: managedPi)
                 #expect(throws: PiRuntimeError.piCommandNotFound(managedPi.path)) {
-                    try PiBundle.executableURL(for: accounts[1], defaults: defaults, managedExecutableURL: managedPi)
+                    try PiBundle.executableURL(defaults: defaults, managedExecutableURL: managedPi)
                 }
                 try FileManager.default.createDirectory(at: managedPi, withIntermediateDirectories: true)
                 #expect(throws: PiRuntimeError.piCommandNotFound(managedPi.path)) {
-                    try PiBundle.executableURL(for: accounts[1], defaults: defaults, managedExecutableURL: managedPi)
+                    try PiBundle.executableURL(defaults: defaults, managedExecutableURL: managedPi)
                 }
                 defaults.set(false, forKey: key)
-                #expect(try PiBundle.executableURL(for: accounts[1], defaults: defaults, managedExecutableURL: managedPi) == pathPi)
+                #expect(try PiBundle.executableURL(defaults: defaults, managedExecutableURL: managedPi) == pathPi)
             }.value
         }
 
@@ -74,15 +69,14 @@ import Foundation
                 let pi = bin.appending(path: "pi")
                 try Data("#!/bin/sh\n".utf8).write(to: pi)
                 try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: pi.path)
-                let account = CodexRuntimeProvider.dahlia(connectionID: UUID())
                 let variables = ["PATH", "NVM_DIR", "OPENAI_API_KEY"].map {
                     PiLaunchSettings.Variable(id: UUID(), name: $0, isSecret: true)
                 }
-                PiLaunchSettings(variables: variables).save(for: account, defaults: defaults)
-                let pathKey = PiLaunchSettings.secretKey(for: account, id: variables[0].id)
-                let nvmKey = PiLaunchSettings.secretKey(for: account, id: variables[1].id)
+                PiLaunchSettings(variables: variables).save(defaults: defaults)
+                let pathKey = PiLaunchSettings.secretKey(id: variables[0].id)
+                let nvmKey = PiLaunchSettings.secretKey(id: variables[1].id)
                 var requested: [String] = []
-                let resolved = try PiBundle.executableURL(for: account, defaults: defaults, secret: { key in
+                let resolved = try PiBundle.executableURL(defaults: defaults, secret: { key in
                     requested.append(key)
                     return key == pathKey ? bin.path : key == nvmKey ? nvm.path : nil
                 })
@@ -96,21 +90,19 @@ import Foundation
             let suite = "PiInfrastructureTests.\(UUID())"
             let defaults = try #require(UserDefaults(suiteName: suite))
             defer { defaults.removePersistentDomain(forName: suite) }
-            let account = CodexRuntimeProvider.local
             let managed = URL(fileURLWithPath: "/test/Dahlia/bin/pi")
-            let legacyKey = "piExecutablePath.\(account.accountKey)"
+            let legacyKey = "piExecutablePath.\(AppAccount.key)"
             for legacy in ["pi", "/custom/bin/pi", "sh", ""] {
                 defaults.set(legacy, forKey: legacyKey)
-                #expect(!PiBundle.usesManagedPi(for: account, defaults: defaults, managedExecutableURL: managed))
+                #expect(!PiBundle.usesManagedPi(defaults: defaults, managedExecutableURL: managed))
             }
             defaults.set(" \(managed.path) ", forKey: legacyKey)
-            #expect(PiBundle.usesManagedPi(for: account, defaults: defaults, managedExecutableURL: managed))
-            #expect(!PiBundle.usesManagedPi(for: .dahlia(connectionID: UUID()), defaults: defaults, managedExecutableURL: managed))
-            defaults.set(false, forKey: PiBundle.useManagedPiDefaultsKey(for: account))
-            #expect(!PiBundle.usesManagedPi(for: account, defaults: defaults, managedExecutableURL: managed))
+            #expect(PiBundle.usesManagedPi(defaults: defaults, managedExecutableURL: managed))
+            defaults.set(false, forKey: PiBundle.useManagedPiDefaultsKey())
+            #expect(!PiBundle.usesManagedPi(defaults: defaults, managedExecutableURL: managed))
             defaults.set("/custom/bin/pi", forKey: legacyKey)
-            defaults.set(true, forKey: PiBundle.useManagedPiDefaultsKey(for: account))
-            #expect(PiBundle.usesManagedPi(for: account, defaults: defaults, managedExecutableURL: managed))
+            defaults.set(true, forKey: PiBundle.useManagedPiDefaultsKey())
+            #expect(PiBundle.usesManagedPi(defaults: defaults, managedExecutableURL: managed))
         }
 
         @Test
@@ -241,9 +233,8 @@ import Foundation
         }
 
         @Test
-        func registeredMCPServersArePerAccountAndShareTheirWorkspaceSignIn() throws {
+        func registeredMCPServersPersistAndShareTheirWorkspaceSignIn() throws {
             let defaults = try #require(UserDefaults(suiteName: "PiInfrastructureTests.\(UUID())"))
-            let account = CodexRuntimeProvider.databricks(connectionID: UUID())
             let workspace = try AgentMCPProvider(workspaceURL: #require(URL(string: "https://example.cloud.databricks.com")))
             #expect(workspace.id == "example.cloud.databricks.com")
             var settings = AgentMCPSettings(providers: [workspace])
@@ -254,10 +245,9 @@ import Foundation
                 AgentMCPServer(id: .v7(), name: "slack", providerID: workspace.id, service: "system.ai.slack"),
                 AgentMCPServer(id: .v7(), name: "work_mail", providerID: workspace.id, service: "system.ai.gmail"),
             ]
-            settings.save(for: account, defaults: defaults)
+            settings.save(defaults: defaults)
 
-            #expect(AgentMCPSettings.load(for: account, defaults: defaults) == settings)
-            #expect(AgentMCPSettings.load(for: .local, defaults: defaults) == AgentMCPSettings())
+            #expect(AgentMCPSettings.load(defaults: defaults) == settings)
             // A second Slack gets a numbered name; names are tool prefixes, so they stay unique and tool-safe.
             #expect(settings.defaultName(for: "system.ai.slack") == "slack_2")
             #expect(settings.defaultName(for: "system.ai.slack", taken: ["slack_2"]) == "slack_3")
@@ -337,88 +327,77 @@ import Foundation
         }
 
         @Test
-        func agentDirectoriesArePrivateAndSeparatedByAccount() throws {
+        func agentDirectoryIsPrivateAndRemovingADahliaAccountRemovesItsFolders() throws {
             let rootURL = FileManager.default.temporaryDirectory
                 .appending(path: "dahlia-pi-agent-test-\(UUID().uuidString)", directoryHint: .isDirectory)
             defer { try? FileManager.default.removeItem(at: rootURL) }
-            let databricksID = UUID.v7()
             let locator = PiAgentDirectoryLocator(applicationSupportURL: rootURL)
             let connectionID = UUID.v7()
 
-            let local = try locator.agentURL(for: .local)
-            let account = try locator.agentURL(for: .dahlia(connectionID: connectionID))
-            let databricks = try locator.agentURL(for: .databricks(connectionID: databricksID))
+            let local = try locator.agentURL()
             let deviceID = try locator.deviceID()
 
-            #expect(local == rootURL.appending(path: "Dahlia/accounts/local/pi", directoryHint: .isDirectory))
-            #expect(databricks == rootURL.appending(
-                path: "Dahlia/accounts/\(databricksID.uuidString.lowercased())/pi", directoryHint: .isDirectory
-            ))
-            #expect(account.path.hasSuffix("accounts/\(connectionID.uuidString.lowercased())/pi"))
-            for url in [local, account, databricks] {
-                let attributes = try FileManager.default.attributesOfItem(atPath: url.path)
-                #expect((attributes[.posixPermissions] as? NSNumber)?.intValue == 0o700)
-            }
+            // The app's one account has one agent folder, named for neither Pi nor an account.
+            #expect(local == rootURL.appending(path: "Dahlia/agent", directoryHint: .isDirectory))
+            let attributes = try FileManager.default.attributesOfItem(atPath: local.path)
+            #expect((attributes[.posixPermissions] as? NSNumber)?.intValue == 0o700)
             #expect(try locator.deviceID() == deviceID)
+            // A Dahlia account that once ran as its own runtime account left these folders.
+            let account = rootURL.appending(path: "Dahlia/accounts/\(connectionID.uuidString.lowercased())/pi")
             let legacyHome = rootURL.appending(path: "Dahlia/CodexAccounts/\(connectionID.uuidString.lowercased())")
-            try FileManager.default.createDirectory(at: legacyHome, withIntermediateDirectories: true)
+            for url in [account, legacyHome] {
+                try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+            }
             try locator.removeAccountDirectory(connectionID: connectionID)
             #expect(!FileManager.default.fileExists(atPath: account.deletingLastPathComponent().path))
             #expect(!FileManager.default.fileExists(atPath: legacyHome.path))
         }
 
         @Test
-        func chatsBelongToTheAccountThatRanThem() throws {
+        func chatsAreKeptPerWorkspace() throws {
             let rootURL = FileManager.default.temporaryDirectory
                 .appending(path: "dahlia-pi-sessions-test-\(UUID().uuidString)", directoryHint: .isDirectory)
             defer { try? FileManager.default.removeItem(at: rootURL) }
             let locator = PiAgentDirectoryLocator(applicationSupportURL: rootURL)
             let workspaceID = UUID.v7()
-            let databricksID = UUID.v7()
 
-            let local = try locator.sessionsURL(for: .local, workspaceID: workspaceID)
-            let databricks = try locator.sessionsURL(for: .databricks(connectionID: databricksID), workspaceID: workspaceID)
+            let local = try locator.sessionsURL(workspaceID: workspaceID)
 
-            // The same workspace under another account starts with that account's own (empty) history.
             #expect(local == rootURL.appending(
-                path: "Dahlia/accounts/local/pi/sessions/\(workspaceID.uuidString.lowercased())",
+                path: "Dahlia/agent/sessions/\(workspaceID.uuidString.lowercased())",
                 directoryHint: .isDirectory
             ))
-            #expect(databricks.path.hasSuffix("accounts/\(databricksID.uuidString.lowercased())/pi/sessions/\(workspaceID.uuidString.lowercased())"))
-            let attributes = try FileManager.default.attributesOfItem(atPath: databricks.path)
+            let attributes = try FileManager.default.attributesOfItem(atPath: local.path)
             #expect((attributes[.posixPermissions] as? NSNumber)?.intValue == 0o700)
         }
 
         @Test
-        func subscriptionModelChoicesPersistWithoutChangingOtherAccounts() throws {
+        func subscriptionModelChoicesPersist() throws {
             let suite = "dahlia-subscription-models-test-\(UUID().uuidString)"
             let defaults = try #require(UserDefaults(suiteName: suite))
             defer { defaults.removePersistentDomain(forName: suite) }
-            AgentModelSettings.setModel("openai/gpt-6.1-sol", on: false, for: .local, defaults: defaults)
-            AgentModelSettings.setModel("anthropic/claude-sonnet-4-6", on: true, for: .local, defaults: defaults)
+            AgentModelSettings.setModel("openai/gpt-6.1-sol", on: false, defaults: defaults)
+            AgentModelSettings.setModel("anthropic/claude-sonnet-4-6", on: true, defaults: defaults)
 
-            let saved = AgentModelSettings.choices(for: .local, defaults: defaults)
+            let saved = AgentModelSettings.choices(defaults: defaults)
             #expect(!AgentModelSettings.isSubscriptionModelOn("openai/gpt-6.1-sol", choices: saved))
             #expect(AgentModelSettings.isSubscriptionModelOn("anthropic/claude-sonnet-4-6", choices: saved))
             #expect(AgentModelSettings.isSubscriptionModelOn("anthropic/claude-haiku-5-5", choices: saved))
             #expect(!AgentModelSettings.isSubscriptionModelOn("openai/future-model", choices: saved))
-            #expect(AgentModelSettings.choices(for: .databricks(connectionID: .v7()), defaults: defaults).isEmpty)
         }
 
         @Test
-        func gatewayModelChoicesAreKeptPerAccount() throws {
+        func gatewayModelChoicesPersist() throws {
             let suite = "dahlia-agent-models-test-\(UUID().uuidString)"
             let defaults = try #require(UserDefaults(suiteName: suite))
             defer { defaults.removePersistentDomain(forName: suite) }
-            let account = CodexRuntimeProvider.databricks(connectionID: .v7())
 
-            AgentModelSettings.setModel("databricks/system.ai.gpt-6-luna", on: false, for: account, defaults: defaults)
-            AgentModelSettings.setModel("dbc-1.cloud.databricks.com/system.ai.gpt-6-luna", on: true, for: account, defaults: defaults)
+            AgentModelSettings.setModel("databricks/system.ai.gpt-6-luna", on: false, defaults: defaults)
+            AgentModelSettings.setModel("dbc-1.cloud.databricks.com/system.ai.gpt-6-luna", on: true, defaults: defaults)
 
-            #expect(AgentModelSettings.choices(for: account, defaults: defaults) == [
+            #expect(AgentModelSettings.choices(defaults: defaults) == [
                 "databricks/system.ai.gpt-6-luna": false, "dbc-1.cloud.databricks.com/system.ai.gpt-6-luna": true,
             ])
-            #expect(AgentModelSettings.choices(for: .databricks(connectionID: .v7()), defaults: defaults).isEmpty)
         }
 
         @Test
@@ -593,7 +572,6 @@ import Foundation
                 PiProviderConfiguration.databricksProviders(models, choices: [:], workspaceURL: added.workspaceURL, providerID: added.id),
                 agentURL: rootURL
             )
-            #expect(PiProviderConfiguration.databricksWorkspaceURL(agentURL: rootURL) == own)
             let data = try Data(contentsOf: rootURL.appending(path: "models.json"))
             let providers = try #require(JSONDecoder().decode(JSONValue.self, from: data).objectValue?["providers"]?.objectValue)
             #expect(Set(providers.keys) == ["databricks", "dbc-1.cloud.databricks.com"])

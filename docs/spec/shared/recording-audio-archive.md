@@ -2,6 +2,7 @@
 
 - 採択: 2026-09-07。Server の音声保管の例外をユーザーが承認した。
 - Local Workspace の保存方式は下記「Local Workspace の保存」に従う（2026-09-16 の決定）。
+- Desktop（macOS アプリ）は Server と同期しないため、Server Workspace の保管・API の節の変換とアップロードを行わない（2026-11-23 にユーザーが承認して削除した）。Desktop の録音はすべて「Local Workspace の保存」に従う。
 
 ## 決定
 

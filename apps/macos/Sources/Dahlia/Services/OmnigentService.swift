@@ -31,8 +31,9 @@ enum OmnigentService {
     nonisolated static func enabledKey(_ account: String) -> String { "omnigentEnabled.\(account)" }
 
     /// The Databricks workspace to call, when the account is a Databricks account that turned Omnigent on (it is off by default).
-    nonisolated static func connectionID(for provider: CodexRuntimeProvider, defaults: UserDefaults = .standard) -> UUID? {
-        guard case let .databricks(connectionID) = provider, defaults.bool(forKey: enabledKey(provider.accountKey)) else { return nil }
+    nonisolated static func connectionID(defaults: UserDefaults = .standard) -> UUID? {
+        guard let connectionID = ProviderAccountDirectory.databricksConnectionID,
+              defaults.bool(forKey: enabledKey(AppAccount.key)) else { return nil }
         return connectionID
     }
 
@@ -265,14 +266,14 @@ extension PiChatService {
         guard let session = sessions[threadID], session.processID == processID, let turn = session.turn,
               session.profile == .interactive else { throw CancellationError() }
         // Read at each call: turning Omnigent off in Settings stops a process that still lists the tools.
-        guard let connectionID = omnigentConnection(session.provider) else {
+        guard let connectionID = omnigentConnection() else {
             throw PiRuntimeError.rpcError(code: nil, message: "Omnigent is turned off for this account")
         }
         if method == "omni_create_session" {
             if let input = payload.objectValue?["input"]?.stringValue, input.count > 32000 {
                 throw PiRuntimeError.rpcError(code: nil, message: "Input exceeds 32000 characters")
             }
-            let thread = try history().thread(id: threadID, accountID: session.provider.accountKey)
+            let thread = try history().thread(id: threadID, accountID: AppAccount.key)
             // Work done for another thread never delegates further, as with `dah_thread_start`.
             guard thread.parentThreadID == nil, turn.run.requestedByThreadID == nil else {
                 throw PiRuntimeError.rpcError(code: nil, message: "Work requested by another thread cannot start Omnigent sessions")

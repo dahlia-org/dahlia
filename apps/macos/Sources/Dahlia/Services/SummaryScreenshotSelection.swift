@@ -17,7 +17,6 @@ enum SummaryScreenshotSelection {
     static func select(
         _ candidates: [MeetingScreenshotRecord],
         settings: WorkspaceGenerationSettings,
-        runtimeProvider: CodexRuntimeProvider,
         appServer: PiRuntimeService = .shared,
         timeout: Duration = .seconds(90),
         imageData: @escaping @Sendable (MeetingScreenshotRecord) async throws -> Data = {
@@ -29,7 +28,7 @@ enum SummaryScreenshotSelection {
         do {
             return try await withThrowingTaskGroup(of: [MeetingScreenshotRecord].self) { group in
                 group.addTask {
-                    try await selectWithModel(pool, settings: settings, runtimeProvider: runtimeProvider, appServer: appServer, imageData: imageData)
+                    try await selectWithModel(pool, settings: settings, appServer: appServer, imageData: imageData)
                 }
                 group.addTask {
                     try await Task.sleep(for: timeout)
@@ -50,7 +49,6 @@ enum SummaryScreenshotSelection {
     private static func selectWithModel(
         _ pool: [MeetingScreenshotRecord],
         settings: WorkspaceGenerationSettings,
-        runtimeProvider: CodexRuntimeProvider,
         appServer: PiRuntimeService,
         imageData: @Sendable (MeetingScreenshotRecord) async throws -> Data
     ) async throws -> [MeetingScreenshotRecord] {
@@ -82,7 +80,7 @@ enum SummaryScreenshotSelection {
                 developerInstructions: instructions,
                 inputs: selectionInputs,
                 outputSchema: outputSchema
-            ), expectedProvider: runtimeProvider)
+            ))
             return try selectedIndices(response, count: pool.count).map { pool[$0] }
         }
     }

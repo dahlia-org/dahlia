@@ -6,7 +6,6 @@ import Observation
 @MainActor
 @Observable
 final class AgentLearningSettingsModel {
-    let account: CodexRuntimeProvider
     var memories: [AgentMemoryRecord] = []
     var changes: [AgentLearningChangeRecord] = []
     var changePreviews: [UUID: (before: String?, after: String?)] = [:]
@@ -15,12 +14,12 @@ final class AgentLearningSettingsModel {
     var error: String?
     var isBusy = false
 
-    init(account: CodexRuntimeProvider) { self.account = account }
+    init() {}
     func refresh() async {
         do {
             let memory = try await PiChatService.shared.memoryService()
             let schedule = try await PiChatService.shared.scheduleService()
-            let key = account.accountKey
+            let key = AppAccount.key
             let loaded = try await Task.detached {
                 let rows = try schedule.list(account: key)
                 let states = try schedule.dbQueue.read { db in
@@ -85,7 +84,7 @@ final class AgentLearningSettingsModel {
                     "content": .string(content),
                 ])
             let service = try await PiChatService.shared.memoryService()
-            let key = self.account.accountKey
+            let key = AppAccount.key
             let result = try await Task.detached {
                 try service.execute(
                     .object(["target": .string(target), "operations": .array([operation])]),
@@ -103,7 +102,7 @@ final class AgentLearningSettingsModel {
     func remove(_ entries: [AgentMemoryRecord]) async {
         await perform {
             let service = try await PiChatService.shared.memoryService()
-            let key = self.account.accountKey
+            let key = AppAccount.key
             try await Task.detached {
                 for target in ["user", "memory"] {
                     let operations = entries.filter { $0.target == target }.map { JSONValue.object([
@@ -130,15 +129,15 @@ final class AgentLearningSettingsModel {
         await perform {
             if change.kind == "skill" {
                 let service = try await PiChatService.shared.skillService()
-                let root = try await PiChatService.shared.skillsRoot(self.account)
+                let root = try await PiChatService.shared.skillsRoot()
                 if action == "undo" {
-                    try await service.undo(id: change.id, account: self.account.accountKey, root: root)
+                    try await service.undo(id: change.id, account: AppAccount.key, root: root)
                 } else {
-                    try await service.resolveProposal(id: change.id, account: self.account.accountKey, root: root, approve: action == "approve")
+                    try await service.resolveProposal(id: change.id, account: AppAccount.key, root: root, approve: action == "approve")
                 }
             } else {
                 let service = try await PiChatService.shared.memoryService()
-                let account = self.account.accountKey
+                let account = AppAccount.key
                 try await Task.detached {
                     try service.resolve(id: change.id, account: account, action: action)
                 }.value
@@ -149,7 +148,7 @@ final class AgentLearningSettingsModel {
     func schedule(_ row: ChatScheduleRecord, action: String, approved: Bool = false) async {
         await perform {
             let service = try await PiChatService.shared.scheduleService()
-            let account = self.account.accountKey
+            let account = AppAccount.key
             let tools = try JSONDecoder().decode([String].self, from: Data(row.allowedTools.utf8))
             _ = try await Task.detached {
                 try service.execute(
@@ -167,7 +166,7 @@ final class AgentLearningSettingsModel {
     func notification(_ row: ChatScheduleRecord, enabled: Bool) async {
         await perform {
             let service = try await PiChatService.shared.scheduleService()
-            let account = self.account.accountKey
+            let account = AppAccount.key
             try await Task.detached { try service.dbQueue.write {
                 try $0.execute(
                     sql: "UPDATE chat_schedules SET notify=? WHERE id=? AND accountID=?",

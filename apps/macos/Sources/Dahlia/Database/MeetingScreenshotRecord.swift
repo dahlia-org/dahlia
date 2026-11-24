@@ -27,11 +27,6 @@ struct MeetingScreenshotRecord: Codable, FetchableRecord, PersistableRecord, Sen
     contentHash, contentLength, pixelWidth, pixelHeight, remoteReference, localReference
     """
 
-    var remoteSource: ScreenshotRemoteReference? {
-        guard let remoteReference else { return nil }
-        return try? JSONDecoder().decode(ScreenshotRemoteReference.self, from: Data(remoteReference.utf8))
-    }
-
     var localSource: ScreenshotRemoteReference? {
         guard let localReference else { return nil }
         return try? JSONDecoder().decode(ScreenshotRemoteReference.self, from: Data(localReference.utf8))

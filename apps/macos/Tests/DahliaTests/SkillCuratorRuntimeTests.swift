@@ -8,21 +8,21 @@
 
     @Suite(.timeLimit(.minutes(1)))
     struct SkillCuratorRuntimeTests {
-        @Test(arguments: [
+        // Every case uses the app's one account, whose curator setting lives in the shared defaults.
+        @Test(.serialized, arguments: [
             "unauthorized", "errorAfterIntermediate", "messageAbort", "settledAbort", "emptyFinal", "success",
             "budget", "noMessage", "eof", "consolidationOff", "drainDuringTransitions", "drainDuringConsolidation",
         ])
         func consolidationRecordsTerminalOutcome(scenario: String) async throws {
             let script = events(scenario)
             let transports = TestPiTransportLog()
-            let provider = CodexRuntimeProvider.databricks(connectionID: .v7())
             // pi-hermes-skills answers `/hermes-curator` through the bridge before Pi reports the command handled.
             let report: JSONValue = .object([
                 "counts": .object(["archived": .number(1), "markedStale": .number(0), "reactivated": .number(0)]),
                 "candidates": .string("Agent-created skills (1):\n\n- sample  provenance=agent"),
             ])
             let pendingCommand = OSAllocatedUnfairLock<JSONValue?>(initialState: nil)
-            let pi = TestPiRuntime(provider: provider) { options in
+            let pi = TestPiRuntime { options in
                 let transport = TestPiTransport { command in
                     guard let id = command["id"] else { return [] }
                     switch command["type"]?.stringValue {
@@ -44,11 +44,11 @@
                 return transport
             }
             defer { try? FileManager.default.removeItem(at: pi.rootURL) }
-            let account = provider.accountKey
+            let account = AppAccount.key
             UserDefaults.standard.set(!["consolidationOff", "drainDuringTransitions"].contains(scenario), forKey: SkillCuratorSettings.consolidateKey(account))
             defer { UserDefaults.standard.removeObject(forKey: SkillCuratorSettings.consolidateKey(account)) }
             let locator = PiAgentDirectoryLocator(applicationSupportURL: pi.rootURL)
-            let root = try locator.agentURL(for: provider).appending(path: "skills/sample")
+            let root = try locator.agentURL().appending(path: "skills/sample")
             try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
             try Data("---\nname: sample\ndescription: Use when testing.\n---\nFollow the steps.".utf8).write(to: root.appending(path: "SKILL.md"))
             let db = try AppDatabaseManager(path: ":memory:").dbQueue
@@ -59,7 +59,7 @@
                 )
             }
             let service = PiChatService(runtime: pi.service, historyStore: ChatThreadStore(dbQueue: db), agentLocator: locator)
-            let run = Task { await service.runCurator(provider: provider) }
+            let run = Task { await service.runCurator() }
             if scenario == "drainDuringTransitions" {
                 let transport = await transports.transport(at: 0)
                 _ = await transport.command("prompt")

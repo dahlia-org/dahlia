@@ -28,12 +28,12 @@ struct AgentMCPServer: Codable, Hashable, Identifiable, Sendable {
     }
 }
 
-/// A Unity AI Gateway sign-in. Pi keeps its OAuth credential, with the workspace and client, in the account's
-/// `auth.json` under `id`; the extension registers the providers that `mcp.json` names. The account's own workspace,
-/// whose models the account uses, is one too: its servers take the account's bridged sign-in instead.
+/// A Unity AI Gateway, named by its workspace host. A Databricks connection in `provider_accounts` is one: the app
+/// holds its sign-in and bridges its token. A workspace added before every connection was a provider account is one
+/// too: Pi keeps its OAuth credential in `auth.json` under `id`, and the extension registers the providers that
+/// `mcp.json` names.
 struct AgentMCPProvider: Codable, Hashable, Identifiable, Sendable {
-    /// The workspace host (with its port, if any), as the extension names the provider, or the account's bridged
-    /// provider for the account's own workspace.
+    /// The workspace host (with its port, if any), as the extension names the provider.
     let id: String
     /// The workspace origin. Settings shows its host to tell providers apart.
     let workspaceURL: URL
@@ -45,22 +45,13 @@ struct AgentMCPProvider: Codable, Hashable, Identifiable, Sendable {
         self.workspaceURL = workspaceURL
     }
 
-    /// The Databricks account's own workspace. Dahlia holds its sign-in, so it never signs in or out here.
-    static func account(workspaceURL: URL) -> Self {
-        Self(id: PiProviderConfiguration.databricksProviderIDs[0], workspaceURL: workspaceURL)
-    }
-
-    private init(id: String, workspaceURL: URL) {
-        self.id = id
-        self.workspaceURL = workspaceURL
-    }
-
     var host: String {
         workspaceURL.host() ?? workspaceURL.absoluteString
     }
 
+    /// Whether it is a provider account: Dahlia holds its sign-in, so it never signs in or out through Pi.
     var isAccount: Bool {
-        id == PiProviderConfiguration.databricksProviderIDs[0]
+        ProviderAccountDirectory.databricksConnections().contains { $0.piProviderID == id }
     }
 
     static func id(for workspaceURL: URL) -> String {
@@ -75,6 +66,7 @@ struct AgentMCPProvider: Codable, Hashable, Identifiable, Sendable {
 
 /// The MCP servers registered for one account, kept in app defaults. Credentials are not stored here.
 struct AgentMCPSettings: Codable, Equatable, Sendable {
+    private static let removedProvidersKey = "agentMCPs.removedProviderAccounts"
     var providers: [AgentMCPProvider] = []
     var servers: [AgentMCPServer] = []
     /// Each provider's MCP services as last listed, keyed by provider ID, so Settings shows them before listing again.
@@ -85,23 +77,56 @@ struct AgentMCPSettings: Codable, Equatable, Sendable {
     /// Explicit full-name registrations remain visible even when disabled or absent from discovery.
     var manualServices: [String: [String]]?
 
-    static func defaultsKey(for account: CodexRuntimeProvider) -> String {
-        "agentMCPs.\(account.accountKey)"
+    static func defaultsKey() -> String {
+        "agentMCPs.\(AppAccount.key)"
     }
 
-    static func load(for account: CodexRuntimeProvider, defaults: UserDefaults = .standard) -> Self {
-        var settings = defaults.data(forKey: defaultsKey(for: account)).flatMap { try? JSONDecoder().decode(Self.self, from: $0) } ?? Self()
+    static func load(defaults: UserDefaults = .standard) -> Self {
+        var settings = defaults.data(forKey: defaultsKey()).flatMap { try? JSONDecoder().decode(Self.self, from: $0) } ?? Self()
         settings.servers.removeAll { $0.providerID == nil && $0.service == "lightpanda" }
         if settings.manualServices == nil {
             let manual = (settings.listedServices ?? [:]).mapValues { $0.filter { !$0.hasPrefix("system.ai.") } }
                 .filter { !$0.value.isEmpty }
             if !manual.isEmpty { settings.manualServices = manual }
         }
+        settings.removeProviders(Set(defaults.stringArray(forKey: removedProvidersKey) ?? []))
         return settings
     }
 
-    func save(for account: CodexRuntimeProvider, defaults: UserDefaults = .standard) {
-        defaults.set(try? JSONEncoder().encode(self), forKey: Self.defaultsKey(for: account))
+    func save(defaults: UserDefaults = .standard) {
+        // A settings window or in-flight listing may still hold a snapshot from before account removal.
+        var current = self
+        current.removeProviders(Set(defaults.stringArray(forKey: Self.removedProvidersKey) ?? []))
+        defaults.set(try? JSONEncoder().encode(current), forKey: Self.defaultsKey())
+    }
+
+    /// Retires every registration before removing the app credential. Retained Pi auth stays inert, even if a stale
+    /// settings snapshot is saved later. No Pi process or credential-file mutation is required.
+    static func removeProviderAccount(_ id: String, agentURL: URL, defaults: UserDefaults = .standard) throws {
+        var removed = Set(defaults.stringArray(forKey: removedProvidersKey) ?? [])
+        removed.insert(id)
+        defaults.set(removed.sorted(), forKey: removedProvidersKey)
+        let settings = load(defaults: defaults)
+        settings.save(defaults: defaults)
+        guard FileManager.default.fileExists(atPath: agentURL.path) else { return }
+        try PiProviderConfiguration.updateProviders(agentURL: agentURL) { $0[id] = nil }
+        try PiProviderConfiguration.writeMCPServers(settings.piServers, agentURL: agentURL)
+    }
+
+    /// An explicitly added service may use the host again after it has been connected as an app provider account.
+    static func allowProviderAccount(_ id: String, defaults: UserDefaults = .standard) {
+        let removed = (defaults.stringArray(forKey: removedProvidersKey) ?? []).filter { $0 != id }
+        defaults.set(removed, forKey: removedProvidersKey)
+    }
+
+    private mutating func removeProviders(_ ids: Set<String>) {
+        providers.removeAll { ids.contains($0.id) }
+        servers.removeAll { $0.providerID.map(ids.contains) == true }
+        for id in ids {
+            listedServices?[id] = nil
+            serviceComments?[id] = nil
+            manualServices?[id] = nil
+        }
     }
 
     func provider(id: String) -> AgentMCPProvider? {

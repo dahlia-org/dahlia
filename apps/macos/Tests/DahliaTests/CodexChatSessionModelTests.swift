@@ -1117,25 +1117,6 @@ import Foundation
         }
 
         @Test
-        func sessionCannotSendWhileAnotherAccountIsSelected() {
-            let settings = AppSettings()
-            let boundWorkspace = Self.testWorkspace()
-            settings.currentWorkspace = boundWorkspace
-            let session = CodexChatSessionModel(
-                service: TestCodexChatService(mode: .complete),
-                settings: settings
-            )
-            var otherAccountWorkspace = Self.testWorkspace()
-            otherAccountWorkspace.databricksConnectionId = .v7()
-            settings.currentWorkspace = otherAccountWorkspace
-
-            session.draft = "Do not send"
-            #expect(!session.canSend)
-            session.sendDraft()
-            #expect(session.messages.isEmpty)
-        }
-
-        @Test
         func everyTurnUsesLatestContextWithoutExposingPromptMarkup() async throws {
             let service = TestCodexChatService(mode: .staleRollout)
             let settings = AppSettings()
@@ -1620,7 +1601,6 @@ import Foundation
             model: String?,
             effort: String,
             approvalMethod: CodexChatApprovalMethod,
-            expectedProvider _: CodexRuntimeProvider? = nil
         ) async throws -> CodexChatTurnHandle {
             turnApprovalMethods.append(approvalMethod)
             let stream = try await send(

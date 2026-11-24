@@ -7,6 +7,8 @@ actor TestPiTransport: CodexAppServerTransport {
     typealias Reply = @Sendable (_ command: [String: JSONValue]) -> [JSONValue]
 
     private let reply: Reply
+    private let delaysStartup: Bool
+    private let onClose: @Sendable () async -> Void
     private var lines: [Data] = []
     private var receiver: CheckedContinuation<Data?, Never>?
     typealias Match = @Sendable ([String: JSONValue]) -> Bool
@@ -16,6 +18,20 @@ actor TestPiTransport: CodexAppServerTransport {
 
     init(reply: @escaping Reply = TestPiTransport.acknowledge) {
         self.reply = reply
+        delaysStartup = false
+        onClose = {}
+    }
+
+    init(onClose: @escaping @Sendable () async -> Void, reply: @escaping Reply) {
+        self.reply = reply
+        delaysStartup = false
+        self.onClose = onClose
+    }
+
+    init(delaysStartup: Bool) {
+        self.delaysStartup = delaysStartup
+        reply = TestPiTransport.acknowledge
+        onClose = {}
     }
 
     func sendLine(_ data: Data) async throws {
@@ -29,7 +45,11 @@ actor TestPiTransport: CodexAppServerTransport {
             if waiter.0(command) { waiter.1.resume(returning: command) } else { waiting.append(waiter) }
         }
         commandWaiters = waiting
-        reply(command).forEach(emit)
+        if command["type"]?.stringValue == "get_state" {
+            if !delaysStartup, let id = command["id"] { emit(Self.response(id: id)) }
+        } else {
+            reply(command).forEach(emit)
+        }
     }
 
     func receiveLine() async -> Data? {
@@ -39,11 +59,13 @@ actor TestPiTransport: CodexAppServerTransport {
     }
 
     func close() async {
+        guard !isClosed else { return }
         isClosed = true
         receiver?.resume(returning: nil)
         receiver = nil
         commandWaiters.forEach { $0.1.resume(returning: [:]) }
         commandWaiters.removeAll()
+        await onClose()
     }
 
     func emit(_ record: JSONValue) {
@@ -129,7 +151,7 @@ struct TestPiRuntime {
     let service: PiRuntimeService
     let launches: LaunchLog
     let rootURL: URL
-    let contextStore: CodexRuntimeContextStore
+    let contextStore: PiRuntimeContextStore
 
     final class LaunchLog: @unchecked Sendable {
         // Guarded by `lock`; written by the service's launcher and read by tests after awaiting it.
@@ -146,9 +168,9 @@ struct TestPiRuntime {
     }
 
     init(
-        provider: CodexRuntimeProvider = .local,
         tokenResolver: @escaping PiRuntimeService.TokenResolver = { _ in "test-token" },
-        modelChoices: @escaping @Sendable (CodexRuntimeProvider) -> [String: Bool] = { _ in
+        dahliaCatalog: @escaping @Sendable (URL, String) async throws -> JSONValue = { _, _ in .object(["data": .array([])]) },
+        modelChoices: @escaping @Sendable () -> [String: Bool] = {
             // Runtime fixtures explicitly enable their synthetic and legacy models, like a user's saved choices.
             Dictionary(uniqueKeysWithValues: [
                 "openai/gpt-test", "openai/gpt-new", "openai/gpt", "openai/new", "openai/old",
@@ -157,13 +179,15 @@ struct TestPiRuntime {
                 "openai/gpt-5.6-luna",
             ].map { ($0, true) })
         },
-        gatewayWorkspaces: @escaping @Sendable (CodexRuntimeProvider) -> [AgentMCPProvider] = { _ in [] },
+        gatewayWorkspaces: @escaping @Sendable () -> [AgentMCPProvider] = { [] },
         transport: @escaping @Sendable (PiRuntimeService.LaunchOptions) -> TestPiTransport
     ) {
         let rootURL = FileManager.default.temporaryDirectory
             .appending(path: "dahlia-pi-test-\(UUID().uuidString)", directoryHint: .isDirectory)
-        let contextStore = CodexRuntimeContextStore()
-        contextStore.apply(provider)
+        let contextStore = PiRuntimeContextStore()
+        contextStore.apply(providers:
+            (ProviderAccountDirectory.connections ?? []).map { .databricks(connectionID: $0.id) }
+                + (ProviderAccountDirectory.dahliaConnections?.first.map { [.dahlia(connectionID: $0)] } ?? []))
         let launches = LaunchLog()
         self.rootURL = rootURL
         self.launches = launches
@@ -172,7 +196,7 @@ struct TestPiRuntime {
             agentLocator: PiAgentDirectoryLocator(applicationSupportURL: rootURL),
             contextStore: contextStore,
             configurationReadiness: { true },
-            launcher: { options, _, _ in
+            launcher: { options, _ in
                 launches.append(options)
                 // Fake Pi creates the resume header that a later process needs, without touching user history.
                 if let sessionIndex = options.arguments.firstIndex(of: "--session-id"),
@@ -185,6 +209,7 @@ struct TestPiRuntime {
                 return transport(options)
             },
             tokenResolver: tokenResolver,
+            dahliaCatalog: dahliaCatalog,
             modelChoices: modelChoices,
             gatewayWorkspaces: gatewayWorkspaces
         )
@@ -244,21 +269,19 @@ final class TestPiTransportLog: @unchecked Sendable {
 extension TestPiRuntime {
     /// Lists `models` and answers every structured generation with `reply`.
     static func generating(
-        provider: CodexRuntimeProvider = .local,
         models: [JSONValue],
         reply: String,
         log: TestPiTransportLog = TestPiTransportLog()
     ) -> TestPiRuntime {
-        generating(provider: provider, models: models, replyForModel: { _ in reply }, log: log)
+        generating(models: models, replyForModel: { _ in reply }, log: log)
     }
 
     static func generating(
-        provider: CodexRuntimeProvider = .local,
         models: [JSONValue],
         replyForModel: @escaping @Sendable (String?) -> String,
         log: TestPiTransportLog = TestPiTransportLog()
     ) -> TestPiRuntime {
-        TestPiRuntime(provider: provider) { options in
+        TestPiRuntime { options in
             let model = options.arguments.firstIndex(of: "--model").map { options.arguments[$0 + 1] }
             let transport = if options.mode == .control {
                 TestPiTransport(reply: modelsReply(models))

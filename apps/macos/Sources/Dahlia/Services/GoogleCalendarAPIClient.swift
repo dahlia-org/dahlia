@@ -91,14 +91,21 @@ final class GoogleCalendarAPIClient: GoogleCalendarAPIClientProviding {
 
     func fetchCalendarList(session googleSession: GoogleSession) async throws -> [CalendarListItem] {
         var components = URLComponents(string: googleSession.apiBaseURL.absoluteString + "calendar/v3/users/me/calendarList")
-        components?.queryItems = [
+        let queryItems = [
             URLQueryItem(name: "minAccessRole", value: "reader"),
             URLQueryItem(name: "showDeleted", value: "false"),
         ]
 
-        let data = try await request(url: Self.url(from: components), accessToken: googleSession.accessToken)
-        let response = try JSONDecoder().decode(CalendarListResponse.self, from: data)
-        return response.items
+        var items: [CalendarListItemPayload] = []
+        var pageToken: String?
+        repeat {
+            components?.queryItems = queryItems + (pageToken.map { [URLQueryItem(name: "pageToken", value: $0)] } ?? [])
+            let data = try await request(url: Self.url(from: components), accessToken: googleSession.accessToken)
+            let response = try JSONDecoder().decode(CalendarListResponse.self, from: data)
+            items += response.items
+            pageToken = response.nextPageToken
+        } while pageToken != nil
+        return items
             .filter { !$0.deleted }
             .map {
                 CalendarListItem(
@@ -365,14 +372,17 @@ extension GoogleCalendarAPIClient {
 
     struct CalendarListResponse: Decodable {
         let items: [CalendarListItemPayload]
+        let nextPageToken: String?
 
         private enum CodingKeys: String, CodingKey {
             case items
+            case nextPageToken
         }
 
         init(from decoder: Decoder) throws {
             let container = try decoder.container(keyedBy: CodingKeys.self)
             items = try container.decodeIfPresent([CalendarListItemPayload].self, forKey: .items) ?? []
+            nextPageToken = try container.decodeIfPresent(String.self, forKey: .nextPageToken)
         }
     }
 

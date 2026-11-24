@@ -5,17 +5,11 @@ import Foundation
 import GRDB
 
 actor BackgroundJobWorker {
-    typealias RuntimeProviderResolver = @Sendable () -> CodexRuntimeProvider
-    typealias LocalAccountSettingsResolver = @MainActor @Sendable () -> LocalAccountAISettings
     typealias FailureReporter = @Sendable (SearchFailureDiagnostic) -> Void
 
-    private let archiveService: RecordingArchiveService
-    private let apiClient: SyncAPIClient
     private let dbQueue: any DatabaseWriter
     private let screenshotAnalyzer: any ScreenshotAnalyzing
     private let inferenceSettingsResolver: @Sendable (WorkspaceRecord) -> AccountInferenceSettings
-    private let runtimeProviderResolver: RuntimeProviderResolver
-    private let localAccountSettingsResolver: LocalAccountSettingsResolver
     private let failureReporter: FailureReporter
     private var reportedFailures: Set<SearchFailureDiagnostic> = []
     private let observationQueue = DispatchQueue(label: "app.dahlia.search-indexer", qos: .utility)
@@ -43,20 +37,11 @@ actor BackgroundJobWorker {
         dbQueue: any DatabaseWriter,
         screenshotAnalyzer: any ScreenshotAnalyzing = CodexScreenshotAnalysisService(),
         inferenceSettingsResolver: @escaping @Sendable (WorkspaceRecord) -> AccountInferenceSettings = { AccountInferenceSettings(workspace: $0) },
-        apiClient: SyncAPIClient = SyncAPIClient(session: .shared),
-        runtimeProviderResolver: @escaping RuntimeProviderResolver = { CodexRuntimeContextStore.shared.provider },
-        localAccountSettingsResolver: @escaping LocalAccountSettingsResolver = {
-            WorkspaceAISettingsModel.shared.localAccountSettings
-        },
         failureReporter: @escaping FailureReporter = { ErrorReportingService.captureSearchFailure($0) }
     ) {
-        archiveService = RecordingArchiveService(dbQueue: dbQueue, api: apiClient)
-        self.apiClient = apiClient
         self.dbQueue = dbQueue
         self.screenshotAnalyzer = screenshotAnalyzer
         self.inferenceSettingsResolver = inferenceSettingsResolver
-        self.runtimeProviderResolver = runtimeProviderResolver
-        self.localAccountSettingsResolver = localAccountSettingsResolver
         self.failureReporter = failureReporter
     }
 
@@ -72,7 +57,7 @@ actor BackgroundJobWorker {
                 db,
                 sql: """
                 SELECT COUNT(*) + COALESCE(SUM(generation), 0)
-                FROM jobs_background WHERE indexKind IN ('fts', 'archive')
+                FROM jobs_background WHERE indexKind = 'fts'
                 """
             ) ?? 0
         }.removeDuplicates()
@@ -236,10 +221,6 @@ actor BackgroundJobWorker {
             let phase = try await indexPhase()
             if phase == "failed" {
                 try await drainCleanupJobs()
-                if let jobs = try await claimNextJobs(archivesOnly: true), let job = jobs.first {
-                    let processed = try await archiveService.runNext(sessionId: job.targetID)
-                    try await rescheduleArchive(job, processed: processed)
-                }
                 return
             }
             try await validateAnalyzer()
@@ -258,10 +239,9 @@ actor BackgroundJobWorker {
                         let capacity = 2 - active.values.reduce(0, +)
                         guard let jobs = try await claimNextJobs(
                             maximumCount: capacity,
-                            allowsSearch: active["search", default: 0] == 0,
-                            allowsArchives: active["archive", default: 0] == 0
+                            allowsSearch: active["search", default: 0] == 0
                         ), let first = jobs.first else { break }
-                        let kind = first.targetKind == "recordingArchive" ? "archive" : first.targetKind == "screenshotAnalysis" ? "image" : "search"
+                        let kind = first.targetKind == "screenshotAnalysis" ? "image" : "search"
                         active[kind, default: 0] += jobs.count
                         group.addTask { [self] in
                             let deferred = try await processGroup(jobs)
@@ -301,10 +281,7 @@ actor BackgroundJobWorker {
     private func processGroup(_ jobs: [SearchIndexJob]) async throws -> Bool {
         do {
             try checkCanContinue()
-            if let job = jobs.first, job.targetKind == "recordingArchive" {
-                let processed = try await archiveService.runNext(sessionId: job.targetID)
-                try await rescheduleArchive(job, processed: processed)
-            } else if jobs.first?.targetKind == "screenshotAnalysis" {
+            if jobs.first?.targetKind == "screenshotAnalysis" {
                 return try await processScreenshotJobsConcurrently(jobs)
             } else {
                 try await process(jobs)
@@ -313,9 +290,7 @@ actor BackgroundJobWorker {
         } catch is CancellationError {
             try? await release(jobs)
         } catch {
-            if jobs.first?.targetKind != "recordingArchive" {
-                reportFailure(error, operation: jobs.first?.targetKind == "screenshotAnalysis" ? .imageAnalysis : .indexing)
-            }
+            reportFailure(error, operation: jobs.first?.targetKind == "screenshotAnalysis" ? .imageAnalysis : .indexing)
             if Self.isTransientDatabaseError(error) {
                 try await release(jobs, retryAt: Date().addingTimeInterval(30), errorCode: Self.errorCode(error))
             } else {
@@ -545,34 +520,30 @@ actor BackgroundJobWorker {
 
     func claimNextJobs(
         cleanupOnly: Bool = false,
-        archivesOnly: Bool = false,
         maximumCount: Int = 2,
-        allowsSearch: Bool = true,
-        allowsArchives: Bool = true
+        allowsSearch: Bool = true
     ) async throws -> [SearchIndexJob]? {
         try await dbQueue.write { db in
-            if !cleanupOnly, !archivesOnly,
+            if !cleanupOnly,
                try String.fetchOne(db, sql: "SELECT phase FROM search_index_state WHERE indexKind = 'fts'") == "pending" {
                 return nil
             }
             let now = Date()
-            let searchFilter = allowsSearch ? "" : "AND targetKind IN ('screenshotAnalysis', 'recordingArchive')"
-            let archiveFilter = allowsArchives ? "" : "AND targetKind <> 'recordingArchive'"
-            let cleanupFilter = archivesOnly ? "AND indexKind = 'archive'" : cleanupOnly
-                ? "AND indexKind = 'fts' AND targetKind IN ('workspaceCleanup', 'meetingCleanup', 'projectCleanup', 'screenshotCleanup')"
+            let searchFilter = allowsSearch ? "" : "AND targetKind = 'screenshotAnalysis'"
+            let cleanupFilter = cleanupOnly
+                ? "AND targetKind IN ('workspaceCleanup', 'meetingCleanup', 'projectCleanup', 'screenshotCleanup')"
                 : ""
             guard let firstRow = try Row.fetchOne(
                 db,
                 sql: """
                 SELECT targetKind, targetKey, generation, attempts, captionLanguage
                 FROM jobs_background
-                WHERE indexKind IN ('fts', 'archive')
+                WHERE indexKind = 'fts'
                   AND availableAt <= ?
-                  AND (targetKind = 'recordingArchive' OR attempts < 5)
+                  AND attempts < 5
                   AND (status = 'pending' OR leaseExpiresAt < ?)
                   \(cleanupFilter)
                   \(searchFilter)
-                  \(archiveFilter)
                 ORDER BY priority DESC, availableAt, targetKind, targetKey
                 LIMIT 1
                 """,
@@ -613,14 +584,14 @@ actor BackgroundJobWorker {
                     outputLanguage: language
                 )
             }
-            let leaseDuration: TimeInterval = ["screenshotAnalysis", "recordingArchive"].contains(targetKind) ? 300 : 60
+            let leaseDuration: TimeInterval = targetKind == "screenshotAnalysis" ? 300 : 60
             for job in jobs {
                 try db.execute(
                     sql: """
                     UPDATE jobs_background
                     SET status = 'processing', attempts = attempts + 1, captionLanguage = ?,
                         claimedAt = ?, leaseExpiresAt = ?, updatedAt = ?
-                    WHERE indexKind = CASE WHEN targetKind = 'recordingArchive' THEN 'archive' ELSE 'fts' END AND targetKind = ? AND targetKey = ? AND generation = ?
+                    WHERE indexKind = 'fts' AND targetKind = ? AND targetKey = ? AND generation = ?
                     """,
                     arguments: [
                         job.outputLanguage?.rawValue,
@@ -634,29 +605,6 @@ actor BackgroundJobWorker {
                 )
             }
             return jobs
-        }
-    }
-
-    private func rescheduleArchive(_ job: SearchIndexJob, processed: Bool) async throws {
-        let delay: TimeInterval = processed ? 5 : min(300, 5 * pow(2, Double(min(job.attempts, 6))))
-        try await dbQueue.write { db in
-            let needed = try Bool.fetchOne(db, sql: """
-            SELECT EXISTS (SELECT 1 FROM recording_archives a WHERE a.sessionId = ? AND a.connectionId IS NOT NULL AND (
-                a.state IN ('pending', 'failed', 'syncing') OR a.state = 'saved' AND EXISTS (
-                    SELECT 1 FROM recording_audio_segments WHERE recordingSessionId = a.sessionId AND state IN ('ready', 'purgePending'))))
-            """, arguments: [job.targetID]) ?? false
-            if needed {
-                try db.execute(sql: """
-                UPDATE jobs_background SET status = 'pending', attempts = ?, claimedAt = NULL, leaseExpiresAt = NULL,
-                    availableAt = MAX(?, COALESCE((SELECT retryAt FROM recording_archives WHERE sessionId = ?), 0))
-                WHERE indexKind = 'archive' AND targetKey = ? AND generation = ? AND status = 'processing'
-                """, arguments: [processed ? 0 : job.attempts, Date.now.addingTimeInterval(delay), job.targetID, job.targetID, job.generation])
-            } else {
-                try db.execute(
-                    sql: "DELETE FROM jobs_background WHERE indexKind = 'archive' AND targetKey = ? AND generation = ? AND status = 'processing'",
-                    arguments: [job.targetID, job.generation]
-                )
-            }
         }
     }
 
@@ -738,18 +686,13 @@ private extension BackgroundJobWorker {
     }
 
     func processScreenshotJobsConcurrently(_ jobs: [SearchIndexJob]) async throws -> Bool {
-        let localSettings = await localAccountSettingsResolver()
         let routing = try await dbQueue.read { [inferenceSettingsResolver] db in
             var inputs: [UUID: ScreenshotAnalysisInput] = [:]
-            var serverConnectionIDs: [UUID: UUID] = [:]
             for job in jobs {
                 guard let screenshot = try MeetingScreenshotRecord.fetchOne(db, key: job.targetID),
                       let meeting = try MeetingRecord.fetchOne(db, key: screenshot.meetingId),
                       let workspace = try WorkspaceRecord.fetchOne(db, key: meeting.workspaceId)
                 else { continue }
-                if let connectionID = workspace.accountConnectionId {
-                    serverConnectionIDs[job.targetID] = connectionID
-                }
                 let analysis = inferenceSettingsResolver(workspace).imageAnalysis
                 guard analysis.enabled, let outputLanguage = job.outputLanguage,
                       screenshot.remoteReference == nil || screenshot.localReference != nil,
@@ -758,34 +701,26 @@ private extension BackgroundJobWorker {
                     id: screenshot.id,
                     imageData: screenshot.imageData,
                     mimeType: screenshot.mimeType,
-                    runtimeProvider: CodexRuntimeProvider(workspace: workspace),
                     outputLanguage: outputLanguage,
                     model: analysis.model,
                     fallbackModel: analysis.fallbackModel
                 )
             }
-            return (inputs, serverConnectionIDs)
+            return inputs
         }
-        let inputs = routing.0
-        let serverConnectionIDs = routing.1
-        let runtimeProvider = runtimeProviderResolver()
+        let inputs = routing
         var outcomes = jobs.compactMap { job in
             inputs[job.targetID] == nil ? ScreenshotJobOutcome.missing(job) : nil
         }
-        let deferredJobs = jobs.filter { job in
-            guard let input = inputs[job.targetID] else { return false }
-            return input.runtimeProvider != runtimeProvider
-        }
-        try await deferScreenshotJobsForRuntime(deferredJobs)
         var prerequisiteError: (any Error)?
         await withTaskGroup(of: ScreenshotJobOutcome.self) { group in
             for job in jobs {
-                guard let input = inputs[job.targetID], input.runtimeProvider == runtimeProvider else { continue }
+                guard let input = inputs[job.targetID] else { continue }
                 group.addTask(priority: .utility) { [screenshotAnalyzer] in
                     do {
                         let results = try await screenshotAnalyzer.analyze([input])
                         try Task.checkCancellation()
-                        return .success(job, results, input.runtimeProvider.accountConnectionID)
+                        return .success(job, results)
                     } catch is CancellationError {
                         return .cancelled
                     } catch {
@@ -812,12 +747,10 @@ private extension BackgroundJobWorker {
         let generation = try await currentGeneration()
         for outcome in outcomes {
             switch outcome {
-            case let .success(job, results, expectedConnectionId):
+            case let .success(job, results):
                 do {
-                    try await storeScreenshotAnalyses(
-                        results, generation: generation, expectedConnectionId: expectedConnectionId
-                    )
-                    try await complete([job], expectedConnectionId: expectedConnectionId)
+                    try await storeScreenshotAnalyses(results, generation: generation)
+                    try await complete([job])
                 } catch is CancellationError {
                     throw CancellationError()
                 } catch {
@@ -827,7 +760,7 @@ private extension BackgroundJobWorker {
                 try await fail(job, error: error)
             case let .missing(job):
                 do {
-                    try await complete([job], expectedConnectionId: serverConnectionIDs[job.targetID])
+                    try await complete([job])
                 } catch is CancellationError {
                     throw CancellationError()
                 } catch {
@@ -840,13 +773,11 @@ private extension BackgroundJobWorker {
         return false
     }
 
-    func storeScreenshotAnalyses(_ results: [ScreenshotAnalysis], generation: Int, expectedConnectionId: UUID?) async throws {
+    func storeScreenshotAnalyses(_ results: [ScreenshotAnalysis], generation: Int) async throws {
         try await dbQueue.write { db in
             for result in results {
                 guard let existing = try MeetingScreenshotRecord.fetchOne(db, key: result.screenshotID),
-                      let meeting = try MeetingRecord.fetchOne(db, key: existing.meetingId),
-                      let workspace = try WorkspaceRecord.fetchOne(db, key: meeting.workspaceId) else { continue }
-                guard workspace.accountConnectionId == expectedConnectionId else { throw TextContentError.changed }
+                      try MeetingRecord.exists(db, key: existing.meetingId) else { continue }
                 guard existing.remoteReference == nil || existing.localReference != nil,
                       (try? TextContentAccess.requireComplete(
                           entity: .file, id: existing.originalFileId, in: db
@@ -864,18 +795,6 @@ private extension BackgroundJobWorker {
                     """,
                     arguments: [result.ocrText, result.caption, result.screenshotID]
                 )
-                if let screenshot = try MeetingScreenshotRecord.fetchOne(db, key: result.screenshotID),
-                   let workspaceId = try UUID.fetchOne(
-                       db,
-                       sql: "SELECT workspace_id FROM meetings WHERE id = ?",
-                       arguments: [screenshot.meetingId]
-                   ) {
-                    try SyncTransactionRecorder.record(
-                        workspaceId: workspaceId,
-                        operations: [SyncInitialSnapshotBuilder.screenshotOperation(screenshot, action: .upsert)],
-                        in: db
-                    )
-                }
                 try indexScreenshotDocument(id: result.screenshotID, generation: generation, in: db)
             }
         }
@@ -1004,21 +923,13 @@ private extension BackgroundJobWorker {
         }
     }
 
-    private func complete(_ jobs: [SearchIndexJob], expectedConnectionId: UUID? = nil) async throws {
+    private func complete(_ jobs: [SearchIndexJob]) async throws {
         try await dbQueue.write { db in
             for job in jobs {
-                if let expectedConnectionId {
-                    let connectionId = try UUID.fetchOne(db, sql: """
-                    SELECT v.accountConnectionId FROM meeting_attachments f
-                    JOIN meetings m ON m.id = f.meetingId JOIN workspaces v ON v.id = m.workspace_id
-                    WHERE f.id = ?
-                    """, arguments: [job.targetID])
-                    guard connectionId == expectedConnectionId else { throw TextContentError.changed }
-                }
                 try db.execute(
                     sql: """
                     DELETE FROM jobs_background
-                    WHERE indexKind = CASE WHEN targetKind = 'recordingArchive' THEN 'archive' ELSE 'fts' END AND targetKind = ? AND targetKey = ? AND generation = ?
+                    WHERE indexKind = 'fts' AND targetKind = ? AND targetKey = ? AND generation = ?
                     """,
                     arguments: [job.targetKind, job.targetID, job.generation]
                 )
@@ -1054,7 +965,7 @@ private extension BackgroundJobWorker {
                         UPDATE jobs_background
                         SET status = 'pending', attempts = max(0, attempts - 1), availableAt = ?,
                             claimedAt = NULL, leaseExpiresAt = NULL, lastErrorCode = ?, updatedAt = ?
-                        WHERE indexKind = CASE WHEN targetKind = 'recordingArchive' THEN 'archive' ELSE 'fts' END AND targetKind = ? AND targetKey = ? AND generation = ?
+                        WHERE indexKind = 'fts' AND targetKind = ? AND targetKey = ? AND generation = ?
                           AND status = 'processing'
                         """,
                         arguments: [release.retryAt, release.errorCode, Date(), job.targetKind, job.targetID, job.generation]
@@ -1083,40 +994,17 @@ private extension BackgroundJobWorker {
         }
     }
 
-    private func deferScreenshotJobsForRuntime(_ jobs: [SearchIndexJob]) async throws {
-        guard !jobs.isEmpty else { return }
-        let retryAt = Date().addingTimeInterval(60)
-        try await dbQueue.write { db in
-            for job in jobs {
-                try db.execute(
-                    sql: """
-                    UPDATE jobs_background
-                    SET status = 'pending', attempts = max(0, attempts - 1), availableAt = ?,
-                        claimedAt = NULL, leaseExpiresAt = NULL, lastErrorCode = ?, updatedAt = ?
-                    WHERE indexKind = CASE WHEN targetKind = 'recordingArchive' THEN 'archive' ELSE 'fts' END AND targetKind = ? AND targetKey = ? AND generation = ?
-                    """,
-                    arguments: [
-                        retryAt, "runtimeProviderMismatch", Date(),
-                        job.targetKind, job.targetID, job.generation,
-                    ]
-                )
-            }
-        }
-    }
-
     private func fail(_ job: SearchIndexJob, error: Error) async throws {
         if isPaused || Task.isCancelled {
             try await release([job])
             return
         }
-        if job.targetKind != "recordingArchive" {
-            reportFailure(error, operation: job.targetKind == "screenshotAnalysis" ? .imageAnalysis : .indexing)
-        }
+        reportFailure(error, operation: job.targetKind == "screenshotAnalysis" ? .imageAnalysis : .indexing)
         if Self.isTransientDatabaseError(error) {
             try await release([job], retryAt: Date().addingTimeInterval(30), errorCode: Self.errorCode(error))
             return
         }
-        if job.attempts >= 5, job.targetKind != "recordingArchive" {
+        if job.attempts >= 5 {
             if job.targetKind == "screenshotAnalysis" {
                 try await dbQueue.write { db in
                     try db.execute(
@@ -1124,7 +1012,7 @@ private extension BackgroundJobWorker {
                         UPDATE jobs_background
                         SET status = 'pending', claimedAt = NULL, leaseExpiresAt = NULL,
                             lastErrorCode = ?, updatedAt = ?
-                        WHERE indexKind = CASE WHEN targetKind = 'recordingArchive' THEN 'archive' ELSE 'fts' END AND targetKind = ? AND targetKey = ? AND generation = ?
+                        WHERE indexKind = 'fts' AND targetKind = ? AND targetKey = ? AND generation = ?
                         """,
                         arguments: [
                             Self.errorCode(error), Date(),
@@ -1138,7 +1026,7 @@ private extension BackgroundJobWorker {
                 try db.execute(
                     sql: """
                     DELETE FROM jobs_background
-                    WHERE indexKind = CASE WHEN targetKind = 'recordingArchive' THEN 'archive' ELSE 'fts' END AND targetKind = ? AND targetKey = ? AND generation = ?
+                    WHERE indexKind = 'fts' AND targetKind = ? AND targetKey = ? AND generation = ?
                     """,
                     arguments: [
                         job.targetKind,
@@ -1155,7 +1043,7 @@ private extension BackgroundJobWorker {
                 UPDATE jobs_background
                 SET status = 'pending', availableAt = ?, claimedAt = NULL, leaseExpiresAt = NULL,
                     lastErrorCode = ?, updatedAt = ?
-                WHERE indexKind = CASE WHEN targetKind = 'recordingArchive' THEN 'archive' ELSE 'fts' END AND targetKind = ? AND targetKey = ? AND generation = ?
+                WHERE indexKind = 'fts' AND targetKind = ? AND targetKey = ? AND generation = ?
                 """,
                 arguments: [
                     Date().addingTimeInterval(30),
@@ -1231,7 +1119,7 @@ struct SearchIndexJob: Sendable {
 }
 
 private enum ScreenshotJobOutcome: Sendable {
-    case success(SearchIndexJob, [ScreenshotAnalysis], UUID?)
+    case success(SearchIndexJob, [ScreenshotAnalysis])
     case failure(SearchIndexJob, any Error)
     case cancelled
     case missing(SearchIndexJob)

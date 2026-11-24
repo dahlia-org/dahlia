@@ -114,13 +114,6 @@ import Foundation
             #expect(await service.sentTextBlocks.isEmpty)
             session.isTurnCleanupPending = false
 
-            var otherAccountWorkspace = Self.testWorkspace()
-            otherAccountWorkspace.accountConnectionId = .v7()
-            settings.currentWorkspace = otherAccountWorkspace
-            session.sendMeetingReviewShortcut()
-            #expect(!session.isGenerating)
-            #expect(await service.sentTextBlocks.isEmpty)
-
             settings.currentWorkspace = boundWorkspace
             session.sendMeetingReviewShortcut()
             #expect(await pollUntil { await service.sentTextBlocks.count == 1 })

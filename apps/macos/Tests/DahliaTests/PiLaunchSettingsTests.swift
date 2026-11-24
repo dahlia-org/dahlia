@@ -7,7 +7,6 @@ import Synchronization
 
     @MainActor
     struct PiLaunchSettingsTests {
-        private static let account = CodexRuntimeProvider.databricks(connectionID: UUID())
 
         /// Secrets kept in memory instead of the Keychain.
         private final class MemorySecrets: Sendable {
@@ -45,29 +44,29 @@ import Synchronization
         func secretsLiveOnlyInTheKeychainAndAreNeverReadBack() async throws {
             let defaults = try #require(UserDefaults(suiteName: "PiLaunchSettingsTests.\(UUID())"))
             let memory = MemorySecrets()
-            let model = PiLaunchSettingsModel(account: Self.account, defaults: defaults, secrets: memory.secrets)
+            let model = PiLaunchSettingsModel(defaults: defaults, secrets: memory.secrets)
 
             model.addVariable()
             let id = try #require(model.settings.variables.first?.id)
             model.setName("API_KEY", of: id)
             model.setValue("plain", of: id)
-            #expect(PiLaunchSettings.load(for: Self.account, defaults: defaults) == model.settings)
+            #expect(PiLaunchSettings.load(defaults: defaults) == model.settings)
 
             // Making it secret moves the value to the Keychain and out of app defaults.
             try await model.setSecret(true, of: id)
-            let key = PiLaunchSettings.secretKey(for: Self.account, id: id)
+            let key = PiLaunchSettings.secretKey(id: id)
             #expect(memory.values.withLock { $0 } == [key: "plain"])
-            #expect(PiLaunchSettings.load(for: Self.account, defaults: defaults).variables.first?.value == nil)
+            #expect(PiLaunchSettings.load(defaults: defaults).variables.first?.value == nil)
             #expect(model.storedSecretIDs == [id])
             try await model.setSecretValue("replaced", of: id)
             #expect(memory.values.withLock { $0[key] } == "replaced")
 
             // A new model sees that a secret is stored without reading it.
-            let reopened = PiLaunchSettingsModel(account: Self.account, defaults: defaults, secrets: memory.secrets)
+            let reopened = PiLaunchSettingsModel(defaults: defaults, secrets: memory.secrets)
             await reopened.refreshStoredSecrets()
             #expect(reopened.storedSecretIDs == [id])
             let environment = reopened.settings.environment { id in
-                memory.values.withLock { $0[PiLaunchSettings.secretKey(for: Self.account, id: id)] }
+                memory.values.withLock { $0[PiLaunchSettings.secretKey(id: id)] }
             }
             #expect(environment == ["API_KEY": "replaced"])
 
@@ -79,7 +78,7 @@ import Synchronization
             try await model.setSecretValue("again", of: id)
             await model.removeVariable(id)
             #expect(memory.values.withLock { $0 }.isEmpty)
-            #expect(PiLaunchSettings.load(for: Self.account, defaults: defaults) == PiLaunchSettings())
+            #expect(PiLaunchSettings.load(defaults: defaults) == PiLaunchSettings())
         }
 
         @Test(arguments: ["PATH", "NVM_DIR"])
@@ -88,7 +87,7 @@ import Synchronization
             let defaults = try #require(UserDefaults(suiteName: suite))
             defer { defaults.removePersistentDomain(forName: suite) }
             let memory = MemorySecrets()
-            let model = PiLaunchSettingsModel(account: Self.account, defaults: defaults, secrets: memory.secrets)
+            let model = PiLaunchSettingsModel(defaults: defaults, secrets: memory.secrets)
             model.addVariable()
             let id = try #require(model.settings.variables.first?.id)
             model.setName("OTHER_VARIABLE", of: id)

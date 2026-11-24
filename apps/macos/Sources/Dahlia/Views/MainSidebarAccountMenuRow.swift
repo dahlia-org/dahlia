@@ -6,8 +6,6 @@ struct MainSidebarAccountMenuRow: View {
     var image: Image?
     var hasExportFolder = false
     var imageColor: Color?
-    var syncState: MeetingSyncState?
-    var isSyncing = false
     var showsDisclosure = false
     var selectionState: Bool?
     var isEnabled = true
@@ -25,10 +23,7 @@ struct MainSidebarAccountMenuRow: View {
     var body: some View {
         Button(action: action) {
             HStack(spacing: 8) {
-                if let syncState {
-                    MeetingSyncStatusView(state: syncState, isSyncing: isSyncing)
-                        .frame(width: 18)
-                } else if let image {
+                if let image {
                     image
                         .resizable()
                         .foregroundStyle(imageColor ?? DahliaDesign.sidebarPrimaryTextColor)
@@ -38,23 +33,14 @@ struct MainSidebarAccountMenuRow: View {
                         .workspaceExportFolderBadge(isVisible: hasExportFolder)
                 }
 
-                if syncState != nil {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(title).lineLimit(1)
-                        if let subtitle {
-                            Text(subtitle).font(.dahliaSecondary).foregroundStyle(.secondary).lineLimit(1)
-                        }
-                    }
-                } else {
-                    HStack(alignment: .firstTextBaseline, spacing: 4) {
-                        Text(title)
+                HStack(alignment: .firstTextBaseline, spacing: 4) {
+                    Text(title)
+                        .lineLimit(1)
+                    if let subtitle {
+                        Text(subtitle)
+                            .font(.dahliaSecondary)
+                            .foregroundStyle(.secondary)
                             .lineLimit(1)
-                        if let subtitle {
-                            Text(subtitle)
-                                .font(.dahliaSecondary)
-                                .foregroundStyle(.secondary)
-                                .lineLimit(1)
-                        }
                     }
                 }
 
@@ -74,7 +60,7 @@ struct MainSidebarAccountMenuRow: View {
                 }
             }
             .padding(.horizontal, 8)
-            .frame(height: syncState != nil && subtitle != nil ? 44 : 30)
+            .frame(height: 30)
             .contentShape(.rect(corners: .concentric(
                 minimum: .fixed(DahliaDesign.Highlight.compactCornerRadius)
             )))

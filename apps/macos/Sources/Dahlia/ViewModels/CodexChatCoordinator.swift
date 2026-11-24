@@ -150,9 +150,9 @@ final class CodexChatCoordinator {
         }
         guard changesAccount else { return }
         runtimeStates = []
-        Task { await service.stopAccountRuns(except: CodexRuntimeProvider(workspace: workspace).accountKey) }
+        Task { await service.stopAccountRuns(except: AppAccount.key) }
         for session in sessions.values
-            where session.accountID != CodexRuntimeProvider(workspace: workspace).accountKey && session.hasPendingGenerationWork {
+            where session.accountID != AppAccount.key && session.hasPendingGenerationWork {
             session.release(stoppingRun: true)
         }
         let session = makeSession()

@@ -8,18 +8,6 @@ struct SyncHTTPError: Error {
         (try? JSONSerialization.jsonObject(with: body) as? [String: Any])?["code"] as? String
     }
 
-    var blockedReason: SyncBlockedReason? {
-        switch status {
-        case 401, 403: .authorization
-        case 409: .conflict
-        case 400 ..< 500 where ![408, 425, 426, 429].contains(status): .validation
-        default: nil
-        }
-    }
-
-    var isRetryable: Bool {
-        [408, 425, 429].contains(status) || (500 ..< 600).contains(status)
-    }
 }
 
 struct SyncAPIClient: Sendable {
