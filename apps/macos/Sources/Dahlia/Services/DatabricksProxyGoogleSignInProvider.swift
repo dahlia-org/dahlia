@@ -28,6 +28,8 @@ final class DatabricksProxyGoogleSignInProvider: GoogleSignInProviding {
     private let apiClient: any GoogleCalendarAPIClientProviding
     private let userDefaults: UserDefaults
     private var connectionObserver: GoogleAuthSessionObserver?
+    private var directObserver: GoogleAuthSessionObserver?
+    let sessionDidChangeNotification = Notification.Name("RoutedGoogleSession.\(UUID())")
 
     init(
         sessionKind: GoogleAuthSessionKind = .calendar,
@@ -46,8 +48,14 @@ final class DatabricksProxyGoogleSignInProvider: GoogleSignInProviding {
         self.apiClient = apiClient
         self.driveClient = driveClient
         self.userDefaults = userDefaults
-        // Adding or removing the Databricks connection changes the route; the store re-evaluates through its own
-        // notification.
+        directObserver = GoogleAuthSessionObserver(notificationName: self.direct.sessionDidChangeNotification) { [weak self] disconnected in
+            guard let self, !isProxyActive else { return }
+            NotificationCenter.default.post(
+                name: sessionDidChangeNotification,
+                object: disconnected ? GoogleAuthSessionChangeReason.disconnected : nil
+            )
+        }
+        // Provider credentials are independent: a direct Google sign-out must not disconnect a selected proxy.
         connectionObserver = GoogleAuthSessionObserver(notificationName: connectionChangeNotification) { [weak self] _ in
             guard let self else { return }
             NotificationCenter.default.post(name: sessionDidChangeNotification, object: nil)
@@ -92,16 +100,13 @@ final class DatabricksProxyGoogleSignInProvider: GoogleSignInProviding {
         }
     }
 
-    var sessionDidChangeNotification: Notification.Name { direct.sessionDidChangeNotification }
-
     func restorePreviousSignIn() async throws -> GoogleSession {
         guard let connection else { return try await direct.restorePreviousSignIn() }
         guard !isDisconnected(connection) else { throw GoogleSignInError.noPreviousSignIn }
         do {
             return try await proxySession(for: connection, interactive: false)
         } catch let error where Self.isUnusableRoute(error) {
-            // Restore runs for every Databricks connection, including users who never chose Calendar through it, so a
-            // route this user cannot use stays signed out quietly; Connect's pre-check then reports why.
+            // An unavailable explicitly selected route stays signed out; Connect reports the authorization error.
             throw GoogleSignInError.noPreviousSignIn
         }
     }

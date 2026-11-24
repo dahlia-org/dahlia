@@ -640,8 +640,7 @@
 "Added earlier · Sign in again" = "Added earlier · Sign in again";
 "Manage Providers…" = "Manage Providers…";
 "Google Drive" = "Google Drive";
-"Read through %@" = "Read through %@";
-"The name shows only in Dahlia. Leave it empty to show the workspace and email." = "The name shows only in Dahlia. Leave it empty to show the workspace and email.";
+"The name shows only in Dahlia. Leave it empty to show the account details." = "The name shows only in Dahlia. Leave it empty to show the account details.";
 "Google" = "Google";
 "Turn this provider on to connect it." = "Turn this provider on to connect it.";
 "Events to Include" = "Events to Include";
@@ -2107,3 +2106,7 @@
 "omnigent.session.openInBrowser" = "Open in Omnigent";
 
 "settings.agents.optimization.agentLegacyReviewRuns" = "Earlier shared review history";
+
+"Add your Google account using your name and email. Calendar and Drive ask for access when you use them. Adding this account does not change your calendar provider." = "Add your Google account using your name and email. Calendar and Drive ask for access when you use them. Adding this account does not change your calendar provider.";
+
+"Disconnect this Google account from Calendar and Drive in Dahlia? Databricks connections are not affected." = "Disconnect this Google account from Calendar and Drive in Dahlia? Databricks connections are not affected.";

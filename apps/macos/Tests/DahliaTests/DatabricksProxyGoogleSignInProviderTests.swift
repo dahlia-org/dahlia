@@ -127,6 +127,31 @@ import Synchronization
 
         /// Google Calendar comes from the provider the user chose: Google itself, or the Databricks connection.
         @Test
+        func anUnsetChoiceUsesDirectGoogleEvenWhenDatabricksIsAvailable() async throws {
+            let defaults = makeDefaults()
+            defaults.removeObject(forKey: GoogleCalendarProvider.userDefaultsKey)
+            let direct = FakeDirectProvider(isConfigured: true, hasPreviousSignIn: true)
+            let provider = makeProvider(connection: connection, direct: direct, userDefaults: defaults)
+            #expect(!provider.isProxyActive)
+            _ = try await provider.restorePreviousSignIn()
+            #expect(direct.restoreCallCount == 1)
+        }
+
+        @Test
+        func disconnectingTheProxyDoesNotPublishADirectGoogleSignOut() async throws {
+            let direct = FakeDirectProvider()
+            let provider = makeProvider(connection: connection, direct: direct)
+            let directChanges = Mutex(0)
+            let observer = NotificationCenter.default.addObserver(forName: direct.sessionDidChangeNotification, object: nil, queue: .main) { _ in
+                directChanges.withLock { $0 += 1 }
+            }
+            defer { NotificationCenter.default.removeObserver(observer) }
+            try await provider.disconnect()
+            #expect(directChanges.withLock { $0 } == 0)
+            #expect(direct.disconnectCallCount == 0)
+        }
+
+        @Test
         func calendarFollowsTheChosenProviderAndDriveKeepsTheConnection() async throws {
             let defaults = makeDefaults()
             let direct = FakeDirectProvider(isConfigured: true, hasPreviousSignIn: true)
@@ -143,18 +168,19 @@ import Synchronization
         }
 
         @Test
-        func theChoiceFallsBackToTheAccountsConnectionWhenItIsGone() throws {
+        func theChoiceNeverAutomaticallySelectsADatabricksConnection() throws {
             let defaults = makeDefaults()
+            defaults.removeObject(forKey: GoogleCalendarProvider.userDefaultsKey)
             let id = UUID.v7()
             try ProviderAccountDirectory.$connections.withValue([.init(
                 id: id,
                 workspaceURL: #require(URL(string: "https://dbc-1.cloud.databricks.com"))
             )]) {
-                #expect(GoogleCalendarProvider.current(defaults: defaults) == .databricks(connectionID: id))
+                #expect(GoogleCalendarProvider.current(defaults: defaults) == .google)
                 defaults.set("google", forKey: GoogleCalendarProvider.userDefaultsKey)
                 #expect(GoogleCalendarProvider.current(defaults: defaults) == .google)
                 defaults.set(UUID.v7().uuidString, forKey: GoogleCalendarProvider.userDefaultsKey)
-                #expect(GoogleCalendarProvider.current(defaults: defaults) == .databricks(connectionID: id))
+                #expect(GoogleCalendarProvider.current(defaults: defaults) == .google)
             }
             ProviderAccountDirectory.$connections.withValue([]) {
                 #expect(GoogleCalendarProvider.current(defaults: defaults) == .google)
@@ -255,7 +281,7 @@ import Synchronization
             _ = try await provider.restorePreviousSignIn()
             let (posts, continuation) = AsyncStream.makeStream(of: Void.self)
             let token = NotificationCenter.default.addObserver(
-                forName: direct.sessionDidChangeNotification, object: nil, queue: .main
+                forName: provider.sessionDidChangeNotification, object: nil, queue: .main
             ) { _ in continuation.yield() }
             defer { NotificationCenter.default.removeObserver(token) }
 
@@ -366,7 +392,8 @@ import Synchronization
             let readded = DatabricksConnection(id: UUID(), host: connection.host)
             let provider = makeProvider(connection: readded, direct: FakeDirectProvider(), userDefaults: defaults)
 
-            // The re-added connection is the app account's connection, so the account must list it.
+            // Re-adding a connection does not select it implicitly; choosing it opts in to its new identity.
+            defaults.set(readded.id.uuidString, forKey: GoogleCalendarProvider.userDefaultsKey)
             let readdedConnections = try [ProviderAccountDirectory.Connection(id: readded.id, workspaceURL: #require(URL(string: readded.host)))]
             #expect(await ProviderAccountDirectory.$connections.withValue(readdedConnections) { await provider.hasPreviousSignIn })
         }
@@ -399,6 +426,7 @@ import Synchronization
             let suite = "DatabricksProxyGoogleSignInProviderTests.\(UUID().uuidString)"
             let defaults = UserDefaults(suiteName: suite)!
             defaults.removePersistentDomain(forName: suite)
+            defaults.set(proxyConnectionID.uuidString, forKey: GoogleCalendarProvider.userDefaultsKey)
             return defaults
         }
 

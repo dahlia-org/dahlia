@@ -2131,12 +2131,17 @@ enum L10n { // swiftlint:disable:this type_body_length
     static var providerAccountSignInToKeep: String { String(localized: "Added earlier · Sign in again", bundle: bundle) }
     static var manageProviders: String { String(localized: "Manage Providers…", bundle: bundle) }
     static var googleDrive: String { String(localized: "Google Drive", bundle: bundle) }
-    static func googleReadThrough(_ name: String) -> String {
-        String(format: String(localized: "Read through %@", bundle: bundle), name)
-    }
+    static var googleProviderSignOutDescription: String { String(
+        localized: "Disconnect this Google account from Calendar and Drive in Dahlia? Databricks connections are not affected.",
+        bundle: bundle
+    ) }
+    static var googleProviderSignInDescription: String { String(
+        localized: "Add your Google account using your name and email. Calendar and Drive ask for access when you use them. Adding this account does not change your calendar provider.",
+        bundle: bundle
+    ) }
 
     static var renameProviderAccountDescription: String { String(
-        localized: "The name shows only in Dahlia. Leave it empty to show the workspace and email.",
+        localized: "The name shows only in Dahlia. Leave it empty to show the account details.",
         bundle: bundle
     ) }
     static var google: String { String(localized: "Google", bundle: bundle) }

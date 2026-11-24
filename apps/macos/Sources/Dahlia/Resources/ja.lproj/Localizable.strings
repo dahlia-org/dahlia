@@ -640,8 +640,7 @@
 "Added earlier · Sign in again" = "以前に追加 · サインインし直してください";
 "Manage Providers…" = "プロバイダーを管理…";
 "Google Drive" = "Google ドライブ";
-"Read through %@" = "%@ 経由で取得中";
-"The name shows only in Dahlia. Leave it empty to show the workspace and email." = "名前は Dahlia の表示にだけ使います。空にすると workspace とメールアドレスを表示します。";
+"The name shows only in Dahlia. Leave it empty to show the account details." = "名前は Dahlia の表示にだけ使います。空にするとアカウントの情報を表示します。";
 "Google" = "Google";
 "Turn this provider on to connect it." = "このプロバイダーをオンにすると接続できます。";
 "Events to Include" = "イベントを含める";
@@ -2107,3 +2106,7 @@
 "omnigent.session.openInBrowser" = "Omnigent で開く";
 
 "settings.agents.optimization.agentLegacyReviewRuns" = "以前の共通履歴";
+
+"Add your Google account using your name and email. Calendar and Drive ask for access when you use them. Adding this account does not change your calendar provider." = "名前とメールアドレスを使って Google アカウントを追加します。カレンダーと Drive の権限は、それぞれを使う際に確認します。追加してもカレンダーのプロバイダーは変更されません。";
+
+"Disconnect this Google account from Calendar and Drive in Dahlia? Databricks connections are not affected." = "この Google アカウントを Dahlia のカレンダーと Drive から切断しますか？ Databricks の接続には影響しません。";

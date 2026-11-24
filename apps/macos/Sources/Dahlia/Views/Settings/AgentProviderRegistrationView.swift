@@ -1,16 +1,17 @@
 import SwiftUI
 
-/// Adds a provider to the open account: the Local Account's OpenAI or Anthropic subscription, or a Databricks workspace
-/// for MCP servers. Each signs in in the browser.
+/// Adds a Pi subscription, Databricks workspace, or direct Google account through browser sign-in.
 struct AgentProviderRegistrationView: View {
     enum Kind: Hashable {
         case subscription(PiSubscription)
         case databricks
+        case google
     }
 
     let model: AgentMCPSettingsModel
     /// The Local Account's subscriptions; other accounts have none.
     let subscriptions: [PiSubscriptionController]
+    let google: GoogleProviderAccountController
     let onClose: () -> Void
 
     @State private var kind: Kind
@@ -18,9 +19,15 @@ struct AgentProviderRegistrationView: View {
     @State private var signInTask: Task<Void, Never>?
     @State private var errorMessage: String?
 
-    init(model: AgentMCPSettingsModel, subscriptions: [PiSubscriptionController], onClose: @escaping () -> Void) {
+    init(
+        model: AgentMCPSettingsModel,
+        subscriptions: [PiSubscriptionController],
+        google: GoogleProviderAccountController,
+        onClose: @escaping () -> Void
+    ) {
         self.model = model
         self.subscriptions = subscriptions
+        self.google = google
         self.onClose = onClose
         let available = subscriptions.first { $0.accountStatus?.isAuthenticated != true }
         _kind = State(initialValue: available.map { .subscription($0.subscription) } ?? .databricks)
@@ -29,6 +36,8 @@ struct AgentProviderRegistrationView: View {
     private var canSignIn: Bool {
         guard signInTask == nil else { return false }
         switch kind {
+        case .google:
+            return google.isConfigured && !google.isBusy && !google.hasConnection
         case .databricks:
             return !workspaceURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         case let .subscription(subscription):
@@ -61,12 +70,22 @@ struct AgentProviderRegistrationView: View {
                             .tag(Kind.subscription(controller.subscription))
                             .selectionDisabled(isAdded)
                     }
+                    Text(google.hasConnection ? L10n.agentProviderAdded(L10n.google) : L10n.google)
+                        .font(.dahliaBody)
+                        .tag(Kind.google)
+                        .selectionDisabled(google.hasConnection)
                     Text(L10n.databricksUnityGateway).font(.dahliaBody).tag(Kind.databricks)
                 }
                 .disabled(signInTask != nil)
 
                 if kind == .databricks {
                     databricksSection
+                }
+
+                if kind == .google {
+                    Text(L10n.googleProviderSignInDescription).foregroundStyle(.secondary)
+                    if !google.isConfigured { Text(L10n.googleAccountClientIDMissingMessage).foregroundStyle(.orange) }
+                    Link(L10n.viewPrivacyPolicy, destination: GoogleOAuthDisclosure.privacyPolicyURL(for: AppSettings.shared.appLanguage.locale))
                 }
 
                 if let errorMessage {
@@ -124,6 +143,14 @@ struct AgentProviderRegistrationView: View {
                     onClose()
                 } else {
                     errorMessage = controller.errorMessage
+                }
+                signInTask = nil
+            }
+        case .google:
+            signInTask = Task {
+                let signedIn = await google.signIn()
+                if !Task.isCancelled {
+                    if signedIn { onClose() } else { errorMessage = google.errorMessage }
                 }
                 signInTask = nil
             }

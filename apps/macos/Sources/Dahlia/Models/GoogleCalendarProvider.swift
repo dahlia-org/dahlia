@@ -14,10 +14,9 @@ enum GoogleCalendarProvider: Hashable, Sendable {
         return connectionID
     }
 
-    /// The saved choice. An unset or removed choice follows the oldest eligible Databricks connection.
+    /// Only an explicitly saved connection uses the proxy. An unset or removed choice uses Google directly.
     static func current(defaults: UserDefaults = .standard) -> Self {
         let connections = ProviderAccountDirectory.databricksConnections()
-        let databricks = connections.first?.id
         switch defaults.string(forKey: userDefaultsKey) {
         case "google":
             return .google
@@ -26,7 +25,7 @@ enum GoogleCalendarProvider: Hashable, Sendable {
         default:
             break
         }
-        return databricks.map { .databricks(connectionID: $0) } ?? .google
+        return .google
     }
 
     static func save(_ provider: Self, defaults: UserDefaults = .standard) {

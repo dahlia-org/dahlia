@@ -6,16 +6,19 @@ import SwiftUI
 struct ProviderAccountsSettingsView: View {
     @Environment(MainWindowNavigation.self) private var navigation
     @State private var workspaceSettings = WorkspaceAISettingsModel.shared
-    @ObservedObject private var googleCalendarStore = GoogleCalendarStore.shared
-    @ObservedObject private var settings = AppSettings.shared
     @State private var mcp = AgentMCPSettingsModel()
     @State private var subscriptions = PiSubscription.allCases.map { PiSubscriptionController(subscription: $0) }
     @State private var databricks = DatabricksAccountController()
-    @State private var pendingRename: DatabricksConnection?
+    private enum RenameTarget {
+        case databricks(DatabricksConnection)
+        case google
+    }
+
+    @State private var google = GoogleProviderAccountController()
+    @State private var pendingRename: RenameTarget?
     @State private var pendingRemoval: AgentMCPProvider?
     @State private var proposedName = ""
-    @State private var googleOAuthConsent = GoogleOAuthConsentState()
-    @State private var googleProvider = GoogleCalendarProvider.current()
+    @State private var confirmsGoogleSignOut = false
 
     private var signedInSubscriptions: [PiSubscriptionController] {
         subscriptions.filter { $0.accountStatus?.isAuthenticated == true }
@@ -34,10 +37,15 @@ struct ProviderAccountsSettingsView: View {
             ) {
                 TextField(L10n.name, text: $proposedName)
                 Button(L10n.save) {
-                    guard let connection = pendingRename else { return }
+                    guard let target = pendingRename else { return }
                     pendingRename = nil
                     let name = proposedName
-                    Task { await workspaceSettings.renameDatabricksConnection(connection.id, to: name) }
+                    switch target {
+                    case let .databricks(connection):
+                        Task { await workspaceSettings.renameDatabricksConnection(connection.id, to: name) }
+                    case .google:
+                        google.rename(name)
+                    }
                 }
                 Button(L10n.cancel, role: .cancel) { pendingRename = nil }
             } message: {
@@ -57,11 +65,13 @@ struct ProviderAccountsSettingsView: View {
             } message: {
                 Text(L10n.mcpRemoveWorkspaceDescription)
             }
-            .sheet(item: $googleOAuthConsent.pendingDisclosure, onDismiss: connectGoogleIfConsented) { disclosure in
-                GoogleOAuthConsentSheet(disclosure: disclosure) {
-                    googleOAuthConsent.grantConsent()
-                }
+            .confirmationDialog(google.displayName, isPresented: $confirmsGoogleSignOut, titleVisibility: .visible) {
+                Button(L10n.signOut, role: .destructive) { Task { await google.disconnect() } }
+                Button(L10n.cancel, role: .cancel) {}
+            } message: {
+                Text(L10n.googleProviderSignOutDescription)
             }
+            .task { await google.activate() }
             .task {
                 mcp.loadAccountProviders()
                 for controller in subscriptions {
@@ -76,11 +86,7 @@ struct ProviderAccountsSettingsView: View {
                     }
                 }
             }
-            .onReceive(NotificationCenter.default.publisher(for: GoogleCalendarProvider.didChange)) { _ in
-                googleProvider = GoogleCalendarProvider.current()
-            }
             .onChange(of: workspaceSettings.databricksConnections, initial: true) { _, _ in
-                googleProvider = GoogleCalendarProvider.current()
                 mcp.loadAccountProviders()
             }
             .onDisappear { navigation.dismissSettingsModal() }
@@ -98,7 +104,7 @@ struct ProviderAccountsSettingsView: View {
                 ForEach(earlierWorkspaces) { provider in
                     earlierWorkspaceRow(provider)
                 }
-                googleRow
+                if google.hasConnection { googleRow }
                 ForEach(errors, id: \.self) { message in
                     Label(message, systemImage: "exclamationmark.triangle.fill")
                         .foregroundStyle(.orange)
@@ -118,7 +124,7 @@ struct ProviderAccountsSettingsView: View {
 
     private var errors: [String] {
         subscriptions.compactMap(\.errorMessage)
-            + [mcp.errorMessage, databricks.errorMessage, workspaceSettings.errorMessage].compactMap(\.self)
+            + [mcp.errorMessage, databricks.errorMessage, workspaceSettings.errorMessage, google.errorMessage].compactMap(\.self)
     }
 
     // MARK: Rows
@@ -147,7 +153,7 @@ struct ProviderAccountsSettingsView: View {
             AgentProviderActions {
                 Button(L10n.rename) {
                     proposedName = connection.name ?? ""
-                    pendingRename = connection
+                    pendingRename = .databricks(connection)
                 }
                 Button(L10n.signInAgain) {
                     Task { _ = await databricks.signIn(workspaceURL: connection.host) }
@@ -172,23 +178,19 @@ struct ProviderAccountsSettingsView: View {
         }
     }
 
-    /// Google reads the calendar and the Drive backups, from Google itself or through a Databricks connection.
     private var googleRow: some View {
-        AgentProviderRow(title: L10n.google, icon: CalendarSource.google.choiceCardImage, uses: [L10n.calendar, L10n.googleDrive]) {
-            if googleProvider == .google, googleCalendarStore.isAuthorized {
-                Text(googleCalendarStore.account?.email.nilIfBlank ?? L10n.codexSignedIn).foregroundStyle(.secondary)
-                AgentProviderActions {
-                    Button(L10n.googleCalendarDisconnect) { Task { await googleCalendarStore.disconnect() } }
+        AgentProviderRow(title: google.displayName, icon: CalendarSource.google.choiceCardImage, uses: [L10n.calendar, L10n.googleDrive]) {
+            Text(google.account?.email.nilIfBlank ?? L10n.providerAccountSignInToKeep).foregroundStyle(.secondary)
+            AgentProviderActions {
+                Button(L10n.rename) {
+                    proposedName = google.name ?? ""
+                    pendingRename = .google
                 }
-                .disabled(googleCalendarStore.isBusy)
-            } else {
-                if case let .databricks(connectionID) = googleProvider,
-                   let connection = workspaceSettings.databricksConnections.first(where: { $0.id == connectionID }) {
-                    Text(L10n.googleReadThrough(connection.displayName)).foregroundStyle(.secondary)
-                }
-                Button(L10n.googleCalendarConnect) { googleOAuthConsent.request(.calendar) }
-                    .disabled(!googleCalendarStore.isConfigured || googleCalendarStore.isBusy)
+                .disabled(google.account == nil)
+                Button(L10n.signInAgain) { Task { _ = await google.signIn() } }
+                Button(L10n.signOut) { confirmsGoogleSignOut = true }
             }
+            .disabled(google.isBusy)
         }
     }
 
@@ -196,18 +198,8 @@ struct ProviderAccountsSettingsView: View {
 
     private func presentRegistration() {
         navigation.presentSettingsModal(
-            AgentProviderRegistrationView(model: mcp, subscriptions: subscriptions, onClose: navigation.dismissSettingsModal)
+            AgentProviderRegistrationView(model: mcp, subscriptions: subscriptions, google: google, onClose: navigation.dismissSettingsModal)
         )
     }
 
-    /// Connecting Google makes it the provider Google Calendar comes from, as turning it on in Calendar does.
-    private func connectGoogleIfConsented() {
-        guard googleOAuthConsent.consumeConsent() else { return }
-        if googleProvider != .google {
-            GoogleCalendarProvider.save(.google)
-            googleProvider = .google
-        }
-        settings.setCalendarSource(.google, isEnabled: true)
-        Task { await googleCalendarStore.signIn() }
-    }
 }

@@ -20,6 +20,7 @@ struct CalendarSettingsView: View {
     @ObservedObject private var settings = AppSettings.shared
     @ObservedObject private var googleCalendarStore = GoogleCalendarStore.shared
     @ObservedObject private var macCalendarStore = MacCalendarStore.shared
+    @State private var googleAccount = GoogleProviderAccountController()
     @State private var workspaceSettings = WorkspaceAISettingsModel.shared
     @State private var expandedProviderIDs: Set<String> = []
     /// Read again when the choice changes, so the rows follow it.
@@ -56,6 +57,7 @@ struct CalendarSettingsView: View {
                 sourceSettings
             }
         }
+        .task { await googleAccount.activate() }
         .task {
             if showsOnlySourceSetup {
                 settings.enabledCalendarSources = [Self.exclusiveSetupSource(from: settings.enabledCalendarSources)]
@@ -100,6 +102,7 @@ struct CalendarSettingsView: View {
                                 description: source.choiceCardDescription,
                                 isSelected: settings.enabledCalendarSources == [source]
                             ) {
+                                if source == .google { GoogleCalendarProvider.save(.google) }
                                 settings.enabledCalendarSources = [source]
                             }
                         }
@@ -119,7 +122,7 @@ struct CalendarSettingsView: View {
                     }
                     providerRow(
                         id: "google",
-                        title: L10n.google,
+                        title: googleAccount.displayName,
                         icon: CalendarSource.google.choiceCardImage,
                         isOn: googleProviderBinding(.google)
                     ) {
