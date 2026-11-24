@@ -37,6 +37,7 @@ final class DatabricksProxyGoogleSignInProvider: GoogleSignInProviding {
     private var routeChangeObserver: AnyCancellable?
     private var observedRoute: String?
     private var routeRevision: UInt64 = 0
+    private var connectTasks: [UUID: Task<GoogleSession, Error>] = [:]
     private let oauth: DatabricksOAuthService
     private let storage: DatabricksOAuthStorage
     private let driveClient: GoogleDriveBackupClient
@@ -77,6 +78,9 @@ final class DatabricksProxyGoogleSignInProvider: GoogleSignInProviding {
                 guard current != observedRoute else { return }
                 observedRoute = current
                 routeRevision &+= 1
+                for task in connectTasks.values {
+                    task.cancel()
+                }
             }
         if let direct {
             directObserver = GoogleAuthSessionObserver(notificationName: direct.sessionDidChangeNotification) { [weak self] _ in
@@ -161,6 +165,22 @@ final class DatabricksProxyGoogleSignInProvider: GoogleSignInProviding {
     }
 
     func signIn(withPresentingWindow window: NSWindow, requestedScopes: Set<String>) async throws -> GoogleSession {
+        try Task.checkCancellation()
+        let id = UUID()
+        let task = Task { try await connect(withPresentingWindow: window, requestedScopes: requestedScopes) }
+        connectTasks[id] = task
+        defer { connectTasks[id] = nil }
+        return try await withTaskCancellationHandler {
+            let result = await task.result
+            guard !task.isCancelled else { throw CancellationError() }
+            return try result.get()
+        } onCancel: {
+            task.cancel()
+        }
+    }
+
+    private func connect(withPresentingWindow window: NSWindow, requestedScopes: Set<String>) async throws -> GoogleSession {
+        try Task.checkCancellation()
         let selected = selectedProvider
         let revision = routeRevision
         guard let connection else {

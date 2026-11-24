@@ -274,6 +274,7 @@ final class GoogleSignInAdapter: NSObject, GoogleSignInProviding {
             loginHint: previousSessionLookup?.session.account.email
         )
 
+        try Task.checkCancellation()
         window.orderFrontRegardless()
         NSApp.activate(ignoringOtherApps: true)
         guard NSWorkspace.shared.open(authorizationURL) else {

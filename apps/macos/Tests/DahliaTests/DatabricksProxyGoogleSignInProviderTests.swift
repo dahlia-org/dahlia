@@ -232,6 +232,60 @@ import Synchronization
             #expect(GoogleCalendarProvider.current(defaults: defaults) == .unassigned)
         }
 
+        enum ConnectInvalidation: CaseIterable, Sendable {
+            case switchProvider, switchAwayAndBack, cancelCaller
+        }
+
+        @Test(arguments: ConnectInvalidation.allCases)
+        func invalidatingASuspendedWorkspaceRefreshPreventsInteractiveFallback(invalidation: ConnectInvalidation) async throws {
+            let host = "refresh-\(UUID().uuidString.lowercased()).example"
+            let connection = DatabricksConnection(id: self.connection.id, host: "https://\(host)")
+            let memory = DatabricksTestStorage(connection: connection)
+            let credential = try DatabricksOAuthCredential(
+                accessToken: "expired", refreshToken: "refresh", expirationDate: .distantPast,
+                tokenEndpoint: #require(URL(string: "https://\(host)/oidc/v1/token"))
+            )
+            memory.state.withLock { $0.credentials[connection.id] = credential }
+            let configuration = URLSessionConfiguration.ephemeral
+            configuration.protocolClasses = [SuspendedWorkspaceTokenURLProtocol.self]
+            let transport = URLSession(configuration: configuration)
+            defer { transport.invalidateAndCancel() }
+            let authorizations = Mutex(0)
+            let oauth = DatabricksOAuthService(session: transport, storage: memory.storage) { _ in
+                authorizations.withLock { $0 += 1 }
+                throw CancellationError()
+            }
+            let defaults = makeDefaults()
+            let route = GoogleCalendarProvider.databricks(connectionID: connection.id)
+            GoogleCalendarProvider.save(route, defaults: defaults)
+            let provider = DatabricksProxyGoogleSignInProvider(
+                sessionKind: .drive, oauth: oauth, storage: memory.storage, userDefaults: defaults
+            )
+            try await provider.disconnect()
+            _ = NSApplication.shared
+            let window = NSWindow()
+            let connect = Task {
+                await #expect(throws: CancellationError.self) {
+                    try await provider.signIn(withPresentingWindow: window, requestedScopes: GoogleOAuthScope.drive)
+                }
+            }
+            defer { connect.cancel() }
+            #expect(await pollUntil { SuspendedWorkspaceTokenURLProtocol.pending.withLock { $0[host] != nil } })
+            let failRefresh = try #require(SuspendedWorkspaceTokenURLProtocol.pending.withLock { $0.removeValue(forKey: host) })
+            switch invalidation {
+            case .switchProvider, .switchAwayAndBack:
+                GoogleCalendarProvider.save(.unassigned, defaults: defaults)
+                if invalidation == .switchAwayAndBack { GoogleCalendarProvider.save(route, defaults: defaults) }
+            case .cancelCaller:
+                connect.cancel()
+            }
+            failRefresh()
+            _ = await connect.value
+            #expect(authorizations.withLock { $0 } == 0)
+            #expect(defaults.bool(forKey: DatabricksProxyGoogleSignInProvider.disconnectedKey(for: connection, sessionKind: .drive)))
+            #expect(memory.state.withLock { $0.credentials[connection.id]?.accessToken } == "expired")
+        }
+
         @Test
         func proxyBaseURLUsesAPI20Route() {
             #expect(
@@ -669,6 +723,36 @@ import Synchronization
             client?.urlProtocolDidFinishLoading(self)
         }
 
+        override func stopLoading() {}
+    }
+
+    private final class SuspendedWorkspaceTokenURLProtocol: URLProtocol, @unchecked Sendable {
+        // Foundation callbacks and test tasks exchange only Sendable completions through the mutex.
+        static let pending = Mutex<[String: @Sendable () -> Void]>([:])
+        override static func canInit(with _: URLRequest) -> Bool { true }
+        override static func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+        override func startLoading() {
+            let url = request.url!
+            if url.path == "/oidc/v1/token" {
+                let host = url.host!
+                let fail: @Sendable () -> Void = { [self] in complete(status: 400) }
+                Self.pending.withLock { $0[host] = fail }
+            } else {
+                #expect(url.path == "/oidc/.well-known/oauth-authorization-server")
+                complete(status: 404)
+            }
+        }
+
+        private func complete(status: Int) {
+            client?.urlProtocol(
+                self, didReceive: HTTPURLResponse(url: request.url!, statusCode: status, httpVersion: nil, headerFields: nil)!,
+                cacheStoragePolicy: .notAllowed
+            )
+            client?.urlProtocol(self, didLoad: Data())
+            client?.urlProtocolDidFinishLoading(self)
+        }
+
+        /// Complete explicitly even after cancellation, to exercise the service's cancellation boundary.
         override func stopLoading() {}
     }
 
