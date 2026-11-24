@@ -10,6 +10,7 @@ enum BackupFileFormat {
 }
 
 struct BackupSettingsView: View {
+    @Environment(MainWindowNavigation.self) private var navigation
     @State private var drive = GoogleDriveBackupModel()
     @State private var googleConsent = GoogleOAuthConsentState()
     @State private var model: BackupSettingsViewModel
@@ -195,7 +196,10 @@ struct BackupSettingsView: View {
                     }
                 }
             }
-            if !drive.isConfigured {
+            if GoogleCalendarProvider.current() == .unassigned {
+                Text(L10n.googleDriveChooseProvider).foregroundStyle(.secondary)
+                Button(L10n.calendar) { navigation.openSettings(category: .calendar) }.buttonStyle(.dahlia())
+            } else if !drive.isConfigured {
                 Text(L10n.googleAccountClientIDMissingMessage).foregroundStyle(.secondary)
             }
             if let error = drive.errorMessage {

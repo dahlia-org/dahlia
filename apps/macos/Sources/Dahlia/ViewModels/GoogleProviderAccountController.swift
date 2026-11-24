@@ -1,10 +1,11 @@
 import AppKit
 import Observation
 
-/// Manages the direct Google identity independently of the provider selected by Calendar or Drive.
+/// Manages one registered Google identity independently of Calendar's selected route.
 @MainActor
 @Observable
-final class GoogleProviderAccountController {
+final class GoogleProviderAccountController: Identifiable {
+    let id: UUID
     private(set) var account: GoogleCalendarAccount?
     private(set) var hasConnection = false
     private(set) var isDisconnectPending = false
@@ -12,20 +13,33 @@ final class GoogleProviderAccountController {
     private(set) var errorMessage: String?
     private(set) var name: String?
     private let signInProvider: any GoogleSignInProviding
-    private let defaults: UserDefaults
+    private let worker: GoogleProviderAccountWorker
+    private var registeredAccount: GoogleProviderAccount?
     private var revision = 0
     private var observer: GoogleAuthSessionObserver?
 
-    init(signInProvider: any GoogleSignInProviding = GoogleSignInAdapter(), defaults: UserDefaults = .standard) {
-        self.signInProvider = signInProvider
-        self.defaults = defaults
-        observer = GoogleAuthSessionObserver(notificationName: signInProvider.sessionDidChangeNotification) { [weak self] disconnected in
+    init(
+        id: UUID = .v7(),
+        registeredAccount: GoogleProviderAccount? = nil,
+        signInProvider: (any GoogleSignInProviding)? = nil,
+        worker: GoogleProviderAccountWorker = GoogleProviderAccountWorker()
+    ) {
+        self.id = registeredAccount?.id ?? id
+        self.registeredAccount = registeredAccount
+        self.worker = worker
+        let provider = signInProvider ?? GoogleSignInAdapter(accountID: self.id, expectedAccountID: registeredAccount?.account.id)
+        self.signInProvider = provider
+        account = registeredAccount?.account
+        name = registeredAccount?.name
+        hasConnection = registeredAccount != nil
+        isDisconnectPending = provider.isDisconnectPending
+        observer = GoogleAuthSessionObserver(notificationName: provider.sessionDidChangeNotification) { [weak self] disconnected in
             guard let self else { return }
             if disconnected {
                 revision += 1
-                apply(nil)
-                isDisconnectPending = signInProvider.isDisconnectPending
-                hasConnection = isDisconnectPending
+                account = nil
+                isDisconnectPending = provider.isDisconnectPending
+                hasConnection = self.registeredAccount != nil || isDisconnectPending
             } else if !isBusy {
                 await activate()
             }
@@ -33,7 +47,9 @@ final class GoogleProviderAccountController {
     }
 
     var isConfigured: Bool { signInProvider.isConfigured }
-    var displayName: String { name ?? account.map { "\(L10n.google) (\($0.email.nilIfBlank ?? $0.displayName))" } ?? L10n.google }
+    var displayName: String {
+        name ?? account.map { "\(L10n.google) (\($0.email.nilIfBlank ?? $0.displayName))" } ?? registeredAccount?.displayName ?? L10n.google
+    }
 
     func activate() async {
         guard !isBusy else { return }
@@ -41,19 +57,23 @@ final class GoogleProviderAccountController {
         let revision = revision
         defer { isBusy = false }
         do {
-            let hasConnection = await signInProvider.hasPreviousSignIn
+            let stored = try await worker.load().first { $0.id == id }
+            guard self.revision == revision else { return }
+            if let stored { registeredAccount = stored
+                name = stored.name
+            }
+            let usable = await signInProvider.hasPreviousSignIn
             guard self.revision == revision else { return }
             isDisconnectPending = signInProvider.isDisconnectPending
-            self.hasConnection = hasConnection || isDisconnectPending
-            let session = hasConnection ? try await signInProvider.restorePreviousSignIn() : nil
+            hasConnection = registeredAccount != nil || usable || isDisconnectPending
+            let session = usable ? try await signInProvider.restorePreviousSignIn() : nil
             guard self.revision == revision else { return }
-            apply(session?.account)
+            account = session?.account
             errorMessage = nil
         } catch is CancellationError {
-            // Leaving Settings cancels this read without signing out the saved provider.
+            // Leaving Settings does not remove a registered identity.
         } catch {
             guard self.revision == revision else { return }
-            apply(nil)
             errorMessage = error.localizedDescription
         }
     }
@@ -66,17 +86,23 @@ final class GoogleProviderAccountController {
         defer { isBusy = false }
         do {
             guard let window = window ?? NSApp.keyWindow ?? NSApp.mainWindow else { throw GoogleSignInError.missingPresentingWindow }
-            // Calendar and Drive request their own permissions when enabled; adding a provider needs identity only.
+            (signInProvider as? GoogleSignInAdapter)?.expectedAccountID = registeredAccount?.account.id
             let session = try await signInProvider.signIn(withPresentingWindow: window, requestedScopes: [])
             guard self.revision == revision else { return false }
-            apply(session.account)
+            if let registeredAccount, registeredAccount.account.id != session.account.id { throw GoogleSignInError.accountMismatch }
+            let record = GoogleProviderAccount(id: id, account: session.account, name: name)
+            try await worker.save(record)
+            guard self.revision == revision else { return false }
+            registeredAccount = record
+            account = session.account
             isDisconnectPending = false
             hasConnection = true
+            NotificationCenter.default.post(name: GoogleProviderAccount.didChange, object: nil)
             return true
         } catch is CancellationError {
             return false
         } catch {
-            guard self.revision == revision else { return false }
+            if registeredAccount == nil { try? await signInProvider.disconnect() }
             errorMessage = error.localizedDescription
             return false
         }
@@ -90,24 +116,30 @@ final class GoogleProviderAccountController {
         defer { isBusy = false }
         do {
             try await signInProvider.disconnect()
-            apply(nil)
+            try await worker.remove(id)
+            registeredAccount = nil
+            account = nil
+            name = nil
             isDisconnectPending = false
             hasConnection = false
+            NotificationCenter.default.post(name: GoogleProviderAccount.didChange, object: nil)
         } catch {
             isDisconnectPending = signInProvider.isDisconnectPending
-            hasConnection = hasConnection || isDisconnectPending
+            hasConnection = registeredAccount != nil || hasConnection || isDisconnectPending
             errorMessage = error.localizedDescription
         }
     }
 
-    func rename(_ name: String) {
-        guard let account else { return }
-        self.name = name.nilIfBlank
-        defaults.set(self.name, forKey: "googleProviderAccountName.\(account.id)")
-    }
-
-    private func apply(_ account: GoogleCalendarAccount?) {
-        self.account = account
-        name = account.flatMap { defaults.string(forKey: "googleProviderAccountName.\($0.id)")?.nilIfBlank }
+    func rename(_ name: String) async {
+        guard !isBusy, var record = registeredAccount else { return }
+        isBusy = true
+        defer { isBusy = false }
+        do {
+            record.name = name.nilIfBlank
+            try await worker.save(record)
+            registeredAccount = record
+            self.name = record.name
+            NotificationCenter.default.post(name: GoogleProviderAccount.didChange, object: nil)
+        } catch { errorMessage = error.localizedDescription }
     }
 }

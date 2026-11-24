@@ -11,14 +11,14 @@ struct ProviderAccountsSettingsView: View {
     @State private var databricks = DatabricksAccountController()
     private enum RenameTarget {
         case databricks(DatabricksConnection)
-        case google
+        case google(GoogleProviderAccountController)
     }
 
-    @State private var google = GoogleProviderAccountController()
+    @State private var googleAccounts = GoogleProviderAccountsModel.shared
     @State private var pendingRename: RenameTarget?
     @State private var pendingRemoval: AgentMCPProvider?
     @State private var proposedName = ""
-    @State private var confirmsGoogleSignOut = false
+    @State private var pendingGoogleSignOut: GoogleProviderAccountController?
 
     private var signedInSubscriptions: [PiSubscriptionController] {
         subscriptions.filter { $0.accountStatus?.isAuthenticated == true }
@@ -43,8 +43,8 @@ struct ProviderAccountsSettingsView: View {
                     switch target {
                     case let .databricks(connection):
                         Task { await workspaceSettings.renameDatabricksConnection(connection.id, to: name) }
-                    case .google:
-                        google.rename(name)
+                    case let .google(controller):
+                        Task { await controller.rename(name) }
                     }
                 }
                 Button(L10n.cancel, role: .cancel) { pendingRename = nil }
@@ -65,13 +65,21 @@ struct ProviderAccountsSettingsView: View {
             } message: {
                 Text(L10n.mcpRemoveWorkspaceDescription)
             }
-            .confirmationDialog(google.displayName, isPresented: $confirmsGoogleSignOut, titleVisibility: .visible) {
-                Button(L10n.signOut, role: .destructive) { Task { await google.disconnect() } }
-                Button(L10n.cancel, role: .cancel) {}
+            .confirmationDialog(
+                pendingGoogleSignOut?.displayName ?? L10n.google,
+                isPresented: Binding(get: { pendingGoogleSignOut != nil }, set: { if !$0 { pendingGoogleSignOut = nil } }),
+                titleVisibility: .visible
+            ) {
+                Button(L10n.signOut, role: .destructive) {
+                    guard let controller = pendingGoogleSignOut else { return }
+                    pendingGoogleSignOut = nil
+                    Task { await controller.disconnect() }
+                }
+                Button(L10n.cancel, role: .cancel) { pendingGoogleSignOut = nil }
             } message: {
                 Text(L10n.googleProviderSignOutDescription)
             }
-            .task { await google.activate() }
+            .task { await googleAccounts.activate() }
             .task {
                 mcp.loadAccountProviders()
                 for controller in subscriptions {
@@ -104,7 +112,7 @@ struct ProviderAccountsSettingsView: View {
                 ForEach(earlierWorkspaces) { provider in
                     earlierWorkspaceRow(provider)
                 }
-                if google.hasConnection { googleRow }
+                ForEach(googleAccounts.controllers) { googleRow($0) }
                 ForEach(errors, id: \.self) { message in
                     Label(message, systemImage: "exclamationmark.triangle.fill")
                         .foregroundStyle(.orange)
@@ -124,7 +132,8 @@ struct ProviderAccountsSettingsView: View {
 
     private var errors: [String] {
         subscriptions.compactMap(\.errorMessage)
-            + [mcp.errorMessage, databricks.errorMessage, workspaceSettings.errorMessage, google.errorMessage].compactMap(\.self)
+            + [mcp.errorMessage, databricks.errorMessage, workspaceSettings.errorMessage, googleAccounts.errorMessage]
+            .compactMap(\.self) + googleAccounts.controllers.compactMap(\.errorMessage)
     }
 
     // MARK: Rows
@@ -178,7 +187,7 @@ struct ProviderAccountsSettingsView: View {
         }
     }
 
-    private var googleRow: some View {
+    private func googleRow(_ google: GoogleProviderAccountController) -> some View {
         AgentProviderRow(title: google.displayName, icon: CalendarSource.google.choiceCardImage, uses: [L10n.calendar, L10n.googleDrive]) {
             Text(google.isDisconnectPending ? L10n.googleProviderDisconnectPending : google.account?.email.nilIfBlank ?? L10n
                 .providerAccountSignInToKeep)
@@ -186,11 +195,10 @@ struct ProviderAccountsSettingsView: View {
             AgentProviderActions {
                 Button(L10n.rename) {
                     proposedName = google.name ?? ""
-                    pendingRename = .google
+                    pendingRename = .google(google)
                 }
-                .disabled(google.account == nil)
                 Button(L10n.signInAgain) { Task { _ = await google.signIn() } }
-                Button(google.isDisconnectPending ? L10n.googleCalendarRetry : L10n.signOut) { confirmsGoogleSignOut = true }
+                Button(google.isDisconnectPending ? L10n.googleCalendarRetry : L10n.signOut) { pendingGoogleSignOut = google }
             }
             .disabled(google.isBusy)
         }
@@ -200,7 +208,12 @@ struct ProviderAccountsSettingsView: View {
 
     private func presentRegistration() {
         navigation.presentSettingsModal(
-            AgentProviderRegistrationView(model: mcp, subscriptions: subscriptions, google: google, onClose: navigation.dismissSettingsModal)
+            AgentProviderRegistrationView(
+                model: mcp,
+                subscriptions: subscriptions,
+                google: googleAccounts.registrationController(),
+                onClose: navigation.dismissSettingsModal
+            )
         )
     }
 

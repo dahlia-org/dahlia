@@ -71,7 +71,7 @@ actor PiRuntimeContextCoordinator {
         let agentURL = try agentLocator.agentURL()
         // Subscriptions use Pi's built-in catalog, and workspaces added in Agents settings keep their entries, so only
         // the provider accounts the app holds the credential for are written.
-        let accounts = ProviderAccountDirectory.accounts
+        let accounts = ProviderAccountDirectory.modelAccounts
         var providers: [String: JSONValue] = [:]
         for account in accounts {
             try await providers.merge(piProviders(for: account, agentURL: agentURL)) { $1 }
@@ -99,6 +99,7 @@ actor PiRuntimeContextCoordinator {
         agentURL: URL
     ) async throws -> [String: JSONValue] {
         switch account {
+        case .google: return [:]
         case let .dahlia(connectionID):
             guard let record = try await repository?.fetchDahliaAccountConnection(id: connectionID),
                   let baseURL = URL(string: record.origin)?.appending(path: "api/v1")

@@ -57,7 +57,7 @@
                 defaults.set(second.id.uuidString, forKey: GoogleCalendarProvider.userDefaultsKey)
                 #expect(GoogleCalendarProvider.current(defaults: defaults) == .databricks(connectionID: second.id))
                 defaults.set("google", forKey: GoogleCalendarProvider.userDefaultsKey)
-                #expect(GoogleCalendarProvider.current(defaults: defaults) == .google)
+                #expect(GoogleCalendarProvider.current(defaults: defaults) == .unassigned)
             }
         }
 

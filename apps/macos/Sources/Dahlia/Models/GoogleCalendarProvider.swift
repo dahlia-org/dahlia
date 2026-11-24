@@ -1,9 +1,9 @@
 import Foundation
 
-/// The provider account that supplies Google Calendar: Google itself (a direct sign-in) or a Databricks connection,
-/// which reads it through its Unity Catalog connection. Both read the same calendars, so only one is used at a time.
+/// One explicitly selected, registered provider. A missing selection never starts Google OAuth or selects a proxy.
 enum GoogleCalendarProvider: Hashable, Sendable {
-    case google
+    case unassigned
+    case google(accountID: UUID)
     case databricks(connectionID: UUID)
 
     nonisolated static let userDefaultsKey = "googleCalendarProvider"
@@ -14,22 +14,33 @@ enum GoogleCalendarProvider: Hashable, Sendable {
         return connectionID
     }
 
-    /// Only an explicitly saved connection uses the proxy. An unset or removed choice uses Google directly.
-    static func current(defaults: UserDefaults = .standard) -> Self {
-        let connections = ProviderAccountDirectory.databricksConnections()
-        switch defaults.string(forKey: userDefaultsKey) {
-        case "google":
-            return .google
-        case let saved?:
-            if let id = UUID(uuidString: saved), connections.contains(where: { $0.id == id }) { return .databricks(connectionID: id) }
-        default:
-            break
+    var googleAccountID: UUID? {
+        guard case let .google(accountID) = self else { return nil }
+        return accountID
+    }
+
+    var storageKey: String {
+        switch self {
+        case .unassigned: "unassigned"
+        case let .google(id): "google-\(id.uuidString)"
+        case let .databricks(id): "databricks-\(id.uuidString)"
         }
-        return .google
+    }
+
+    static func current(defaults: UserDefaults = .standard) -> Self {
+        guard let saved = defaults.string(forKey: userDefaultsKey) else { return .unassigned }
+        if saved.hasPrefix("google-"), let id = UUID(uuidString: String(saved.dropFirst(7))),
+           ProviderAccountDirectory.googleConnections().contains(where: { $0.id == id }) {
+            return .google(accountID: id)
+        }
+        if let id = UUID(uuidString: saved), ProviderAccountDirectory.databricksConnections().contains(where: { $0.id == id }) {
+            return .databricks(connectionID: id)
+        }
+        return .unassigned
     }
 
     static func save(_ provider: Self, defaults: UserDefaults = .standard) {
-        defaults.set(provider.databricksConnectionID?.uuidString ?? "google", forKey: userDefaultsKey)
+        defaults.set(provider.databricksConnectionID?.uuidString ?? provider.storageKey, forKey: userDefaultsKey)
         NotificationCenter.default.post(name: didChange, object: nil)
     }
 }

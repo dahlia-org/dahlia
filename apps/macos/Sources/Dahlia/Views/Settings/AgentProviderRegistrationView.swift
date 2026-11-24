@@ -37,7 +37,7 @@ struct AgentProviderRegistrationView: View {
         guard signInTask == nil else { return false }
         switch kind {
         case .google:
-            return google.isConfigured && !google.isBusy && !google.hasConnection
+            return google.isConfigured && !google.isBusy
         case .databricks:
             return !workspaceURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         case let .subscription(subscription):
@@ -70,10 +70,9 @@ struct AgentProviderRegistrationView: View {
                             .tag(Kind.subscription(controller.subscription))
                             .selectionDisabled(isAdded)
                     }
-                    Text(google.hasConnection ? L10n.agentProviderAdded(L10n.google) : L10n.google)
+                    Text(L10n.google)
                         .font(.dahliaBody)
                         .tag(Kind.google)
-                        .selectionDisabled(google.hasConnection)
                     Text(L10n.databricksUnityGateway).font(.dahliaBody).tag(Kind.databricks)
                 }
                 .disabled(signInTask != nil)

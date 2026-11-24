@@ -2118,7 +2118,7 @@ enum L10n { // swiftlint:disable:this type_body_length
     ) }
     static var calendarSources: String { String(localized: "Calendar Sources", bundle: bundle) }
     static var calendarSourcesDescription: String { String(
-        localized: "Turn on the providers that supply upcoming events. Google Calendar comes from Google or from a Databricks connection, one at a time.",
+        localized: "Choose a registered provider for Google Calendar. Add Google accounts in Providers. One Google account or Databricks connection is used at a time.",
         bundle: bundle
     ) }
     static var calendarProviders: String { String(localized: "Calendar Providers", bundle: bundle) }
@@ -2131,6 +2131,14 @@ enum L10n { // swiftlint:disable:this type_body_length
     static var providerAccountSignInToKeep: String { String(localized: "Added earlier · Sign in again", bundle: bundle) }
     static var manageProviders: String { String(localized: "Manage Providers…", bundle: bundle) }
     static var googleDrive: String { String(localized: "Google Drive", bundle: bundle) }
+    static var googleProviderAccountMismatch: String { String(
+        localized: "Sign in with the same Google account. To use another account, add a provider.",
+        bundle: bundle
+    ) }
+    static var googleDriveChooseProvider: String { String(
+        localized: "Choose a registered provider in Calendar settings to use Google Drive.",
+        bundle: bundle
+    ) }
     static var googleProviderDisconnectPending: String { String(
         localized: "Sign-out incomplete. Retry to remove the saved credential.",
         bundle: bundle

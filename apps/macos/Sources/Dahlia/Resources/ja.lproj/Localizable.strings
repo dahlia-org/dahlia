@@ -632,7 +632,7 @@
 "Calendar Source" = "カレンダーソース";
 "Choose which calendar service provides upcoming events." = "今後の予定を取得するカレンダーサービスを選びます。";
 "Calendar Sources" = "カレンダーソース";
-"Turn on the providers that supply upcoming events. Google Calendar comes from Google or from a Databricks connection, one at a time." = "予定を取得するプロバイダーをオンにします。Google カレンダーは、Google か Databricks の接続のどちらか一方から取得します。";
+"Choose a registered provider for Google Calendar. Add Google accounts in Providers. One Google account or Databricks connection is used at a time." = "登録済みのプロバイダーから Google カレンダーを選びます。Google アカウントは「プロバイダー」で追加できます。Google アカウントか Databricks 接続のいずれか1つを利用します。";
 "Calendar Providers" = "カレンダーのプロバイダー";
 "Rename Provider Account" = "プロバイダーアカウントの名前を変更";
 "Providers" = "プロバイダー";
@@ -2112,3 +2112,5 @@
 "Disconnect this Google account from Calendar and Drive in Dahlia? Databricks connections are not affected." = "この Google アカウントを Dahlia のカレンダーと Drive から切断しますか？ Databricks の接続には影響しません。";
 
 "Sign-out incomplete. Retry to remove the saved credential." = "サインアウトが完了していません。保存済みの認証を削除するには再試行してください。";
+"Sign in with the same Google account. To use another account, add a provider." = "同じ Google アカウントでサインインしてください。別のアカウントを使うにはプロバイダーを追加してください。";
+"Choose a registered provider in Calendar settings to use Google Drive." = "Google ドライブを使うには、カレンダー設定で登録済みのプロバイダーを選んでください。";

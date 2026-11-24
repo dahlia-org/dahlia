@@ -1,7 +1,7 @@
 import Foundation
 import GRDB
 
-/// A provider account (`provider_accounts`): a Dahlia Server, or a Databricks workspace (`kind = "databricks"`). The
+/// A provider account (`provider_accounts`): a Dahlia Server, Databricks workspace, or Google identity. The
 /// Local Account has no row; its workspaces leave both account columns nil.
 struct DahliaAccountConnectionRecord: Codable, FetchableRecord, PersistableRecord, Identifiable, Equatable, Sendable {
     static let databaseTableName = "provider_accounts"
@@ -13,7 +13,7 @@ struct DahliaAccountConnectionRecord: Codable, FetchableRecord, PersistableRecor
     var clientID: String
     var createdAt: Date
     var kind = Self.dahliaKind
-    /// The signed-in user and workspace ID of a Databricks account, fetched after sign-in.
+    /// The signed-in email and external identity: a Databricks workspace ID or Google subject.
     var email: String?
     var workspaceID: String?
     /// The name the user gave this connection; nil shows its host and email.

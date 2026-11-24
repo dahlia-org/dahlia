@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 import Foundation
 
 /// Routes Google Calendar and Drive reads through the provider the user chose for Google (`GoogleCalendarProvider`):
@@ -21,7 +22,16 @@ final class DatabricksProxyGoogleSignInProvider: GoogleSignInProviding {
         "\(sessionKind == .drive ? "googleDrive" : "googleCalendar")DatabricksProxyDisconnected.\(connection.id.uuidString)"
     }
 
-    private let direct: any GoogleSignInProviding
+    private let directOverride: (any GoogleSignInProviding)?
+    private let directProviderFactory: @MainActor (GoogleProviderAccount) -> any GoogleSignInProviding
+    private var direct: (any GoogleSignInProviding)? {
+        if let directOverride { return directOverride }
+        guard let id = GoogleCalendarProvider.current(defaults: userDefaults).googleAccountID,
+              let account = ProviderAccountDirectory.googleConnections().first(where: { $0.id == id }) else { return nil }
+        return directProviderFactory(account)
+    }
+
+    private var registeredSessionObserver: AnyCancellable?
     private let oauth: DatabricksOAuthService
     private let storage: DatabricksOAuthStorage
     private let driveClient: GoogleDriveBackupClient
@@ -34,6 +44,7 @@ final class DatabricksProxyGoogleSignInProvider: GoogleSignInProviding {
     init(
         sessionKind: GoogleAuthSessionKind = .calendar,
         direct: (any GoogleSignInProviding)? = nil,
+        directProviderFactory: (@MainActor (GoogleProviderAccount) -> any GoogleSignInProviding)? = nil,
         oauth: DatabricksOAuthService = .shared,
         storage: DatabricksOAuthStorage = .local(),
         apiClient: any GoogleCalendarAPIClientProviding = GoogleCalendarAPIClient(),
@@ -42,17 +53,27 @@ final class DatabricksProxyGoogleSignInProvider: GoogleSignInProviding {
         connectionChangeNotification: Notification.Name = .databricksConnectionDidChange
     ) {
         self.sessionKind = sessionKind
-        self.direct = direct ?? GoogleSignInAdapter(sessionKind: sessionKind)
+        self.directOverride = direct
+        self.directProviderFactory = directProviderFactory ?? {
+            GoogleSignInAdapter(accountID: $0.id, expectedAccountID: $0.account.id, sessionKind: sessionKind)
+        }
         self.oauth = oauth
         self.storage = storage
         self.apiClient = apiClient
         self.driveClient = driveClient
         self.userDefaults = userDefaults
-        directObserver = GoogleAuthSessionObserver(notificationName: self.direct.sessionDidChangeNotification) { [weak self] _ in
-            guard let self, !isProxyActive else { return }
-            // A queued hint must reconcile the current route; direct sign-out cleanup has its own observer.
-            NotificationCenter.default.post(name: sessionDidChangeNotification, object: nil)
+        if let direct {
+            directObserver = GoogleAuthSessionObserver(notificationName: direct.sessionDidChangeNotification) { [weak self] _ in
+                guard let self, !isProxyActive else { return }
+                NotificationCenter.default.post(name: sessionDidChangeNotification, object: nil)
+            }
         }
+        registeredSessionObserver = NotificationCenter.default.publisher(for: GoogleProviderAccount.sessionDidChange)
+            .sink { [weak self] notification in
+                guard let self, let change = notification.object as? GoogleProviderAccountSessionChange,
+                      GoogleCalendarProvider.current(defaults: userDefaults).googleAccountID == change.accountID else { return }
+                NotificationCenter.default.post(name: sessionDidChangeNotification, object: nil)
+            }
         // Provider credentials are independent: a direct Google sign-out must not disconnect a selected proxy.
         connectionObserver = GoogleAuthSessionObserver(notificationName: connectionChangeNotification) { [weak self] _ in
             guard let self else { return }
@@ -80,7 +101,7 @@ final class DatabricksProxyGoogleSignInProvider: GoogleSignInProviding {
     /// Where the user grants or fixes Google access for the active Databricks connection.
     var connectionPageURL: URL? { connection.map { Self.signInPageURL(for: $0, sessionKind: sessionKind) } }
 
-    var isConfigured: Bool { isProxyActive || direct.isConfigured }
+    var isConfigured: Bool { isProxyActive || direct?.isConfigured == true }
 
     private func isDisconnected(_ connection: DatabricksConnection) -> Bool {
         userDefaults.bool(forKey: Self.disconnectedKey(for: connection, sessionKind: sessionKind))
@@ -91,15 +112,29 @@ final class DatabricksProxyGoogleSignInProvider: GoogleSignInProviding {
         connection.map { !isDisconnected($0) } ?? false
     }
 
+    private func directDisconnectedKey(for provider: GoogleCalendarProvider) -> String {
+        "googleCapabilityDisconnected.\(provider.storageKey).\(sessionKind == .drive ? "drive" : "calendar")"
+    }
+
+    private var isDirectDisconnected: Bool {
+        userDefaults.bool(forKey: directDisconnectedKey(for: GoogleCalendarProvider.current(defaults: userDefaults)))
+    }
+
     var hasPreviousSignIn: Bool {
         get async {
-            guard let connection else { return await direct.hasPreviousSignIn }
+            guard let connection else {
+                guard !isDirectDisconnected, let direct else { return false }
+                return await direct.hasPreviousSignIn
+            }
             return !isDisconnected(connection)
         }
     }
 
     func restorePreviousSignIn() async throws -> GoogleSession {
-        guard let connection else { return try await direct.restorePreviousSignIn() }
+        guard let connection else {
+            guard !isDirectDisconnected, let direct else { throw GoogleSignInError.noPreviousSignIn }
+            return try await direct.restorePreviousSignIn()
+        }
         guard !isDisconnected(connection) else { throw GoogleSignInError.noPreviousSignIn }
         do {
             return try await proxySession(for: connection, interactive: false)
@@ -111,7 +146,11 @@ final class DatabricksProxyGoogleSignInProvider: GoogleSignInProviding {
 
     func signIn(withPresentingWindow window: NSWindow, requestedScopes: Set<String>) async throws -> GoogleSession {
         guard let connection else {
-            return try await direct.signIn(withPresentingWindow: window, requestedScopes: requestedScopes)
+            guard let direct else { throw GoogleSignInError.noPreviousSignIn }
+            let selected = GoogleCalendarProvider.current(defaults: userDefaults)
+            let session = try await direct.signIn(withPresentingWindow: window, requestedScopes: requestedScopes)
+            userDefaults.removeObject(forKey: directDisconnectedKey(for: selected))
+            return session
         }
         // Only this pre-check may open the Databricks login; every later token use is unattended.
         // Only a missing Google credential opens the page; any other error surfaces, and Settings then offers the page.
@@ -136,13 +175,23 @@ final class DatabricksProxyGoogleSignInProvider: GoogleSignInProviding {
     }
 
     func refreshCurrentSession() async throws -> GoogleSession? {
-        guard let connection else { return try await direct.refreshCurrentSession() }
+        guard let connection else {
+            guard !isDirectDisconnected, let direct else { return nil }
+            return try await direct.refreshCurrentSession()
+        }
         guard !isDisconnected(connection) else { return nil }
         return try await proxySession(for: connection, interactive: false)
     }
 
     func disconnect() async throws {
-        guard let connection else { return try await direct.disconnect() }
+        guard let connection else {
+            let selected = GoogleCalendarProvider.current(defaults: userDefaults)
+            if selected.googleAccountID != nil {
+                userDefaults.set(true, forKey: directDisconnectedKey(for: selected))
+                NotificationCenter.default.post(name: sessionDidChangeNotification, object: nil)
+            } else { try await direct?.disconnect() }
+            return
+        }
         // The Google grant stays in Databricks; revoke it on the connection page.
         userDefaults.set(true, forKey: Self.disconnectedKey(for: connection, sessionKind: sessionKind))
         NotificationCenter.default.post(name: sessionDidChangeNotification, object: nil)

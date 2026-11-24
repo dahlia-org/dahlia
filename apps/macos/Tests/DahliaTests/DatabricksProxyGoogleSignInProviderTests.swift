@@ -176,14 +176,14 @@ import Synchronization
                 id: id,
                 workspaceURL: #require(URL(string: "https://dbc-1.cloud.databricks.com"))
             )]) {
-                #expect(GoogleCalendarProvider.current(defaults: defaults) == .google)
+                #expect(GoogleCalendarProvider.current(defaults: defaults) == .unassigned)
                 defaults.set("google", forKey: GoogleCalendarProvider.userDefaultsKey)
-                #expect(GoogleCalendarProvider.current(defaults: defaults) == .google)
+                #expect(GoogleCalendarProvider.current(defaults: defaults) == .unassigned)
                 defaults.set(UUID.v7().uuidString, forKey: GoogleCalendarProvider.userDefaultsKey)
-                #expect(GoogleCalendarProvider.current(defaults: defaults) == .google)
+                #expect(GoogleCalendarProvider.current(defaults: defaults) == .unassigned)
             }
             ProviderAccountDirectory.$connections.withValue([]) {
-                #expect(GoogleCalendarProvider.current(defaults: defaults) == .google)
+                #expect(GoogleCalendarProvider.current(defaults: defaults) == .unassigned)
             }
         }
 

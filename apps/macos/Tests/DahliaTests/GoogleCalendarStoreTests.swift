@@ -295,7 +295,7 @@ import Foundation
                 }
                 let files = try FileManager.default.contentsOfDirectory(atPath: directory.path)
                 #expect(files.count == 3)
-                #expect(files.contains { $0.hasPrefix("local-google-") })
+                #expect(files.contains { $0.hasPrefix("local-unassigned-") })
                 for id in [first, second] {
                     #expect(files.contains { $0.hasPrefix("local-databricks-\(id.uuidString)-") })
                 }
@@ -304,6 +304,54 @@ import Foundation
                 let remaining = try FileManager.default.contentsOfDirectory(atPath: directory.path)
                 #expect(remaining.count == 2)
                 #expect(!remaining.contains { $0.hasPrefix("local-databricks-\(second.uuidString)-") })
+            }
+        }
+
+        @Test
+        func registeredGoogleAccountsKeepSeparateSelectionsAndSignOutOnlyDeletesItsOwnCache() async throws {
+            let first = GoogleProviderAccount(id: .v7(), account: fixtureSession.account)
+            let second = GoogleProviderAccount(id: .v7(), account: .init(id: "second", displayName: "Second", email: "second@example.com"))
+            try await ProviderAccountDirectory.$googleAccounts.withValue([first, second]) {
+                let defaults = isolatedUserDefaults()
+                let directory = temporaryCacheDirectory()
+                defer { try? FileManager.default.removeItem(at: directory) }
+                let route = Notification.Name("RegisteredCalendarRoute.\(UUID())")
+                let sessionChange = Notification.Name("RegisteredCalendarSession.\(UUID())")
+                defaults.set("google-\(first.id.uuidString)", forKey: GoogleCalendarProvider.userDefaultsKey)
+                let signIn = MockGoogleCalendarSignInProvider(hasPreviousSignIn: true)
+                let store = GoogleCalendarStore(
+                    signInProvider: signIn, apiClient: MockGoogleCalendarAPIClient(calendars: [primaryCalendar], events: [fixtureEvent]),
+                    userDefaults: defaults, now: { fixtureNow }, eventsCacheDirectory: directory, providerChangeNotification: route,
+                    registeredSessionChangeNotification: sessionChange
+                )
+                await store.restoreSessionIfNeeded()
+                store.setCalendarSelection(["primary"])
+                await store.refreshIfNeeded(force: true)
+                await store.waitForEventsCacheWrite()
+                defaults.set("google-\(second.id.uuidString)", forKey: GoogleCalendarProvider.userDefaultsKey)
+                NotificationCenter.default.post(name: route, object: nil)
+                #expect(await pollUntil { signIn.restoreCallCount == 2 && store.state == .needsCalendarSelection })
+                #expect(store.selectedCalendarIDs.isEmpty)
+                store.setCalendarSelection(["primary"])
+                await store.refreshIfNeeded(force: true)
+                await store.waitForEventsCacheWrite()
+                let files = try FileManager.default.contentsOfDirectory(atPath: directory.path)
+                #expect(files.contains { $0.hasPrefix("local-google-\(first.id.uuidString)-") })
+                #expect(files.contains { $0.hasPrefix("local-google-\(second.id.uuidString)-") })
+                NotificationCenter.default.post(
+                    name: sessionChange,
+                    object: GoogleProviderAccountSessionChange(accountID: first.id, disconnected: true)
+                )
+                await store.waitForEventsCacheWrite()
+                let remaining = try FileManager.default.contentsOfDirectory(atPath: directory.path)
+                #expect(!remaining.contains { $0.hasPrefix("local-google-\(first.id.uuidString)-") })
+                #expect(remaining.contains { $0.hasPrefix("local-google-\(second.id.uuidString)-") })
+                #expect(store.selectedCalendarIDs == ["primary"])
+                #expect(store.upcomingEvents == [fixtureEvent])
+                defaults.set("google-\(first.id.uuidString)", forKey: GoogleCalendarProvider.userDefaultsKey)
+                NotificationCenter.default.post(name: route, object: nil)
+                #expect(await pollUntil { signIn.restoreCallCount == 3 && store.state == .needsCalendarSelection })
+                #expect(store.selectedCalendarIDs.isEmpty)
             }
         }
 
@@ -329,7 +377,7 @@ import Foundation
                 await store.restoreSessionIfNeeded()
                 await store.waitForEventsCacheWrite()
                 let directFile = try #require(try FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil).first)
-                let oldPrincipal = directory.appending(path: "local-google-\(String(repeating: "f", count: 64)).json")
+                let oldPrincipal = directory.appending(path: "local-unassigned-\(String(repeating: "f", count: 64)).json")
                 try FileManager.default.copyItem(at: directFile, to: oldPrincipal)
                 if proxySelected {
                     defaults.set(connectionID.uuidString, forKey: GoogleCalendarProvider.userDefaultsKey)
@@ -344,7 +392,7 @@ import Foundation
                 NotificationCenter.default.post(name: directChange, object: GoogleAuthSessionChangeReason.disconnected)
                 #expect(await pollUntil {
                     let files = (try? FileManager.default.contentsOfDirectory(atPath: directory.path)) ?? []
-                    return !files.contains { $0.hasPrefix("local-google-") }
+                    return !files.contains { $0.hasPrefix("local-unassigned-") }
                 })
                 await store.waitForEventsCacheWrite()
                 #expect(try proxyFiles.map { try Data(contentsOf: $0) } == proxyData)
@@ -415,7 +463,7 @@ import Foundation
                 NotificationCenter.default.post(name: direct.sessionDidChangeNotification, object: GoogleAuthSessionChangeReason.disconnected)
                 #expect(await pollUntil {
                     let files = (try? FileManager.default.contentsOfDirectory(atPath: directory.path)) ?? []
-                    return forwarded && store.isLoaded && !files.contains { $0.hasPrefix("local-google-") }
+                    return forwarded && store.isLoaded && !files.contains { $0.hasPrefix("local-unassigned-") }
                 })
                 await store.waitForEventsCacheWrite()
                 #expect(store.selectedCalendarIDs == ["primary"])

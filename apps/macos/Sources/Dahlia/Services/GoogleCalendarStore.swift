@@ -73,6 +73,7 @@ final class GoogleCalendarStore: ObservableObject {
     private var isDisconnecting = false
     private var isLoadingAccountData = false
     private var authChangeObserver: GoogleAuthSessionObserver?
+    private var registeredSignOutObserver: AnyCancellable?
     private var directSignOutObserver: GoogleAuthSessionObserver?
     private var providerChangeObserver: AnyCancellable?
     private var provider: GoogleCalendarProvider?
@@ -97,6 +98,7 @@ final class GoogleCalendarStore: ObservableObject {
         eventsCacheDirectory: URL? = nil,
         providerChangeNotification: Notification.Name = GoogleCalendarProvider.didChange,
         directSessionChangeNotification: Notification.Name = .googleSessionDidChange,
+        registeredSessionChangeNotification: Notification.Name = GoogleProviderAccount.sessionDidChange,
         cachedEventsLoader: @escaping @Sendable (URL) async -> [CalendarEvent] = GoogleCalendarStore.readCachedEvents
     ) {
         self.eventsCacheDirectory = eventsCacheDirectory
@@ -117,14 +119,26 @@ final class GoogleCalendarStore: ObservableObject {
         // Direct identity management is independent of the selected Calendar route.
         directSignOutObserver = GoogleAuthSessionObserver(notificationName: directSessionChangeNotification) { [weak self] disconnected in
             guard let self, disconnected else { return }
-            if provider == .google {
+            if provider == .unassigned {
                 clearRuntimeState(clearSelection: true)
                 didAttemptRestore = false
                 recomputeState()
             } else {
-                removeEventsCache(for: .google)
+                removeEventsCache(for: .unassigned)
             }
         }
+        registeredSignOutObserver = NotificationCenter.default.publisher(for: registeredSessionChangeNotification)
+            .sink { [weak self] notification in
+                guard let self, let change = notification.object as? GoogleProviderAccountSessionChange, change.disconnected else { return }
+                reloadIfProviderChanged()
+                let source = GoogleCalendarProvider.google(accountID: change.accountID)
+                userDefaults.removeObject(forKey: "\(Self.accountSelectedCalendarIDsKey).google.\(change.accountID.uuidString)")
+                if provider == source {
+                    clearRuntimeState(clearSelection: true)
+                    didAttemptRestore = false
+                    recomputeState()
+                } else { removeEventsCache(for: source) }
+            }
         provider = GoogleCalendarProvider.current(defaults: userDefaults)
         providerChangeObserver = NotificationCenter.default.publisher(for: providerChangeNotification)
             .sink { [weak self] _ in self?.reloadIfProviderChanged() }
@@ -494,6 +508,7 @@ final class GoogleCalendarStore: ObservableObject {
         guard current != provider else { return false }
         provider = current
         clearRuntimeState(clearSelection: false)
+        selectedCalendarIDs = Self.loadSelectedCalendarIDs(from: userDefaults)
         cachedEventsSnapshot = nil
         didAttemptRestore = false
         recomputeState()
@@ -547,22 +562,21 @@ final class GoogleCalendarStore: ObservableObject {
     }
 
     private func eventsCachePrefix(for provider: GoogleCalendarProvider) -> String {
-        let identity = provider.databricksConnectionID.map { "databricks-\($0.uuidString)" } ?? "google"
-        return "\(AppAccount.key)-\(identity)-"
+        "\(AppAccount.key)-\(provider.storageKey)-"
     }
 
     private func eventsCacheURL() -> URL? {
         guard let session = currentSession, session.isAccountIdentityVerified else { return nil }
         let accountID = session.account.id
         let principal = SHA256.hash(data: Data(accountID.utf8)).map { String(format: "%02x", $0) }.joined()
-        return eventsCacheDirectory?.appending(path: "\(eventsCachePrefix(for: provider ?? .google))\(principal).json")
+        return eventsCacheDirectory?.appending(path: "\(eventsCachePrefix(for: provider ?? .unassigned))\(principal).json")
     }
 
     /// Writes and route-specific removals share the same ordered lane off MainActor.
     private func writeEventsCache(_ events: [CalendarEvent]?) {
         guard let events else {
             cachedEventsSnapshot = nil
-            removeEventsCache(for: provider ?? .google)
+            removeEventsCache(for: provider ?? .unassigned)
             return
         }
         guard let directory = eventsCacheDirectory, let url = eventsCacheURL(), cachedEventsSnapshot != events else { return }
@@ -602,7 +616,9 @@ final class GoogleCalendarStore: ObservableObject {
     }
 
     private static func loadSelectedCalendarIDs(from userDefaults: UserDefaults) -> Set<String> {
-        let json = userDefaults.string(forKey: accountSelectedCalendarIDsKey) ?? userDefaults.string(forKey: selectedCalendarIDsKey)
+        let provider = GoogleCalendarProvider.current(defaults: userDefaults)
+        let key = provider.googleAccountID.map { "\(accountSelectedCalendarIDsKey).google.\($0.uuidString)" } ?? accountSelectedCalendarIDsKey
+        let json = userDefaults.string(forKey: key) ?? (provider.googleAccountID == nil ? userDefaults.string(forKey: selectedCalendarIDsKey) : nil)
         guard let json,
               let data = json.data(using: .utf8),
               let ids = try? JSONDecoder().decode([String].self, from: data)
@@ -619,6 +635,8 @@ final class GoogleCalendarStore: ObservableObject {
         else {
             return
         }
-        userDefaults.set(json, forKey: Self.accountSelectedCalendarIDsKey)
+        let provider = GoogleCalendarProvider.current(defaults: userDefaults)
+        let key = provider.googleAccountID.map { "\(accountSelectedCalendarIDsKey).google.\($0.uuidString)" } ?? accountSelectedCalendarIDsKey
+        userDefaults.set(json, forKey: key)
     }
 }

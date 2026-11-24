@@ -66,7 +66,7 @@ Server Account による同期は未リリースで、見直しの対象であ�
 | ChatGPT サブスクリプション | ○ | | | | | Pi（`auth.json`）。行は持たない |
 | Anthropic サブスクリプション | ○ | | | | | Pi（`auth.json`）。行は持たない |
 | Databricks workspace（複数可） | ○ Gateway | ○ Unity Gateway | ○ Google Calendar の proxy | 対応予定（未実装） | 対応予定（未実装） | Desktop（Keychain、`provider_accounts` 行） |
-| Google | | | ○ | ○ Google Drive。現在はバックアップの読み取りだけ | | Desktop（Keychain、`provider_accounts` 行） |
+| Google（複数可） | | | ○ | ○ Google Drive。現在はバックアップの読み取りだけ | | Desktop（Keychain、`provider_accounts` 行） |
 | Dahlia Server（未リリース、見直し対象） | Gateway | | | Workspace の同期、音声アーカイブ | 同左 | Desktop（Keychain、既存の行） |
 
 - プロバイダーアカウントの台帳は、既存の `accounts` テーブルを `provider_accounts` に改名して使う（新しい migration で改名する）。
@@ -78,7 +78,7 @@ Server Account による同期は未リリースで、見直しの対象であ�
   - **Pi が持つ（`auth.json`、行なし）**: ChatGPT と Anthropic のサブスクリプション。提供するのはモデルだけで、サインインの手順も Pi が実装している。アプリ側に同じ認証を作り直す理由がない。
   - 設定の「プロバイダーアカウント」の一覧には両方を並べる。Pi が持つものは、Pi のサインイン状態から表示する。
   - 後からモデル以外の capability を持つことになったプロバイダーは、その時点でアプリ側へ移す。
-- Google は `calendar` と `storage`（Google Drive）を持つプロバイダーアカウントにする。認証は 1 つのプロバイダーアカウントに 1 つだけ持ち、必要な権限は capability を使い始めるときに同じ認証へ足す。
+- Google は複数登録できる `calendar` と `storage`（Google Drive）のプロバイダーアカウントにする。アカウントごとに `provider_accounts` の行と Keychain の認証を持ち、同じアカウント内の Calendar と Drive だけがその認証を共有する。必要な権限は capability を使い始めるときに同じ認証へ足す。
   現在は Keychain にカレンダー用と Drive 用のセッションを別々に持ち、台帳の行がない。この 2 つは引き継がず、アップデート時に削除して再サインインを求める。
   直接の Google 接続でカレンダーと Drive を使っている利用者はほぼいないため、破壊的な変更を許容する（2026-11-23 にユーザーが確認）。Databricks 経由のカレンダーは Databricks の認証を使うので、影響を受けない。
 - capability は種別ごとにコードで決まる値とし、テーブルに保存しない。モデル一覧や MCP の一覧は今までどおり接続先から取得する。
@@ -206,9 +206,9 @@ DB の `accountID` と UserDefaults の接尾辞には、当面 `local` を定�
 
 - 実装した（2026-11-23）: Databricks の接続ごとのプロバイダー ID（ホスト名）。アカウントはすべての接続を同時に使う。保存済みの `databricks`（モデル指定、MCP の登録、Gateway のモデル一覧）は起動時に 1 回、移す元の接続のホスト名へ置き換える。
 - 実装した（2026-11-23）: 「プロバイダーを追加」はアプリ側のサインインで接続（プロバイダーアカウント）を作る。以前に追加した workspace は Pi のサインインのまま動き、同じホストの接続を追加するとアプリ側の認証が優先される。
-- 実装した（2026-11-23）: Google のカレンダーと Drive は 1 つのサインインを共有し、Drive もカレンダーと同じ Google の選択に従う。用途ごとの以前のサインインは起動時に削除する。Google はプロバイダー一覧から直接の認証を追加・再認証・サインアウトでき、利用者ごとの表示名はこの Mac に保存する。`provider_accounts` の行への統合は未実装で、認証は共有の Keychain セッションを使う。
+- Google は複数のプロバイダーアカウントとして登録でき、アカウントごとの表示名と外部 identity を `provider_accounts` に保存する。Calendar と Drive は、同じプロバイダーアカウント内だけで Keychain の認証を共有する。Drive はカレンダーで明示的に選んだプロバイダーを使う。プロバイダー一覧で個別に追加・再認証・名前変更・サインアウトできる。再認証で別の Google identity に差し替えず、別アカウントは新しいプロバイダーとして追加する。以前の固定 Google セッションは起動時に削除し、再登録を求める。
 - 実装した（2026-11-23）: 表示名の編集。設定のエージェントのプロバイダー一覧（接続ごとの行）で名前を変え、一覧・モデルの選択・カレンダー・サインアウトの確認に出す。モデルと MCP は、その一覧の接続ごとの行で選ぶ。
-  カレンダーは実装した（2026-11-23）。設定のカレンダーでプロバイダー（macOS カレンダー、Google、Databricks の接続）を折り畳んで並べ、Google カレンダーは Google か Databricks の接続のどちらか一方から読む（`Models/GoogleCalendarProvider.swift`）。Databricks 経由の読み取りは明示的にそのプロバイダーを選んだ場合だけとし、自動では選ばない。Google はプロバイダーの追加から直接認証し、カレンダーの選択とは独立して管理する。macOS カレンダーは OS の権限なので `provider_accounts` に置かない。
+  カレンダー設定とセットアップには、macOS カレンダーと登録済みのプロバイダーだけを並べる。未登録 Google の固定行は表示しない。Google カレンダーは、登録済み Google アカウントまたは Databricks 接続のいずれか1つから取得する（`Models/GoogleCalendarProvider.swift`）。未選択・削除済みの割り当てから別プロバイダーへ自動で切り替えない。Google アカウントごとのカレンダー選択・キャッシュ・認証通知を分離し、1つのアカウントのサインアウトが他のアカウントへ影響しないようにする。カレンダーや Drive での切断はその連携だけを止め、プロバイダー一覧からのサインアウトが当該アカウントの共通認証を削除する。macOS カレンダーは OS の権限なので `provider_accounts` に置かない。
 - 実装した（2026-11-23）: 接続の追加・削除で Pi を止めない。設定ファイルを書き直し、待機中のチャットは閉じて次の送信で開き直す。実行中のチャットはターンの終了後に閉じる。
 - `dahlia-mcp` の `--account` を外す。今も `--account local` は Server 以外のすべての Workspace を対象にする（所属を空にしたため）。
 

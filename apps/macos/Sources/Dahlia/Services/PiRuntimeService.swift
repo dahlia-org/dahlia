@@ -968,6 +968,7 @@ actor PiRuntimeService {
 
     nonisolated static func resolveToken(_ account: ProviderAccount) async throws -> String {
         switch account {
+        case .google: throw AIConfigurationError.accountNotReady
         case let .dahlia(connectionID):
             try await DahliaCloudTokenServiceRegistry.shared.validAccessToken(connectionID: connectionID)
         case let .databricks(connectionID):

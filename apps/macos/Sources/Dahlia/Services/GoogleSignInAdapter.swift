@@ -35,28 +35,22 @@ enum GoogleOAuthScope {
     }
 }
 
-/// What a Google sign-in is used for. Google is one provider account: both uses share one sign-in, which gains each
-/// use's scopes as it asks for them, and one disconnect ends both.
-enum GoogleAuthSessionKind: Hashable, Sendable {
-    case calendar
-    case drive
-
-    /// The provider account's one sign-in.
+/// A service's use of one provider account. Calendar and Drive share that account's credential and generation.
+struct GoogleAuthSessionKind: Hashable, Sendable {
+    private enum Service: Sendable { case calendar, drive }
+    private let service: Service
+    let accountID: UUID?
+    static let calendar = Self(service: .calendar, accountID: nil)
+    static let drive = Self(service: .drive, accountID: nil)
     static let keychainKey = "googleProviderAccountSession"
-    /// Sign-ins kept per use, and by older releases, which a launch deletes.
     static let retiredKeychainKeys = ["googleCalendarOAuthSession", "googleDriveBackupReadSession", "googleOAuthSession"]
 
-    var keychainKey: String { Self.keychainKey }
-
-    var serviceScopes: Set<String> {
-        switch self {
-        case .calendar: GoogleOAuthScope.calendar
-        case .drive: GoogleOAuthScope.drive
-        }
+    func forAccount(_ id: UUID) -> Self { Self(service: service, accountID: id) }
+    var keychainKey: String { accountID.map { "\(Self.keychainKey).\($0.uuidString)" } ?? Self.keychainKey }
+    var serviceScopes: Set<String> { service == .drive ? GoogleOAuthScope.drive : GoogleOAuthScope.calendar }
+    var sessionDidChangeNotification: Notification.Name {
+        accountID.map { Notification.Name("GoogleProviderAccountSession.\($0.uuidString)") } ?? .googleSessionDidChange
     }
-
-    /// Both uses hear a change to the shared sign-in.
-    var sessionDidChangeNotification: Notification.Name { .googleSessionDidChange }
 }
 
 enum GoogleAuthSessionChangeReason: Equatable, Sendable {
@@ -107,9 +101,12 @@ enum GoogleSignInError: LocalizedError {
     case invalidTokenResponse
     case stateMismatch
     case authorizationFailed(String)
+    case accountMismatch
 
     var errorDescription: String? {
         switch self {
+        case .accountMismatch:
+            L10n.googleProviderAccountMismatch
         case .notConfigured:
             L10n.googleAccountClientIDMissingMessage
         case .missingPresentingWindow:
@@ -200,6 +197,7 @@ final class GoogleSignInAdapter: NSObject, GoogleSignInProviding {
 
     private let sessionKind: GoogleAuthSessionKind
     private let urlSession: URLSession
+    var expectedAccountID: String?
 
     var isConfigured: Bool {
         GoogleCalendarConfiguration.isConfigured
@@ -222,9 +220,10 @@ final class GoogleSignInAdapter: NSObject, GoogleSignInProviding {
         sessionKind.sessionDidChangeNotification
     }
 
-    init(sessionKind: GoogleAuthSessionKind = .calendar, urlSession: URLSession = .shared) {
-        self.sessionKind = sessionKind
+    init(accountID: UUID? = nil, expectedAccountID: String? = nil, sessionKind: GoogleAuthSessionKind = .calendar, urlSession: URLSession = .shared) {
+        self.sessionKind = accountID.map { sessionKind.forAccount($0) } ?? sessionKind
         self.urlSession = urlSession
+        self.expectedAccountID = expectedAccountID
         super.init()
     }
 
@@ -244,7 +243,7 @@ final class GoogleSignInAdapter: NSObject, GoogleSignInProviding {
             throw GoogleSignInError.noPreviousSignIn
         }
         if refreshed.grantedScopes != storedSessionLookup.session.grantedScopes {
-            NotificationCenter.default.post(name: sessionDidChangeNotification, object: nil)
+            postSessionChange(disconnected: false)
         }
         return refreshed.session
     }
@@ -270,7 +269,8 @@ final class GoogleSignInAdapter: NSObject, GoogleSignInProviding {
             redirectURL: redirect,
             codeChallenge: pkce.codeChallenge,
             state: state,
-            scopes: authorizationScopes
+            scopes: authorizationScopes,
+            loginHint: previousSessionLookup?.session.account.email
         )
 
         window.orderFrontRegardless()
@@ -291,6 +291,9 @@ final class GoogleSignInAdapter: NSObject, GoogleSignInProviding {
             codeVerifier: pkce.codeVerifier
         )
         let account = try await fetchAccount(accessToken: tokenResponse.accessToken)
+        if let expected = expectedAccountID ?? previousSessionSnapshot.lookup?.session.account.id, expected != account.id {
+            throw GoogleSignInError.accountMismatch
+        }
         let session = StoredGoogleSession(
             account: account,
             accessToken: tokenResponse.accessToken,
@@ -312,7 +315,7 @@ final class GoogleSignInAdapter: NSObject, GoogleSignInProviding {
         guard !isDisconnectPending else {
             throw CancellationError()
         }
-        NotificationCenter.default.post(name: sessionDidChangeNotification, object: nil)
+        postSessionChange(disconnected: false)
         return session.session
     }
 
@@ -326,7 +329,7 @@ final class GoogleSignInAdapter: NSObject, GoogleSignInProviding {
         guard await save(refreshed, migrating: storedSessionLookup, generation: storedSessionLookup.generation) else { return nil }
         guard !isDisconnectPending else { return nil }
         if refreshed.grantedScopes != storedSessionLookup.session.grantedScopes {
-            NotificationCenter.default.post(name: sessionDidChangeNotification, object: nil)
+            postSessionChange(disconnected: false)
         }
         return refreshed.session
     }
@@ -343,7 +346,7 @@ final class GoogleSignInAdapter: NSObject, GoogleSignInProviding {
             deletionError = error
         }
         await Self.keychainWorker.finishDisconnect(for: sessionKind)
-        NotificationCenter.default.post(name: sessionDidChangeNotification, object: GoogleAuthSessionChangeReason.disconnected)
+        postSessionChange(disconnected: true)
         if let deletionError {
             throw deletionError
         }
@@ -419,6 +422,19 @@ final class GoogleSignInAdapter: NSObject, GoogleSignInProviding {
         return try? JSONDecoder().decode(StoredGoogleSession.self, from: data)
     }
 
+    private func postSessionChange(disconnected: Bool) {
+        NotificationCenter.default.post(
+            name: sessionDidChangeNotification,
+            object: disconnected ? GoogleAuthSessionChangeReason.disconnected : nil
+        )
+        if let accountID = sessionKind.accountID {
+            NotificationCenter.default.post(
+                name: GoogleProviderAccount.sessionDidChange,
+                object: GoogleProviderAccountSessionChange(accountID: accountID, disconnected: disconnected)
+            )
+        }
+    }
+
     var isDisconnectPending: Bool {
         Self.disconnectPendingUserDefaultsKeys(for: sessionKind).contains {
             UserDefaults.standard.bool(forKey: $0)
@@ -456,6 +472,7 @@ final class GoogleSignInAdapter: NSObject, GoogleSignInProviding {
             KeychainService.delete(key: key)
         }
         KeychainService.delete(key: retiredDriveKeychainKey)
+        KeychainService.delete(key: GoogleAuthSessionKind.keychainKey)
         for scope in scopes {
             KeychainService.delete(key: "\(retiredDriveKeychainKey).\(scope.storageKey)")
         }
@@ -609,7 +626,8 @@ final class GoogleSignInAdapter: NSObject, GoogleSignInProviding {
         redirectURL: URL,
         codeChallenge: String,
         state: String,
-        scopes: Set<String>
+        scopes: Set<String>,
+        loginHint: String? = nil
     ) -> URL {
         var components = URLComponents(url: authorizationEndpoint, resolvingAgainstBaseURL: false)!
         components.queryItems = [
@@ -619,11 +637,12 @@ final class GoogleSignInAdapter: NSObject, GoogleSignInProviding {
             .init(name: "scope", value: scopes.sorted().joined(separator: " ")),
             .init(name: "access_type", value: "offline"),
             // No `include_granted_scopes`: a Drive grant from the retired export must not ride along on Calendar tokens.
-            .init(name: "prompt", value: "consent"),
+            .init(name: "prompt", value: loginHint == nil ? "select_account consent" : "consent"),
             .init(name: "code_challenge", value: codeChallenge),
             .init(name: "code_challenge_method", value: "S256"),
             .init(name: "state", value: state),
         ]
+        if let loginHint { components.queryItems?.append(.init(name: "login_hint", value: loginHint)) }
         return components.url!
     }
 

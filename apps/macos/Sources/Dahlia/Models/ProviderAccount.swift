@@ -1,8 +1,7 @@
 import Foundation
 import Synchronization
 
-/// A kind of service that a provider account offers to Dahlia's features. Storage and database are defined for later
-/// use; no provider account offers them yet.
+/// A service offered by a provider account. Storage currently covers Google Drive backup reads; database is reserved.
 enum ProviderCapability: String, CaseIterable, Sendable {
     case model
     case mcp
@@ -16,10 +15,11 @@ enum ProviderCapability: String, CaseIterable, Sendable {
 enum ProviderAccount: Hashable, Sendable {
     case databricks(connectionID: UUID)
     case dahlia(connectionID: UUID)
+    case google(connectionID: UUID)
 
     var connectionID: UUID {
         switch self {
-        case let .databricks(connectionID), let .dahlia(connectionID): connectionID
+        case let .databricks(connectionID), let .dahlia(connectionID), let .google(connectionID): connectionID
         }
     }
 
@@ -32,6 +32,7 @@ enum ProviderAccount: Hashable, Sendable {
         switch self {
         case .databricks: [.model, .mcp, .calendar]
         case .dahlia: [.model]
+        case .google: [.calendar, .storage]
         }
     }
 
@@ -43,12 +44,28 @@ enum ProviderAccount: Hashable, Sendable {
             ProviderAccountDirectory.databricksConnections().first { $0.id == connectionID }?.piProviderID
                 ?? PiProviderConfiguration.legacyDatabricksProviderID
         case .dahlia: "dahlia"
+        case let .google(connectionID): "google-\(connectionID.uuidString)"
         }
     }
 }
 
 /// The Databricks connections in `provider_accounts`, oldest first, which the app's one account uses.
 enum ProviderAccountDirectory {
+    @TaskLocal static var googleAccounts: [GoogleProviderAccount]?
+    private static let registeredGoogleAccounts = Mutex<[GoogleProviderAccount]>([])
+
+    static func googleConnections() -> [GoogleProviderAccount] {
+        googleAccounts ?? registeredGoogleAccounts.withLock { $0 }
+    }
+
+    static func setGoogleAccounts(_ accounts: [GoogleProviderAccount]) -> Bool {
+        registeredGoogleAccounts.withLock {
+            guard $0 != accounts else { return false }
+            $0 = accounts
+            return true
+        }
+    }
+
     struct Connection: Equatable, Sendable {
         let id: UUID
         let workspaceURL: URL
@@ -91,7 +108,10 @@ extension ProviderAccountDirectory {
     static var accounts: [ProviderAccount] {
         databricksConnections().map { .databricks(connectionID: $0.id) }
             + [dahliaConnectionID().map { .dahlia(connectionID: $0) }].compactMap(\.self)
+            + googleConnections().map { .google(connectionID: $0.id) }
     }
+
+    static var modelAccounts: [ProviderAccount] { accounts.filter { $0.capabilities.contains(.model) } }
 
     static func account(offering capability: ProviderCapability) -> ProviderAccount? {
         accounts.first { $0.capabilities.contains(capability) }
@@ -104,6 +124,6 @@ extension ProviderAccountDirectory {
 
     /// The provider account behind a Pi provider ID that asks Dahlia for a token, if the app bridges it.
     static func account(piProviderID: String) -> ProviderAccount? {
-        accounts.first { $0.piProviderID == piProviderID }
+        modelAccounts.first { $0.piProviderID == piProviderID }
     }
 }

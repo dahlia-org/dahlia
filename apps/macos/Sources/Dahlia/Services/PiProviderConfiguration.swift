@@ -26,7 +26,7 @@ enum PiProviderConfiguration {
 
     /// Providers whose credential the app holds, which the extension resolves through the bridge for each use.
     static var bridgedProviderIDs: [String] {
-        ProviderAccountDirectory.accounts.map(\.piProviderID)
+        ProviderAccountDirectory.modelAccounts.map(\.piProviderID)
     }
 
     /// The Pi provider ID every Databricks account used before each connection was named by its host. Saved settings

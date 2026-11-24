@@ -632,7 +632,7 @@
 "Calendar Source" = "Calendar Source";
 "Choose which calendar service provides upcoming events." = "Choose which calendar service provides upcoming events.";
 "Calendar Sources" = "Calendar Sources";
-"Turn on the providers that supply upcoming events. Google Calendar comes from Google or from a Databricks connection, one at a time." = "Turn on the providers that supply upcoming events. Google Calendar comes from Google or from a Databricks connection, one at a time.";
+"Choose a registered provider for Google Calendar. Add Google accounts in Providers. One Google account or Databricks connection is used at a time." = "Choose a registered provider for Google Calendar. Add Google accounts in Providers. One Google account or Databricks connection is used at a time.";
 "Calendar Providers" = "Calendar Providers";
 "Rename Provider Account" = "Rename Provider Account";
 "Providers" = "Providers";
@@ -2112,3 +2112,5 @@
 "Disconnect this Google account from Calendar and Drive in Dahlia? Databricks connections are not affected." = "Disconnect this Google account from Calendar and Drive in Dahlia? Databricks connections are not affected.";
 
 "Sign-out incomplete. Retry to remove the saved credential." = "Sign-out incomplete. Retry to remove the saved credential.";
+"Sign in with the same Google account. To use another account, add a provider." = "Sign in with the same Google account. To use another account, add a provider.";
+"Choose a registered provider in Calendar settings to use Google Drive." = "Choose a registered provider in Calendar settings to use Google Drive.";

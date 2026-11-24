@@ -7,6 +7,11 @@ import Foundation
 
     @MainActor
     struct GoogleProviderAccountControllerTests {
+        private func providerWorker() throws -> GoogleProviderAccountWorker {
+            let database = try AppDatabaseManager(path: ":memory:")
+            return GoogleProviderAccountWorker(storage: .local(database: { database.dbQueue }))
+        }
+
         @Test
         func addingGoogleOnlyRequestsIdentityAndKeepsTheSelectedCalendarProvider() async throws {
             let suite = "GoogleProvider.\(UUID())"
@@ -14,8 +19,9 @@ import Foundation
             defer { defaults.removePersistentDomain(forName: suite) }
             let selected = UUID().uuidString
             defaults.set(selected, forKey: GoogleCalendarProvider.userDefaultsKey)
+            let worker = try providerWorker()
             let signIn = ProviderGoogleSignIn()
-            let controller = GoogleProviderAccountController(signInProvider: signIn, defaults: defaults)
+            let controller = GoogleProviderAccountController(signInProvider: signIn, worker: worker)
             _ = NSApplication.shared
             let window = NSWindow()
             #expect(await controller.signIn(window: window))
@@ -23,12 +29,12 @@ import Foundation
             #expect(controller.hasConnection)
             #expect(controller.account?.id == "google-user")
             #expect(defaults.string(forKey: GoogleCalendarProvider.userDefaultsKey) == selected)
-            controller.rename("Personal")
+            await controller.rename("Personal")
             #expect(controller.displayName == "Personal")
-            let restored = GoogleProviderAccountController(signInProvider: signIn, defaults: defaults)
+            let restored = GoogleProviderAccountController(id: controller.id, signInProvider: signIn, worker: worker)
             await restored.activate()
             #expect(restored.displayName == "Personal")
-            restored.rename(" ")
+            await restored.rename(" ")
             #expect(restored.displayName.contains("me@example.com"))
             await controller.disconnect()
             #expect(signIn.disconnectCount == 1)
@@ -38,11 +44,39 @@ import Foundation
         }
 
         @Test
+        func addingTwoGoogleAccountsKeepsBothAndRemovingOnePreservesTheOther() async throws {
+            let worker = try providerWorker()
+            let firstSignIn = ProviderGoogleSignIn()
+            let secondSignIn = ProviderGoogleSignIn()
+            secondSignIn.session = GoogleSession(
+                account: .init(id: "second-user", displayName: "Second", email: "second@example.com"),
+                accessToken: "second-fixture", grantedScopes: GoogleOAuthScope.base
+            )
+            let first = GoogleProviderAccountController(signInProvider: firstSignIn, worker: worker)
+            let second = GoogleProviderAccountController(signInProvider: secondSignIn, worker: worker)
+            _ = NSApplication.shared
+            let window = NSWindow()
+            #expect(await first.signIn(window: window))
+            #expect(await second.signIn(window: window))
+            let model = GoogleProviderAccountsModel(worker: worker)
+            await model.activate()
+            #expect(Set(model.accounts.map(\.id)) == [first.id, second.id])
+            await first.rename("Personal")
+            #expect(await pollUntil { model.accounts.first { $0.id == first.id }?.name == "Personal" })
+            await first.disconnect()
+            #expect(await pollUntil { model.accounts.map(\.id) == [second.id] })
+            #expect(secondSignIn.hasPreviousSignIn)
+            #expect(secondSignIn.disconnectCount == 0)
+            #expect(second.hasConnection)
+        }
+
+        @Test
         func aLateRestoreCannotUndoExternalGoogleSignOut() async throws {
+            let worker = try providerWorker()
             let signIn = ProviderGoogleSignIn()
             signIn.hasPreviousSignIn = true
             signIn.delaysRestore = true
-            let controller = GoogleProviderAccountController(signInProvider: signIn)
+            let controller = GoogleProviderAccountController(signInProvider: signIn, worker: worker)
             let task = Task { await controller.activate() }
             #expect(await pollUntil { signIn.restoreContinuation != nil })
             signIn.hasPreviousSignIn = false
@@ -60,9 +94,12 @@ import Foundation
             let suite = "PendingGoogleDisconnect.\(UUID())"
             let defaults = try #require(UserDefaults(suiteName: suite))
             defer { defaults.removePersistentDomain(forName: suite) }
+            let worker = try providerWorker()
             let signIn = ProviderGoogleSignIn(defaults: defaults)
             signIn.hasPreviousSignIn = true
-            let controller = GoogleProviderAccountController(signInProvider: signIn, defaults: defaults)
+            let controller = GoogleProviderAccountController(signInProvider: signIn, worker: worker)
+            _ = NSApplication.shared
+            #expect(await controller.signIn(window: NSWindow()))
             await controller.activate()
             signIn.disconnectFails = true
             signIn.suspendsDisconnect = notificationBeforeError
@@ -81,11 +118,12 @@ import Foundation
             #expect(!signIn.hasPreviousSignIn)
 
             let reopenedSignIn = ProviderGoogleSignIn(defaults: defaults)
-            let reopened = GoogleProviderAccountController(signInProvider: reopenedSignIn, defaults: defaults)
+            let reopened = GoogleProviderAccountController(id: controller.id, signInProvider: reopenedSignIn, worker: worker)
             await reopened.activate()
             #expect(reopened.hasConnection)
             #expect(reopened.isDisconnectPending)
             #expect(reopened.account == nil)
+            #expect(try await worker.load().map(\.id) == [controller.id])
             await reopened.disconnect()
             #expect(reopenedSignIn.disconnectCount == 1)
             #expect(!reopenedSignIn.isDisconnectPending)
@@ -121,7 +159,7 @@ import Foundation
         init(defaults: UserDefaults? = nil) { self.defaults = defaults }
         var delaysRestore = false
         var restoreContinuation: CheckedContinuation<GoogleSession, any Error>?
-        let session = GoogleSession(
+        var session = GoogleSession(
             account: GoogleCalendarAccount(id: "google-user", displayName: "Me", email: "me@example.com"),
             accessToken: "synthetic", grantedScopes: GoogleOAuthScope.base
         )
