@@ -245,7 +245,7 @@
 "Select a project from Projects." = "Projects からプロジェクトを選択してください。";
 "Open Projects" = "Projects を開く";
 "Title" = "タイトル";
-"All" = "All";
+"All" = "すべて";
 "Filter" = "フィルター";
 "Search filters..." = "フィルターを検索...";
 "Tags" = "タグ";
@@ -1648,6 +1648,7 @@
 "settings.agents.variableNameInvalid" = "変数名には英字・数字・_ が使えます（先頭は数字以外）。この変数は渡しません。";
 "settings.agents.providers" = "プロバイダー";
 "settings.agents.providerModels" = "モデル";
+"settings.agents.providerStorage" = "ストレージ";
 "settings.agents.mcpAccountSignInRequired" = "アカウントのサインインが切れています。サイドバー下部のアカウントメニューからサインインし直してください。";
 "settings.agents.addProvider" = "プロバイダーを追加…";
 "settings.agents.addProviderTitle" = "プロバイダーを追加";
@@ -1660,10 +1661,9 @@
 "settings.agents.mcpWorkspaceIsAccount" = "このワークスペースはアカウント自身のもので、MCP にもそのまま使えます。";
 "settings.agents.enabledCount %lld" = "%lld 件オン";
 "settings.agents.mcpServiceWithServerName %@ %@" = "%1$@ (%2$@)";
-"settings.agents.unityGatewayHost %@" = "Unity Gateway (%@)";
+"settings.agents.unityGatewayHost %@" = "Databricks (%@)";
 "settings.agents.workspaceURL" = "ワークスペース URL";
 "settings.agents.mcps" = "コネクタ";
-"settings.agents.databricksUnityGateway" = "Databricks (Unity Gateway)";
 "settings.agents.mcpLoadingServices" = "Unity AI Gateway の MCP を読み込んでいます…";
 "settings.agents.mcpNoServices" = "このワークスペースの Unity AI Gateway（system.ai）に、使える MCP はありません。";
 "settings.agents.mcpRemoveWorkspaceDescription" = "このワークスペースからサインアウトし、登録した MCP サーバーもすべて削除します。";

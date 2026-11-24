@@ -188,7 +188,7 @@ struct ProviderAccountsSettingsView: View {
     }
 
     private func googleRow(_ google: GoogleProviderAccountController) -> some View {
-        AgentProviderRow(title: google.displayName, icon: CalendarSource.google.choiceCardImage, uses: [L10n.calendar, L10n.googleDrive]) {
+        AgentProviderRow(title: google.displayName, icon: .googleLogo, uses: [L10n.calendar, L10n.agentProviderStorage]) {
             Text(google.isDisconnectPending ? L10n.googleProviderDisconnectPending : google.account?.email.nilIfBlank ?? L10n
                 .providerAccountSignInToKeep)
                 .foregroundStyle(.secondary)

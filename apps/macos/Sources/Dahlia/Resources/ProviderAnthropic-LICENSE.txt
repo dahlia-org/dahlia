@@ -1,5 +1,7 @@
 Claude logo (Anthropic provider)
 Source: Font Awesome Free 7.3.1, svgs/brands/claude.svg (https://fontawesome.com)
+Changes: fill set to Claude's brand color #D97757, as documented at
+https://platform.claude.com/docs/en/manage-claude/oauth-apps/branding-samples
 
 Icon licensed under the Creative Commons Attribution 4.0 International License (CC BY 4.0):
 https://creativecommons.org/licenses/by/4.0/

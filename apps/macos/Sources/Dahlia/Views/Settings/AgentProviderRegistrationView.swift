@@ -1,11 +1,42 @@
 import SwiftUI
 
-/// Adds a Pi subscription, Databricks workspace, or direct Google account through browser sign-in.
+/// Adds a Pi subscription, Databricks workspace, or direct Google account through browser sign-in. Providers are one
+/// list: a subscription row starts its sign-in when clicked, and a row that needs more before it (Databricks's
+/// workspace URL, Google's disclosure) expands in place with its own sign-in button.
 struct AgentProviderRegistrationView: View {
-    enum Kind: Hashable {
+    enum Kind: Hashable, Identifiable {
         case subscription(PiSubscription)
         case databricks
         case google
+
+        var id: Self { self }
+
+        var capabilities: [AgentProviderCapability] {
+            switch self {
+            case .subscription: [.models]
+            case .databricks: [.models, .mcp, .calendar]
+            case .google: [.calendar, .storage]
+            }
+        }
+
+        /// Whether the row expands to ask for more before it can sign in.
+        var needsDetails: Bool {
+            if case .subscription = self { false } else { true }
+        }
+
+        @MainActor
+        func canOpen(subscriptions: [PiSubscriptionController], isSigningIn: Bool) -> Bool {
+            guard !isSigningIn else { return false }
+            guard case let .subscription(subscription) = self else { return true }
+            guard let controller = subscriptions.first(where: { $0.subscription == subscription }) else { return false }
+            return !controller.isBusy && controller.accountStatus?.isAuthenticated != true
+        }
+
+        static func matching(_ capability: AgentProviderCapability?, subscriptions: [PiSubscription]) -> [Self] {
+            (subscriptions.map(subscription) + [.google, .databricks]).filter { kind in
+                capability.map { kind.capabilities.contains($0) } ?? true
+            }
+        }
     }
 
     let model: AgentMCPSettingsModel
@@ -14,39 +45,14 @@ struct AgentProviderRegistrationView: View {
     let google: GoogleProviderAccountController
     let onClose: () -> Void
 
-    @State private var kind: Kind
+    @State private var capability: AgentProviderCapability?
+    @State private var expanded: Kind?
+    @State private var hovered: Kind?
     @State private var workspaceURL = ""
+    @State private var signingIn: Kind?
     @State private var signInTask: Task<Void, Never>?
     @State private var errorMessage: String?
-
-    init(
-        model: AgentMCPSettingsModel,
-        subscriptions: [PiSubscriptionController],
-        google: GoogleProviderAccountController,
-        onClose: @escaping () -> Void
-    ) {
-        self.model = model
-        self.subscriptions = subscriptions
-        self.google = google
-        self.onClose = onClose
-        let available = subscriptions.first { $0.accountStatus?.isAuthenticated != true }
-        _kind = State(initialValue: available.map { .subscription($0.subscription) } ?? .databricks)
-    }
-
-    private var canSignIn: Bool {
-        guard signInTask == nil else { return false }
-        switch kind {
-        case .google:
-            return google.isConfigured && !google.isBusy
-        case .databricks:
-            return !workspaceURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        case let .subscription(subscription):
-            // A controller checking its status ignores a sign-in, so the button waits for it. One signed in already is
-            // listed under Providers, even if it was chosen before its status arrived.
-            guard let controller = subscriptions.first(where: { $0.subscription == subscription }) else { return false }
-            return !controller.isBusy && controller.accountStatus?.isAuthenticated != true
-        }
-    }
+    @FocusState private var isWorkspaceURLFocused: Bool
 
     var body: some View {
         ZStack {
@@ -61,31 +67,25 @@ struct AgentProviderRegistrationView: View {
                 Text(L10n.addProviderTitle)
                     .font(.dahliaTitle2)
                     .accessibilityAddTraits(.isHeader)
-                Picker(L10n.agentProviders, selection: $kind) {
-                    ForEach(subscriptions, id: \.subscription) { controller in
-                        // A subscription that is signed in already is listed under Providers.
-                        let isAdded = controller.accountStatus?.isAuthenticated == true
-                        Text(isAdded ? L10n.agentProviderAdded(controller.subscription.displayName) : controller.subscription.displayName)
-                            .font(.dahliaBody)
-                            .tag(Kind.subscription(controller.subscription))
-                            .selectionDisabled(isAdded)
+
+                HStack(spacing: 6) {
+                    FilterChip(title: L10n.all, isSelected: capability == nil) { capability = nil }
+                    ForEach(AgentProviderCapability.allCases, id: \.self) { choice in
+                        FilterChip(title: choice.title, isSelected: capability == choice) { capability = choice }
                     }
-                    Text(L10n.google)
-                        .font(.dahliaBody)
-                        .tag(Kind.google)
-                    Text(L10n.databricksUnityGateway).font(.dahliaBody).tag(Kind.databricks)
                 }
+                .accessibilityElement(children: .contain)
+                .accessibilityLabel(L10n.filter)
                 .disabled(signInTask != nil)
 
-                if kind == .databricks {
-                    databricksSection
+                VStack(spacing: 0) {
+                    ForEach(Array(visibleKinds.enumerated()), id: \.element) { index, choice in
+                        if index > 0 { Divider() }
+                        row(choice)
+                    }
                 }
-
-                if kind == .google {
-                    Text(L10n.googleProviderSignInDescription).foregroundStyle(.secondary)
-                    if !google.isConfigured { Text(L10n.googleAccountClientIDMissingMessage).foregroundStyle(.orange) }
-                    Link(L10n.viewPrivacyPolicy, destination: GoogleOAuthDisclosure.privacyPolicyURL(for: AppSettings.shared.appLanguage.locale))
-                }
+                .clipShape(.rect(cornerRadius: DahliaDesign.Card.regularCornerRadius))
+                .dahliaCardSurface()
 
                 if let errorMessage {
                     Label(errorMessage, systemImage: "exclamationmark.triangle.fill")
@@ -102,10 +102,6 @@ struct AgentProviderRegistrationView: View {
                     Button(signInTask == nil ? L10n.cancel : L10n.cancelSignIn, action: cancel)
                         .buttonStyle(.dahlia())
                         .keyboardShortcut(.cancelAction)
-                    Button(L10n.dahliaSignIn, action: signIn)
-                        .buttonStyle(.dahlia(.primary))
-                        .keyboardShortcut(.defaultAction)
-                        .disabled(!canSignIn)
                 }
             }
             .padding(24)
@@ -113,24 +109,169 @@ struct AgentProviderRegistrationView: View {
             .dahliaModalSurface()
         }
         .transition(.identity)
+        .onChange(of: capability) { _, _ in
+            if let expanded, !visibleKinds.contains(expanded) { self.expanded = nil }
+        }
+        .onChange(of: expanded) { _, newValue in
+            errorMessage = nil
+            isWorkspaceURLFocused = newValue == .databricks
+        }
         .onDisappear { signInTask?.cancel() }
     }
 
-    private var databricksSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            LabeledContent(L10n.workspaceURL) {
-                TextField(L10n.workspaceURL, text: $workspaceURL, prompt: Text(L10n.databricksWorkspaceURLPlaceholder))
-                    .labelsHidden()
-                    .textContentType(.URL)
-                    .onSubmit(signIn)
+    private func row(_ choice: Kind) -> some View {
+        let isAdded = isAdded(choice)
+        let isEnabled = choice.canOpen(subscriptions: subscriptions, isSigningIn: signInTask != nil)
+        return VStack(alignment: .leading, spacing: 0) {
+            Button { open(choice) } label: {
+                HStack(spacing: 12) {
+                    image(for: choice)
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: 28, height: 28)
+                        .accessibilityHidden(true)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(title(for: choice))
+                            .font(.dahliaHeadline)
+                        Text(choice.capabilities.map(\.title).joined(separator: " · "))
+                            .font(.dahliaSecondary)
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer(minLength: 8)
+                    trailing(choice, isAdded: isAdded)
+                }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 10)
+                .contentShape(.rect)
+                .background(hovered == choice && isEnabled ? DahliaDesign.contentHighlightColor : .clear)
+            }
+            .buttonStyle(.plain)
+            .disabled(!isEnabled)
+            .onHover { isHovering in
+                if isHovering { hovered = choice } else if hovered == choice { hovered = nil }
+            }
+
+            if expanded == choice {
+                details(choice)
+                    .padding(.leading, 54)
+                    .padding(.trailing, 14)
+                    .padding(.bottom, 12)
+                    .disabled(signInTask != nil)
             }
         }
-        .disabled(signInTask != nil)
     }
 
-    private func signIn() {
-        guard canSignIn else { return }
+    @ViewBuilder
+    private func trailing(_ choice: Kind, isAdded: Bool) -> some View {
+        if isAdded {
+            Label(L10n.codexSignedIn, systemImage: "checkmark.circle.fill")
+                .foregroundStyle(.secondary)
+                .labelStyle(.titleAndIcon)
+        } else if signingIn == choice || subscriptions.contains(where: { choice == .subscription($0.subscription) && $0.isBusy }) {
+            ProgressView().controlSize(.small)
+        } else if choice.needsDetails {
+            Image(systemName: "chevron.right")
+                .foregroundStyle(.tertiary)
+                .rotationEffect(.degrees(expanded == choice ? 90 : 0))
+                .dahliaFixedSymbol()
+        } else {
+            Label(L10n.dahliaSignIn, systemImage: "arrow.up.forward")
+                .labelStyle(.titleAndIcon)
+                .foregroundStyle(.tint)
+        }
+    }
+
+    @ViewBuilder
+    private func details(_ choice: Kind) -> some View {
+        switch choice {
+        case .databricks:
+            HStack(spacing: 8) {
+                TextField(L10n.workspaceURL, text: $workspaceURL, prompt: Text(L10n.databricksWorkspaceURLPlaceholder))
+                    .labelsHidden()
+                    .textFieldStyle(.roundedBorder)
+                    .textContentType(.URL)
+                    .focused($isWorkspaceURLFocused)
+                    .onSubmit { signIn(.databricks) }
+                signInButton(.databricks)
+            }
+        case .google:
+            VStack(alignment: .leading, spacing: 8) {
+                Text(L10n.googleProviderSignInDescription)
+                    .font(.dahliaSecondary)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                if !google.isConfigured {
+                    Text(L10n.googleAccountClientIDMissingMessage).font(.dahliaSecondary).foregroundStyle(.orange)
+                }
+                HStack {
+                    Link(L10n.viewPrivacyPolicy, destination: GoogleOAuthDisclosure.privacyPolicyURL(for: AppSettings.shared.appLanguage.locale))
+                        .font(.dahliaSecondary)
+                    Spacer()
+                    signInButton(.google)
+                }
+            }
+        case .subscription:
+            EmptyView()
+        }
+    }
+
+    private func signInButton(_ choice: Kind) -> some View {
+        Button(L10n.dahliaSignIn) { signIn(choice) }
+            .buttonStyle(.dahlia(.primary))
+            .keyboardShortcut(.defaultAction)
+            .disabled(!canSignIn(choice))
+    }
+
+    private var visibleKinds: [Kind] {
+        Kind.matching(capability, subscriptions: subscriptions.map(\.subscription))
+    }
+
+    private func open(_ choice: Kind) {
+        if choice.needsDetails {
+            withAnimation(.snappy(duration: 0.2)) { expanded = expanded == choice ? nil : choice }
+        } else {
+            expanded = nil
+            signIn(choice)
+        }
+    }
+
+    private func isAdded(_ kind: Kind) -> Bool {
+        guard case let .subscription(subscription) = kind else { return false }
+        return subscriptions.first { $0.subscription == subscription }?.accountStatus?.isAuthenticated == true
+    }
+
+    private func canSignIn(_ kind: Kind) -> Bool {
+        guard kind.canOpen(subscriptions: subscriptions, isSigningIn: signInTask != nil) else { return false }
+        switch kind {
+        case .google:
+            return google.isConfigured && !google.isBusy
+        case .databricks:
+            return !workspaceURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        case .subscription:
+            return true
+        }
+    }
+
+    private func image(for kind: Kind) -> Image {
+        switch kind {
+        case let .subscription(subscription): subscription.logo
+        case .google: .googleLogo
+        case .databricks: .databricksLogo
+        }
+    }
+
+    private func title(for kind: Kind) -> String {
+        switch kind {
+        case let .subscription(subscription): subscription.displayName
+        case .google: L10n.google
+        case .databricks: L10n.databricks
+        }
+    }
+
+    private func signIn(_ kind: Kind) {
+        guard canSignIn(kind) else { return }
         errorMessage = nil
+        signingIn = kind
         switch kind {
         case let .subscription(subscription):
             guard let controller = subscriptions.first(where: { $0.subscription == subscription }) else { return }
@@ -143,7 +284,7 @@ struct AgentProviderRegistrationView: View {
                 } else {
                     errorMessage = controller.errorMessage
                 }
-                signInTask = nil
+                finishSignIn()
             }
         case .google:
             signInTask = Task {
@@ -151,7 +292,7 @@ struct AgentProviderRegistrationView: View {
                 if !Task.isCancelled {
                     if signedIn { onClose() } else { errorMessage = google.errorMessage }
                 }
-                signInTask = nil
+                finishSignIn()
             }
         case .databricks:
             signInTask = Task {
@@ -163,14 +304,41 @@ struct AgentProviderRegistrationView: View {
                 } catch {
                     errorMessage = error.localizedDescription
                 }
-                signInTask = nil
+                finishSignIn()
             }
         }
+    }
+
+    private func finishSignIn() {
+        signInTask = nil
+        signingIn = nil
     }
 
     /// Closing the modal also stops a pending browser sign-in, like the backdrop.
     private func cancel() {
         signInTask?.cancel()
         onClose()
+    }
+}
+
+/// One capability filter: a capsule that the chosen filter fills with the accent tint.
+private struct FilterChip: View {
+    let title: String
+    let isSelected: Bool
+    let action: () -> Void
+    @State private var isHovered = false
+
+    var body: some View {
+        Button(action: action) {
+            Text(title)
+                .font(.dahliaSecondary.weight(isSelected ? .semibold : .regular))
+                .foregroundStyle(isSelected ? AnyShapeStyle(.tint) : AnyShapeStyle(.secondary))
+                .padding(.horizontal, 4)
+                .dahliaChipSurface(isHovered: isHovered && !isSelected, tint: isSelected ? .accentColor : nil)
+                .contentShape(.capsule)
+        }
+        .buttonStyle(.plain)
+        .onHover { isHovered = $0 }
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 }

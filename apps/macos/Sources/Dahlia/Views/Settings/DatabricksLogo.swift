@@ -13,19 +13,27 @@ extension Image {
     static var databricksLogo: Image { Image(nsImage: .databricksLogo) }
 
     /// The bundled OpenAI mark, drawn in the text color so it shows in dark mode too.
-    static var openAILogo: Image { monochromeLogo("ProviderOpenAI") }
+    static var openAILogo: Image { providerLogo("ProviderOpenAI") }
 
     /// The bundled Claude mark (Font Awesome Free, CC BY 4.0; see `ProviderAnthropic-LICENSE.txt`).
-    static var anthropicLogo: Image { monochromeLogo("ProviderAnthropic") }
+    static var anthropicLogo: Image { providerLogo("ProviderAnthropic", isTemplate: false) }
+
+    static var googleLogo: Image {
+        if let image = Bundle.appModule.image(forResource: "ProviderGoogle") {
+            Image(nsImage: image).renderingMode(.original)
+        } else {
+            Image(systemName: "person.crop.circle")
+        }
+    }
 
     /// The Pi mark, rendered in the current text color; see `ProviderPi-LICENSE.txt`.
-    @MainActor static let piLogo: Image = monochromeLogo("ProviderPi")
+    @MainActor static let piLogo: Image = providerLogo("ProviderPi")
 
-    private static func monochromeLogo(_ name: String) -> Image {
+    private static func providerLogo(_ name: String, isTemplate: Bool = true) -> Image {
         guard let image = Bundle.appModule.url(forResource: name, withExtension: "svg").flatMap(NSImage.init(contentsOf:)) else {
             return Image(systemName: "circle.hexagongrid")
         }
-        image.isTemplate = true
+        image.isTemplate = isTemplate
         return Image(nsImage: image)
     }
 }

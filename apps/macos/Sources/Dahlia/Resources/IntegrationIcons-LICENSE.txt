@@ -4,6 +4,8 @@ Icons: slack, github, atlassian
 Changes: brand-color fills added.
 
 The other integration icons are not from simple-icons:
+- ProviderGoogle.png: Google's G logo, unchanged, from
+  https://www.gstatic.com/images/branding/googleg/2x/googleg_standard_color_64dp.png
 - IntegrationGmail.png, IntegrationGoogleDrive.png, IntegrationGoogleCalendar.png: Google's product icons, from
   https://www.gstatic.com/images/branding/product/2x/{gmail,drive,calendar}_2020q4_48dp.png
 - IntegrationGenie.svg (GenieCodeIcon) and IntegrationDBSQL.svg (DatabaseIcon): @databricks/design-system 2.0.16
