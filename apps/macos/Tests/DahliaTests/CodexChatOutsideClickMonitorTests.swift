@@ -45,6 +45,7 @@
             let handledEvent = coordinator.handle(fixture.event, in: fixture.view)
 
             #expect(handledEvent === fixture.event)
+            #expect(!(await pollUntil(timeout: .milliseconds(100)) { dismissCount > 0 }))
             #expect(dismissCount == 0)
         }
 
@@ -93,6 +94,7 @@
             let handledEvent = coordinator.handle(otherEvent, in: fixture.view)
 
             #expect(handledEvent === otherEvent)
+            #expect(!(await pollUntil(timeout: .milliseconds(100)) { dismissCount > 0 }))
             #expect(dismissCount == 0)
         }
 
