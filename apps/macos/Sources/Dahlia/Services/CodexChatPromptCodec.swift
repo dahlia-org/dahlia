@@ -140,12 +140,8 @@ enum CodexChatPromptCodec {
               let closingRange = text.range(of: contextClosingTag)
         else { return nil }
         let contextBlock = String(text[..<closingRange.upperBound])
-        guard let decodedContext = decodeLiveModeTextBlocks([contextBlock]) else { return nil }
         let remainder = removingContextSeparator(from: text[closingRange.upperBound...])
-        let visibleText = isCanonicalLiveTranscriptBlock(remainder) || isDahliaLiveTranscriptBlock(remainder)
-            ? ""
-            : remainder
-        return (visibleText, decodedContext.context)
+        return decodeLiveModeTextBlocks([contextBlock, remainder])
     }
 
     private static func decodeContextPrefix(from text: String) -> (text: String, context: CodexChatContext)? {

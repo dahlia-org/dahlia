@@ -39,6 +39,43 @@ import Foundation
             #expect(CodexChatPromptCodec.visibleUserText(from: context + separator + transcript).isEmpty)
         }
 
+        @Test(arguments: ["", "\n", "\n\n"], [false, true])
+        func flattenedLiveTranscriptClassificationMatchesSeparateBlocks(separator: String, hasHiddenMarker: Bool) {
+            let context = hasHiddenMarker
+                ? TestCodexChatFixtures.liveTranscriptContext
+                : "<context>\n  Live mode is enabled. You are receiving finalized live transcription from Dahlia.\n</context>"
+            let literal = "<live_transcript>keep this visible</live_transcript>"
+            let cases = [
+                (body: literal, expected: hasHiddenMarker ? "" : literal),
+                (body: "<live_transcript source=\"dahlia\">Hidden speech</live_transcript>", expected: ""),
+            ]
+            for (body, expected) in cases {
+                #expect(CodexChatPromptCodec.decodeTextBlocks([context, body]).text == expected)
+                #expect(CodexChatPromptCodec.visibleUserText(from: context + separator + body) == expected)
+            }
+        }
+
+        @Test
+        func literalLiveTranscriptTagSurvivesHistoryRestore() throws {
+            let context = "<context>\n  Live mode is enabled. You are receiving finalized live transcription from Dahlia.\n</context>"
+            let literal = "<live_transcript>keep this visible</live_transcript>"
+            let records: [[String: JSONValue]] = [[
+                "type": .string("message"),
+                "id": .string("user-message"),
+                "message": .object([
+                    "role": .string("user"),
+                    "content": .string(context + "\n" + literal),
+                ]),
+            ]]
+
+            let messages = PiChatSessionFiles.messages(records)
+
+            #expect(messages.count == 1)
+            let message = try #require(messages.first)
+            #expect(message.role == .user)
+            #expect(message.text == literal)
+        }
+
         @Test
         func plainUserTextPreservesIntentionalWhitespace() {
             let text = "\n  First line\n\nSecond line\n"
