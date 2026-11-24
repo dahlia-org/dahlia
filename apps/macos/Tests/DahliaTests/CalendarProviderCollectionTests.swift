@@ -8,6 +8,30 @@ import GRDB
 
     @MainActor
     struct CalendarProviderCollectionTests {
+        @Test(arguments: [Notification.Name.databricksConnectionDidChange, GoogleCalendarProvider.didChange])
+        func backgroundRegistrationAndSignOutNotificationsReloadTheCatalog(name: Notification.Name) async {
+            let center = NotificationCenter()
+            let registered = connection()
+            var loadCount = 0
+            let collection = CalendarProviderCollection(
+                defaults: defaults(enabling: [registered]), notificationCenter: center,
+                loadConnections: {
+                    MainActor.assertIsolated()
+                    loadCount += 1
+                    return loadCount == 1 ? [registered] : []
+                }, makeStore: { _ in Store() }
+            )
+            await Task.detached { center.post(name: name, object: nil) }.value
+            _ = await pollUntil { collection.connections == [registered] }
+            #expect(collection.connections == [registered])
+            #expect(collection.enabledIDs == [registered.id])
+            await Task.detached { center.post(name: name, object: nil) }.value
+            _ = await pollUntil { collection.connections.isEmpty }
+            #expect(collection.connections.isEmpty)
+            #expect(collection.stores.isEmpty)
+            #expect(collection.enabledIDs.isEmpty)
+        }
+
         @Test
         func multipleGoogleAndDatabricksConnectionsHaveIndependentSwitchesAndSurviveReload() async {
             let catalog = [connection(google: true), connection(google: true), connection(), connection()]

@@ -37,6 +37,7 @@ final class CalendarProviderCollection: ObservableObject, CalendarEventSourceSto
     init(
         defaults: UserDefaults = .standard,
         observesChanges: Bool = true,
+        notificationCenter: NotificationCenter = .default,
         loadConnections: @escaping @MainActor () async throws -> [CalendarProviderConnection] = CalendarProviderCollection.registeredConnections,
         makeStore: @escaping @MainActor (CalendarProviderConnection) -> any CalendarConnectionStore = CalendarProviderCollection.googleStore
     ) {
@@ -55,9 +56,11 @@ final class CalendarProviderCollection: ObservableObject, CalendarEventSourceSto
         }
         if observesChanges {
             for name in [GoogleCalendarProvider.didChange, .databricksConnectionDidChange] {
-                NotificationCenter.default.publisher(for: name).sink { [weak self] _ in
-                    Task { await self?.reloadConnections() }
-                }.store(in: &observers)
+                notificationCenter.publisher(for: name)
+                    .receive(on: DispatchQueue.main)
+                    .sink { [weak self] _ in
+                        Task { await self?.reloadConnections() }
+                    }.store(in: &observers)
             }
         }
     }
