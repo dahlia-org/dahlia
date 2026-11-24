@@ -156,18 +156,14 @@ final class GoogleCalendarStore: ObservableObject {
                 let currentDate = now()
                 upcomingEvents = cached.filter { $0.endDate > currentDate && selectedCalendarIDs.contains($0.calendarID) }
             }
-            try await loadAccountData(
-                session: session,
-                refreshEvents: true,
-                generation: generation,
-                refreshInCurrentTask: startedByRefreshTask
-            )
+            try await loadAccountData(session: session, generation: generation)
         } catch GoogleSignInError.noPreviousSignIn {
             guard isCurrentRefresh(generation) else { return }
             clearRuntimeState(clearSelection: false)
             recomputeState()
         } catch {
             guard isCurrentRefresh(generation) else { return }
+            didAttemptRestore = false
             handle(error)
             clearRuntimeState(clearSelection: false)
             recomputeStateIfNeeded()
@@ -194,7 +190,7 @@ final class GoogleCalendarStore: ObservableObject {
                 requestedScopes: GoogleOAuthScope.calendar
             )
             guard isCurrentRefresh(generation) else { return }
-            try await loadAccountData(session: session, refreshEvents: true, generation: generation)
+            try await loadAccountData(session: session, generation: generation)
         } catch {
             guard isCurrentRefresh(generation) else { return }
             handle(error)
@@ -275,13 +271,6 @@ final class GoogleCalendarStore: ObservableObject {
             return
         }
 
-        guard !selectedCalendarIDs.isEmpty else {
-            if !upcomingEvents.isEmpty { upcomingEvents = [] }
-            lastRefreshAt = nil
-            recomputeState()
-            return
-        }
-
         if !force,
            let lastRefreshAt,
            now().timeIntervalSince(lastRefreshAt) < refreshInterval {
@@ -293,20 +282,14 @@ final class GoogleCalendarStore: ObservableObject {
         let generation = refreshGeneration
         beginLoadingIfNeeded()
         do {
-            guard let session = try await refreshedSession(generation: generation) else { return }
-            let selectedCalendars = availableCalendars.filter { selectedCalendarIDs.contains($0.id) }
-            let events = try await apiClient.fetchUpcomingEvents(
-                session: session,
-                calendars: selectedCalendars,
-                now: now(),
-                daysAhead: daysAhead
-            )
+            guard let session = try await signInProvider.refreshCurrentSession() else {
+                guard isCurrentRefresh(generation) else { return }
+                clearRuntimeState(clearSelection: false)
+                recomputeState()
+                return
+            }
             guard isCurrentRefresh(generation) else { return }
-            if upcomingEvents != events { upcomingEvents = events }
-            writeEventsCache(events)
-            lastRefreshAt = now()
-            if lastErrorMessage != nil { lastErrorMessage = nil }
-            recomputeState()
+            try await loadAccountData(session: session, generation: generation)
         } catch is CancellationError {
             guard isCurrentRefresh(generation) else { return }
             if lastRefreshAt != nil {
@@ -340,12 +323,8 @@ final class GoogleCalendarStore: ObservableObject {
         }
     }
 
-    private func loadAccountData(
-        session: GoogleSession,
-        refreshEvents: Bool,
-        generation: UInt64,
-        refreshInCurrentTask: Bool = false
-    ) async throws {
+    /// Every attempt reads metadata before events; authentication alone never means a list was loaded.
+    private func loadAccountData(session: GoogleSession, generation: UInt64) async throws {
         guard isCurrentRefresh(generation) else { return }
         applySession(session)
         if lastErrorMessage != nil { lastErrorMessage = nil }
@@ -363,43 +342,48 @@ final class GoogleCalendarStore: ObservableObject {
         if availableCalendars != calendars { availableCalendars = calendars }
         pruneSelectedCalendars()
         isLoadingAccountData = false
-
-        if refreshEvents {
-            if selectedCalendarIDs.isEmpty {
-                if !upcomingEvents.isEmpty { upcomingEvents = [] }
-                lastRefreshAt = nil
-                recomputeState()
-            } else if refreshInCurrentTask {
-                await performRefresh(force: true)
-            } else {
-                await refreshIfNeeded(force: true)
-            }
-        } else {
-            recomputeState()
-        }
+        await refreshEvents(session: session, generation: generation)
     }
 
-    private func refreshedSession(generation: UInt64) async throws -> GoogleSession? {
-        let refreshed = try await signInProvider.refreshCurrentSession() ?? currentSession
-        guard isCurrentRefresh(generation) else { return nil }
-        guard let session = refreshed else {
-            clearRuntimeState(clearSelection: false)
+    private func refreshEvents(session: GoogleSession, generation: UInt64) async {
+        guard !selectedCalendarIDs.isEmpty else {
+            if !upcomingEvents.isEmpty { upcomingEvents = [] }
+            lastRefreshAt = nil
             recomputeState()
-            return nil
+            return
         }
-        if applySession(session) {
-            let calendars = try await apiClient.fetchCalendarList(session: session)
-            guard isCurrentRefresh(generation) else { return nil }
-            availableCalendars = calendars
-            pruneSelectedCalendars()
+
+        do {
+            let selectedCalendars = availableCalendars.filter { selectedCalendarIDs.contains($0.id) }
+            let events = try await apiClient.fetchUpcomingEvents(
+                session: session,
+                calendars: selectedCalendars,
+                now: now(),
+                daysAhead: daysAhead
+            )
+            guard isCurrentRefresh(generation) else { return }
+            if upcomingEvents != events { upcomingEvents = events }
+            writeEventsCache(events)
+            lastRefreshAt = now()
+            if lastErrorMessage != nil { lastErrorMessage = nil }
+            recomputeState()
+        } catch is CancellationError {
+            guard isCurrentRefresh(generation) else { return }
+            if lastRefreshAt != nil {
+                recomputeState()
+            }
+        } catch {
+            guard isCurrentRefresh(generation) else { return }
+            handle(error)
+            recomputeStateIfNeeded()
         }
-        return session
     }
 
     /// A route can retain its ID while its Google grant changes.
-    @discardableResult
-    private func applySession(_ session: GoogleSession) -> Bool {
-        let identityChanged = !session.isAccountIdentityVerified || currentSession?.account.id != session.account.id
+    private func applySession(_ session: GoogleSession) {
+        let canReuseProjection = session.isAccountIdentityVerified && currentSession?.isAccountIdentityVerified == true
+            && currentSession?.account.id == session.account.id
+        let identityChanged = !canReuseProjection
         if identityChanged {
             beginLoading()
             availableCalendars = []
@@ -409,7 +393,6 @@ final class GoogleCalendarStore: ObservableObject {
         }
         currentSession = session
         if account != session.account { account = session.account }
-        return identityChanged
     }
 
     private func beginLoading() {
