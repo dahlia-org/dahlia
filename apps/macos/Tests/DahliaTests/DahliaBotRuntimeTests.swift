@@ -130,7 +130,7 @@
             }
 
             /// A Worker is a queued run of its Task's read-only Thread, under the Home thread, with only its Task's servers.
-            @Test(arguments: ["report", "noReport", "error", "stop", "revokedWork"])
+            @Test(arguments: ["report", "refreshReport", "noReport", "error", "stop", "revokedWork"])
             func aWorkerRunsInItsTaskThreadAndAlwaysTellsTheRouter(scenario: String) async throws {
                 // These scenarios share the app account and run serially to isolate its Bot settings.
                 let provider = AppAccount.key
@@ -168,11 +168,18 @@
                 await chat.drainAlwaysOn()
                 await chat.scheduleRuns(accountID: account)
                 let attached = try #require(try await chat.attach(threadID: threadID))
-                if scenario == "report" {
+                if scenario == "refreshReport" {
+                    pi.contextStore.beginActivation()
+                    await chat.providerAccountsDidChange()
+                    #expect(!pi.contextStore.isConfigured)
+                }
+                if ["report", "refreshReport"].contains(scenario) {
                     await transport.emit(TestPiTransport.bridgeRequest(id: "r1", method: "botTool", payload: call("task_report", [
                         "summary": .string("Q4 の価格表で答えられます"), "question": .string("この内容で返信の下書きを作りますか?"),
                     ])))
                     _ = await transport.command("extension_ui_response")
+                    let delivery = try await store.dbQueue.read { try AgentWorkerDeliveryRecord.fetchOne($0, key: attached.id) }
+                    #expect(delivery?.status == "reported")
                 }
                 if scenario == "stop" { await chat.abort(threadID: threadID) }
                 await transport.emit(scenario == "error"
@@ -185,6 +192,7 @@
                     #expect(scenario == "error")
                 }
 
+                if scenario == "refreshReport" { pi.contextStore.apply() }
                 let launch = try #require(pi.launches.all.first { $0.mode == .chat })
                 #expect(launch.profile == .worker && !launch.arguments.contains("--no-session"))
                 let tools = try #require(launch.arguments.firstIndex(of: "--tools").map { launch.arguments[$0 + 1] }).split(separator: ",")
@@ -206,7 +214,9 @@
                     }
                 }
                 switch scenario {
-                case "report":
+                case "report", "refreshReport":
+                    #expect(try store.run(id: attached.id)?.status == "completed")
+                    #expect(try inbox.queueWorker(taskID: task.id, account: account, input: { _, _ in "Retry" }) == nil)
                     #expect(await pollUntil { await (try? events().map(\.status)) == ["processed", "unassigned"] })
                     let report = try #require(try await events().last)
                     #expect(report.kind == "result" && report.excerpt == "Q4 の価格表で答えられます" && report.payload.contains("返信の下書き"))

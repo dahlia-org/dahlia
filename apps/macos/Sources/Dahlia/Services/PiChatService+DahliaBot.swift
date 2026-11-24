@@ -323,7 +323,6 @@ extension PiChatService {
     private func botToolCall(_ name: String, args: [String: JSONValue], caller: AgentInboxService.Caller) throws
         -> JSONValue {
         let account = AppAccount.key
-        guard runtime.isConfigured else { throw CancellationError() }
         if caller == .router { try validateBotActivity() }
         func text(_ key: String) -> String { args[key]?.stringValue ?? "" }
         func list(_ key: String) -> [String] { args[key]?.arrayValue?.compactMap(\.stringValue) ?? [] }
