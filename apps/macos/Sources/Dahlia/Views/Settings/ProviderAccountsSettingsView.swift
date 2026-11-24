@@ -198,7 +198,7 @@ struct ProviderAccountsSettingsView: View {
                     pendingRename = .google(google)
                 }
                 .disabled(google.isDisconnectPending && google.account == nil)
-                Button(L10n.googleProviderConnectBoth) { Task { _ = await google.signIn() } }
+                Button(L10n.googleProviderAuthorizeBoth) { Task { _ = await google.signIn() } }
                 Button(google.isDisconnectPending ? L10n.googleCalendarRetry : L10n.signOut) { pendingGoogleSignOut = google }
             }
             .disabled(google.isBusy)
