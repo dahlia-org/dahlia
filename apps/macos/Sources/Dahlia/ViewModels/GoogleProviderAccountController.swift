@@ -31,7 +31,7 @@ final class GoogleProviderAccountController: Identifiable {
         self.signInProvider = provider
         account = registeredAccount?.account
         name = registeredAccount?.name
-        hasConnection = registeredAccount != nil
+        hasConnection = registeredAccount != nil || provider.isDisconnectPending
         isDisconnectPending = provider.isDisconnectPending
         observer = GoogleAuthSessionObserver(notificationName: provider.sessionDidChangeNotification) { [weak self] disconnected in
             guard let self else { return }
@@ -99,11 +99,16 @@ final class GoogleProviderAccountController: Identifiable {
             hasConnection = true
             NotificationCenter.default.post(name: GoogleProviderAccount.didChange, object: nil)
             return true
-        } catch is CancellationError {
-            return false
         } catch {
-            if registeredAccount == nil { try? await signInProvider.disconnect() }
-            errorMessage = error.localizedDescription
+            if registeredAccount == nil {
+                do { try await signInProvider.disconnect() } catch {
+                    // The adapter's durable pending marker keeps this UUID discoverable after the modal closes.
+                }
+                isDisconnectPending = signInProvider.isDisconnectPending
+                hasConnection = isDisconnectPending
+                NotificationCenter.default.post(name: GoogleProviderAccount.didChange, object: nil)
+            }
+            if !(error is CancellationError) { errorMessage = error.localizedDescription }
             return false
         }
     }
@@ -116,7 +121,7 @@ final class GoogleProviderAccountController: Identifiable {
         defer { isBusy = false }
         do {
             try await signInProvider.disconnect()
-            try await worker.remove(id)
+            if registeredAccount != nil { try await worker.remove(id) }
             registeredAccount = nil
             account = nil
             name = nil

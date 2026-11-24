@@ -88,7 +88,7 @@ import Synchronization
                 RecordingURLProtocol.recorders.withLock { $0[host] = nil }
             }
             let defaults = try #require(UserDefaults(suiteName: "CalendarPages.\(UUID())"))
-            defaults.set("[\"later\"]", forKey: GoogleCalendarStore.selectedCalendarIDsKey)
+            defaults.set("[\"later\"]", forKey: "\(GoogleCalendarStore.accountSelectedCalendarIDsKey).unassigned")
             let session = GoogleSession(
                 account: GoogleCalendarAccount(id: "test-user", displayName: "Test", email: "test@example.com"),
                 accessToken: "test-token", grantedScopes: GoogleOAuthScope.calendar, apiBaseURL: root

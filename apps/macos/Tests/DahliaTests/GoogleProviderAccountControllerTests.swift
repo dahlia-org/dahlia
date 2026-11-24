@@ -9,7 +9,7 @@ import Foundation
     struct GoogleProviderAccountControllerTests {
         private func providerWorker() throws -> GoogleProviderAccountWorker {
             let database = try AppDatabaseManager(path: ":memory:")
-            return GoogleProviderAccountWorker(storage: .local(database: { database.dbQueue }))
+            return GoogleProviderAccountWorker(storage: .local(database: { database.dbQueue }), pendingDisconnects: { [] })
         }
 
         @Test
@@ -68,6 +68,48 @@ import Foundation
             #expect(secondSignIn.hasPreviousSignIn)
             #expect(secondSignIn.disconnectCount == 0)
             #expect(second.hasConnection)
+        }
+
+        @Test(arguments: [false, true])
+        func failedFirstRegistrationRemainsDiscoverableForDeletion(metadataReadFails: Bool) async throws {
+            let suite = "FailedGoogleRegistration.\(UUID())"
+            let defaults = try #require(UserDefaults(suiteName: suite))
+            defer { defaults.removePersistentDomain(forName: suite) }
+            let id = UUID.v7()
+            let pendingKey = GoogleSignInAdapter.disconnectPendingUserDefaultsKey(for: .calendar.forAccount(id))
+            let worker = GoogleProviderAccountWorker(
+                storage: .init(
+                    load: {
+                        if metadataReadFails { throw GoogleSignInError.invalidTokenResponse }
+                        return []
+                    },
+                    save: { _ in throw GoogleSignInError.invalidTokenResponse },
+                    remove: { _ in Issue.record("Cleanup without a registration must not depend on SQLite") }
+                ),
+                pendingDisconnects: {
+                    GoogleSignInAdapter.pendingDisconnectAccountIDs(defaults: UserDefaults(suiteName: suite)!)
+                }
+            )
+            let signIn = ProviderGoogleSignIn(defaults: defaults, pendingKey: pendingKey)
+            signIn.disconnectFails = true
+            let controller = GoogleProviderAccountController(id: id, signInProvider: signIn, worker: worker)
+            _ = NSApplication.shared
+            #expect(await controller.signIn(window: NSWindow()) == false)
+            #expect(controller.isDisconnectPending)
+            #expect(defaults.bool(forKey: pendingKey))
+            let recoveredSignIn = ProviderGoogleSignIn(defaults: defaults, pendingKey: pendingKey)
+            let reopened = GoogleProviderAccountsModel(worker: worker, signInProvider: { _ in recoveredSignIn })
+            await reopened.activate()
+            #expect(reopened.accounts.isEmpty)
+            #expect(await pollUntil { reopened.controllers.contains { $0.id == id } })
+            let recovery = try #require(reopened.controllers.first { $0.id == id })
+            #expect(recovery.isDisconnectPending)
+            #expect(recovery.hasConnection)
+            #expect(recoveredSignIn.disconnectCount == 0)
+            await recovery.disconnect()
+            #expect(recoveredSignIn.disconnectCount == 1)
+            #expect(!defaults.bool(forKey: pendingKey))
+            #expect(await pollUntil { reopened.controllers.isEmpty })
         }
 
         @Test
@@ -144,19 +186,24 @@ import Foundation
         var suspendsDisconnect = false
         var disconnectContinuation: CheckedContinuation<Void, Never>?
         private let defaults: UserDefaults?
+        private let pendingKey: String
         private var pendingDisconnect = false
         var isDisconnectPending: Bool {
-            get { defaults?.bool(forKey: "pendingDisconnect") ?? pendingDisconnect }
+            get { defaults?.bool(forKey: pendingKey) ?? pendingDisconnect }
             set {
                 if let defaults {
-                    defaults.set(newValue, forKey: "pendingDisconnect")
+                    defaults.set(newValue, forKey: pendingKey)
                 } else {
                     pendingDisconnect = newValue
                 }
             }
         }
 
-        init(defaults: UserDefaults? = nil) { self.defaults = defaults }
+        init(defaults: UserDefaults? = nil, pendingKey: String = "pendingDisconnect") {
+            self.defaults = defaults
+            self.pendingKey = pendingKey
+        }
+
         var delaysRestore = false
         var restoreContinuation: CheckedContinuation<GoogleSession, any Error>?
         var session = GoogleSession(

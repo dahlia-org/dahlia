@@ -615,10 +615,19 @@ final class GoogleCalendarStore: ObservableObject {
         }.value
     }
 
+    private static func selectedCalendarIDsStorageKey(for provider: GoogleCalendarProvider) -> String {
+        switch provider {
+        case .unassigned: "\(accountSelectedCalendarIDsKey).unassigned"
+        case let .google(id): "\(accountSelectedCalendarIDsKey).google.\(id.uuidString)"
+        case .databricks: accountSelectedCalendarIDsKey
+        }
+    }
+
     private static func loadSelectedCalendarIDs(from userDefaults: UserDefaults) -> Set<String> {
         let provider = GoogleCalendarProvider.current(defaults: userDefaults)
-        let key = provider.googleAccountID.map { "\(accountSelectedCalendarIDsKey).google.\($0.uuidString)" } ?? accountSelectedCalendarIDsKey
-        let json = userDefaults.string(forKey: key) ?? (provider.googleAccountID == nil ? userDefaults.string(forKey: selectedCalendarIDsKey) : nil)
+        let key = selectedCalendarIDsStorageKey(for: provider)
+        let json = userDefaults
+            .string(forKey: key) ?? (provider.databricksConnectionID != nil ? userDefaults.string(forKey: selectedCalendarIDsKey) : nil)
         guard let json,
               let data = json.data(using: .utf8),
               let ids = try? JSONDecoder().decode([String].self, from: data)
@@ -636,7 +645,7 @@ final class GoogleCalendarStore: ObservableObject {
             return
         }
         let provider = GoogleCalendarProvider.current(defaults: userDefaults)
-        let key = provider.googleAccountID.map { "\(accountSelectedCalendarIDsKey).google.\($0.uuidString)" } ?? accountSelectedCalendarIDsKey
+        let key = selectedCalendarIDsStorageKey(for: provider)
         userDefaults.set(json, forKey: key)
     }
 }

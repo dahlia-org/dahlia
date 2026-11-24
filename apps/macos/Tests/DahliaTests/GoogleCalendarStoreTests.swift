@@ -21,6 +21,58 @@ import Foundation
         }
 
         @Test
+        func removingSelectedGoogleRegistrationPreservesDatabricksSelection() async throws {
+            let proxyID = UUID.v7()
+            let google = GoogleProviderAccount(id: .v7(), account: fixtureSession.account)
+            try await ProviderAccountDirectory.$connections.withValue([
+                .init(id: proxyID, workspaceURL: #require(URL(string: "https://calendar.example"))),
+            ]) {
+                await ProviderAccountDirectory.$googleAccounts.withValue([google]) {
+                    let defaults = isolatedUserDefaults()
+                    defaults.set(proxyID.uuidString, forKey: GoogleCalendarProvider.userDefaultsKey)
+                    seedSelectedCalendars(["primary"], defaults: defaults)
+                    let route = Notification.Name("RemovedGoogleRoute.\(UUID())")
+                    let signIn = MockGoogleCalendarSignInProvider(hasPreviousSignIn: true)
+                    let store = GoogleCalendarStore(
+                        signInProvider: signIn, apiClient: MockGoogleCalendarAPIClient(calendars: [primaryCalendar], events: [fixtureEvent]),
+                        userDefaults: defaults, now: { fixtureNow }, providerChangeNotification: route
+                    )
+                    await store.restoreSessionIfNeeded()
+                    #expect(store.selectedCalendarIDs == ["primary"])
+                    defaults.set("google-\(google.id.uuidString)", forKey: GoogleCalendarProvider.userDefaultsKey)
+                    NotificationCenter.default.post(name: route, object: nil)
+                    #expect(await pollUntil { signIn.restoreCallCount == 2 })
+                    signIn.isConfigured = false
+                    await ProviderAccountDirectory.$googleAccounts.withValue([]) {
+                        NotificationCenter.default.post(name: route, object: nil)
+                        await store.restoreSessionIfNeeded()
+                        #expect(store.state == .unconfigured)
+                    }
+                    signIn.isConfigured = true
+                    defaults.set(proxyID.uuidString, forKey: GoogleCalendarProvider.userDefaultsKey)
+                    NotificationCenter.default.post(name: route, object: nil)
+                    #expect(await pollUntil { signIn.restoreCallCount == 3 })
+                    #expect(store.selectedCalendarIDs == ["primary"])
+                    #expect(await pollUntil { store.isLoaded })
+                }
+            }
+        }
+
+        @Test
+        func unassignedRestoreDoesNotReadOrClearSavedDatabricksSelection() async {
+            let defaults = isolatedUserDefaults()
+            defaults.set("[\"primary\"]", forKey: GoogleCalendarStore.selectedCalendarIDsKey)
+            let store = GoogleCalendarStore(
+                signInProvider: MockGoogleCalendarSignInProvider(isConfigured: false),
+                apiClient: MockGoogleCalendarAPIClient(), userDefaults: defaults
+            )
+            #expect(store.selectedCalendarIDs.isEmpty)
+            await store.restoreSessionIfNeeded()
+            #expect(defaults.string(forKey: GoogleCalendarStore.accountSelectedCalendarIDsKey) == nil)
+            #expect(defaults.string(forKey: GoogleCalendarStore.selectedCalendarIDsKey)?.contains("primary") == true)
+        }
+
+        @Test
         func restorePreviousSessionLoadsCalendarsAndEvents() async {
             let defaults = isolatedUserDefaults()
             seedSelectedCalendars(["primary"], defaults: defaults)
@@ -1258,7 +1310,7 @@ import Foundation
 
             #expect(store.selectedCalendarIDs == [secondaryCalendar.id])
 
-            let saved = defaults.string(forKey: GoogleCalendarStore.accountSelectedCalendarIDsKey)
+            let saved = defaults.string(forKey: "\(GoogleCalendarStore.accountSelectedCalendarIDsKey).unassigned")
             #expect(saved?.contains(secondaryCalendar.id) == true)
         }
 
@@ -1504,7 +1556,7 @@ private func calendarEvent(id: String, calendarID: String = "primary") -> Calend
 
 @MainActor
 private final class MockGoogleCalendarSignInProvider: GoogleSignInProviding {
-    let isConfigured: Bool
+    var isConfigured: Bool
     private let previousSignInResult: Bool
     var suspendsPreviousSignIn = false
     private var previousSignInContinuation: CheckedContinuation<Bool, Never>?
@@ -1721,7 +1773,9 @@ private func seedSelectedCalendars(_ ids: [String], defaults: UserDefaults) {
     guard let data = try? JSONEncoder().encode(ids) else {
         preconditionFailure("Static calendar identifiers must be JSON encodable")
     }
-    defaults.set(String(data: data, encoding: .utf8), forKey: GoogleCalendarStore.selectedCalendarIDsKey)
+    let json = String(data: data, encoding: .utf8)
+    defaults.set(json, forKey: GoogleCalendarStore.selectedCalendarIDsKey)
+    defaults.set(json, forKey: "\(GoogleCalendarStore.accountSelectedCalendarIDsKey).unassigned")
 }
 
 enum CalendarReadinessEntryPoint: CaseIterable {

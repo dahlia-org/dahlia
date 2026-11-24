@@ -189,7 +189,7 @@ final class GoogleSignInAdapter: NSObject, GoogleSignInProviding {
     /// Keychain keys of the retired Google Drive export: the per-account key is `<prefix>.<scope>`.
     private nonisolated static let retiredDriveKeychainKey = "googleDriveOAuthSession"
     private nonisolated static let keychainWorker = GoogleKeychainWorker()
-    private static let disconnectPendingUserDefaultsKeyPrefix = "googleOAuthDisconnectPending"
+    private nonisolated static let disconnectPendingUserDefaultsKeyPrefix = "googleOAuthDisconnectPending"
     private static let authorizationEndpoint = URL(string: "https://accounts.google.com/o/oauth2/v2/auth")!
     private static let tokenEndpoint = URL(string: "https://oauth2.googleapis.com/token")!
     private static let userInfoEndpoint = URL(string: "https://openidconnect.googleapis.com/v1/userinfo")!
@@ -458,6 +458,15 @@ final class GoogleSignInAdapter: NSObject, GoogleSignInProviding {
 
     static func disconnectPendingUserDefaultsKeys(for kind: GoogleAuthSessionKind) -> [String] {
         [disconnectPendingUserDefaultsKey(for: kind)]
+    }
+
+    /// Failed first registrations have no SQLite row, so recover their cleanup identity from the durable marker.
+    nonisolated static func pendingDisconnectAccountIDs(defaults: UserDefaults = .standard) -> [UUID] {
+        let prefix = "\(disconnectPendingUserDefaultsKeyPrefix).\(GoogleAuthSessionKind.keychainKey)."
+        return defaults.dictionaryRepresentation().compactMap { key, value in
+            guard key.hasPrefix(prefix), value as? Bool == true else { return nil }
+            return UUID(uuidString: String(key.dropFirst(prefix.count)))
+        }.sorted { $0.uuidString < $1.uuidString }
     }
 
     static func shouldRestoreStoredSession(disconnectPending: Bool, hasStoredSession: Bool) -> Bool {

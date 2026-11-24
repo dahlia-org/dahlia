@@ -16,7 +16,7 @@
             let database = try AppDatabaseManager(path: ":memory:")
             let databricks = DatabricksConnection(id: .v7(), host: "https://workspace.example")
             try DatabricksOAuthStorage.local(database: { database.dbQueue }).saveConnections([databricks])
-            let worker = GoogleProviderAccountWorker(storage: .local(database: { database.dbQueue }))
+            let worker = GoogleProviderAccountWorker(storage: .local(database: { database.dbQueue }), pendingDisconnects: { [] })
             var first = account("first@example.com")
             let second = account("second@example.com")
             try await worker.save(first)
@@ -26,7 +26,7 @@
             let model = GoogleProviderAccountsModel(worker: worker)
             await model.activate()
             #expect(Dictionary(uniqueKeysWithValues: model.accounts.map { ($0.id, $0) }) == [first.id: first, second.id: second])
-            #expect(model.controllers.map(\.displayName).sorted() == ["Personal", "Google (second@example.com)"].sorted())
+            #expect(await pollUntil { model.controllers.map(\.displayName).sorted() == ["Personal", "Google (second@example.com)"].sorted() })
             try await worker.remove(first.id)
             await model.activate()
             #expect(await pollUntil { model.accounts == [second] })
@@ -57,6 +57,21 @@
             ProviderAccountDirectory.$googleAccounts.withValue([first]) {
                 #expect(GoogleCalendarProvider.current(defaults: defaults) == .unassigned)
             }
+        }
+
+        @Test
+        func pendingCleanupDiscoveryUsesOnlyValidDisabledGoogleRegistrationIDs() throws {
+            let suite = "GoogleCleanupDiscovery.\(UUID())"
+            let defaults = try #require(UserDefaults(suiteName: suite))
+            defer { defaults.removePersistentDomain(forName: suite) }
+            let pending = UUID.v7()
+            let completed = UUID.v7()
+            let key = GoogleSignInAdapter.disconnectPendingUserDefaultsKey(for: .calendar.forAccount(pending))
+            defaults.set(true, forKey: key)
+            defaults.set(false, forKey: GoogleSignInAdapter.disconnectPendingUserDefaultsKey(for: .calendar.forAccount(completed)))
+            defaults.set(true, forKey: key + ".invalid")
+            defaults.set(true, forKey: GoogleSignInAdapter.disconnectPendingUserDefaultsKey(for: .calendar))
+            #expect(GoogleSignInAdapter.pendingDisconnectAccountIDs(defaults: defaults) == [pending])
         }
 
         @Test

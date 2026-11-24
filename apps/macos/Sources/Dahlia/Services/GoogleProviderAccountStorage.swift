@@ -49,7 +49,16 @@ struct GoogleProviderAccountStorage: Sendable {
 /// Keeps provider metadata IO off MainActor and orders registration, rename and removal.
 actor GoogleProviderAccountWorker {
     private let storage: GoogleProviderAccountStorage
-    init(storage: GoogleProviderAccountStorage = .local()) { self.storage = storage }
+    private let pendingDisconnects: @Sendable () -> [UUID]
+    init(
+        storage: GoogleProviderAccountStorage = .local(),
+        pendingDisconnects: @escaping @Sendable () -> [UUID] = { GoogleSignInAdapter.pendingDisconnectAccountIDs() }
+    ) {
+        self.storage = storage
+        self.pendingDisconnects = pendingDisconnects
+    }
+
+    func pendingDisconnectIDs() -> [UUID] { pendingDisconnects() }
     func load() throws -> [GoogleProviderAccount] { try storage.load() }
     func save(_ account: GoogleProviderAccount) throws { try storage.save(account) }
     func remove(_ id: UUID) throws { try storage.remove(id) }
