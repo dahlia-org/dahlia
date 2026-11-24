@@ -76,6 +76,27 @@ enum KeychainService {
         return nil
     }
 
+    /// Migration must distinguish a missing item from temporary Keychain denial before recording completion.
+    static func loadOrThrow(key: String) throws -> String? {
+        if keychainState.withLock({ $0 }) != false {
+            let (data, status) = loadProtected(key: key)
+            if status == errSecSuccess {
+                keychainState.withLock { $0 = true }
+                return data.flatMap { String(data: $0, encoding: .utf8) }
+            }
+            if fallbackErrors.contains(status) {
+                keychainState.withLock { $0 = false }
+            } else if status != errSecItemNotFound {
+                throw KeychainError.unexpectedStatus(status)
+            }
+        }
+        let (data, status) = loadLegacy(key: key)
+        guard status == errSecSuccess || status == errSecItemNotFound else {
+            throw KeychainError.unexpectedStatus(status)
+        }
+        return data.flatMap { String(data: $0, encoding: .utf8) }
+    }
+
     @discardableResult
     static func delete(key: String) -> Bool {
         deleteFromBothKeychains(key: key)

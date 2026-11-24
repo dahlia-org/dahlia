@@ -13,7 +13,8 @@ import Foundation
             let store = GoogleCalendarStore(
                 signInProvider: MockGoogleCalendarSignInProvider(isConfigured: false),
                 apiClient: MockGoogleCalendarAPIClient(),
-                userDefaults: isolatedUserDefaults())
+                userDefaults: isolatedUserDefaults()
+            )
 
             #expect(store.state == .unconfigured)
             #expect(!store.isConfigured)
@@ -46,6 +47,22 @@ import Foundation
             #expect(store.availableCalendars == [primaryCalendar])
             #expect(store.upcomingEvents == [fixtureEvent])
             #expect(apiClient.fetchEventsCallCount == 1)
+        }
+
+        @Test
+        func startupReloadsCalendarSelectionCopiedAfterStoreConstruction() async {
+            let defaults = isolatedUserDefaults()
+            let store = GoogleCalendarStore(
+                signInProvider: MockGoogleCalendarSignInProvider(hasPreviousSignIn: true, restoreResult: .success(fixtureSession)),
+                apiClient: MockGoogleCalendarAPIClient(calendars: [primaryCalendar], events: [fixtureEvent]),
+                userDefaults: defaults, now: { fixtureNow }
+            )
+            #expect(store.selectedCalendarIDs.isEmpty)
+            seedSelectedCalendars(["primary"], defaults: defaults)
+            store.reloadSelectedCalendarsAfterMigration()
+            await store.restoreSessionIfNeeded()
+            #expect(store.selectedCalendarIDs == ["primary"])
+            #expect(store.upcomingEvents == [fixtureEvent])
         }
 
         @Test
@@ -125,7 +142,9 @@ import Foundation
                 eventsCacheDirectory: temporaryCacheDirectory(),
                 cachedEventsLoader: { _ in
                     readStarted.continuation.yield(())
-                    for await events in cachedEvents.stream { return events }
+                    for await events in cachedEvents.stream {
+                        return events
+                    }
                     return []
                 }
             )
@@ -173,7 +192,9 @@ import Foundation
                 eventsCacheDirectory: cacheDirectory,
                 cachedEventsLoader: { _ in
                     readStarted.continuation.yield(())
-                    for await events in cachedEvents.stream { return events }
+                    for await events in cachedEvents.stream {
+                        return events
+                    }
                     return []
                 }
             )
@@ -611,7 +632,8 @@ import Foundation
             let store = GoogleCalendarStore(
                 signInProvider: signInProvider,
                 apiClient: MockGoogleCalendarAPIClient(),
-                userDefaults: isolatedUserDefaults())
+                userDefaults: isolatedUserDefaults()
+            )
 
             await store.restoreSessionIfNeeded()
 
@@ -727,7 +749,8 @@ import Foundation
             let store = GoogleCalendarStore(
                 signInProvider: signInProvider,
                 apiClient: MockGoogleCalendarAPIClient(calendars: [primaryCalendar], events: []),
-                userDefaults: isolatedUserDefaults())
+                userDefaults: isolatedUserDefaults()
+            )
 
             NotificationCenter.default.post(name: ignoredNotification, object: nil)
             await Task.yield()

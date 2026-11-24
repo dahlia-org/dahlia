@@ -41,6 +41,13 @@ enum WorkspaceBackupTransfer {
     ) throws {
         guard try WorkspaceRecord.fetchOne(db, sql: "SELECT * FROM backup_source.workspaces WHERE id = ?", arguments: [workspaceId]) != nil
         else { throw BackupServiceError.invalidBackup }
+        // Availability state is intentionally not portable; reject missing source content before omitting it.
+        if try Bool.fetchOne(db, sql: """
+        SELECT EXISTS(SELECT 1 FROM backup_source.sync_content_state
+            WHERE workspace_id = ? AND (complete = 0 OR fetchError = 'deleted'))
+        """, arguments: [workspaceId]) == true {
+            throw TextContentError.incomplete
+        }
         try destinationWorkspace.insert(db)
         var mappings: [String: [DatabaseValue: DatabaseValue]] = [
             "workspaces": [workspaceId.databaseValue: destinationWorkspace.id.databaseValue],

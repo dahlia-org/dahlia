@@ -14,15 +14,15 @@ enum GoogleCalendarProvider: Hashable, Sendable {
         return connectionID
     }
 
-    /// The saved choice. Unset, or naming a connection the account no longer has, follows the account's Databricks
-    /// connection when it has one, as before the choice existed.
+    /// The saved choice. An unset or removed choice follows the oldest eligible Databricks connection.
     static func current(defaults: UserDefaults = .standard) -> Self {
-        let databricks = ProviderAccountDirectory.account(offering: .calendar)?.databricksConnectionID
+        let connections = ProviderAccountDirectory.databricksConnections()
+        let databricks = connections.first?.id
         switch defaults.string(forKey: userDefaultsKey) {
         case "google":
             return .google
-        case let saved? where UUID(uuidString: saved) == databricks:
-            if let databricks { return .databricks(connectionID: databricks) }
+        case let saved?:
+            if let id = UUID(uuidString: saved), connections.contains(where: { $0.id == id }) { return .databricks(connectionID: id) }
         default:
             break
         }

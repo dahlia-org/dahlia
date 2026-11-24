@@ -106,5 +106,12 @@ extension MeetingRepository {
             destination, source, destination, source, source, source, destination, source,
             destination, source, destination, source, destination, source,
         ])
+        // Former Server content may never have been downloaded. Keep that fact when the source is deleted.
+        for table in ["sync_content_state", "sync_entity_state"] {
+            try db.execute(
+                sql: "UPDATE \(table) SET workspace_id = ? WHERE workspace_id = ? AND entity <> 'workspace'",
+                arguments: [destination, source]
+            )
+        }
     }
 }

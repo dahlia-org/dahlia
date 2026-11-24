@@ -241,7 +241,10 @@ import os
 
         /// The extension names the provider it needs. Only a provider the account bridges gets a token, and it is that
         /// provider account's token.
-        @Test(.providerAccounts([.init(id: ownConnectionID, workspaceURL: URL(string: "https://own.cloud.databricks.com")!)]), arguments: [("own.cloud.databricks.com", true), ("openai", false), ("dahlia", false)])
+        @Test(
+            .providerAccounts([.init(id: ownConnectionID, workspaceURL: URL(string: "https://own.cloud.databricks.com")!)]),
+            arguments: [("own.cloud.databricks.com", true), ("openai", false), ("dahlia", false)]
+        )
         func tokenRequestsResolveOnlyTheNamedBridgedProvider(providerID: String, bridged: Bool) async throws {
             let log = TestPiTransportLog()
             let resolved = ResolvedAccounts()
@@ -505,7 +508,10 @@ import os
                     if command["type"]?.stringValue == "get_available_models" {
                         return [TestPiTransport.response(
                             id: id,
-                            data: .object(["models": .array([TestPiTransport.model(provider: "own.cloud.databricks.com", id: "system.ai.claude-haiku-5-5")])])
+                            data: .object(["models": .array([TestPiTransport.model(
+                                provider: "own.cloud.databricks.com",
+                                id: "system.ai.claude-haiku-5-5"
+                            )])])
                         )]
                     }
                     return command["message"]?.stringValue?.hasPrefix("/databricks-model-services") == true ? [] : [TestPiTransport.response(id: id)]
@@ -515,7 +521,11 @@ import os
             let agentURL = try PiAgentDirectoryLocator(applicationSupportURL: pi.rootURL).agentURL()
             try PiProviderConfiguration.write(
                 PiProviderConfiguration.databricksProviders(
-                    PiProviderConfiguration.databricksModels(workspaceURL: workspaceURL, providerID: "own.cloud.databricks.com", isProviderAccount: true),
+                    PiProviderConfiguration.databricksModels(
+                        workspaceURL: workspaceURL,
+                        providerID: "own.cloud.databricks.com",
+                        isProviderAccount: true
+                    ),
                     choices: [:],
                     workspaceURL: workspaceURL,
                     providerID: "own.cloud.databricks.com"
@@ -571,7 +581,10 @@ import os
 
             // A saved model that is gone falls back to the first listed one, which is the account's own.
             let listed = try await pi.service.models()
-            #expect(listed.map(\.model) == ["own.cloud.databricks.com/system.ai.claude-sonnet-5-5", "dbc-1.cloud.databricks.com/system.ai.claude-opus-5-5"])
+            #expect(listed.map(\.model) == [
+                "own.cloud.databricks.com/system.ai.claude-sonnet-5-5",
+                "dbc-1.cloud.databricks.com/system.ai.claude-opus-5-5",
+            ])
             let request = CodexAppServerRequest(
                 model: "own.cloud.databricks.com/system.ai.claude-haiku-5-5",
                 developerInstructions: "",
@@ -787,15 +800,47 @@ import os
             #expect(UUID(uuidString: launch.environment["DAHLIA_PI_DEVICE_ID"] ?? "") != nil)
         }
 
-        @Test
-        func signOutClosesTheAccountsProcesses() async throws {
+        @Test(arguments: [false, true])
+        func signOutPreservesRunningChatsAndSummaries(mcp: Bool) async throws {
             let pi = TestPiRuntime { _ in TestPiTransport() }
             let cwd = FileManager.default.temporaryDirectory
             let local = try await pi.service.connect(.init(mode: .chat, cwd: cwd))
+            let summary = try await pi.service.connect(.init(mode: .summary, cwd: cwd))
 
-            try await pi.service.signOut(.openai)
+            if mcp {
+                try await pi.service.signOut(AgentMCPProvider(workspaceURL: #require(URL(string: "https://other.example.com"))))
+            } else {
+                try await pi.service.signOut(.openai)
+            }
 
-            #expect(await !local.isOpen)
+            #expect(await local.isOpen)
+            #expect(await summary.isOpen)
+            await pi.service.shutdown()
+        }
+
+        @Test(arguments: ["subscription", "workspace", "service"])
+        func reauthenticationPreservesRunningChatsAndSummaries(kind: String) async throws {
+            let pi = TestPiRuntime { _ in
+                TestPiTransport { command in
+                    guard command["type"]?.stringValue == "prompt" else { return [] }
+                    let message = command["message"]?.stringValue ?? ""
+                    let prefix = message.hasPrefix("/dahlia-login") ? "dahlia:"
+                        : message.hasPrefix("/databricks-connection-login") ? "databricks:connection_" : "databricks:"
+                    return [TestPiTransport.notify(prefix + "login_succeeded")]
+                }
+            }
+            let cwd = FileManager.default.temporaryDirectory
+            let chat = try await pi.service.connect(.init(mode: .chat, cwd: cwd))
+            let summary = try await pi.service.connect(.init(mode: .summary, cwd: cwd))
+            let provider = try AgentMCPProvider(workspaceURL: #require(URL(string: "https://other.example.com")))
+            switch kind {
+            case "subscription": try await pi.service.signIn(.anthropic) { _ in true }
+            case "workspace": try await pi.service.signIn(provider) { _ in true }
+            default: try await pi.service.signInToService("system.ai.github", of: provider) { _ in true }
+            }
+            #expect(await chat.isOpen)
+            #expect(await summary.isOpen)
+            await pi.service.shutdown()
         }
 
         @Test

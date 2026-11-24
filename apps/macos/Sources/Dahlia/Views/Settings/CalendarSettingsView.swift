@@ -125,8 +125,7 @@ struct CalendarSettingsView: View {
                     ) {
                         googleCalendarContent(for: .google)
                     }
-                    // shortcut: the account uses only its oldest Databricks connection; list each once each has its own route.
-                    if let connection = workspaceSettings.databricksConnections.first {
+                    ForEach(workspaceSettings.databricksConnections) { connection in
                         let provider = GoogleCalendarProvider.databricks(connectionID: connection.id)
                         providerRow(
                             id: connection.id.uuidString,

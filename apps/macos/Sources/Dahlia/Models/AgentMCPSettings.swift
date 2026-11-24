@@ -66,6 +66,7 @@ struct AgentMCPProvider: Codable, Hashable, Identifiable, Sendable {
 
 /// The MCP servers registered for one account, kept in app defaults. Credentials are not stored here.
 struct AgentMCPSettings: Codable, Equatable, Sendable {
+    private static let removedProvidersKey = "agentMCPs.removedProviderAccounts"
     var providers: [AgentMCPProvider] = []
     var servers: [AgentMCPServer] = []
     /// Each provider's MCP services as last listed, keyed by provider ID, so Settings shows them before listing again.
@@ -88,11 +89,44 @@ struct AgentMCPSettings: Codable, Equatable, Sendable {
                 .filter { !$0.value.isEmpty }
             if !manual.isEmpty { settings.manualServices = manual }
         }
+        settings.removeProviders(Set(defaults.stringArray(forKey: removedProvidersKey) ?? []))
         return settings
     }
 
     func save(defaults: UserDefaults = .standard) {
-        defaults.set(try? JSONEncoder().encode(self), forKey: Self.defaultsKey())
+        // A settings window or in-flight listing may still hold a snapshot from before account removal.
+        var current = self
+        current.removeProviders(Set(defaults.stringArray(forKey: Self.removedProvidersKey) ?? []))
+        defaults.set(try? JSONEncoder().encode(current), forKey: Self.defaultsKey())
+    }
+
+    /// Retires every registration before removing the app credential. Retained Pi auth stays inert, even if a stale
+    /// settings snapshot is saved later. No Pi process or credential-file mutation is required.
+    static func removeProviderAccount(_ id: String, agentURL: URL, defaults: UserDefaults = .standard) throws {
+        var removed = Set(defaults.stringArray(forKey: removedProvidersKey) ?? [])
+        removed.insert(id)
+        defaults.set(removed.sorted(), forKey: removedProvidersKey)
+        let settings = load(defaults: defaults)
+        settings.save(defaults: defaults)
+        guard FileManager.default.fileExists(atPath: agentURL.path) else { return }
+        try PiProviderConfiguration.updateProviders(agentURL: agentURL) { $0[id] = nil }
+        try PiProviderConfiguration.writeMCPServers(settings.piServers, agentURL: agentURL)
+    }
+
+    /// An explicitly added service may use the host again after it has been connected as an app provider account.
+    static func allowProviderAccount(_ id: String, defaults: UserDefaults = .standard) {
+        let removed = (defaults.stringArray(forKey: removedProvidersKey) ?? []).filter { $0 != id }
+        defaults.set(removed, forKey: removedProvidersKey)
+    }
+
+    private mutating func removeProviders(_ ids: Set<String>) {
+        providers.removeAll { ids.contains($0.id) }
+        servers.removeAll { $0.providerID.map(ids.contains) == true }
+        for id in ids {
+            listedServices?[id] = nil
+            serviceComments?[id] = nil
+            manualServices?[id] = nil
+        }
     }
 
     func provider(id: String) -> AgentMCPProvider? {

@@ -18,8 +18,10 @@ struct SingleAccountMigration {
     var dbQueue: any DatabaseWriter
     var locator: PiAgentDirectoryLocator
     var defaults: UserDefaults
-    var loadSecret: (String) -> String?
-    var saveSecret: (String, String) -> Void
+    var loadSecret: (String) throws -> String?
+    var saveSecret: (String, String) throws -> Void
+    var recordingRoot: URL = BatchAudioStorage.managedRootURL
+    var copyItem: (URL, URL) throws -> Void = { try FileManager.default.copyItem(at: $0, to: $1) }
 
     /// Runs off MainActor: it copies files and reads the Keychain.
     @concurrent
@@ -28,8 +30,8 @@ struct SingleAccountMigration {
             dbQueue: dbQueue,
             locator: PiAgentDirectoryLocator(),
             defaults: .standard,
-            loadSecret: { KeychainService.load(key: $0) },
-            saveSecret: { try? KeychainService.save(key: $0, value: $1) }
+            loadSecret: { try KeychainService.loadOrThrow(key: $0) },
+            saveSecret: { try KeychainService.save(key: $0, value: $1) }
         ).run()
     }
 
@@ -39,7 +41,7 @@ struct SingleAccountMigration {
             try copyAgentFiles(from: source)
             if let source {
                 copySettings(from: source)
-                copySecrets(from: source)
+                try copySecrets(from: source)
             }
             // The copied settings name the legacy provider ID again, so it is renamed again.
             defaults.removeObject(forKey: Self.providerIDsKey)
@@ -49,6 +51,7 @@ struct SingleAccountMigration {
             try db.execute(sql: "UPDATE workspaces SET databricksConnectionId = NULL WHERE databricksConnectionId IS NOT NULL")
             try Self.moveServerWorkspaces(in: db)
         }
+        try adoptLocalRecordingArchives()
         defaults.set(true, forKey: Self.completedKey)
         try renameLegacyProviderID(source: source)
     }
@@ -90,7 +93,10 @@ struct SingleAccountMigration {
             let destination = target.appending(path: item.lastPathComponent)
             let isDirectory = (try? item.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true
             if !fileManager.fileExists(atPath: destination.path) {
-                try fileManager.copyItem(at: item, to: destination)
+                let temporary = target.appending(path: ".migration-copy-\(UUID.v7().uuidString)")
+                defer { try? fileManager.removeItem(at: temporary) }
+                try copyItem(item, temporary)
+                try fileManager.moveItem(at: temporary, to: destination)
             } else if item.lastPathComponent == "auth.json", !isDirectory {
                 try mergeSignIns(item, into: destination)
             } else if isDirectory, !isSkills {
@@ -134,11 +140,11 @@ struct SingleAccountMigration {
         if owner != nil { defaults.set(Self.accountKey, forKey: ownerKey) }
     }
 
-    private func copySecrets(from source: UUID) {
+    private func copySecrets(from source: UUID) throws {
         let databricks = source.uuidString.lowercased()
         for variable in PiLaunchSettings.load(accountKey: databricks, defaults: defaults).variables where variable.isSecret {
-            guard let value = loadSecret(PiLaunchSettings.secretKey(accountKey: databricks, id: variable.id)) else { continue }
-            saveSecret(PiLaunchSettings.secretKey(id: variable.id), value)
+            guard let value = try loadSecret(PiLaunchSettings.secretKey(accountKey: databricks, id: variable.id)) else { continue }
+            try saveSecret(PiLaunchSettings.secretKey(id: variable.id), value)
         }
     }
 
@@ -248,6 +254,29 @@ struct SingleAccountMigration {
         UPDATE workspaces SET generationSettings = json_set(generationSettings, '$.processing.location', 'local')
         WHERE json_valid(generationSettings) AND json_extract(generationSettings, '$.processing.location') = 'remote';
         """)
+    }
+
+    /// A verified Server upload may still have its prepared audio on this Mac after the PCM segments were purged.
+    private func adoptLocalRecordingArchives() throws {
+        let archives = try dbQueue.read { db in
+            try RecordingArchiveRecord.filter(Column("connectionId") != nil && Column("preparedJSON") != "{}").fetchAll(db)
+        }
+        for archive in archives {
+            guard let prepared = try? SyncJSON.decoder.decode([String: RecordingArchiveEncoder.Prepared].self, from: Data(archive.preparedJSON.utf8)),
+                  !prepared.isEmpty,
+                  prepared.allSatisfy({ name, file in
+                      guard RecordingAudioSource(audioSource: name) != nil,
+                            let url = BatchAudioStorage.safeURL(baseURL: recordingRoot, relativePath: file.relativePath)
+                      else { return false }
+                      return (try? RecordingArchiveEncoder.checksum(url)) == file.checksum
+                  }) else { continue }
+            try dbQueue.write { db in
+                try db.execute(sql: """
+                UPDATE recording_archives SET connectionId = NULL, state = 'saved'
+                WHERE sessionId = ? AND connectionId = ? AND preparedJSON = ?
+                """, arguments: [archive.sessionId, archive.connectionId, archive.preparedJSON])
+            }
+        }
     }
 
     /// Every table that records an account moves the Databricks account's rows to the account. A row keyed by account

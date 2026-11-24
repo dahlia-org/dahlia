@@ -54,9 +54,9 @@ import Security
 
         @Test
         func authorizationRequestsOnlyCalendarScopesWithoutEarlierGrants() throws {
-            let url = GoogleSignInAdapter.makeAuthorizationURL(
+            let url = try GoogleSignInAdapter.makeAuthorizationURL(
                 clientID: "client-id",
-                redirectURL: try #require(URL(string: "http://127.0.0.1:8080/callback")),
+                redirectURL: #require(URL(string: "http://127.0.0.1:8080/callback")),
                 codeChallenge: "challenge",
                 state: "state",
                 scopes: GoogleOAuthScope.authorizationScopes(for: GoogleOAuthScope.calendar)
@@ -93,6 +93,19 @@ import Security
             let committed = await worker.performIfCurrent(for: .calendar, generation: generation) {}
 
             #expect(!committed)
+        }
+
+        @Test
+        func sharedGoogleSignInRejectsAnOlderRefreshFromEitherService() async {
+            let worker = GoogleKeychainWorker()
+            let (_, previous) = await worker.snapshot(for: .calendar) {}
+            #expect(await worker.performIfCurrent(for: .drive, generation: previous, replacingSession: true) {})
+            #expect(await worker.performIfCurrent(for: .calendar, generation: previous) {} == false)
+            #expect(await worker.performIfCurrent(for: .drive, generation: previous) {} == false)
+            let (_, current) = await worker.snapshot(for: .calendar) {}
+            #expect(await worker.performIfCurrent(for: .calendar, generation: current) {})
+            await worker.beginDisconnect(for: .drive)
+            #expect(await worker.performIfCurrent(for: .calendar, generation: current, replacingSession: true) {} == false)
         }
 
         @Test

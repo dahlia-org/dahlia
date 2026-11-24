@@ -160,7 +160,9 @@ actor DatabricksOAuthService {
     }
 
     func remove(connectionID: UUID) throws {
-        _ = try connection(id: connectionID)
+        let connection = try connection(id: connectionID)
+        // A promoted legacy gateway must never fall back to Pi's retained OAuth after its app credential goes.
+        try storage.removeProviderRegistrations(connection)
         generations[connectionID] = UUID()
         pending[connectionID]?.task.cancel()
         pending[connectionID] = nil

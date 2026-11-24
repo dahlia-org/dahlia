@@ -1,4 +1,5 @@
 #if canImport(Testing)
+    import DahliaMeetingAccess
     import DahliaRuntimeSupport
     import Foundation
     import GRDB
@@ -7,6 +8,50 @@
 
     @MainActor
     struct WorkspaceDeletionTests {
+        @Test(arguments: [false, true])
+        func transferPreservesUnavailableContentAndRevisionState(rollsBack: Bool) async throws {
+            let database = try AppDatabaseManager(path: ":memory:")
+            let source = WorkspaceRecord(id: .v7(), path: nil, name: "Source", createdAt: .now, lastOpenedAt: .now)
+            let destination = WorkspaceRecord(id: .v7(), path: nil, name: "Destination", createdAt: .now, lastOpenedAt: .now)
+            let meeting = MeetingRecord(id: .v7(), workspaceId: source.id, name: "Unavailable", createdAt: .now, updatedAt: .now)
+            try await database.dbQueue.write { db in
+                try source.insert(db)
+                try destination.insert(db)
+                try meeting.insert(db)
+                for entity in ["transcript", "summary"] {
+                    try db.execute(sql: """
+                    INSERT INTO sync_content_state(workspace_id, entity, entityId, complete, contentCount, residentRevision)
+                    VALUES (?, ?, ?, 0, 4, 1)
+                    """, arguments: [source.id, entity, meeting.id])
+                    try db.execute(sql: """
+                    INSERT INTO sync_entity_state(workspace_id, entity, entityId, confirmedRevision) VALUES (?, ?, ?, 2)
+                    """, arguments: [source.id, entity, meeting.id])
+                }
+                if rollsBack {
+                    try db.execute(sql: "CREATE TEMP TRIGGER fail_delete BEFORE DELETE ON workspaces BEGIN SELECT RAISE(ABORT, 'test'); END")
+                }
+            }
+            do {
+                try await MeetingRepository(dbQueue: database.dbQueue).transferAndDeleteWorkspace(id: source.id, destinationID: destination.id)
+                #expect(!rollsBack)
+            } catch {
+                #expect(rollsBack)
+            }
+            try await database.dbQueue.read { db in
+                let expected = rollsBack ? source.id : destination.id
+                for entity in [TextContentEntity.transcript, .summary] {
+                    let availability = try TextContentAccess.availability(entity: entity, id: meeting.id, in: db)
+                    #expect(availability.state == .missing)
+                    #expect(availability.revision == 1 && availability.latestRevision == 2)
+                    #expect(throws: TextContentError.incomplete) { try TextContentAccess.requireComplete(entity: entity, id: meeting.id, in: db) }
+                }
+                #expect(try UUID.fetchOne(db, sql: "SELECT workspace_id FROM sync_content_state LIMIT 1") == expected)
+                #expect(try UUID.fetchOne(db, sql: "SELECT workspace_id FROM sync_entity_state LIMIT 1") == expected)
+                #expect(try TextContentAccess.transcriptCount(meetingId: meeting.id, in: db) == 4)
+                #expect(try Row.fetchAll(db, sql: "PRAGMA foreign_key_check").isEmpty)
+            }
+        }
+
         @Test(arguments: [false, true])
         func transferPreservesContentAndDisambiguatesNames(exportFolderExists: Bool) async throws {
             let database = try AppDatabaseManager(path: ":memory:")

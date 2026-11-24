@@ -19,6 +19,7 @@ struct DatabricksOAuthStorage: Sendable {
     var loadCredential: @Sendable (UUID) throws -> DatabricksOAuthCredential?
     var saveCredential: @Sendable (UUID, DatabricksOAuthCredential) throws -> Void
     var deleteCredential: @Sendable (UUID) throws -> Void
+    var removeProviderRegistrations: @Sendable (DatabricksConnection) throws -> Void = { _ in }
 
     /// Every storage of one database shares this, so the MainActor views that read it (Calendar's proxy) and each
     /// token request skip SQLite. Only `saveConnections` writes Databricks rows; each save bumps `generation`, so a
@@ -86,6 +87,12 @@ struct DatabricksOAuthStorage: Sendable {
             },
             deleteCredential: { id in
                 try KeychainService.deleteOrThrow(key: prefix + "." + id.uuidString)
+            },
+            removeProviderRegistrations: { connection in
+                guard let url = URL(string: connection.host) else { throw AIConfigurationError.invalidDatabricksWorkspaceURL }
+                try AgentMCPSettings.removeProviderAccount(
+                    AgentMCPProvider.id(for: url), agentURL: PiAgentDirectoryLocator().sharedAgentURL
+                )
             }
         )
     }

@@ -1,10 +1,66 @@
 #if canImport(Testing)
-    @testable import Dahlia
     import Foundation
     import GRDB
     import Testing
+    @testable import Dahlia
 
     struct ProviderAccountTests {
+        @Test
+        func removingPromotedProviderRetiresRegistrationDespiteStaleSaves() throws {
+            let suite = "RemovedProvider.\(UUID())"
+            let defaults = try #require(UserDefaults(suiteName: suite))
+            let root = FileManager.default.temporaryDirectory.appending(path: suite)
+            try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+            defer {
+                defaults.removePersistentDomain(forName: suite)
+                try? FileManager.default.removeItem(at: root)
+            }
+            let removed = try AgentMCPProvider(workspaceURL: #require(URL(string: "https://removed.example.com")))
+            let kept = try AgentMCPProvider(workspaceURL: #require(URL(string: "https://kept.example.com")))
+            let stale = AgentMCPSettings(
+                providers: [removed, kept],
+                servers: [removed, kept].map { .init(id: .v7(), name: $0.id, providerID: $0.id, service: "system.ai.github") },
+                listedServices: [removed.id: ["system.ai.github"]]
+            )
+            stale.save(defaults: defaults)
+            try PiProviderConfiguration.write([removed.id: .object([:]), kept.id: .object([:])], agentURL: root)
+            try PiProviderConfiguration.writeMCPServers(stale.piServers, agentURL: root)
+            let auth = Data(#"{"removed.example.com":{"type":"oauth","refresh":"synthetic"}}"#.utf8)
+            try auth.write(to: root.appending(path: "auth.json"))
+
+            try AgentMCPSettings.removeProviderAccount(removed.id, agentURL: root, defaults: defaults)
+            // An old window or service listing cannot restore the retired host on its next save.
+            stale.save(defaults: defaults)
+            let saved = AgentMCPSettings.load(defaults: defaults)
+            #expect(saved.providers == [kept])
+            #expect(saved.servers.map(\.providerID) == [kept.id])
+            #expect(saved.listedServices?[removed.id] == nil)
+            let models = try JSONDecoder().decode(JSONValue.self, from: Data(contentsOf: root.appending(path: "models.json")))
+            #expect(models.objectValue?["providers"]?.objectValue?.keys.sorted() == [kept.id])
+            #expect(try Data(contentsOf: root.appending(path: "auth.json")) == auth)
+            let mcp = try JSONDecoder().decode(JSONValue.self, from: Data(contentsOf: root.appending(path: "mcp.json")))
+            #expect(mcp.objectValue?["mcpServers"]?.objectValue?.keys.sorted() == [kept.id])
+
+            AgentMCPSettings.allowProviderAccount(removed.id, defaults: defaults)
+            stale.save(defaults: defaults)
+            #expect(AgentMCPSettings.load(defaults: defaults).providers == [removed, kept])
+        }
+
+        @Test
+        func calendarChoiceCanUseAnyDatabricksConnection() throws {
+            let suite = "CalendarProviderChoice.\(UUID())"
+            let defaults = try #require(UserDefaults(suiteName: suite))
+            defer { defaults.removePersistentDomain(forName: suite) }
+            let first = try ProviderAccountDirectory.Connection(id: .v7(), workspaceURL: #require(URL(string: "https://first.example.com")))
+            let second = try ProviderAccountDirectory.Connection(id: .v7(), workspaceURL: #require(URL(string: "https://second.example.com")))
+            ProviderAccountDirectory.$connections.withValue([first, second]) {
+                defaults.set(second.id.uuidString, forKey: GoogleCalendarProvider.userDefaultsKey)
+                #expect(GoogleCalendarProvider.current(defaults: defaults) == .databricks(connectionID: second.id))
+                defaults.set("google", forKey: GoogleCalendarProvider.userDefaultsKey)
+                #expect(GoogleCalendarProvider.current(defaults: defaults) == .google)
+            }
+        }
+
         @Test
         func signingInAgainKeepsTheNameTheUserGaveTheConnection() throws {
             let database = try AppDatabaseManager(path: ":memory:")
@@ -27,10 +83,13 @@
         }
 
         @Test
-        func theAppsAccountMapsToTheProviderAccountsItsFeaturesUse() {
+        func theAppsAccountMapsToTheProviderAccountsItsFeaturesUse() throws {
             let databricksID = UUID.v7()
             let dahliaID = UUID.v7()
-            let connection = ProviderAccountDirectory.Connection(id: databricksID, workspaceURL: URL(string: "https://dbc.cloud.databricks.com")!)
+            let connection = try ProviderAccountDirectory.Connection(
+                id: databricksID,
+                workspaceURL: #require(URL(string: "https://dbc.cloud.databricks.com"))
+            )
 
             #expect(ProviderAccountDirectory.$connections.withValue([]) { ProviderAccountDirectory.accounts.isEmpty })
             ProviderAccountDirectory.$connections.withValue([connection]) {
@@ -63,13 +122,21 @@
         }
 
         @Test
-        func eachConnectionIsAProviderNamedByItsHostAndTheAccountUsesThemAll() {
-            let first = ProviderAccountDirectory.Connection(id: .v7(), workspaceURL: URL(string: "https://dbc-1.cloud.databricks.com")!)
-            let second = ProviderAccountDirectory.Connection(id: .v7(), workspaceURL: URL(string: "https://dbc-2.cloud.databricks.com:8443")!)
+        func eachConnectionIsAProviderNamedByItsHostAndTheAccountUsesThemAll() throws {
+            let first = try ProviderAccountDirectory.Connection(id: .v7(), workspaceURL: #require(URL(string: "https://dbc-1.cloud.databricks.com")))
+            let second = try ProviderAccountDirectory.Connection(
+                id: .v7(),
+                workspaceURL: #require(URL(string: "https://dbc-2.cloud.databricks.com:8443"))
+            )
             ProviderAccountDirectory.$connections.withValue([first, second]) {
                 #expect(ProviderAccountDirectory.accounts == [.databricks(connectionID: first.id), .databricks(connectionID: second.id)])
                 #expect(PiProviderConfiguration.bridgedProviderIDs == ["dbc-1.cloud.databricks.com", "dbc-2.cloud.databricks.com:8443"])
-                #expect(PiProviderConfiguration.providerIDs == ["openai", "anthropic", "dbc-1.cloud.databricks.com", "dbc-2.cloud.databricks.com:8443"])
+                #expect(PiProviderConfiguration.providerIDs == [
+                    "openai",
+                    "anthropic",
+                    "dbc-1.cloud.databricks.com",
+                    "dbc-2.cloud.databricks.com:8443",
+                ])
                 #expect(ProviderAccountDirectory.account(piProviderID: "dbc-2.cloud.databricks.com:8443") == .databricks(connectionID: second.id))
                 #expect(ProviderAccountDirectory.account(piProviderID: "openai") == nil)
                 #expect(PiProviderConfiguration.isOwnProvider("dbc-1.cloud.databricks.com"))

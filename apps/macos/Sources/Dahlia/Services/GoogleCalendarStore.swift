@@ -119,6 +119,11 @@ final class GoogleCalendarStore: ObservableObject {
         await restoreSessionIfNeeded(startedByRefreshTask: false)
     }
 
+    /// Startup constructs the store before the account migration copies its saved calendar selection.
+    func reloadSelectedCalendarsAfterMigration() {
+        selectedCalendarIDs = Self.loadSelectedCalendarIDs(from: userDefaults)
+    }
+
     private func restoreSessionIfNeeded(startedByRefreshTask: Bool) async {
         guard !isDisconnecting, !didAttemptRestore else { return }
         didAttemptRestore = true

@@ -1,11 +1,113 @@
 #if canImport(Testing)
-    @testable import Dahlia
     import DahliaRuntimeSupport
     import Foundation
     import GRDB
     import Testing
+    @testable import Dahlia
 
     struct SingleAccountMigrationTests {
+        enum CopyFailure: Error { case interrupted }
+
+        @Test @MainActor
+        func migrationFailureBlocksStartupUntilAFreshLaunchCanRetry() async throws {
+            let fixture = try await Task.detached { try Fixture() }.value
+            let startup = AppStartupModel()
+            var activated = false
+            await startup.start(onReady: { activated = true }) {
+                try await Task.detached {
+                    try SingleAccountMigration(
+                        dbQueue: fixture.database.dbQueue, locator: fixture.locator, defaults: fixture.defaults,
+                        loadSecret: { _ in throw CopyFailure.interrupted }, saveSecret: { _, _ in }
+                    ).run()
+                }.value
+                Issue.record("Account consumers must not run after migration failure")
+                return nil
+            }
+            #expect(!activated)
+            guard case .failed(_, canContinue: false) = startup.state else {
+                Issue.record("Expected blocking migration failure")
+                return
+            }
+            let retry = AppStartupModel()
+            await retry.start(onReady: { activated = true }) {
+                try await Task.detached { try fixture.run() }.value
+                return nil
+            }
+            #expect(retry.isReady && activated)
+        }
+
+        @Test
+        func interruptedSkillCopyIsNotPublishedAndRetryCopiesTheWholeSkill() throws {
+            let fixture = try Fixture()
+            let migration = SingleAccountMigration(
+                dbQueue: fixture.database.dbQueue, locator: fixture.locator, defaults: fixture.defaults,
+                loadSecret: { fixture.secrets[$0] }, saveSecret: { fixture.secrets[$0] = $1 },
+                copyItem: { source, target in
+                    if source.lastPathComponent == "skills" {
+                        try FileManager.default.createDirectory(at: target.appending(path: "shared"), withIntermediateDirectories: true)
+                        try Data("partial".utf8).write(to: target.appending(path: "shared/SKILL.md"))
+                        throw CopyFailure.interrupted
+                    }
+                    try FileManager.default.copyItem(at: source, to: target)
+                }
+            )
+            #expect(throws: CopyFailure.self) { try migration.run() }
+            #expect(!fixture.defaults.bool(forKey: SingleAccountMigration.completedKey))
+            #expect(fixture.read("agent/skills/shared/SKILL.md") == nil)
+            try fixture.run()
+            #expect(fixture.read("agent/skills/shared/SKILL.md") == "databricks skill")
+            #expect(fixture.read("agent/skills/notes/SKILL.md") == "local only")
+        }
+
+        @Test(arguments: [false, true])
+        func failedSecretReadOrWriteLeavesMigrationRetryable(failRead: Bool) throws {
+            let fixture = try Fixture()
+            let migration = SingleAccountMigration(
+                dbQueue: fixture.database.dbQueue, locator: fixture.locator, defaults: fixture.defaults,
+                loadSecret: { key in
+                    if failRead { throw CopyFailure.interrupted }
+                    return fixture.secrets[key]
+                },
+                saveSecret: { _, _ in throw CopyFailure.interrupted }
+            )
+            #expect(throws: CopyFailure.self) { try migration.run() }
+            #expect(!fixture.defaults.bool(forKey: SingleAccountMigration.completedKey))
+            try fixture.run()
+            #expect(fixture.secrets[PiLaunchSettings.secretKey(id: fixture.secretID)] == "secret")
+            #expect(fixture.defaults.bool(forKey: SingleAccountMigration.completedKey))
+        }
+
+        @Test(arguments: [true, false])
+        func serverArchivesAreAdoptedOnlyWhenTheirAudioIsVerifiedOnThisMac(filePresent: Bool) throws {
+            let fixture = try Fixture()
+            let root = fixture.root.appending(path: "audio")
+            try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+            let file = root.appending(path: "archive.m4a")
+            try Data("prepared recording".utf8).write(to: file)
+            let prepared = try RecordingArchiveEncoder.Prepared(
+                relativePath: "archive.m4a", size: 18, checksum: RecordingArchiveEncoder.checksum(file),
+                manifest: .init(sampleRate: 16000, frameCount: 16000, ranges: [])
+            )
+            if !filePresent { try FileManager.default.removeItem(at: file) }
+            let sessionID = UUID.v7()
+            try fixture.database.dbQueue.write { db in
+                let workspace = try #require(try WorkspaceRecord.fetchOne(db))
+                let meeting = MeetingRecord(id: .v7(), workspaceId: workspace.id, projectId: nil, name: "M", createdAt: .now, updatedAt: .now)
+                try meeting.insert(db)
+                try RecordingSessionRecord(id: sessionID, meetingId: meeting.id, startedAt: .now, offsetSeconds: 0, createdAt: .now, updatedAt: .now)
+                    .insert(db)
+                try RecordingArchiveRecord(
+                    sessionId: sessionID, meetingId: meeting.id, workspaceId: workspace.id, connectionId: fixture.connectionID,
+                    preparedJSON: String(decoding: SyncJSON.encoder.encode(["mic": prepared]), as: UTF8.self), state: "verified"
+                ).insert(db)
+            }
+            try SingleAccountMigration(
+                dbQueue: fixture.database.dbQueue, locator: fixture.locator, defaults: fixture.defaults,
+                loadSecret: { fixture.secrets[$0] }, saveSecret: { fixture.secrets[$0] = $1 }, recordingRoot: root
+            ).run()
+            #expect(try fixture.database.dbQueue.read { try RecordingArchiveRecord.isAvailable(sessionId: sessionID, in: $0) } == filePresent)
+        }
+
         /// A Mac that used a Databricks account, with a little Local Account data too.
         final class Fixture: @unchecked Sendable {
             // Only the test's own task touches these.
@@ -70,7 +172,7 @@
                 defaults.set(Data("inference".utf8), forKey: "accountInferenceSettings.databricks.\(key)")
                 let secretID = UUID()
                 let settings = PiLaunchSettings(variables: [.init(id: secretID, name: "TOKEN", isSecret: true)])
-                defaults.set(try JSONEncoder().encode(settings), forKey: PiLaunchSettings.defaultsKey(accountKey: key))
+                try defaults.set(JSONEncoder().encode(settings), forKey: PiLaunchSettings.defaultsKey(accountKey: key))
                 secrets[PiLaunchSettings.secretKey(accountKey: key, id: secretID)] = "secret"
                 self.secretID = secretID
             }

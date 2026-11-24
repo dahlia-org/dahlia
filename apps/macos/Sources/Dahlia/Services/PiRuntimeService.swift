@@ -464,7 +464,7 @@ actor PiRuntimeService {
     // MARK: MCP sign-in
 
     /// Signs in to a Unity AI Gateway with the extension's `/databricks-login`; Pi keeps the credential in the account's
-    /// `auth.json`. Open chats stop, so the next turn starts a process that connects with it.
+    /// `auth.json`. Chats reopen after their active turns finish to use the changed credential.
     func signIn(
         _ mcpProvider: AgentMCPProvider,
         openURL: @escaping @Sendable (URL) async -> Bool
@@ -475,7 +475,7 @@ actor PiRuntimeService {
             environment: [:],
             openURL: openURL
         )
-        await closeAll(mode: .chat)
+        await credentialsDidChange()
         // The workspace's models become available.
         gatewayRefresh = nil
         gatewayListings[mcpProvider.id] = nil
@@ -483,8 +483,7 @@ actor PiRuntimeService {
     }
 
     /// Signs the user in to the connection behind an MCP service (GitHub behind `system.ai.github`, for example), which
-    /// the gateway needs before it serves the service's tools. The workspace's own sign-in stays as it is; open chats
-    /// stop so the next turn connects to the service again.
+    /// the gateway needs before it serves the service's tools. Chats reopen after their active turns finish.
     func signInToService(
         _ service: String,
         of mcpProvider: AgentMCPProvider,
@@ -496,7 +495,7 @@ actor PiRuntimeService {
             environment: [:],
             openURL: openURL
         )
-        await closeAll(mode: .chat)
+        await credentialsDidChange()
     }
 
     /// Removes what Pi and the user kept signed in for an account that signs out: its `auth.json` and its secret
@@ -510,16 +509,16 @@ actor PiRuntimeService {
     }
 
     /// Pi removes a credential without its provider registered, so the generic sign-out serves MCP sign-ins too.
-    /// Open chats stop even if the sign-out fails, since the workspace's servers are no longer registered.
+    /// Chats reopen after their active turns finish, even if the sign-out fails.
     func signOut(_ mcpProvider: AgentMCPProvider) async throws {
         do {
             try await logout(providerID: mcpProvider.id)
         } catch {
-            await closeAll(mode: .chat)
+            await credentialsDidChange()
             invalidateModels()
             throw error
         }
-        await closeAll(mode: .chat)
+        await credentialsDidChange()
         invalidateModels()
     }
 
@@ -637,10 +636,10 @@ actor PiRuntimeService {
         _ = try result.get()
     }
 
-    /// Running chats reopen with the new credentials on their next turn, and model pickers reload.
+    /// Running turns and summaries finish; idle chats reopen for their next turn, and model pickers reload.
     private func credentialsDidChange() async {
-        await closeAll()
         invalidateModels()
+        await PiChatService.shared.providerAccountsDidChange()
     }
 
     nonisolated static func notification(_ event: JSONValue) -> String? {

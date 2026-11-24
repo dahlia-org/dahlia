@@ -142,11 +142,13 @@ actor GoogleKeychainWorker {
     func performIfCurrent(
         for sessionKind: GoogleAuthSessionKind,
         generation expectedGeneration: UInt64,
+        replacingSession: Bool = false,
         _ operation: @Sendable () throws -> Void
     ) rethrows -> Bool {
         guard activeDisconnectCounts[sessionKind.keychainKey, default: 0] == 0,
               generations[sessionKind.keychainKey, default: 0] == expectedGeneration else { return false }
         try operation()
+        if replacingSession { generations[sessionKind.keychainKey, default: 0] &+= 1 }
         return true
     }
 
@@ -281,19 +283,19 @@ final class GoogleSignInAdapter: NSObject, GoogleSignInProviding {
         let session = StoredGoogleSession(
             account: account,
             accessToken: tokenResponse.accessToken,
-            refreshToken: tokenResponse.refreshToken ?? previousSessionLookup?.session.refreshToken,
+            refreshToken: tokenResponse
+                .refreshToken ?? (previousSessionLookup?.session.account.id == account.id ? previousSessionLookup?.session.refreshToken : nil),
             expirationDate: tokenResponse.expirationDate,
             grantedScopes: authorizationScopes
         )
-        guard await save(session, migrating: previousSessionLookup, generation: previousSessionSnapshot.generation) else {
+        guard await save(session, migrating: previousSessionLookup, generation: previousSessionSnapshot.generation, replacingSession: true) else {
             throw CancellationError()
         }
         clearDisconnectPending()
         guard await Self.keychainWorker.isCurrent(
             for: sessionKind,
-            generation: previousSessionSnapshot.generation
+            generation: previousSessionSnapshot.generation &+ 1
         ) else {
-            Self.markDisconnectPending(for: sessionKind)
             throw CancellationError()
         }
         guard !isDisconnectPending else {
@@ -355,11 +357,19 @@ final class GoogleSignInAdapter: NSObject, GoogleSignInProviding {
     private func save(
         _ session: StoredGoogleSession,
         migrating lookup: StoredGoogleSessionLookup?,
-        generation: UInt64
+        generation: UInt64,
+        replacingSession: Bool = false
     ) async -> Bool {
         let key = sessionKind.keychainKey
         let sessionKind = sessionKind
-        return await Self.save(session, key: key, migrating: lookup, sessionKind: sessionKind, generation: generation)
+        return await Self.save(
+            session,
+            key: key,
+            migrating: lookup,
+            sessionKind: sessionKind,
+            generation: generation,
+            replacingSession: replacingSession
+        )
     }
 
     private nonisolated static func save(
@@ -367,20 +377,21 @@ final class GoogleSignInAdapter: NSObject, GoogleSignInProviding {
         key: String,
         migrating _: StoredGoogleSessionLookup?,
         sessionKind: GoogleAuthSessionKind,
-        generation: UInt64
+        generation: UInt64,
+        replacingSession: Bool = false
     ) async -> Bool {
-        let operation: @Sendable () -> Void = {
-            saveStoredSession(session, key: key)
+        let operation: @Sendable () throws -> Void = {
+            try saveStoredSession(session, key: key)
         }
-        return await keychainWorker.performIfCurrent(for: sessionKind, generation: generation, operation)
+        return await (
+            try? keychainWorker.performIfCurrent(for: sessionKind, generation: generation, replacingSession: replacingSession, operation)
+        ) ??
+            false
     }
 
-    private nonisolated static func saveStoredSession(_ session: StoredGoogleSession, key: String) {
-        guard let data = try? JSONEncoder().encode(session),
-              let json = String(data: data, encoding: .utf8)
-        else { return }
-
-        try? KeychainService.save(key: key, value: json)
+    private nonisolated static func saveStoredSession(_ session: StoredGoogleSession, key: String) throws {
+        let data = try JSONEncoder().encode(session)
+        try KeychainService.save(key: key, value: String(decoding: data, as: UTF8.self))
     }
 
     private nonisolated static func loadStoredSession(key: String) -> StoredGoogleSession? {

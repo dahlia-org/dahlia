@@ -54,6 +54,7 @@ final class AgentMCPSettingsModel {
 
     /// Lists the account's Databricks provider accounts, so their MCPs can be added too.
     func loadAccountProviders() {
+        settings = AgentMCPSettings.load(defaults: defaults)
         let connections = ProviderAccountDirectory.accounts.compactMap(\.databricksConnectionID)
         accountProviders = ProviderAccountDirectory.databricksConnections()
             .filter { connections.contains($0.id) }
@@ -204,6 +205,7 @@ final class AgentMCPSettingsModel {
             if let error = added.nameError(name) { throw AgentMCPSettingsError(message: error) }
             added.servers.append(AgentMCPServer(id: .v7(), name: name, providerID: provider.id, service: service))
         }
+        if provider.isAccount { AgentMCPSettings.allowProviderAccount(provider.id, defaults: defaults) }
         settings = added
         settings.save(defaults: defaults)
     }

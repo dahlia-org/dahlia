@@ -13,6 +13,7 @@
                 get { connections.first }
                 set { connections = newValue.map { [$0] } ?? [] }
             }
+
             var credentials: [UUID: DatabricksOAuthCredential] = [:]
             var failSave = false
         }
@@ -41,6 +42,24 @@
         /// A non-first port proves the token exchange reuses the redirect URI the browser step chose.
         static let redirectURI = "http://localhost:8022"
         static let token = #"{"access_token":"access","refresh_token":"refresh","token_type":"Bearer","expires_in":3600}"#
+
+        @Test
+        func registrationCleanupFailureKeepsConnectionForRetry() async throws {
+            let connection = DatabricksConnection(id: .v7(), host: Self.host)
+            let memory = DatabricksTestStorage(connection: connection)
+            let fails = Mutex(true)
+            var storage = memory.storage
+            storage.removeProviderRegistrations = { removed in
+                #expect(removed.id == connection.id)
+                if fails.withLock({ $0 }) { throw CocoaError(.fileWriteNoPermission) }
+            }
+            let service = DatabricksOAuthService(storage: storage)
+            await #expect(throws: CocoaError.self) { try await service.remove(connectionID: connection.id) }
+            #expect(try await service.connections() == [connection])
+            fails.withLock { $0 = false }
+            try await service.remove(connectionID: connection.id)
+            #expect(try await service.connections().isEmpty)
+        }
 
         @Test
         func aWorkspaceLinkOrABareHostNormalizesToTheWorkspaceOrigin() throws {
@@ -353,9 +372,12 @@
             let session = makeSession { request in
                 if request.url!.path.contains(".well-known") { return (404, "") }
                 guard form(request)["grant_type"] == "refresh_token" else { return (200, Self.token) }
-                if refreshes.withLock({ $0 += 1; return $0 }) == 1 {
+                if refreshes.withLock({ $0 += 1
+                    return $0 }) == 1 {
                     startedContinuation.yield()
-                    for await _ in gate { break }
+                    for await _ in gate {
+                        break
+                    }
                 }
                 return (400, "")
             }
