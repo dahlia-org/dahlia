@@ -52,10 +52,12 @@ struct MainSidebarChatHistorySection: View {
                     )
                 }
                 .buttonStyle(.plain)
+                .listRowInsets(.vertical, 1.5)
                 .listRowSeparator(.hidden)
             }
 
             statusRow
+                .listRowInsets(.vertical, 1.5)
                 .listRowSeparator(.hidden)
         }
     }

@@ -68,9 +68,12 @@ struct MainSidebarOmnigentSection: View {
                         .accessibilityAddTraits(session.id == selectedSessionID ? .isSelected : [])
                     }
                     .buttonStyle(.plain)
+                    .listRowInsets(.vertical, 1.5)
                     .listRowSeparator(.hidden)
                 }
-                statusRow.listRowSeparator(.hidden)
+                statusRow
+                    .listRowInsets(.vertical, 1.5)
+                    .listRowSeparator(.hidden)
             }
         }
     }
