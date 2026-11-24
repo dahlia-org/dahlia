@@ -1,68 +1,41 @@
 import SwiftUI
 
+/// The app has one account, so the footer holds app-wide actions: the settings menu, unprocessed recordings, updates, and help.
 struct MainSidebarFooterView: View {
     @Environment(MainWindowNavigation.self) private var mainWindowNavigation
 
     let workspaces: [WorkspaceRecord]
     let currentWorkspace: WorkspaceRecord?
     var updateController: AppUpdateController
-    let onSelectWorkspace: (WorkspaceRecord) -> Void
     let unprocessedRecordingCount: Int
     let onShowUnprocessedRecordings: () -> Void
 
-    @State private var isAccountMenuHovered = false
+    @State private var isSettingsHovered = false
     @State private var isHelpHovered = false
     @State private var isMCPPresented = false
-    @State private var dahliaAccountController = DahliaCloudAccountController.shared
-    @State private var workspaceAISettings = WorkspaceAISettingsModel.shared
 
     var body: some View {
-        // Dahlia accounts are listed by their sign-in state; the app's one account is always the current one.
-        let signedInConnections = dahliaAccountController.connections.filter(\.isSignedIn)
         HStack(spacing: 4) {
-            MainSidebarAccountMenuButton(
-                connections: signedInConnections,
-                currentConnectionID: nil,
-                isLocalAccount: true,
-                onOpenSettings: showSettings,
-                onSelectAccount: selectAccount,
-                onAddAccount: { mainWindowNavigation.openDahliaSignIn() },
-                onAccountAction: accountAction,
-                unprocessedRecordingCount: unprocessedRecordingCount,
-                onShowUnprocessedRecordings: onShowUnprocessedRecordings
-            )
-            .disabled(workspaceAISettings.isSwitchingRuntime)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .frame(height: 44)
-            .background(
-                isAccountMenuHovered ? DahliaDesign.sidebarHighlightColor : .clear,
-                in: .rect(cornerRadius: DahliaDesign.Highlight.compactCornerRadius)
-            )
-            .contentShape(.rect(cornerRadius: DahliaDesign.Highlight.compactCornerRadius))
-            .onContinuousHover { phase in
-                isAccountMenuHovered = phase != .ended
-            }
-            .help(L10n.accountMenuDescription)
+            MainSidebarAccountMenuButton(onOpenSettings: { mainWindowNavigation.openSettings(category: nil) })
+                .footerMenuButtonStyle(isHovered: $isSettingsHovered, help: L10n.settings)
 
-            if workspaceAISettings.isSwitchingRuntime {
-                ProgressView()
-                    .controlSize(.small)
-                    .help(L10n.switchingAIAccount)
+            if unprocessedRecordingCount > 0 {
+                MainSidebarFooterIconButton(
+                    title: L10n.unprocessedRecordings,
+                    systemImage: "waveform.badge.exclamationmark",
+                    count: unprocessedRecordingCount,
+                    action: onShowUnprocessedRecordings
+                )
             }
+
+            Spacer(minLength: 0)
 
             if updateController.isUpdateAvailable {
                 MainSidebarUpdateBadge(updateController: updateController)
             }
 
-            MainSidebarHelpMenuButton(onOpenMCP: showMCP)
-                .frame(width: 30, height: 30)
-                .background(
-                    isHelpHovered ? DahliaDesign.sidebarHighlightColor : .clear,
-                    in: .rect(cornerRadius: DahliaDesign.Highlight.compactCornerRadius)
-                )
-                .contentShape(.rect(cornerRadius: DahliaDesign.Highlight.compactCornerRadius))
-                .help(L10n.help)
-                .onHover { isHelpHovered = $0 }
+            MainSidebarHelpMenuButton(onOpenMCP: { isMCPPresented = true })
+                .footerMenuButtonStyle(isHovered: $isHelpHovered, help: L10n.help)
         }
         .padding(.horizontal, 10)
         .frame(height: MainSidebarLayout.footerHeight)
@@ -78,30 +51,54 @@ struct MainSidebarFooterView: View {
             )
         }
     }
+}
 
-    private func showMCP() {
-        isMCPPresented = true
+private extension View {
+    /// The hover highlight and hit area of a footer button that opens an AppKit menu.
+    func footerMenuButtonStyle(isHovered: Binding<Bool>, help: String) -> some View {
+        frame(width: 30, height: 30)
+            .background(
+                isHovered.wrappedValue ? DahliaDesign.sidebarHighlightColor : .clear,
+                in: .rect(cornerRadius: DahliaDesign.Highlight.compactCornerRadius)
+            )
+            .contentShape(.rect(cornerRadius: DahliaDesign.Highlight.compactCornerRadius))
+            .help(help)
+            .onHover { isHovered.wrappedValue = $0 }
     }
+}
 
-    private func showSettings(_ category: SettingsCategory?) {
-        mainWindowNavigation.openSettings(category: category)
-    }
+private struct MainSidebarFooterIconButton: View {
+    let title: String
+    let systemImage: String
+    var count: Int?
+    let action: () -> Void
 
-    private func accountAction() {
-        mainWindowNavigation.openDahliaSignIn()
-    }
+    @State private var isHovered = false
 
-    /// The app has one account. Choosing it opens its oldest workspace when none is open, creating one on first use.
-    private func selectAccount(_ connection: DahliaAccountConnection?) {
-        guard connection == nil, currentWorkspace == nil else { return }
-        if let workspace = workspaces.min(by: { ($0.createdAt, $0.id.uuidString) < ($1.createdAt, $1.id.uuidString) }) {
-            onSelectWorkspace(workspace)
-            return
-        }
-        Task { @MainActor in
-            if let workspace = await WorkspaceAISettingsModel.shared.accountWorkspace() {
-                onSelectWorkspace(workspace)
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 3) {
+                Image(systemName: systemImage)
+                if let count {
+                    Text(count.formatted())
+                        .font(.dahliaSecondary)
+                        .monospacedDigit()
+                }
             }
+            .font(.dahliaBody)
+            .foregroundStyle(isHovered ? .primary : .secondary)
+            .padding(.horizontal, count == nil ? 0 : 6)
+            .frame(minWidth: 30, minHeight: 30)
+            .background(
+                isHovered ? DahliaDesign.sidebarHighlightColor : .clear,
+                in: .rect(cornerRadius: DahliaDesign.Highlight.compactCornerRadius)
+            )
+            .contentShape(.rect(cornerRadius: DahliaDesign.Highlight.compactCornerRadius))
         }
+        .buttonStyle(.plain)
+        .onHover { isHovered = $0 }
+        .help(title)
+        .accessibilityLabel(title)
+        .accessibilityValue(count.map { $0.formatted() } ?? "")
     }
 }

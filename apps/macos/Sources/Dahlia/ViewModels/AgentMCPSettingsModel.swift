@@ -74,8 +74,8 @@ final class AgentMCPSettingsModel {
         signedInProviderIDs = await (try? service.signedInProviderIDs()) ?? []
     }
 
-    /// Adds a workspace as a provider account: the app signs in and holds its credential, like the account menu's
-    /// sign-in. A workspace added before, whose sign-in Pi held, keeps its host, so its servers and models carry over.
+    /// Adds a workspace as a provider account: the app signs in and holds its credential, like the
+    /// Providers page. A workspace added before, whose sign-in Pi held, keeps its host, so its servers and models carry over.
     func addWorkspace(workspaceURL: String) async throws -> AgentMCPProvider {
         let url = try DatabricksOAuthService.shared.normalizedWorkspaceURL(workspaceURL)
         // Chat tells a workspace's provider from Pi's own (`openai`, `anthropic`) by the dot in its host.

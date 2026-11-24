@@ -97,7 +97,6 @@ struct DahliaApp: App {
                             mode: setupTourMode,
                             currentWorkspace: AppSettings.shared.currentWorkspace,
                             workspaceManagementModel: workspaceManagementModel,
-                            accountController: dahliaAccountController,
                             canComplete: { viewModel.canSwitchWorkspace },
                             onComplete: completeSetupTour
                         )
@@ -149,21 +148,11 @@ struct DahliaApp: App {
                         }
                     }
                 }
-                .disabled(mainWindowNavigation.isShowingDahliaSignIn || mainWindowNavigation.settingsModal != nil)
-                .accessibilityHidden(mainWindowNavigation.isShowingDahliaSignIn || mainWindowNavigation.settingsModal != nil)
+                .disabled(mainWindowNavigation.settingsModal != nil)
+                .accessibilityHidden(mainWindowNavigation.settingsModal != nil)
 
                 if let settingsModal = mainWindowNavigation.settingsModal {
                     settingsModal
-                }
-
-                if mainWindowNavigation.isShowingDahliaSignIn {
-                    // Dahlia Cloud and Server sign-in (`DahliaServerSignInView`) is hidden for now.
-                    DatabricksSignInView(
-                        showsLocalAccount: workspaceManagementModel.workspaces.isEmpty,
-                        onCancel: cancelDahliaSignIn,
-                        onContinueWithDatabricks: { _ in continueFromSignIn() },
-                        onContinueLocally: continueFromSignIn
-                    )
                 }
             }
             .modifier(DatabricksSignOutPresentation())
@@ -247,7 +236,6 @@ struct DahliaApp: App {
                         !startup.isReady
                             || showWorkspacePicker
                             || mainWindowNavigation.isShowingSettings
-                            || mainWindowNavigation.isShowingDahliaSignIn
                             || !sidebarViewModel.canEditCurrentWorkspace
                     )
             }
@@ -457,22 +445,6 @@ struct DahliaApp: App {
         viewModel.prepareAnalyzer()
         showWorkspacePicker = false
         return true
-    }
-
-    /// A Databricks sign-in adds a provider account; no workspace belongs to it, so the open workspace stays.
-    private func continueFromSignIn() {
-        mainWindowNavigation.dismissDahliaSignIn()
-        guard AppSettings.shared.currentWorkspace == nil else { return }
-        Task {
-            if let workspace = await WorkspaceAISettingsModel.shared.accountWorkspace() {
-                _ = openWorkspace(workspace)
-            }
-        }
-    }
-
-    private func cancelDahliaSignIn() {
-        dahliaAccountController.cancelAccountTask()
-        mainWindowNavigation.dismissDahliaSignIn()
     }
 
     private func reconcileWorkspacesAfterAccountChange() async {

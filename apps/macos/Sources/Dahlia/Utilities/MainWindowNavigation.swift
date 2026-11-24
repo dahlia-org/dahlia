@@ -56,8 +56,7 @@ final class MainWindowNavigation {
     private(set) var isNavigatingHistory = false
     private(set) var hasInitializedNavigationHistory = false
     private(set) var isShowingSettings = false
-    private(set) var isShowingDahliaSignIn = false
-    /// A settings modal card shown over the whole window, as the sign-in is.
+    /// A settings modal card shown over the whole window.
     private(set) var settingsModal: AnyView?
     private(set) var setupTourMode: SetupTourMode?
     private(set) var sidebarWidth: CGFloat
@@ -256,15 +255,6 @@ final class MainWindowNavigation {
         openMainWindow()
     }
 
-    func openDahliaSignIn() {
-        isShowingDahliaSignIn = true
-        openMainWindow()
-    }
-
-    func dismissDahliaSignIn() {
-        isShowingDahliaSignIn = false
-    }
-
     func openAgentSettings(tab: AgentSettingsView.Tab) {
         openSettings(category: .agents, agentTab: tab)
     }
@@ -278,7 +268,6 @@ final class MainWindowNavigation {
     }
 
     func dismissSettings() {
-        dismissDahliaSignIn()
         dismissSettingsModal()
         isShowingSettings = false
     }

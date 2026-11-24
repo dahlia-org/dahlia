@@ -90,7 +90,8 @@ struct CalendarSettingsView: View {
                         }
                     }
                 }
-                Button(L10n.manageProviders) { navigation.openSettings(category: .providers) }
+                // The setup tour cannot open Settings, so it adds a calendar provider in place.
+                Button(showsOnlySourceSetup ? L10n.addProvider : L10n.manageProviders, action: manageProviders)
                     .buttonStyle(.dahlia())
                 if let error = googleAccounts.errorMessage ?? providers.catalogError { calendarErrorMessage(error) }
             } header: {
@@ -232,6 +233,22 @@ struct CalendarSettingsView: View {
 
     private func refreshEnabledSources(force: Bool = false) async {
         await calendarSourceCoordinator.refreshEnabledSources(settings.enabledCalendarSources, force: force)
+    }
+
+    private func manageProviders() {
+        guard showsOnlySourceSetup else {
+            navigation.openSettings(category: .providers)
+            return
+        }
+        navigation.presentSettingsModal(
+            AgentProviderRegistrationView(
+                model: AgentMCPSettingsModel(),
+                subscriptions: [],
+                google: googleAccounts.registrationController(),
+                capability: .calendar,
+                onClose: navigation.dismissSettingsModal
+            )
+        )
     }
 }
 
@@ -404,5 +421,18 @@ private struct CalendarSourceSelectionView: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+private extension CalendarSource {
+    var choiceCardImage: Image {
+        guard self == .google,
+              let url = Bundle.appModule.url(forResource: "GoogleCalendar", withExtension: "png"),
+              let image = NSImage(contentsOf: url) else {
+            return Image(systemName: "calendar")
+        }
+
+        image.isTemplate = false
+        return Image(nsImage: image)
     }
 }

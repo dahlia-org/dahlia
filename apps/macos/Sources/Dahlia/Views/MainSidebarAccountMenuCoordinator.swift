@@ -1,25 +1,11 @@
 import AppKit
 import SwiftUI
 
-struct MainSidebarAccountSelection {
-    let connectionID: UUID?
-    let isLocal: Bool
-}
-
 @MainActor
 final class MainSidebarAccountMenuCoordinator: NSObject {
     weak var button: NSButton?
 
-    private var connections: [DahliaAccountConnection]
-    private var currentConnectionID: UUID?
-    private var isLocalAccount: Bool
-    private var onOpenSettings: (SettingsCategory?) -> Void
-    private var onSelectAccount: (DahliaAccountConnection?) -> Void
-    private var onAddAccount: () -> Void
-    private var onAccountAction: () -> Void
-    private var unprocessedRecordingCount: Int
-    private var onShowUnprocessedRecordings: () -> Void
-    var openURL: (URL) -> Bool = { NSWorkspace.shared.open($0) }
+    private var onOpenSettings: () -> Void
     private let settings: AppSettings
     private let navigation = MainSidebarAccountMenuNavigationState()
     private var mainPanel: NSPanel?
@@ -29,52 +15,17 @@ final class MainSidebarAccountMenuCoordinator: NSObject {
     private var typeAheadResetTask: Task<Void, Never>?
     private var typeAheadBuffer = ""
 
-    init(
-        connections: [DahliaAccountConnection],
-        accountSelection: MainSidebarAccountSelection,
-        onOpenSettings: @escaping (SettingsCategory?) -> Void,
-        onSelectAccount: @escaping (DahliaAccountConnection?) -> Void,
-        onAddAccount: @escaping () -> Void = {},
-        onAccountAction: @escaping () -> Void,
-        unprocessedRecordingCount: Int = 0,
-        onShowUnprocessedRecordings: @escaping () -> Void,
-        settings: AppSettings = .shared
-    ) {
+    init(onOpenSettings: @escaping () -> Void, settings: AppSettings = .shared) {
         self.settings = settings
-        self.connections = connections
-        currentConnectionID = accountSelection.connectionID
-        isLocalAccount = accountSelection.isLocal
         self.onOpenSettings = onOpenSettings
-        self.onSelectAccount = onSelectAccount
-        self.onAddAccount = onAddAccount
-        self.onAccountAction = onAccountAction
-        self.unprocessedRecordingCount = unprocessedRecordingCount
-        self.onShowUnprocessedRecordings = onShowUnprocessedRecordings
     }
 
     static func shouldPassThroughKeyEvent(modifierFlags: NSEvent.ModifierFlags) -> Bool {
         !modifierFlags.isDisjoint(with: [.command, .control])
     }
 
-    func update(
-        connections: [DahliaAccountConnection],
-        accountSelection: MainSidebarAccountSelection,
-        onOpenSettings: @escaping (SettingsCategory?) -> Void,
-        onSelectAccount: @escaping (DahliaAccountConnection?) -> Void,
-        onAddAccount: @escaping () -> Void = {},
-        onAccountAction: @escaping () -> Void,
-        unprocessedRecordingCount: Int = 0,
-        onShowUnprocessedRecordings: @escaping () -> Void
-    ) {
-        self.connections = connections
-        currentConnectionID = accountSelection.connectionID
-        isLocalAccount = accountSelection.isLocal
+    func update(onOpenSettings: @escaping () -> Void) {
         self.onOpenSettings = onOpenSettings
-        self.onSelectAccount = onSelectAccount
-        self.onAddAccount = onAddAccount
-        self.onAccountAction = onAccountAction
-        self.unprocessedRecordingCount = unprocessedRecordingCount
-        self.onShowUnprocessedRecordings = onShowUnprocessedRecordings
     }
 
     @objc
@@ -97,24 +48,13 @@ final class MainSidebarAccountMenuCoordinator: NSObject {
         guard let button else { return }
 
         navigation.reset()
-        let content = MainSidebarAccountMenuPanel(width: MainSidebarAccountMenuLayout.rootMenuWidth) {
+        let content = MainSidebarAccountMenuPanel(width: MainSidebarAccountMenuLayout.menuWidth) {
             MainSidebarAccountRootMenuView(
                 navigation: navigation,
-                connections: connections,
-                currentConnectionID: currentConnectionID,
-                isLocalAccount: isLocalAccount,
-                showsLocalAccount: true,
-                showsAddAccount: showsAddAccount,
-                showsAccountAction: showsAccountAction,
                 onShowAppearance: { [weak self] in self?.presentAppearanceMenu(anchorMinY: $0) },
                 onShowLanguages: { [weak self] in self?.presentLanguageMenu(anchorMinY: $0) },
                 onDismissSubmenu: { [weak self] in self?.closeSubmenu() },
-                onOpenSettings: { [weak self] in self?.openSettings(category: $0) },
-                onSelectAccount: { [weak self] in self?.selectAccount($0) },
-                onAddAccount: { [weak self] in self?.addAccount() },
-                onAccountAction: { [weak self] in self?.performAccountAction() },
-                unprocessedRecordingCount: unprocessedRecordingCount,
-                onShowUnprocessedRecordings: { [weak self] in self?.showUnprocessedRecordings() }
+                onOpenSettings: { [weak self] in self?.openSettings() }
             )
         }
         let panel = makePanel(content: content)
@@ -230,30 +170,9 @@ final class MainSidebarAccountMenuCoordinator: NSObject {
         panel.orderFront(nil)
     }
 
-    private func openSettings(category: SettingsCategory? = nil) {
+    private func openSettings() {
         dismissMenu()
-        onOpenSettings(category)
-    }
-
-    private func showUnprocessedRecordings() {
-        dismissMenu()
-        onShowUnprocessedRecordings()
-    }
-
-    private func addAccount() {
-        dismissMenu()
-        onAddAccount()
-    }
-
-    private func performAccountAction() {
-        dismissMenu()
-        onAccountAction()
-    }
-
-    private func selectAccount(_ connection: DahliaAccountConnection?) {
-        dismissMenu()
-        guard connection?.id != currentConnectionID else { return }
-        onSelectAccount(connection)
+        onOpenSettings()
     }
 
     private func closeSubmenu() {
@@ -425,8 +344,8 @@ extension MainSidebarAccountMenuCoordinator {
             navigation.rootSelection = MainSidebarAccountMenuNavigationState.nextEnabledIndex(
                 from: navigation.rootSelection,
                 direction: direction,
-                count: menuOffset + (showsAccountAction ? 5 : 4),
-                isEnabled: isRootIndexEnabled
+                count: MainSidebarAccountRootMenuView.Item.allCases.count,
+                isEnabled: { _ in true }
             )
         case .appearance:
             let appearances = AppAppearance.allCases
@@ -450,9 +369,11 @@ extension MainSidebarAccountMenuCoordinator {
     }
 
     func openSelectedSubmenu() {
-        guard navigation.activeMenu == .root, let selection = navigation.rootSelection else { return }
-        if selection == menuOffset { presentLanguageMenu() }
-        if selection == menuOffset + 1 { presentAppearanceMenu() }
+        guard navigation.activeMenu == .root,
+              let selection = navigation.rootSelection.flatMap(MainSidebarAccountRootMenuView.Item.init(rawValue:))
+        else { return }
+        if selection == .language { presentLanguageMenu() }
+        if selection == .appearance { presentAppearanceMenu() }
     }
 
     func activateSelection() {
@@ -464,25 +385,11 @@ extension MainSidebarAccountMenuCoordinator {
     }
 
     func activateRootSelection() {
-        guard let selection = navigation.rootSelection else { return }
-        // A Dahlia account owns no workspace, so its row shows that it is signed in and opens nothing.
-        if connections.indices.contains(selection) { return }
-        if selection == connections.count {
-            // Choosing the Local Account opens its `Default` workspace when it has none.
-            selectAccount(nil)
-            return
-        }
-        if showsAddAccount, selection == menuOffset - 1 {
-            addAccount()
-            return
-        }
-        switch selection - menuOffset {
-        case 0: presentLanguageMenu()
-        case 1: presentAppearanceMenu()
-        case 2: openSettings(category: nil)
-        case 3: showUnprocessedRecordings()
-        case 4 where showsAccountAction: performAccountAction()
-        default: break
+        switch navigation.rootSelection.flatMap(MainSidebarAccountRootMenuView.Item.init(rawValue:)) {
+        case .language: presentLanguageMenu()
+        case .appearance: presentAppearanceMenu()
+        case .settings: openSettings()
+        case nil: break
         }
     }
 
@@ -505,23 +412,15 @@ extension MainSidebarAccountMenuCoordinator {
     }
 
     func announceCurrentSelection() {
-        let title: String?
-        switch navigation.activeMenu {
+        let title: String? = switch navigation.activeMenu {
         case .root:
-            var titles = connections.map(\.displayName)
-            titles.append(L10n.localAccount)
-            if showsAddAccount { titles.append(L10n.addAccount) }
-            titles += [L10n.language, L10n.appearance, L10n.settings, L10n.unprocessedRecordings]
-            if showsAccountAction {
-                titles.append(hasCurrentConnection ? L10n.signOut : L10n.dahliaSignIn)
-            }
-            title = navigation.rootSelection.flatMap { titles.indices.contains($0) ? titles[$0] : nil }
+            navigation.rootSelection.flatMap(MainSidebarAccountRootMenuView.Item.init(rawValue:))?.title
         case .appearance:
-            title = navigation.submenuSelection.flatMap {
+            navigation.submenuSelection.flatMap {
                 AppAppearance.allCases.indices.contains($0) ? AppAppearance.allCases[$0].displayName : nil
             }
         case .languages:
-            title = navigation.submenuSelection.flatMap {
+            navigation.submenuSelection.flatMap {
                 AppLanguage.allCases.indices.contains($0) ? AppLanguage.allCases[$0].displayName : nil
             }
         }
@@ -540,18 +439,4 @@ extension MainSidebarAccountMenuCoordinator {
             ]
         )
     }
-
-    var hasCurrentConnection: Bool {
-        connections.contains { $0.id == currentConnectionID }
-    }
-
-    var showsAddAccount: Bool { !connections.isEmpty }
-    var showsAccountAction: Bool { hasCurrentConnection || !showsAddAccount }
-    /// The Dahlia accounts, the Local Account, then Add Account.
-    var menuOffset: Int { connections.count + 1 + (showsAddAccount ? 1 : 0) }
-
-    private func isRootIndexEnabled(_ index: Int) -> Bool {
-        !connections.indices.contains(index)
-    }
-
 }

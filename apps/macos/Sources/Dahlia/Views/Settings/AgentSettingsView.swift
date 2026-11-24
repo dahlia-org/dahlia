@@ -647,7 +647,7 @@ private struct AgentModelSettingsView: View {
 
     private func message(_ error: any Error, provider: AgentMCPProvider) -> String {
         guard case .notLoggedIn = error as? PiRuntimeError else { return error.localizedDescription }
-        // The account signs in from the account menu; other providers sign in under Models.
+        // Both sign in again under Settings > Providers.
         return provider.isAccount ? L10n.mcpAccountSignInRequired : L10n.mcpProviderSignInRequired
     }
 

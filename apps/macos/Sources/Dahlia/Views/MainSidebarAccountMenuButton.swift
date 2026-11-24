@@ -1,105 +1,43 @@
 import AppKit
 import SwiftUI
 
+/// The footer's gear: opens the menu with quick language and appearance changes and the full Settings.
 struct MainSidebarAccountMenuButton: NSViewRepresentable {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
-    let connections: [DahliaAccountConnection]
-    let currentConnectionID: UUID?
-    let isLocalAccount: Bool
-    let onOpenSettings: (SettingsCategory?) -> Void
-    let onSelectAccount: (DahliaAccountConnection?) -> Void
-    var onAddAccount: () -> Void = {}
-    let onAccountAction: () -> Void
-    var unprocessedRecordingCount = 0
-    let onShowUnprocessedRecordings: () -> Void
+    let onOpenSettings: () -> Void
 
     func makeCoordinator() -> MainSidebarAccountMenuCoordinator {
-        MainSidebarAccountMenuCoordinator(
-            connections: connections,
-            accountSelection: accountSelection,
-            onOpenSettings: onOpenSettings,
-            onSelectAccount: onSelectAccount,
-            onAddAccount: onAddAccount,
-            onAccountAction: onAccountAction,
-            unprocessedRecordingCount: unprocessedRecordingCount,
-            onShowUnprocessedRecordings: onShowUnprocessedRecordings
-        )
+        MainSidebarAccountMenuCoordinator(onOpenSettings: onOpenSettings)
     }
 
-    func makeNSView(context: Context) -> MainSidebarAccountButton {
-        let button = MainSidebarAccountButton(frame: .zero)
-        button.target = context.coordinator
-        button.action = #selector(MainSidebarAccountMenuCoordinator.toggleMenu)
+    func makeNSView(context: Context) -> NSButton {
+        let button = NSButton(title: "", target: context.coordinator, action: #selector(MainSidebarAccountMenuCoordinator.toggleMenu))
         button.isBordered = false
-        button.imagePosition = .imageLeading
+        button.imagePosition = .imageOnly
         button.imageScaling = .scaleProportionallyDown
-        button.alignment = .left
-        button.lineBreakMode = .byTruncatingTail
-        button.cell?.usesSingleLineMode = false
-        button.setContentHuggingPriority(.defaultLow, for: .horizontal)
-        // A long line (a workspace host) shrinks the button instead of pushing the help button out of the footer.
-        button.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         context.coordinator.button = button
         configure(button)
         return button
     }
 
-    func updateNSView(_ button: MainSidebarAccountButton, context: Context) {
+    func updateNSView(_ button: NSButton, context: Context) {
         // An AppKit button ignores SwiftUI's `.disabled`, such as the footer's while recording.
         button.isEnabled = context.environment.isEnabled
-        context.coordinator.update(
-            connections: connections,
-            accountSelection: accountSelection,
-            onOpenSettings: onOpenSettings,
-            onSelectAccount: onSelectAccount,
-            onAddAccount: onAddAccount,
-            onAccountAction: onAccountAction,
-            unprocessedRecordingCount: unprocessedRecordingCount,
-            onShowUnprocessedRecordings: onShowUnprocessedRecordings
-        )
+        context.coordinator.update(onOpenSettings: onOpenSettings)
         configure(button)
     }
 
-    static func dismantleNSView(_: MainSidebarAccountButton, coordinator: MainSidebarAccountMenuCoordinator) {
+    static func dismantleNSView(_: NSButton, coordinator: MainSidebarAccountMenuCoordinator) {
         coordinator.dismissMenu()
     }
 
-    private func configure(_ button: MainSidebarAccountButton) {
+    private func configure(_ button: NSButton) {
         _ = dynamicTypeSize
-        let currentConnection = connections.first { $0.id == currentConnectionID }
-        let accountTitle = isLocalAccount ? L10n.localAccount : currentConnection?.displayName ?? L10n.dahliaNotSignedIn
-        button.attributedTitle = Self.footerTitle(accountName: accountTitle)
-        let icon = NSImage(systemSymbolName: isLocalAccount ? "person.2" : "person.crop.circle", accessibilityDescription: nil)?
-            .withSymbolConfiguration(.init(pointSize: NSFont.dahliaBody.pointSize, weight: .regular))
-        button.setIcon(icon, animated: false)
-        button.toolTip = nil
-        button.setAccessibilityLabel("\(L10n.account), \(accountTitle)")
+        button.image = NSImage(
+            systemSymbolName: "gearshape",
+            accessibilityDescription: L10n.settings
+        )?.withSymbolConfiguration(.init(pointSize: NSFont.dahliaBody.pointSize, weight: .regular))
+        button.setAccessibilityLabel(L10n.settings)
     }
-
-    private var accountSelection: MainSidebarAccountSelection {
-        MainSidebarAccountSelection(connectionID: currentConnectionID, isLocal: isLocalAccount)
-    }
-
-    static func footerTitle(accountName: String, syncSummary: String? = nil) -> NSAttributedString {
-        let result = NSMutableAttributedString()
-        result.append(NSAttributedString(
-            string: accountName,
-            attributes: [.font: NSFont.dahliaBody, .foregroundColor: NSColor.labelColor]
-        ))
-        if let syncSummary {
-            result.append(NSAttributedString(
-                string: "\n" + syncSummary,
-                attributes: [.font: NSFont.dahliaSecondary, .foregroundColor: NSColor.secondaryLabelColor]
-            ))
-        }
-        let paragraphStyle = NSMutableParagraphStyle()
-        paragraphStyle.firstLineHeadIndent = 6
-        paragraphStyle.headIndent = 6
-        // Each line ends in "…" when too long, rather than wrapping at a hyphen into a line the footer cannot show.
-        paragraphStyle.lineBreakMode = .byTruncatingTail
-        result.addAttribute(.paragraphStyle, value: paragraphStyle, range: NSRange(location: 0, length: result.length))
-        return result
-    }
-
 }

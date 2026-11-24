@@ -67,23 +67,13 @@ struct ContentView: View {
                             onOpenOmnigentSession: openOmnigentSession,
                             onShowUnprocessedRecordings: showUnprocessedRecordings,
                             onCreateProject: presentProjectCreation,
-                            onOpenProject: handleMeetingSidebarProjectAction,
-                            onSelectWorkspace: onSelectWorkspace
+                            onOpenProject: handleMeetingSidebarProjectAction
                         )
                     } settingsContent: {
                         SettingsSidebarView(
                             selection: $mainWindowNavigation.settingsCategory,
                             onReturnToApp: mainWindowNavigation.dismissSettings
-                        ) {
-                            MainSidebarBottomArea(
-                                viewModel: viewModel,
-                                sidebarViewModel: sidebarViewModel,
-                                recordingCoordinator: recordingCoordinator,
-                                updateController: updateController,
-                                onSelectWorkspace: onSelectWorkspace,
-                                onShowUnprocessedRecordings: showUnprocessedRecordings
-                            )
-                        }
+                        )
                     }
                 } detail: {
                     MainWindowPaneContent(isShowingSettings: isShowingSettings) {
