@@ -27,6 +27,11 @@ account skill の変更は [Desktop Pi のメモリーと自己学習](pi-self-l
 同梱とパッケージの skill は読むだけとし、カスタマイズは別名の account skill を作る。
 会議 MCP と外部 MCP は [Pi runtime](pi-runtime.md) と承認方針に従う。
 
+## チャット context の表示
+
+ユーザーメッセージには、会議・Project・ライブモードの非表示 context と本文の区切りを表示しない。
+本文中の改行やインデントは保持し、履歴を再表示した場合も同じ本文を表示する。
+
 ## 要約 context
 
 要約は過去 meeting を自動選択・取得せず、全 MCP / tool / skill を thread 単位で無効にする。Pi の MCP 設定は書き換えない。structured output と temporary cwd を維持する。

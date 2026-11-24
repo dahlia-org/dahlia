@@ -7,6 +7,82 @@ import Foundation
 
     struct CodexChatPromptCodecTests {
         @Test
+        func piJoinedContextDoesNotAddALeadingBlankLine() throws {
+            let contexts: [CodexChatContext] = [
+                .meeting(id: UUID(), name: "Meeting", calendarEvent: nil),
+                .meetingDraft(id: nil, name: "Draft", calendarEvent: nil),
+                .project(id: UUID(), name: "Project", description: "Description"),
+            ]
+            for context in contexts {
+                for text in ["テスト", "First line\n\n  Indented line"] {
+                    let blocks = CodexChatPromptCodec.encodeTextBlocks(text: text, context: context)
+                    let inputs = PiChatService.textJoined(blocks.map(CodexAppServerInput.text))
+                    let input = try #require(inputs.first)
+                    guard case let .text(prompt) = input else {
+                        Issue.record("Expected a text prompt")
+                        return
+                    }
+                    let decoded = CodexChatPromptCodec.decodeTextBlocks([prompt])
+                    #expect(decoded.text == text)
+                    #expect(decoded.context == context)
+                    #expect(CodexChatPromptCodec.visibleUserText(from: prompt) == text)
+                }
+            }
+        }
+
+        @Test(arguments: ["", "\n", "\n\n"])
+        func flattenedLiveModeContextRemovesOnlyTheTransportSeparator(separator: String) {
+            let context = "<context>\n  Live mode is enabled. You are receiving finalized live transcription from Dahlia.\n</context>"
+            let text = "テスト\n\n  Next line\n"
+            #expect(CodexChatPromptCodec.visibleUserText(from: context + separator + text) == text)
+            let transcript = "<live_transcript source=\"dahlia\">Hidden speech</live_transcript>"
+            #expect(CodexChatPromptCodec.visibleUserText(from: context + separator + transcript).isEmpty)
+        }
+
+        @Test(arguments: ["", "\n", "\n\n"], [false, true])
+        func flattenedLiveTranscriptClassificationMatchesSeparateBlocks(separator: String, hasHiddenMarker: Bool) {
+            let context = hasHiddenMarker
+                ? TestCodexChatFixtures.liveTranscriptContext
+                : "<context>\n  Live mode is enabled. You are receiving finalized live transcription from Dahlia.\n</context>"
+            let literal = "<live_transcript>keep this visible</live_transcript>"
+            let cases = [
+                (body: literal, expected: hasHiddenMarker ? "" : literal),
+                (body: "<live_transcript source=\"dahlia\">Hidden speech</live_transcript>", expected: ""),
+            ]
+            for (body, expected) in cases {
+                #expect(CodexChatPromptCodec.decodeTextBlocks([context, body]).text == expected)
+                #expect(CodexChatPromptCodec.visibleUserText(from: context + separator + body) == expected)
+            }
+        }
+
+        @Test
+        func literalLiveTranscriptTagSurvivesHistoryRestore() throws {
+            let context = "<context>\n  Live mode is enabled. You are receiving finalized live transcription from Dahlia.\n</context>"
+            let literal = "<live_transcript>keep this visible</live_transcript>"
+            let records: [[String: JSONValue]] = [[
+                "type": .string("message"),
+                "id": .string("user-message"),
+                "message": .object([
+                    "role": .string("user"),
+                    "content": .string(context + "\n" + literal),
+                ]),
+            ]]
+
+            let messages = PiChatSessionFiles.messages(records)
+
+            #expect(messages.count == 1)
+            let message = try #require(messages.first)
+            #expect(message.role == .user)
+            #expect(message.text == literal)
+        }
+
+        @Test
+        func plainUserTextPreservesIntentionalWhitespace() {
+            let text = "\n  First line\n\nSecond line\n"
+            #expect(CodexChatPromptCodec.visibleUserText(from: text) == text)
+        }
+
+        @Test
         func typedContextsPreserveLegacyHistoryAndRejectInvalidIDs() {
             let id = UUID()
             let cases: [(CodexChatContext, TypeID.Kind)] = [

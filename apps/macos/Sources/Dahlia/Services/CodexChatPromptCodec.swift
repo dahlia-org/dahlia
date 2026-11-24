@@ -140,12 +140,8 @@ enum CodexChatPromptCodec {
               let closingRange = text.range(of: contextClosingTag)
         else { return nil }
         let contextBlock = String(text[..<closingRange.upperBound])
-        guard let decodedContext = decodeLiveModeTextBlocks([contextBlock]) else { return nil }
-        let remainder = String(text[closingRange.upperBound...])
-        let visibleText = isCanonicalLiveTranscriptBlock(remainder) || isDahliaLiveTranscriptBlock(remainder)
-            ? ""
-            : remainder
-        return (visibleText, decodedContext.context)
+        let remainder = removingContextSeparator(from: text[closingRange.upperBound...])
+        return decodeLiveModeTextBlocks([contextBlock, remainder])
     }
 
     private static func decodeContextPrefix(from text: String) -> (text: String, context: CodexChatContext)? {
@@ -154,7 +150,18 @@ enum CodexChatPromptCodec {
         else { return nil }
         let contextBlock = String(text[..<closingRange.upperBound])
         guard let context = canonicalContext(from: contextBlock) else { return nil }
-        return (String(text[closingRange.upperBound...]), context)
+        return (removingContextSeparator(from: text[closingRange.upperBound...]), context)
+    }
+
+    private static func removingContextSeparator(from text: Substring) -> String {
+        // Pi joins blocks with one newline; legacy prompts use two.
+        if text.hasPrefix("\n\n") {
+            return String(text.dropFirst(2))
+        }
+        if text.hasPrefix("\n") {
+            return String(text.dropFirst())
+        }
+        return String(text)
     }
 
     private static func canonicalContext(from block: String) -> CodexChatContext? {
