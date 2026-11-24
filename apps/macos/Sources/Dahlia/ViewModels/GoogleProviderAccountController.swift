@@ -7,6 +7,7 @@ import Observation
 final class GoogleProviderAccountController {
     private(set) var account: GoogleCalendarAccount?
     private(set) var hasConnection = false
+    private(set) var isDisconnectPending = false
     private(set) var isBusy = false
     private(set) var errorMessage: String?
     private(set) var name: String?
@@ -23,7 +24,8 @@ final class GoogleProviderAccountController {
             if disconnected {
                 revision += 1
                 apply(nil)
-                hasConnection = false
+                isDisconnectPending = signInProvider.isDisconnectPending
+                hasConnection = isDisconnectPending
             } else if !isBusy {
                 await activate()
             }
@@ -41,7 +43,8 @@ final class GoogleProviderAccountController {
         do {
             let hasConnection = await signInProvider.hasPreviousSignIn
             guard self.revision == revision else { return }
-            self.hasConnection = hasConnection
+            isDisconnectPending = signInProvider.isDisconnectPending
+            self.hasConnection = hasConnection || isDisconnectPending
             let session = hasConnection ? try await signInProvider.restorePreviousSignIn() : nil
             guard self.revision == revision else { return }
             apply(session?.account)
@@ -67,6 +70,7 @@ final class GoogleProviderAccountController {
             let session = try await signInProvider.signIn(withPresentingWindow: window, requestedScopes: [])
             guard self.revision == revision else { return false }
             apply(session.account)
+            isDisconnectPending = false
             hasConnection = true
             return true
         } catch is CancellationError {
@@ -87,8 +91,11 @@ final class GoogleProviderAccountController {
         do {
             try await signInProvider.disconnect()
             apply(nil)
+            isDisconnectPending = false
             hasConnection = false
         } catch {
+            isDisconnectPending = signInProvider.isDisconnectPending
+            hasConnection = hasConnection || isDisconnectPending
             errorMessage = error.localizedDescription
         }
     }

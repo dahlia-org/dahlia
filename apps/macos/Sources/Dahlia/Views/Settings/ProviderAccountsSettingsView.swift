@@ -180,7 +180,9 @@ struct ProviderAccountsSettingsView: View {
 
     private var googleRow: some View {
         AgentProviderRow(title: google.displayName, icon: CalendarSource.google.choiceCardImage, uses: [L10n.calendar, L10n.googleDrive]) {
-            Text(google.account?.email.nilIfBlank ?? L10n.providerAccountSignInToKeep).foregroundStyle(.secondary)
+            Text(google.isDisconnectPending ? L10n.googleProviderDisconnectPending : google.account?.email.nilIfBlank ?? L10n
+                .providerAccountSignInToKeep)
+                .foregroundStyle(.secondary)
             AgentProviderActions {
                 Button(L10n.rename) {
                     proposedName = google.name ?? ""
@@ -188,7 +190,7 @@ struct ProviderAccountsSettingsView: View {
                 }
                 .disabled(google.account == nil)
                 Button(L10n.signInAgain) { Task { _ = await google.signIn() } }
-                Button(L10n.signOut) { confirmsGoogleSignOut = true }
+                Button(google.isDisconnectPending ? L10n.googleCalendarRetry : L10n.signOut) { confirmsGoogleSignOut = true }
             }
             .disabled(google.isBusy)
         }

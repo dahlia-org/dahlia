@@ -308,6 +308,60 @@ import Foundation
         }
 
         @Test(arguments: [false, true])
+        func directSignOutDeletesOnlyDirectSnapshotsEvenAfterSwitchingToProxy(proxySelected: Bool) async throws {
+            let connectionID = UUID.v7()
+            try await ProviderAccountDirectory.$connections.withValue([
+                .init(id: connectionID, workspaceURL: #require(URL(string: "https://calendar.example"))),
+            ]) {
+                let defaults = isolatedUserDefaults()
+                defaults.set("google", forKey: GoogleCalendarProvider.userDefaultsKey)
+                seedSelectedCalendars(["primary"], defaults: defaults)
+                let directory = temporaryCacheDirectory()
+                defer { try? FileManager.default.removeItem(at: directory) }
+                let route = Notification.Name("CalendarRoute.\(UUID())")
+                let directChange = Notification.Name("DirectGoogleSignOut.\(UUID())")
+                let signIn = MockGoogleCalendarSignInProvider(hasPreviousSignIn: true)
+                let store = GoogleCalendarStore(
+                    signInProvider: signIn, apiClient: MockGoogleCalendarAPIClient(calendars: [primaryCalendar], events: [fixtureEvent]),
+                    userDefaults: defaults, now: { fixtureNow }, eventsCacheDirectory: directory,
+                    providerChangeNotification: route, directSessionChangeNotification: directChange
+                )
+                await store.restoreSessionIfNeeded()
+                await store.waitForEventsCacheWrite()
+                let directFile = try #require(try FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil).first)
+                let oldPrincipal = directory.appending(path: "local-google-\(String(repeating: "f", count: 64)).json")
+                try FileManager.default.copyItem(at: directFile, to: oldPrincipal)
+                if proxySelected {
+                    defaults.set(connectionID.uuidString, forKey: GoogleCalendarProvider.userDefaultsKey)
+                    NotificationCenter.default.post(name: route, object: nil)
+                    #expect(await pollUntil { signIn.restoreCallCount == 2 && store.isLoaded })
+                    await store.waitForEventsCacheWrite()
+                }
+                let filesBefore = try FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)
+                let proxyFiles = filesBefore.filter { $0.lastPathComponent.hasPrefix("local-databricks-") }
+                let proxyData = try proxyFiles.map { try Data(contentsOf: $0) }
+                #expect(proxyFiles.count == (proxySelected ? 1 : 0))
+                NotificationCenter.default.post(name: directChange, object: GoogleAuthSessionChangeReason.disconnected)
+                #expect(await pollUntil {
+                    let files = (try? FileManager.default.contentsOfDirectory(atPath: directory.path)) ?? []
+                    return !files.contains { $0.hasPrefix("local-google-") }
+                })
+                await store.waitForEventsCacheWrite()
+                #expect(try proxyFiles.map { try Data(contentsOf: $0) } == proxyData)
+                if proxySelected {
+                    #expect(store.isLoaded)
+                    #expect(store.upcomingEvents == [fixtureEvent])
+                    #expect(store.selectedCalendarIDs == ["primary"])
+                    #expect(store.account == fixtureSession.account)
+                } else {
+                    #expect(!store.isAuthorized)
+                    #expect(store.upcomingEvents.isEmpty)
+                    #expect(store.selectedCalendarIDs.isEmpty)
+                }
+            }
+        }
+
+        @Test(arguments: [false, true])
         func returningToAProxyVerifiesItsGoogleUserBeforeShowingCache(identityFails: Bool) async throws {
             let connectionID = UUID.v7()
             try await ProviderAccountDirectory.$connections.withValue([

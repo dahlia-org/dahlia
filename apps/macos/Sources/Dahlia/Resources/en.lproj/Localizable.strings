@@ -2110,3 +2110,5 @@
 "Add your Google account using your name and email. Calendar and Drive ask for access when you use them. Adding this account does not change your calendar provider." = "Add your Google account using your name and email. Calendar and Drive ask for access when you use them. Adding this account does not change your calendar provider.";
 
 "Disconnect this Google account from Calendar and Drive in Dahlia? Databricks connections are not affected." = "Disconnect this Google account from Calendar and Drive in Dahlia? Databricks connections are not affected.";
+
+"Sign-out incomplete. Retry to remove the saved credential." = "Sign-out incomplete. Retry to remove the saved credential.";

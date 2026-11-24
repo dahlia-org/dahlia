@@ -55,21 +55,43 @@ import Foundation
             #expect(!controller.hasConnection)
         }
 
-        @Test
-        func failedDisconnectKeepsTheProviderVisibleForRetry() async {
-            let signIn = ProviderGoogleSignIn()
+        @Test(arguments: [false, true])
+        func failedDisconnectKeepsARetryAfterNotificationAndSettingsReopen(notificationBeforeError: Bool) async throws {
+            let suite = "PendingGoogleDisconnect.\(UUID())"
+            let defaults = try #require(UserDefaults(suiteName: suite))
+            defer { defaults.removePersistentDomain(forName: suite) }
+            let signIn = ProviderGoogleSignIn(defaults: defaults)
             signIn.hasPreviousSignIn = true
-            let controller = GoogleProviderAccountController(signInProvider: signIn)
+            let controller = GoogleProviderAccountController(signInProvider: signIn, defaults: defaults)
             await controller.activate()
             signIn.disconnectFails = true
-            await controller.disconnect()
+            signIn.suspendsDisconnect = notificationBeforeError
+            let disconnect = Task { await controller.disconnect() }
+            if notificationBeforeError {
+                #expect(await pollUntil { signIn.disconnectContinuation != nil && controller.account == nil })
+                let continuation = try #require(signIn.disconnectContinuation)
+                continuation.resume()
+            }
+            await disconnect.value
+            // Account clearing proves the asynchronous notification ran, whether before or after the error.
+            #expect(await pollUntil { controller.account == nil })
             #expect(controller.hasConnection)
-            #expect(controller.account != nil)
+            #expect(controller.isDisconnectPending)
             #expect(controller.errorMessage != nil)
-            signIn.disconnectFails = false
-            await controller.disconnect()
-            #expect(!controller.hasConnection)
-            #expect(controller.errorMessage == nil)
+            #expect(!signIn.hasPreviousSignIn)
+
+            let reopenedSignIn = ProviderGoogleSignIn(defaults: defaults)
+            let reopened = GoogleProviderAccountController(signInProvider: reopenedSignIn, defaults: defaults)
+            await reopened.activate()
+            #expect(reopened.hasConnection)
+            #expect(reopened.isDisconnectPending)
+            #expect(reopened.account == nil)
+            await reopened.disconnect()
+            #expect(reopenedSignIn.disconnectCount == 1)
+            #expect(!reopenedSignIn.isDisconnectPending)
+            #expect(!reopened.hasConnection)
+            #expect(!reopened.isDisconnectPending)
+            #expect(reopened.errorMessage == nil)
         }
     }
 
@@ -81,6 +103,22 @@ import Foundation
         var requestedScopes: Set<String>?
         var disconnectCount = 0
         var disconnectFails = false
+        var suspendsDisconnect = false
+        var disconnectContinuation: CheckedContinuation<Void, Never>?
+        private let defaults: UserDefaults?
+        private var pendingDisconnect = false
+        var isDisconnectPending: Bool {
+            get { defaults?.bool(forKey: "pendingDisconnect") ?? pendingDisconnect }
+            set {
+                if let defaults {
+                    defaults.set(newValue, forKey: "pendingDisconnect")
+                } else {
+                    pendingDisconnect = newValue
+                }
+            }
+        }
+
+        init(defaults: UserDefaults? = nil) { self.defaults = defaults }
         var delaysRestore = false
         var restoreContinuation: CheckedContinuation<GoogleSession, any Error>?
         let session = GoogleSession(
@@ -101,8 +139,11 @@ import Foundation
         func refreshCurrentSession() async throws -> GoogleSession? { hasPreviousSignIn ? session : nil }
         func disconnect() async throws {
             disconnectCount += 1
-            if disconnectFails { throw GoogleSignInError.invalidTokenResponse }
             hasPreviousSignIn = false
+            isDisconnectPending = disconnectFails
+            NotificationCenter.default.post(name: sessionDidChangeNotification, object: GoogleAuthSessionChangeReason.disconnected)
+            if suspendsDisconnect { await withCheckedContinuation { disconnectContinuation = $0 } }
+            if disconnectFails { throw GoogleSignInError.invalidTokenResponse }
         }
     }
 #endif

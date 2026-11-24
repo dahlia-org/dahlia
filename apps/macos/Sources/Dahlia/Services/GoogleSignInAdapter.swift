@@ -173,12 +173,18 @@ actor GoogleKeychainWorker {
 protocol GoogleSignInProviding: AnyObject {
     var isConfigured: Bool { get }
     var hasPreviousSignIn: Bool { get async }
+    /// The credential is disabled but its deletion still needs to complete.
+    var isDisconnectPending: Bool { get }
     var sessionDidChangeNotification: Notification.Name { get }
 
     func restorePreviousSignIn() async throws -> GoogleSession
     func signIn(withPresentingWindow window: NSWindow, requestedScopes: Set<String>) async throws -> GoogleSession
     func refreshCurrentSession() async throws -> GoogleSession?
     func disconnect() async throws
+}
+
+extension GoogleSignInProviding {
+    var isDisconnectPending: Bool { false }
 }
 
 @MainActor
@@ -331,11 +337,13 @@ final class GoogleSignInAdapter: NSObject, GoogleSignInProviding {
         let deletionError: Error?
         do {
             try await clearStoredSession()
+            clearDisconnectPending()
             deletionError = nil
         } catch {
             deletionError = error
         }
         await Self.keychainWorker.finishDisconnect(for: sessionKind)
+        NotificationCenter.default.post(name: sessionDidChangeNotification, object: GoogleAuthSessionChangeReason.disconnected)
         if let deletionError {
             throw deletionError
         }
@@ -411,7 +419,7 @@ final class GoogleSignInAdapter: NSObject, GoogleSignInProviding {
         return try? JSONDecoder().decode(StoredGoogleSession.self, from: data)
     }
 
-    private var isDisconnectPending: Bool {
+    var isDisconnectPending: Bool {
         Self.disconnectPendingUserDefaultsKeys(for: sessionKind).contains {
             UserDefaults.standard.bool(forKey: $0)
         }
@@ -422,7 +430,7 @@ final class GoogleSignInAdapter: NSObject, GoogleSignInProviding {
     }
 
     private func clearDisconnectPending() {
-        // An explicit sign-in re-enables the provider account's one sign-in.
+        // Successful deletion or explicit sign-in completes the pending removal.
         for key in Self.disconnectPendingUserDefaultsKeys(for: sessionKind) {
             UserDefaults.standard.removeObject(forKey: key)
         }
@@ -454,12 +462,6 @@ final class GoogleSignInAdapter: NSObject, GoogleSignInProviding {
     }
 
     private func clearStoredSession() async throws {
-        defer {
-            NotificationCenter.default.post(
-                name: sessionKind.sessionDidChangeNotification,
-                object: GoogleAuthSessionChangeReason.disconnected
-            )
-        }
         try await Self.keychainWorker.perform {
             try KeychainService.deleteOrThrow(key: sessionKind.keychainKey)
         }

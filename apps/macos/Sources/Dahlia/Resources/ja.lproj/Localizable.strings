@@ -2110,3 +2110,5 @@
 "Add your Google account using your name and email. Calendar and Drive ask for access when you use them. Adding this account does not change your calendar provider." = "名前とメールアドレスを使って Google アカウントを追加します。カレンダーと Drive の権限は、それぞれを使う際に確認します。追加してもカレンダーのプロバイダーは変更されません。";
 
 "Disconnect this Google account from Calendar and Drive in Dahlia? Databricks connections are not affected." = "この Google アカウントを Dahlia のカレンダーと Drive から切断しますか？ Databricks の接続には影響しません。";
+
+"Sign-out incomplete. Retry to remove the saved credential." = "サインアウトが完了していません。保存済みの認証を削除するには再試行してください。";

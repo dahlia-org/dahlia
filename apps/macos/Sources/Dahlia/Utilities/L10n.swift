@@ -2131,6 +2131,10 @@ enum L10n { // swiftlint:disable:this type_body_length
     static var providerAccountSignInToKeep: String { String(localized: "Added earlier · Sign in again", bundle: bundle) }
     static var manageProviders: String { String(localized: "Manage Providers…", bundle: bundle) }
     static var googleDrive: String { String(localized: "Google Drive", bundle: bundle) }
+    static var googleProviderDisconnectPending: String { String(
+        localized: "Sign-out incomplete. Retry to remove the saved credential.",
+        bundle: bundle
+    ) }
     static var googleProviderSignOutDescription: String { String(
         localized: "Disconnect this Google account from Calendar and Drive in Dahlia? Databricks connections are not affected.",
         bundle: bundle
