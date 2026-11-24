@@ -224,12 +224,10 @@ import Foundation
         }
 
         @Test
-        func settingsCopyNamesTheInstructionAndLocalAccount() {
+        func settingsCopyNamesTheInstruction() {
             let instructionName = "Weekly review"
 
             #expect(L10n.deleteInstructionConfirmation(instructionName).contains(instructionName))
-            #expect(L10n.aiAccountDescription.contains(L10n.localAccount))
-            #expect(L10n.aiAccountSettingsDescription.contains(L10n.localAccount))
         }
 
         @MainActor

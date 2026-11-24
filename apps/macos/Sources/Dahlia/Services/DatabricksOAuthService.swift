@@ -66,7 +66,7 @@ actor DatabricksOAuthService {
         self.authorize = authorize
     }
 
-    /// Connected workspaces, oldest first. Each one is its own Databricks account.
+    /// Connected workspaces, oldest first. Each one is a provider account of the app's one account.
     func connections() throws -> [DatabricksConnection] { try storage.loadConnections() }
 
     /// The oldest connected workspace, which Google Calendar's Databricks proxy uses.

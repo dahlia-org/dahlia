@@ -6,7 +6,7 @@
     <meta name="theme-color" content="#f7f5f1" />
     <meta
       name="description"
-      content="Dahliaは、会議をMacで記録・文字起こしし、AIへの質問や要約、Claude Code・Codexからの読み取り専用MCPアクセスに対応するmacOSアプリです。"
+      content="Dahliaは、会議をMacで記録・文字起こしし、AIへの質問や要約、Claude Code・CodexからのMCPアクセス（既定は読み取り専用）に対応するmacOSアプリです。"
     />
     <meta property="og:type" content="website" />
     <meta property="og:locale" content="ja_JP" />
@@ -14,7 +14,7 @@
     <meta property="og:title" content="Dahlia — 会話に集中。あとはAIに聞けばいい。" />
     <meta
       property="og:description"
-      content="会議を記録し、必要なことをDahliaに質問。Claude CodeやCodexからも、読み取り専用MCPで会議の文脈を活用できます。"
+      content="会議を記録し、必要なことをDahliaに質問。Claude CodeやCodexからも、MCP（既定は読み取り専用）で会議の文脈を活用できます。"
     />
     <meta
       property="og:url"
@@ -28,7 +28,7 @@
     <meta name="twitter:title" content="Dahlia — 会話に集中。あとはAIに聞けばいい。" />
     <meta
       name="twitter:description"
-      content="会議を記録し、必要なことをDahliaに質問。Claude CodeやCodexからも、読み取り専用MCPで会議の文脈を活用できます。"
+      content="会議を記録し、必要なことをDahliaに質問。Claude CodeやCodexからも、MCP（既定は読み取り専用）で会議の文脈を活用できます。"
     />
     <meta
       name="twitter:image"
@@ -365,7 +365,7 @@
               <div class="mcp-card-visual" aria-hidden="true">
                 <div class="mcp-client-row"><span>Claude Code</span><i></i><span>Codex</span></div>
                 <div class="mcp-tool-row"><code>query_meetings</code><b>READ ONLY</b></div>
-                <div class="mcp-tool-row"><code>get_meeting</code><b>VAULT SCOPED</b></div>
+                <div class="mcp-tool-row"><code>get_meeting</code><b>WORKSPACE SCOPED</b></div>
                 <div class="mcp-tool-row"><code>get_meeting_transcript</code><b>CONFIRMED</b></div>
               </div>
             </article>
@@ -461,7 +461,8 @@
               <p>
                 <span class="copy-line"><span class="mobile-copy-line">Dahliaのアプリ内AIだけでなく、</span><span class="mobile-copy-line">Claude CodeやCodexからも、</span></span>
                 <span class="copy-line">同じ会議データを検索できます。</span>
-                <span class="copy-line"><span class="mobile-copy-line">MCPで参照できるのは、</span><span class="mobile-copy-line">選択したVault内のデータだけです。</span></span>
+                <span class="copy-line">アプリ内AIは、このMacに追加したすべてのワークスペースを参照できます。</span>
+                <span class="copy-line">外部MCPの範囲と編集権限は、登録時に設定できます。</span>
               </p>
             </div>
           </div>
@@ -481,7 +482,7 @@
             </article>
 
             <article class="mcp-demo reveal">
-              <div class="demo-topline"><span><i>⌁</i> Dahlia MCP</span><b>LOCAL · READ ONLY</b></div>
+              <div class="demo-topline"><span><i>⌁</i> Dahlia MCP</span><b>LOCAL · MCP</b></div>
               <h3>会議の文脈を、仕事の現場へ。</h3>
               <p>設定画面から登録コマンドをコピーするだけ。Claude CodeやCodexから、会議の検索、要約、確定済みの文字起こし、縮小したスクリーンショットを参照できます。</p>
               <div class="client-pills" aria-label="対応MCPクライアント"><span>Claude Code</span><span>Codex CLI</span></div>
@@ -518,14 +519,14 @@
                 <div><span>00:16</span><p>共有体験を優先します。</p></div>
                 <i></i>
               </div>
-              <div class="step-copy"><small>UNDERSTAND</small><h3>必要なことを聞く</h3><p><span class="mobile-copy-line">要約を生成するか、アプリ内AIに質問。</span><span class="mobile-copy-line">選択したVaultの会議から、</span><span class="mobile-copy-line">決定事項や背景、次のアクションを</span><span class="mobile-copy-line">引き出します。</span></p></div>
+              <div class="step-copy"><small>UNDERSTAND</small><h3>必要なことを聞く</h3><p><span class="mobile-copy-line">要約を生成するか、アプリ内AIに質問。</span><span class="mobile-copy-line">このMacに追加したすべての</span><span class="mobile-copy-line">ワークスペースの会議から、</span><span class="mobile-copy-line">決定事項や背景、次のアクションを</span><span class="mobile-copy-line">引き出します。</span></p></div>
             </li>
             <li class="step reveal">
               <span class="step-number">3</span>
               <div class="step-visual step-summarize" aria-hidden="true">
                 <span>⌁</span><div><i></i><i></i><i></i></div><b>MCP</b>
               </div>
-              <div class="step-copy"><small>ACT</small><h3>次の仕事に活かす</h3><p><span class="mobile-copy-line">議事録を書き出すか、</span><span class="mobile-copy-line">Claude CodeやCodexから、</span><span class="mobile-copy-line">Vault限定・読み取り専用のMCPで</span><span class="mobile-copy-line">必要な会議を参照します。</span></p></div>
+              <div class="step-copy"><small>ACT</small><h3>次の仕事に活かす</h3><p><span class="mobile-copy-line">議事録を書き出すか、</span><span class="mobile-copy-line">Claude CodeやCodexから、</span><span class="mobile-copy-line">MCPで必要な会議を参照します。</span><span class="mobile-copy-line">範囲は1つかすべてのワークスペースから選び、</span><span class="mobile-copy-line">編集権限は必要な場合だけ有効にします。</span></p></div>
             </li>
           </ol>
         </div>
@@ -540,7 +541,8 @@
             <p>
               <span class="copy-line"><span class="mobile-copy-line">会議データはローカルのSQLiteに保存し、</span><span class="mobile-copy-line">音声認識もMac上で処理します。</span></span>
               <span class="copy-line"><span class="mobile-copy-line">AIに文脈を渡すのは、</span><span class="mobile-copy-line">質問、要約、自動要約を実行するときだけ。</span></span>
-              <span class="copy-line"><span class="mobile-copy-line">外部クライアントには、</span><span class="mobile-copy-line">選択したVaultへの読み取り権限だけを</span><span class="mobile-copy-line">提供します。</span></span>
+              <span class="copy-line">外部MCPの範囲は、1つかすべてのワークスペースから選べます。</span>
+              <span class="copy-line">既定は読み取り専用で、編集権限は設定で明示的に有効にします。</span>
             </p>
           </div>
           <div class="privacy-cards">
@@ -554,7 +556,7 @@
             </article>
             <article class="privacy-card reveal">
               <span class="privacy-icon" aria-hidden="true">⌂</span>
-              <div><h3>外部アクセスは必要な範囲だけ</h3><p>MCPが公開するのは、選択したVaultの会議検索、保存済み要約、確定済みの文字起こし、スクリーンショットだけです。スクリーンショットは既定で縮小され、明示的に指定した場合のみ元サイズで取得できます。</p></div>
+              <div><h3>範囲と権限を選べる外部アクセス</h3><p>外部MCPは、1つかすべてのワークスペースの会議検索、保存済み要約、確定済みの文字起こし、スクリーンショットを参照できます。既定は読み取り専用で、編集は明示的に有効にした場合だけ可能です。スクリーンショットは既定で縮小され、明示的に指定した場合のみ元サイズで取得できます。</p></div>
             </article>
           </div>
         </div>

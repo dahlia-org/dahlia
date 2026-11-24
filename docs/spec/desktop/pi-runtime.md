@@ -8,8 +8,8 @@
 Dahlia は Pi を同梱せず、利用者がインストールした `pi` を使う（2026-11-07 ユーザー承認）。
 実行する `pi` は、Dahlia AI 設定の「アプリ管理下の Pi を使う」で切り替える（2026-11-12 ユーザー承認）。
 オフが既定で、PATH 上の `pi` を探索して表示・利用する。オンでは Dahlia がインストールした `bin/pi` のパスを表示・利用する。
-実行ファイルのパスやコマンド名は手入力させない。選択は実行アカウントごとに保存し（agent directory と同じ `local` またはアカウント ID で区別）、
-Dahlia がインストールする Pi はアプリプロファイルごとに全アカウントで共有する。旧パス設定がその `bin/pi` を指していたアカウントはオンを引き継ぎ、
+実行ファイルのパスやコマンド名は手入力させない。選択はアプリのアカウント（`local`）の設定として保存し、
+Dahlia がインストールする Pi はアプリプロファイルごとに 1 つ置く。旧パス設定がその `bin/pi` を指していた場合はオンを引き継ぎ、
 それ以外の旧設定は PATH 探索に切り替える。明示的に切り替えたトグルは旧設定より優先する。
 Finder／アプリランチャーから開いた場合は、起動時の PATH に Homebrew（`/opt/homebrew/bin`・`/opt/homebrew/sbin`・`/usr/local/bin`・`/usr/local/sbin`）、`~/.local/bin`・`~/.bun/bin`・`~/bin`・`~/Library/pnpm`・`~/.volta/bin`・`~/.npm-global/bin`・`/opt/homebrew/opt/libpq/bin` を補助探索先として加える。シェルや `.zshrc` などの起動スクリプトは実行しない。
 nvm は `~/.nvm/versions/node/v*/bin`（`NVM_DIR` が設定されていればその配下）を、インストール済みのバージョン番号の降順で探索する。既存の PATH を優先し、nvm の default alias は評価しない。Pi の実行時は、見つけた Pi 自身のディレクトリを PATH の先頭に置き、同じバージョンの Node.js を利用する。探索・実行・パッケージ操作とファイルアクセス制限の検証は共通の探索先を使う。
@@ -44,14 +44,14 @@ GitHub の 429、または rate limit header を持つ 403 はアクセス制限
 Pi の更新時に `test-pi-extension.py` で確かめる。ユーザーの `~/.pi` は使わない。
 
 利用者は「エージェント」>「一般」の「環境変数」で、アカウントのすべての Pi process（要約・チャット・control）に環境変数を足せる
-（2026-11-09 ユーザー承認。`piLaunch.<local またはアカウント ID>`）。Dahlia が設定する変数より先に入れるので、Dahlia の指定
-（agent directory・`PI_OFFLINE` など）が勝つ。秘密にした値は Keychain（`piEnvironment.<profile>.<アカウント>.<変数 ID>`）に置き、
+（2026-11-09 ユーザー承認。`piLaunch.local`）。Dahlia が設定する変数より先に入れるので、Dahlia の指定
+（agent directory・`PI_OFFLINE` など）が勝つ。秘密にした値は Keychain（`piEnvironment.<profile>.local.<変数 ID>`）に置き、
 起動のたびに読む。設定画面には戻さない。変数名が環境変数として不正なもの、値のないものは渡さない。起動引数は足させない。
 
 ## Process と境界
 
-Pi の agent directory は `Application Support/Dahlia/agent`（0700）。Pi 以外のエージェントでも使えるよう、名前に Pi もアカウントも含めない。Dahlia Server のアカウントだけは `accounts/<provider_accounts.id>/pi` を使う。ユーザーの `~/.pi` は使わない。
-アカウント別の設定と DB の `accountID` は、アプリのアカウントでは `local`、Dahlia account では `provider_accounts` テーブルの ID を使う。`PI_OFFLINE`・`PI_SKIP_VERSION_CHECK`・`PI_TELEMETRY=0` と、
+Pi の agent directory は `~/.dahlia/agent`（0700）。development profile は自分のデータの folder の `agent` を使い、production のサインインを共有しない。Pi 以外のエージェントでも使えるよう、名前に Pi もアカウントも含めない。`Application Support/Dahlia/accounts/<アカウント>/pi` は移行元としてだけ読む。ユーザーの `~/.pi` は使わない。
+アカウント別の設定キーの接尾辞と DB の `accountID` は `local`（`AppAccount.key`）。`PI_OFFLINE`・`PI_SKIP_VERSION_CHECK`・`PI_TELEMETRY=0` と、
 extension・context file・theme・project trust の自動読込を無効化して起動する。チャットでは標準 skill、アカウントの `pi/skills` に保存した skill、追加したパッケージの skill・prompt template を読み込む（2026-11-12 ユーザー承認）。要約・画像解析・通常の control は skill・prompt template も無効にする。「スキル」タブ専用の一覧プロセスは同じ resource loader で読み込み、モデル・MCP・tool を実行せず `get_commands` の認識結果を一覧にする。スキル名と最大2行の説明を表示し、保存先はフォルダを開く操作に使う。詳細はアプリ内モーダルで説明と SKILL.md を表示し、ファイル読込と Markdown 解析は MainActor 外で行う。追加・変更は新しいチャットプロセスから反映する。
 内蔵 `skill-creator` はチャットから Pi 向け skill の作成・更新・検証を支援する。`/skill:skill-creator <依頼>` でも呼び出せる。
 保存先は system prompt に渡した現在のアカウントの `pi/skills/<skill-name>/SKILL.md` とし、アカウント内の Workspace 間で共有する。
@@ -86,7 +86,7 @@ Pi 本体は sandbox の外で動かす。Seatbelt は入れ子にできず、Pi
 | sandbox の外で実行されるもの: インストールされた Pi（実行ファイルの実体の folder。npm package なら `node` を含む prefix）、Dahlia の extension と skill、上の Pi の一時フォルダ | 書き込み不可（作業フォルダがこれを含んでいても） |
 | 現在のアカウントの `pi/skills` | ファイル道具には読み取り専用。変更は `skill_manage` からアプリのサービスを通す（[自己学習](pi-self-learning.md)）。Pi が再利用する skill の保存先。認証・設定・他アカウントへのリンク先は許可しない。保存先への symlink 作成・移動を拒否し、skill 探索でも symlink を除外する。保存先またはその配下が実効 PATH に含まれる設定は、全 Pi モードとパッケージ操作の起動前に拒否する |
 | Dahlia の preset skill、アカウントの Pi directory の `npm`・`git` 配下（インストール済みパッケージ）、画像の保存先（`FileStore`）、app の SQLite（`dahlia.sqlite` と `-wal`・`-shm`） | 読み取りだけ（画像と SQLite はデバッグ用） |
-| Dahlia の Application Support のそれ以外（全アカウントの agent directory、録音、backup。development build からは production のものも） | 読み書き不可（作業フォルダがこれを含んでいても） |
+| Dahlia の Application Support のそれ以外と agent directory（録音、backup、`~/.dahlia/agent`。development build からは production のものも） | 読み書き不可（作業フォルダがこれを含んでいても） |
 | システムと全ユーザー向けの tool（`/System`・`/usr`・`/bin`・`/sbin`・`/Library/Developer`・`/Applications`・`/opt`・`/private/etc` など、`pi.sb` に名前で列挙） | 読み取りだけ。ただし local service の data と設定（`/opt/homebrew`・`/usr/local` の `var` と `etc`）は不可 |
 | セキュリティ設定で追加したファイル・フォルダ | アカウントごと・この Mac のチャットだけに、読み取りのみ／読み書きを追加。ファイルはその実体だけ、フォルダは配下を含む。既存の保護対象への例外にはならない |
 | それ以外すべて（ホーム、`/Volumes`、利用者の一時フォルダと cache など） | 追加の許可がなければ読み書き不可（metadata は読める） |
@@ -108,15 +108,14 @@ Pi の codemode（未有効）の script は Pi の process 内の QuickJS で�
 
 - 要約・画像解析・画像選別・モデル一覧・サインインは操作ごとに `pi --mode rpc --no-session --no-tools` を起動し、終了・取消・610秒期限で閉じる。同じモデルへの自動再送はしない。取消・期限切れでは終了済みの process を後始末のために起動しない。要約・画像解析・画像選別は、利用者がフォールバックモデルを設定した場合だけ、生成失敗時にそのモデルを1回試す。
 - チャットは turn の開始時に thread ごとに1 process を起動し、turn 後はチャット画面が thread を開いている間だけ残す。履歴の表示や新規 thread の作成では起動しない。process が終了していれば次の turn で session file から開き直す。スラッシュ候補の取得は既存 process を使い、なければ同じチャット用 resource を読む `--no-session` の一時 process を取得完了・失敗・取消で閉じる。
-- アカウント切替は全 process を閉じ、切替先の agent directory の `models.json` を書き換える。実行中の要約は取消になり、次の操作で新しいアカウントの process を起動する。
-- OpenAI / Anthropic のサインイン・サインアウトは Local Account の process だけを閉じる。Databricks アカウントのサインアウトでは、そのワークスペースが Local Account に戻り、agent directory（チャットの再開状態を含む）は残して、そのアカウントの `auth.json` と環境変数の秘密値は消す。Dahlia account を削除すると、agent directory ごと消し、環境変数の秘密値も消す。
+- OpenAI / Anthropic のサインイン・サインアウトでは Pi を止めず、プロバイダーアカウントの追加・削除と同じくモデル一覧を捨ててチャットを開き直す（[Provider](#provider)）。
 - stdout の1行は 4 MiB（送った最大行の分を加える）までとし、超えた行は改行まで捨てて読み続ける。Pi の `turn_end`・`agent_end` は run のメッセージを画像ごと繰り返すが、Dahlia は読まない。
 - prompt、画像、文字起こし、チャット、生成結果、request / response body を log や Sentry に送らない（[Telemetry policy](../../telemetry.md)）。取消・未サインイン・Pi 未検出（`piCommandNotFound`）は期待状態として扱う。
 - アプリ終了時は新しい Pi process の起動を拒否し、stdin を閉じ、猶予後に SIGTERM、さらに SIGKILL で止め、stdio を drain して reap してから終了する。
 - 要約は一時的な作業フォルダ（temporary cwd）で動き、生成の結果にかかわらず削除する。
 - 画像非対応・能力不明のモデルには画像を渡さず、テキストで続ける。
 - Dahlia は RPC の extension UI（`ctx.ui.input("dahlia:<method>")`）でだけ extension と通信する。token は要求ごとに stdin で渡し、config・環境変数・log に残さない。
-- Databricks アカウントと Dahlia account の provider（`DAHLIA_PI_BRIDGED_PROVIDERS`）は、extension が pi-ai の `createProvider` で認証だけを持つ provider として登録し、使うたびに bridge の `token` で起動時の接続 ID に結び付いた credential を解決する。RPC の初期化応答までに設定が変わった起動は閉じてやり直す。別の接続へ切り替わった古い要求は拒否し、モデル一覧の取得先と credential も同じ接続に固定する。切り替え前に始めた一覧は新しい設定へ保存しない（モデルは `models.json` を重ねる。session 開始前の利用可否の確認には要求に使わない仮の値を返す）。`models.json` に key は書かない。
+- Databricks の接続と Dahlia account の provider（`DAHLIA_PI_BRIDGED_PROVIDERS`）は、extension が pi-ai の `createProvider` で認証だけを持つ provider として登録し、使うたびに bridge の `token` で起動時の接続 ID に結び付いた credential を解決する。RPC の初期化応答までに設定が変わった起動は閉じてやり直す。別の接続へ切り替わった古い要求は拒否し、モデル一覧の取得先と credential も同じ接続に固定する。切り替え前に始めた一覧は新しい設定へ保存しない（モデルは `models.json` を重ねる。session 開始前の利用可否の確認には要求に使わない仮の値を返す）。`models.json` に key は書かない。
 - Unity AI Gateway の sign-in は、extension が OAuth の provider として登録する（[Unity AI Gateway の MCP](#unity-ai-gateway-の-mcp)）。モデルは Dahlia が `models.json` に書く。`mcp.json` の項目は `auth.provider` でその credential を要求ごとに使う（Pi の文書にない項目で、Pi 更新時に回帰確認する）。
 
 ### stdio
@@ -129,7 +128,7 @@ Pi の codemode（未有効）の script は Pi の process 内の QuickJS で�
 
 ## Provider
 
-Local Account は OpenAI と Anthropic に別々にサインインでき、サインイン済みの両方のモデルをまとめて一覧に出す。サインインは
+アプリのアカウントは OpenAI と Anthropic に別々にサインインでき、サインイン済みの両方のモデルをまとめて一覧に出す。サインインは
 「Dahlia AI」>「モデル」の「プロバイダー」で行う（セットアップツアーにも残す）。「プロバイダー」には、アカウント自身のサインインと、
 サインイン済みのサブスクリプション、追加した Databricks を並べ、それぞれに使い道（「モデル」「MCP」）のバッジを付ける（Databricks は両方）。サブスクリプションと
 Databricks は「プロバイダーを追加」のモーダルで選んで追加する。設定のモーダルは窓全体に重ねる。追加はアプリ側のサインインで、接続は `provider_accounts` の行になり、Keychain が認証を持つ。アプリのアカウントは、Pi のサブスクリプションと、すべての接続の Gateway のモデルを一覧に出す。接続の provider ID はその workspace のホスト名（ドットを含む）である。接続の追加・削除では Pi のプロセスを止めない。`models.json` を書き直し、新しく起動するプロセスから使う。待機中のチャットは閉じて次の送信で開き直し、実行中のチャットはそのターンが終わってから閉じる。
@@ -144,10 +143,10 @@ Databricks は「プロバイダーを追加」のモーダルで選んで追加
 | Dahlia account | `dahlia`（Server の `/api/v1/responses`） | Dahlia token を bridge |
 
 Databricks のモデル一覧は Unity Catalog の `/api/2.1/unity-catalog/model-services?parent=schemas/system.ai` から作るので、
-Gateway に追加されたモデルはアプリの更新なしで出る。一覧は extension の `/databricks-model-services` が Pi の中で取り（アカウント自身の
-Gateway は `--provider databricks` で bridge した sign-in を使う）、token は Pi の外に出ない。各 Gateway が最後に答えた一覧は agent directory の
+Gateway に追加されたモデルはアプリの更新なしで出る。一覧は extension の `/databricks-model-services` が Pi の中で取り（プロバイダーアカウントの
+Gateway は `--provider <ホスト名>` で bridge した sign-in を使う）、token は Pi の外に出ない。各 Gateway が最後に答えた一覧は agent directory の
 `gateway-models.json` に provider ごとに保存し、`models.json` はいつもこの保存した一覧とスイッチから作る（まだ答えていない Gateway は同梱の
-`models` で代える）。アカウントの切替とスイッチの切り替えは network を使わず、保存した一覧から書く。一覧の取得はアカウントの切替後に最初に
+`models` で代える）。スイッチの切り替えは network を使わず、保存した一覧から書く。一覧の取得は起動後に最初に
 モデルを一覧するとき（と workspace へのサインイン後）に、サインイン済みの Gateway をまとめてバックグラウンドで1回だけ行い、モデル一覧は
 それを待たない。取得で `models.json` の Gateway の項目が変わったときだけキャッシュを捨てて `DahliaPiModelsDidChange` を通知し、モデル選択が
 読み直す。同じ Gateway の取得が同時に走るときは1つにまとめ、切替やサインインの後に始まった取得があればそれ以前の取得の結果は保存しない。
@@ -159,10 +158,10 @@ Pi は起動時にしか `models.json` を読まないので、開いている�
 当たったものをファイル順に重ね、Gateway が返す画像入力、`models` のモデル個別の値の順に上書きする（各段はトップレベルの項目ごとに入れ替える）。
 テンプレートの経路（`baseUrl` と、Gateway の `supported_api_types` に要る `gatewayApi`）がないモデルと tool を呼べないモデルは出さない。
 並びは最初に当たったテンプレート、`models` の順、ID の降順。provider の `baseUrl` に workspace を記録する（各モデルは自分の経路で上書きする）。
-Dahlia account は切替時に Server の URL だけを記録し（network 不要）、
+Dahlia account はサインイン時に Server の URL だけを記録し（network 不要）、
 モデル一覧の取得時に `/api/v1/models` を `models.json` に変換する。取得に失敗したら直前の一覧を保ち、空の一覧はキャッシュしない。
 一覧は account ごとに1つの Pi 起動を同時の呼び出し元すべてで共有し、全員が取り消したときだけ止める。サインイン・サインアウト・
-アカウント切替・Gateway モデルの有効・無効の切り替えはキャッシュを捨て、`DahliaPiModelsDidChange` を通知する。それ以前に始まった取得の結果は
+プロバイダーアカウントの追加・削除・Gateway モデルの有効・無効の切り替えはキャッシュを捨て、`DahliaPiModelsDidChange` を通知する。それ以前に始まった取得の結果は
 保存も返却もせず、その呼び出し元は取得し直す（遅れて終わった古い一覧が新しい一覧を上書きしない）。設定・要約の確認・チャットのモデル選択は
 その通知で読み直し、通知の時に表示されていなかったチャットは次に表示されたときに読み直す。画面を開くだけではキャッシュを使い、再試行だけが取得し直す。
 チャットのモデル選択はモデルをプロバイダーごとにまとめ、プロバイダー名の下に並べる（workspace のモデル名に付けたホスト名は省く）。
@@ -175,8 +174,8 @@ Dahlia account は切替時に Server の URL だけを記録し（network 不�
 `models.json` に書く（一覧を取るのはサインイン済みの workspace だけ）。`models.json` を書くたびに Gateway の項目をまとめて作り直し、
 「プロバイダー」から外したときも書き直すので、外した workspace の項目は（サインアウトに失敗しても）すぐに消え、Gateway 以外の項目（Dahlia account の `dahlia`）は残る。
 
-「Dahlia AI」>「モデル」タブは全アカウントに表示し、プロバイダー、要約生成、画像解析を同じタブで設定する。AI による代理承認 (pi-auto-review) は「プラグイン」タブで設定する。要約生成・画像解析の設定リンクも「モデル」を開く。
-Unity Gateway があるアカウント（Databricks アカウントか、Databricks を追加したアカウント）では、Gateway ごとのモデルも「コネクタ」タブと同じくプロバイダーの行の下に折りたたんで並べ、モデルごとのスイッチでオン・オフする。
+「Dahlia AI」>「モデル」タブは、プロバイダー、要約生成、画像解析を同じタブで設定する。AI による代理承認 (pi-auto-review) は「プラグイン」タブで設定する。要約生成・画像解析の設定リンクも「モデル」を開く。
+Databricks の接続があるときは、Gateway ごとのモデルも「コネクタ」タブと同じくプロバイダーの行の下に折りたたんで並べ、モデルごとのスイッチでオン・オフする。
 Local Account の ChatGPT・Claude も同じくプロバイダー行の下でモデルごとに表示を切り替える。
 選択のないモデルは Claude Opus 5.5・Sonnet 5.5・Haiku 5.5、GPT 6.1 Sol・GPT 6.1 Terra・GPT 6 Luna だけをオンにし、保存した選択は再サインイン後も保つ。
 サブスクリプションは Pi の認証・カタログを変更せず、Dahlia がチャット・要約・画像解析などへ返す一覧を絞る。
@@ -185,13 +184,12 @@ Local Account の ChatGPT・Claude も同じくプロバイダー行の下でモ
 Pi の `models.json` には
 モデルごとの有効・無効の項目がなく（`settings.json` の `enabledModels` は起動時の選択と切替の範囲だけで、`get_available_models` からは外さない）、
 Gateway の有効・無効の設定は `models.json` を編集する。オンのモデルだけを `models.json` に書くので、Pi が知るのもチャット・要約・画像解析が選べるのもそれだけになる。
-選択はサブスクリプションも Gateway も `provider/id` ごとに app defaults（`agentGatewayModels.<account>`）に記録し、選択のないモデルは既定に従う。Gateway の既定はオフで、Databricks アカウント
-自身の Gateway の、`models` で `onByDefault` を付けたモデル（Claude Haiku 5.5）だけがオン（その Gateway が Haiku を出さないときは先頭のモデル）。オンにしていたモデルを Gateway が出さなくなって自身の Gateway で
-オンが1つもなくなるときは、この既定のモデルをオンとして扱い、設定の表示と `models.json` は同じ結果を使う。「プロバイダー」に追加した workspace は
-すべてオフで始まる。Databricks アカウントの要約の既定モデルも、保存した設定がなければ同じ Haiku
-（`databricks/system.ai.claude-haiku-5-5`）にする。画像解析はモデルを保存せず、一覧にある Haiku を最優先で選び、Haiku をオフにすると次の候補（Luna、なければ画像を受け付ける最初のモデル）を使う。切り替えると保存した一覧から
-`models.json` を書き直してキャッシュを捨て、`DahliaPiModelsDidChange` を通知する。チャットにはモデルが要るので、Databricks アカウントは自身の Gateway で最後の1つをオフにできない（追加した workspace は外せるので
-数えない。Local・Dahlia account はほかのモデルを持つので制限しない）。
+選択はサブスクリプションも Gateway も `provider/id` ごとに app defaults（`agentGatewayModels.local`）に記録し、選択のないモデルは既定に従う。Gateway の既定はオフで、Databricks の接続
+（プロバイダーアカウント）の Gateway の、`models` で `onByDefault` を付けたモデル（Claude Haiku 5.5）だけがオン（その Gateway が Haiku を出さないときは先頭のモデル）。オンにしていたモデルを Gateway が出さなくなってその Gateway で
+オンが1つもなくなるときは、この既定のモデルをオンとして扱い、設定の表示と `models.json` は同じ結果を使う。以前に追加した workspace は
+すべてオフで始まる。要約は、保存した設定がなければ、プロバイダーアカウントとサブスクリプションのモデルを優先して先頭の利用可能モデルを使う。画像解析はモデルを保存せず、一覧にある Haiku を最優先で選び、Haiku をオフにすると次の候補（Luna、なければ画像を受け付ける最初のモデル）を使う。切り替えると保存した一覧から
+`models.json` を書き直してキャッシュを捨て、`DahliaPiModelsDidChange` を通知する。チャットにはモデルが要るので、Databricks の接続の Gateway では最後の1つをオフにしても既定のモデルをオンとして扱う（以前に追加した workspace は外せるので
+対象にしない）。
 すべてオフにした Gateway は、モデルのない provider として `models.json` に残す（workspace と sign-in のため）。オフにしたモデルが保存されていた要約は、フォールバックが設定されていればそのモデルを試し、未設定なら先頭の利用可能モデルを使う。チャットは先頭の利用可能モデルを使う。画像解析は保存したモデルが見つからない場合も設定したフォールバックを試し、未設定なら失敗する。
 
 サインインは extension の `/dahlia-login` が Pi の login を呼ぶ。Pi の extension API に login がないため
@@ -216,7 +214,7 @@ schema だけで生成する。外した制約は Dahlia 側で守る（要約�
 不完全な返答は生成失敗とし、フォールバックがなければ既存の要約を保つ。
 要約の Markdown fallback には流さない。
 
-要約生成と画像解析には、それぞれモデルの直下に任意のフォールバックモデルを設定できる。既定は「なし」で、アカウントごと・この Mac の設定として保存し、要約ジョブの開始時に固定する。通常モデルの生成失敗・不正な JSON・本文欠落などを検知した場合、指定した別モデルを同じ入力・schema で1回だけ試す。要約の推論レベルは切り替え先が対応する値へ解決し、要約の metadata には実際に成功したモデルと推論レベルを記録する。取消・アカウント切替・Pi 未起動などの共通実行基盤の失敗では切り替えない。フォールバックも失敗すれば既存の要約を保ち、生成エラーを表示する。
+要約生成と画像解析には、それぞれモデルの直下に任意のフォールバックモデルを設定できる。既定は「なし」で、この Mac の設定として保存し、要約ジョブの開始時に固定する。通常モデルの生成失敗・不正な JSON・本文欠落などを検知した場合、指定した別モデルを同じ入力・schema で1回だけ試す。要約の推論レベルは切り替え先が対応する値へ解決し、要約の metadata には実際に成功したモデルと推論レベルを記録する。取消・アカウント切替・Pi 未起動などの共通実行基盤の失敗では切り替えない。フォールバックも失敗すれば既存の要約を保ち、生成エラーを表示する。
 
 画像解析のフォールバックは検索用 OCR・caption と要約前の画像選別に共通で使用する。画像選別は全体90秒の期限内で実行し、両モデルの失敗・期限切れでは候補画像をすべて保持する既存の挙動を維持する。要約前の画像選別は推論レベル `medium`、OCR・caption は `low` 固定で実行する。画像解析モデルの用途はモデル行の i マークから表示する。
 
@@ -243,9 +241,9 @@ Steer で受理したユーザーメッセージは吹き出し右上に Steer �
 チャットを閉じた場合やアプリ再起動後の復元は行わない。macOS のサイドパネル・メイン画面・独立ウィンドウと
 Local／Server Account に共通で、Private Web／Electron、Local／Server MCP には追加しない。
 
-チャットは作業フォルダで動く（2026-11-11 ユーザー承認）。作業フォルダは「Dahlia AI」>「セキュリティ」でアカウントごとに設定し（`piWorkingDirectory.<local またはアカウント ID>`）、
+チャットは作業フォルダで動く（2026-11-11 ユーザー承認）。作業フォルダは「Dahlia AI」>「セキュリティ」で設定し（`piWorkingDirectory.local`）、
 既定は `~/Dahlia`（development profile は `~/Dahlia-Development`）。チャットが自由に書けるので、sandbox の外で実行されるもの（shell の設定、ホームの下に入れた tool と Pi、app の設定）を含むフォルダは指定できない:
-ホームフォルダ自身、それを含むフォルダ、`~/Library` とその中、相対 path、Pi を探して起動するときの PATH の folder を含むフォルダ（`pi` を置き換えたり、`node` より先に見つかるコマンドを置いたりできる）は、チャットの起動時に拒否する。`~/Documents` は macOS がアクセス許可を求め、iCloud に同期されうるので使わない。フォルダはなければ作る。
+ホームフォルダ自身、それを含むフォルダ、`~/Library` とその中、`~/.dahlia` とその中、相対 path、Pi を探して起動するときの PATH の folder を含むフォルダ（`pi` を置き換えたり、`node` より先に見つかるコマンドを置いたりできる）は、チャットの起動時に拒否する。`~/Documents` は macOS がアクセス許可を求め、iCloud に同期されうるので使わない。フォルダはなければ作る。
 Pi は thread を session file の header の `cwd` で動かすので、Dahlia は thread を開き直す前に header の `cwd` を今の作業フォルダに書き換える。設定の変更は次に起動する chat process から効く。
 以前の `Application Support/<profile>/CodexChatWorkspace/<Workspace ID>` は使わず、削除もしない。
 
@@ -276,12 +274,12 @@ MCP の読み取り結果も untrusted data として扱う。
 Auto review の利用可否は import 先のファイルの存在で判定する。旧版の API は設定を無視するため審査せず、手動確認へ戻す。カードのスイッチはインストール登録の有無を示し、ファイルが欠けた登録も削除できる。
 未インストールのアカウントでは、チャットの「AIにより確認する」を選べず（選択済みの thread は「常に確認する」と表示）、MCP gate も Auto review も「常に確認する」と同じ確認として扱う。
 インストール・アンインストールは起動済みのチャットでも次の MCP 変更操作から効く。既に読み込んだ旧版を置き換えた場合は、新しいチャットで固定版を読み直す。
-審査モデルは「Dahlia AI」>「プラグイン」> pi-auto-review のカードの設定で実行アカウントごとに指定し、`autoReviewModel.<local またはアカウント ID>` に保存する。
+審査モデルは「Dahlia AI」>「プラグイン」> pi-auto-review のカードの設定で指定し、`autoReviewModel.local` に保存する。
 空の選択（既定）は審査時点のチャットモデルを使う。変更は起動済みのチャットでも次の審査から効き、`PI_AUTO_REVIEW_MODEL` や Pi 側の `autoReview` 設定より優先する。
 reasoning effort は審査モデルの価格情報から自動設定する。Pi の100万トークン当たりの入力価格が2 USD以上、または出力価格が10 USD以上なら low、それ未満なら high。
 価格情報がない・ゼロの場合はモデル名に関係なく high にする。「チャットと同じモデル」でも審査の推論強度はこの規則で選ぶ。
 審査は追加のモデル呼び出しになり、その provider に履歴と予定操作を渡す。
-同じ設定画面のトリアージは既定で無効。アカウントごとに `autoReviewTriage.<local またはアカウント ID>` に保存し、次の審査から反映する。
+同じ設定画面のトリアージは既定で無効。`autoReviewTriage.local` に保存し、次の審査から反映する。
 接続済み Unity AI Gateway のモデルサービス一覧から System One API を提供する `system.ai.openjev-qwen35-4b` を取得できた場合だけ有効化できる。
 トグルのオン操作時に接続先へ確認し、成功した場合だけオンを保存する。確認に失敗しても再びオン操作で再確認でき、古い取得状態でトグルを操作不能にはしない。
 確認済みのモデル・接続先情報は保持して審査時に再利用し、設定画面の表示や審査ごとには再取得しない。
@@ -309,13 +307,12 @@ Codex の web search、`request_user_input` は Pi にないため提供しな�
 ### Unity AI Gateway の MCP
 
 採否は[エージェントによる MCP 経由の外部サービス操作](agent-mcp-operations.md)に従う。
-開いているアカウントに、「Dahlia AI」>「モデル」の「プロバイダー」で Databricks の workspace（sign-in）を追加し、「コネクタ」タブで
+アプリのアカウントに、「Dahlia AI」>「モデル」の「プロバイダー」で Databricks の workspace（sign-in）を追加し、「コネクタ」タブで
 その workspace の MCP server を登録する（2026-11-09 ユーザー承認）。「プロバイダー」には、アカウント自身のモデルのサインインも並べる。モデルの
-workspace と MCP の workspace が異なることが多いため、MCP 用の workspace はアカウントとは別にサインインする。Databricks アカウントでは、
-モデルと同じプロバイダーアカウントの workspace の MCP も選べ、その server は `auth.provider` にその接続の bridged provider（ホスト名）を指定して
-アカウントの token を使う。一覧も `/databricks-mcp-services <URL> --provider databricks` でその token で取り、ここではサインインもサインアウトも
-しない。この workspace は最初の server と一緒に保存し、最後の server を外すと消す。登録は Local Account・Databricks
-アカウント・Dahlia account のどれでもでき、アカウントごとに app defaults（`agentMCPs.<local またはアカウント ID>`）に保存する。
+workspace と MCP の workspace が異なることが多いため、MCP 用の workspace はモデルとは別にサインインできる。
+Databricks の接続（プロバイダーアカウント）の workspace の MCP も選べ、その server は `auth.provider` にその接続の bridged provider（ホスト名）を指定して
+接続の token を使う。一覧も `/databricks-mcp-services <URL> --provider <ホスト名>` でその token で取り、ここではサインインもサインアウトも
+しない。この workspace は最初の server と一緒に保存し、最後の server を外すと消す。登録は app defaults（`agentMCPs.local`）に保存する。
 Unity Gateway の MCP service は登録の操作なしで一覧からトグルにより有効にする（2026-11-09 ユーザー承認）。「コネクタ」タブは、アカウント自身の workspace と「プロバイダー」で
 追加した Databricks を折りたたみ可能な見出しとして並べ、その下に MCP service を2列のカードで表示する。一覧は中央の設定カラムに収め、カードには名前と API の `comment` を表示し、検索は説明も対象にする。各 MCP service のカード右上にトグルを置き、有効な MCP だけ、その左に小型の円形の認証表示と処理中のキャンセルを表示する。プロバイダーのサインインは「モデル」の「プロバイダー」で行う。オンにすると server を登録し、オフにすると外す。
 各 provider のすべてのサービスカードの後に「MCP サーバーを追加」カードを置く。`main.default.notion` のような完全名を入力すると有効なカードとして追加し、無効化後も一覧に残す。追加用カードは常に最後に表示する。
@@ -366,15 +363,15 @@ control process の `/databricks-connection-login <workspace URL> <service>` が
 履歴の正本は app の GRDB の `chat_threads` と追記専用 `chat_items`。Dahlia では永続的な会話を Thread、
 その時系列ログを Item と呼ぶ。session は Pi／Databricks のアダプタ内と録音の用語に留める。台帳は常に GRDB に置き、
 将来の Databricks managed memory session store への切り替えは `ChatItemStore` の裏のアイテムログだけを対象とする。
-Thread は実行アカウントに属し、Workspace とは直接関連付けない。Project は議事録と同じ `projects.id` を任意で参照する。
-チャット入力欄の枠のすぐ上に Project だけを表示する。新規 Thread では同じアカウント内の Project または「プロジェクトなし」を選べる。
+Thread はアプリのアカウント（`accountID` は `local`）に属し、Workspace とは直接関連付けない。Project は議事録と同じ `projects.id` を任意で参照する。
+チャット入力欄の枠のすぐ上に Project だけを表示する。新規 Thread ではすべての Workspace の Project または「プロジェクトなし」を選べる。
 Project のパスが重複する場合は選択肢と保存済みの表示に Workspace 名を補い、Workspace 名も同じ場合はその識別子を添えて区別する。
 未選択なら最初の入力の Project／Meeting context を初期値に使い、Thread 作成時に「プロジェクトなし」も含めて関連を確定する。
 最初の送信以降は表示のみとし、初回実行前の失敗・再試行でも関連を変更しない。
-Project がない Thread はアカウント共通であり、同じアカウント内の Workspace 切替では履歴・実行中の会話を維持する。
-Project から実行先 Workspace を解決しない。Dahlia MCP は Thread のアカウントで範囲を固定し、Project はその範囲を狭めない。
-Project を削除しても Thread は保持して紐づけだけを外す。Workspace を別アカウントへ移しても Thread の実行アカウントは移さない。
-親 Thread は作成時だけ指定でき、同じアカウントの子を持つ。親を削除すると子とその Item も削除する。
+Project がない Thread は Workspace に属さず、Workspace 切替では履歴・実行中の会話を維持する。
+Project から実行先 Workspace を解決しない。チャットの Dahlia MCP はすべての Workspace を読み、Project はその範囲を狭めない。
+Project を削除しても Thread は保持して紐づけだけを外す。
+親 Thread は作成時だけ指定でき、子を持つ。親を削除すると子とその Item も削除する。
 子の起動・結果配送は[スレッド管理の設計判断](chat-thread-orchestration.md)を参照。
 
 ユーザー入力は送信前、アシスタント応答は `message_end`、ツール結果は実行完了で保存し、途中の文字デルタは保存しない。
@@ -395,8 +392,8 @@ Mac の検索は Thread のタイトルとユーザー／アシスタントの�
 検索結果は Thread ごとにまとめ、複数語の AND 条件はタイトルと複数メッセージをまたいで満たせる。
 会議 context、live transcript の隠しブロック、推論文、ツール引数・結果、画像データは索引に含めない。
 アカウント・Project（子Projectを含む）・更新日時の期間で絞り込み、タグ付き検索ではチャットを返さない。
-辞書を変更して全文検索を再構築するとチャットも再構築する。チャットは会議と別の全文検索表（`search_chat_documents`／`search_chat_documents_fts`）に索引する。メッセージごとに索引するので、同じ表に入れると会議検索の関連度順位（表全体の統計に依存する）が変わり、ページ送りがずれるため。チャットの索引 job は会議検索のカーソルを無効にする索引リビジョンも進めない。Server Account の Mac チャットもローカル保存・ローカル検索であり、
-Private Web／Electron の Mastra チャットや Server MCP の検索対象は変わらない。
+辞書を変更して全文検索を再構築するとチャットも再構築する。チャットは会議と別の全文検索表（`search_chat_documents`／`search_chat_documents_fts`）に索引する。メッセージごとに索引するので、同じ表に入れると会議検索の関連度順位（表全体の統計に依存する）が変わり、ページ送りがずれるため。チャットの索引 job は会議検索のカーソルを無効にする索引リビジョンも進めない。Mac のチャットはローカル保存・ローカル検索であり、
+Private Web／Electron の Mastra チャットや Server MCP の検索対象にはならない。
 チャットは DB デバッグ読み取りの既存の全アカウント例外に含まれ、通常の検索・履歴 UI のアカウント境界とは異なる。
 Thread／Item とその検索索引は Workspace バックアップと Server 同期には含めない。チャットのバックアップツールは対象の `workspace_id` を必須引数とし、実行アカウントへの所属を検証する。
 

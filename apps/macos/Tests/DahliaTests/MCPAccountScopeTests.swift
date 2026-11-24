@@ -66,6 +66,8 @@ import GRDB
                     arguments: [serverID, UUID.v7(), fixture.otherWorkspaceID]
                 )
                 try WorkspaceRecord(id: localWorkspaceID, name: "Local", createdAt: .now, lastOpenedAt: .now).insert(db)
+                // A released database can still link a workspace to a Databricks connection until the app clears it.
+                try db.execute(sql: "UPDATE workspaces SET databricksConnectionId = ? WHERE id = ?", arguments: [databricksID, localWorkspaceID])
             }
             // A Databricks connection is no account of its own, so it scopes nothing.
             #expect(throws: MCPAccountScope.Failure.accountNotFound) {

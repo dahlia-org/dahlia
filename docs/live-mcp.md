@@ -2,22 +2,20 @@
 
 ## ローカル MCP の登録
 
-設定の「Dahlia MCP」で、接続するアプリ（既定は Claude Code）、公開する範囲、編集権限を順に選ぶ。アカウントは Local、Databricks、Dahlia Server ごとに表示され、アカウントを選ぶとその所属ワークスペースから1つに限定することもできる。「対象のワークスペース」は「すべてのアカウント」では既定で折りたたみ、個別のアカウントを選ぶと展開する。アイコンとラベル全体で開閉でき、各行を「ワークスペース名 - アカウント名」で表示する。選択メニューも同じ表記を使い、同じアカウント内でも重複する場合だけ保存先または短い ID を添える。
+設定の「Dahlia MCP」で、接続するアプリ（既定は Claude Code）、公開する範囲、編集権限を順に選ぶ。範囲は「すべてのワークスペース」か、1つのワークスペースだけを選ぶ。ワークスペース名が重複する場合だけ保存先または短い ID を添える。
 
-登録コマンドと mcp.json は常に表示され、コピーボタンで取得できる。Claude Code / Codex は表示された登録コマンドをターミナルで実行し、接続先のアプリを再起動する。その他のアプリは mcp.json を選び、既存の MCP 設定ファイルへ追加する。範囲や編集権限の選択は設定のプレビューであり、登録済みの接続を直接変更しない。変更・解除の手順は「接続の変更・解除」から確認できる。アカウント全体の指定は `--account <UUID|local>`、個別ワークスペースは `--workspace-id <ws_TypeID>` を生成する。両者は排他である。
+登録コマンドと mcp.json は常に表示され、コピーボタンで取得できる。Claude Code / Codex は表示された登録コマンドをターミナルで実行し、接続先のアプリを再起動する。その他のアプリは mcp.json を選び、既存の MCP 設定ファイルへ追加する。範囲や編集権限の選択は設定のプレビューであり、登録済みの接続を直接変更しない。変更・解除の手順は「接続の変更・解除」から確認できる。個別ワークスペースは `--workspace-id <ws_TypeID>` を生成し、「すべてのワークスペース」では範囲の引数を付けない。
 
 ```sh
 dahlia-mcp                                   # この Mac に追加済みの全ワークスペース、読み取りのみ
 dahlia-mcp --write                           # 全ワークスペースへの読み書き
-dahlia-mcp --account local                   # Local Account のワークスペースだけ読み取り
-dahlia-mcp --account <account_UUID> --write   # 指定アカウントのワークスペースだけ読み書き
 dahlia-mcp --workspace <ws_TypeID>            # 指定したワークスペースだけ読み取り
 dahlia-mcp --workspace-id <ws_TypeID> --write  # 指定したワークスペースだけ読み書き
 ```
 
-`--account` は `--workspace` / `--workspace-id` と排他で、併用・重複・不正な値は起動時に拒否する。`--account` の UUID はこの Mac の `provider_accounts.id` であり、Server の user / organization ID ではない。Local Account は ID を持たないため `local` と指定する。Server アカウントは `accountConnectionId`、Databricks アカウントは `databricksConnectionId` の所属で絞り、Local Account はどちらも未設定の Workspace に限定する。起動後の追加・移動も操作時に反映する。不明・削除済みアカウントでは失敗し、全件にフォールバックしない。
+既存の登録との互換のため、`--account local` と `--account <Dahlia account の UUID>` も受け付ける。`local` は Server の所属を持たない Workspace（Desktop ではすべて）、UUID はその Dahlia account の所属を残した Workspace を対象にする。`--account` は `--workspace` / `--workspace-id` と排他で、併用・重複・不正な値、Databricks の接続 ID、不明・削除済みの UUID は起動時に拒否し、全件にフォールバックしない。
 
-`list_workspaces` はワークスペース ID・名前・`account_type`・`account_id`・`access_state`・`freshness` を返す。`account_id` は登録にそのまま使える UUID または `local`。`account_type` は従来どおりデータ保持方式の `local` / `server` を表し、Databricks アカウントの Workspace も `local` になる。Server の `last_synced` は端末に保持した同期済みデータであり、最新の共有権限や接続を保証しない。`query_meetings` の `is_recording`（Server: `isRecording`）で録音状態を確認する。Server の状態は開始・終了イベントの同期に従う。
+`list_workspaces` はワークスペース ID・名前・`account_type`・`account_id`・`access_state`・`freshness` を返す。`account_id` はどの Workspace も `local`（Server の所属を残した旧い行だけ Dahlia account の UUID）で、Databricks の接続 ID は返さない。`account_type` はデータ保持方式の `local` / `server` を表す。`query_meetings` の `is_recording`（Server: `isRecording`）で録音状態を確認する。
 
 全ワークスペースの query は `workspaces` 配列に各ワークスペースの結果をまとめる。各結果の cursor と `workspace_id` を一緒に渡して続きを取得する。`get_*` は対象 ID からワークスペースを解決する。アカウントまたは個別ワークスペースの指定で起動した場合、ツールの `workspace_id` で範囲を広げることはできない。
 
@@ -50,7 +48,7 @@ MCP は録音や認識を開始しない。未確定文、ライブ専用ツー�
 
 Public tool IDs use TypeID prefixes: `mtg_`, `proj_`, `ws_`, `att_`, `transcript_`, and `seg_`. Reuse returned IDs unchanged; raw database UUIDs are not accepted as tool arguments. Desktop Dahlia AI sends the same IDs, including `meeting:mtg_...` mentions, while preserving display of historical UUID contexts and mentions. Generated screenshot references use `att_`; user-authored text is unchanged. Treat cursors and `next_after` as opaque values.
 
-Local MCP defaults to all workspaces added to this Mac. `--write` enables writes across that scope; optional `--workspace` / `--workspace-id` restrict both reads and writes. Alternatively, `--account <UUID|local>` restricts access to one account’s added Workspaces and is mutually exclusive with Workspace flags. Use the `account_id` returned by `list_workspaces`: a Mac-local account UUID or `local`. Server and Databricks memberships are checked at operation time; Local excludes both. Unknown or removed accounts fail without broadening access. Existing IDs identify the destination Workspace. Creates require an explicit `workspace_id` or an unambiguous parent ID. Cross-Workspace references are rejected. Query results are grouped by Workspace; continue each group with its own Workspace ID and cursor.
+Local MCP defaults to all workspaces added to this Mac. `--write` enables writes across that scope; optional `--workspace` / `--workspace-id` restrict both reads and writes. For existing registrations, `--account local` or `--account <Dahlia account UUID>` is still accepted and is mutually exclusive with Workspace flags; a Databricks connection ID, an unknown or removed account fails without broadening access. `list_workspaces` returns `account_id` `local` for every Workspace on the Desktop. Existing IDs identify the destination Workspace. Creates require an explicit `workspace_id` or an unambiguous parent ID. Cross-Workspace references are rejected. Query results are grouped by Workspace; continue each group with its own Workspace ID and cursor.
 
 `get_meeting_transcript` returns confirmed speech for the whole meeting. Pass `next_after` as `after` to read additions. `wait: true` waits up to 25 seconds only when empty. Empty responses still include `next_after`. Existing `cursor` pagination cannot be combined with `after`. Keep the same meeting and time range. On `transcript_changed_refetch_without_after`, omit `after` and rebuild your accumulated transcript. Missing bodies and authorization failures are errors, never empty successes.
 

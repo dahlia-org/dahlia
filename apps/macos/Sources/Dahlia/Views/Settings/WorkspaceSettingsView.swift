@@ -78,7 +78,7 @@ struct WorkspaceSettingsView: View {
             HStack(spacing: 8) {
                 Image(systemName: "desktopcomputer")
                     .accessibilityHidden(true)
-                Text(L10n.localAccount)
+                Text(L10n.thisMac)
                     .font(.dahliaSectionHeader)
                 Button {
                     showCreateAlert()

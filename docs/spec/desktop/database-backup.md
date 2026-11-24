@@ -4,13 +4,13 @@
 
 ## 世代と対象
 
-Local Account 配下の複数の Workspace を選択して一つの gzip 圧縮 tar（`.tar.gz`）にまとめ、Application Support/Dahlia/Backups にユーザー削除まで保持する。自動で世代数を減らさない。
+複数の Workspace を選択して一つの gzip 圧縮 tar（`.tar.gz`）にまとめ、Application Support/Dahlia/Backups にユーザー削除まで保持する。自動で世代数を減らさない。
 現行形式の manifest と各 DB snapshot に元の Workspace UUID・名前の一覧、世代 UUID、日時、schema / migration、app version/build、理由を埋め込む。
 単一の DB snapshot から選択した全 Workspace を抽出し、途中で失敗した世代は公開しない。
 現行 manifest を持つ tar.gz だけを読み込み・復元の対象とする。
 
 対象は選択した Workspace の DB 内データと参照関係。Project 階層、会議、文字起こし・翻訳、session timeline、要約、files の metadata、会議との紐付け、スクリーンショットの OCR / caption を含む。原本は `files/{fileId}/original`、DB は `database.sqlite` として格納し、`manifest.json` に各 entry のサイズと SHA-256 を記録する。
-Server Account の Workspace とその未送信画像は対象外。Local Account の対象 Workspace の原本は FileStore から取り込む。画面の選択肢と作成元 snapshot の所属を検証し、Server Account の Workspace を一つでも含む作成要求は世代を公開せず拒否する。端末固有の画像ファイル参照は含めない。
+対象 Workspace の原本は FileStore から取り込む。端末固有の画像ファイル参照は含めない。
 共有タグ・カレンダー情報は対象会議から参照されるものだけを保存する。
 明示した対象テーブルから新しい DB へコピーするため、他 Workspace の内容は含まれない。原文・要約・OCR / caption の専用本文テーブルもコピーし、親 metadata に対応する本文の欠損があれば世代の公開・復元を拒否する。本文の保持状態や同期 state はコピーしない。
 音声本体・参照、Workspace Markdown / 添付、端末の出力先、UserDefaults、アカウント接続、Keychain / token、同期キュー・カーソル、検索索引は含めない。対象 Workspace に未文字起こし segmented audio があれば、文字起こしか明示破棄まで作成を拒否する。
@@ -48,7 +48,7 @@ import は管理領域の一時 copy を integrity / metadata / schema / migrati
   外部キー・多態参照・要約内のスクリーンショット参照も新しい ID へ書き換える。同名は許可する。
   接続、同期状態、出力先（要約の書き出し先参照を含む）は引き継がない。共有タグは名前で対応付け、既存タグや共有カレンダー情報は上書きしない。
 
-Server Account の Workspace への上書きは拒否する。復元による Server への操作・同期 transaction は生成しない。
+復元による Server への操作・同期 transaction は生成しない。
 バックアップは原本を内包するため、復元時にクラウドから画像を取得しない。
 
 復元は再起動時、単一 process lock 取得後・通常 DB open 前に行う。録音・処理中には開始しない。
@@ -66,7 +66,7 @@ Server Account の Workspace への上書きは拒否する。復元による Se
 復元時に既存音声ファイルを削除しない。外部 Markdown / 添付の書き換えも行わない。
 復元対象以外の Workspace で、バックアップ後から再起動までに追加されたデータも最新 DB のコピーを通じて保持する。
 Server canonical data は [同期契約](../shared/sync.md) の境界で扱い、backup restore を Server 削除の許可とみなさない。
-Server Account の本文部分保持で backup の対象は広げない。Local Account へ移す場合は、metadata 同期と全本文・画像原本の取得を完了してから所属を変更する。途中失敗した接続や未送信 queue は保持し、不完全な working copy を Local Account の完全な backup として扱わない。既存 backup 世代や書き出し済み Markdown は本文 cache の容量管理で削除しない。
+既存 backup 世代や書き出し済み Markdown は本文 cache の容量管理で削除しない。
 
 ## 未適合・未検証
 

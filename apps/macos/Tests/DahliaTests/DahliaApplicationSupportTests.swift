@@ -163,6 +163,20 @@ import Foundation
         }
 
         @Test
+        func releasedAgentLivesInTheHomeFolderAndADevelopmentAgentBesideItsData() {
+            let home = URL(fileURLWithPath: "/Users/u", isDirectory: true)
+            let development = URL(fileURLWithPath: "/tmp/worktree-data", isDirectory: true)
+
+            #expect(DahliaApplicationSupport.agentDirectoryURL(profile: .production, home: home).path == "/Users/u/.dahlia/agent")
+            #expect(DahliaApplicationSupport.agentDirectoryURL(
+                profile: .development, home: home, developmentDirectory: development, applicationSupportDirectory: baseURL
+            ).path == "/tmp/worktree-data/agent")
+            #expect(DahliaApplicationSupport.agentDirectoryURL(
+                profile: .development, home: home, developmentDirectory: nil, applicationSupportDirectory: baseURL
+            ) == baseURL.appending(path: "Dahlia-Development/agent", directoryHint: .isDirectory))
+        }
+
+        @Test
         func appAndMeetingAccessHelperResolveTheSameDatabase() {
             let expectedURL = DahliaApplicationSupport.currentDirectoryURL.appending(path: "dahlia.sqlite")
 

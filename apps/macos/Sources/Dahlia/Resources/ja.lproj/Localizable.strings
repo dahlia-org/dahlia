@@ -1,4 +1,3 @@
-"settings.organization.checkAdvancedModels" = "利用できないモデルが指定されています。詳細設定で変更するか「自動」に戻してください。";
 "settings.organization.settingsDataAndAccounts" = "データ管理";
 "settings.organization.workspaceSettings" = "ワークスペースの設定";
 "settings.organization.searchSettings" = "設定を検索";
@@ -53,13 +52,10 @@
 "Delete" = "削除";
 "Remove from Project" = "プロジェクトを解除";
 "Backups" = "バックアップ";
-"Database Backup" = "データベースのバックアップ";
-"Backups include transcripts and other database content. Audio files and their references are excluded." = "文字起こしなどのデータベース内容を保存します。音声ファイルとその参照情報は含まれません。";
 "Create Backup" = "バックアップを作成";
 "Import Backup" = "バックアップを読み込む";
 "Restore" = "復元";
 "Delete Backup" = "バックアップを削除";
-"Backup Generations" = "バックアップ世代";
 "No Backups" = "バックアップはありません";
 "Create a backup to preserve the selected workspace." = "選択したワークスペースを保存するにはバックアップを作成してください。";
 "Backup created." = "バックアップを作成しました。";
@@ -82,7 +78,6 @@
 "Delete this backup?" = "このバックアップを削除しますか？";
 "This backup generation will be permanently deleted. This cannot be undone." = "このバックアップ世代は完全に削除されます。この操作は取り消せません。";
 "Restore this backup?" = "このバックアップを復元しますか？";
-"The current database will be backed up first, then replaced. Dahlia will restart. Audio files and app settings are not restored." = "現在のデータベースを先に退避してから置き換え、Dahliaを再起動します。音声ファイルとアプリ設定は復元されません。";
 "Unprocessed Recordings" = "未処理の録音";
 "Open Unprocessed Recordings" = "未処理の録音を開く";
 "Finish the current recording before opening unprocessed recordings in another workspace." = "別のワークスペースにある未処理の録音を開くには、現在の録音を終了してください。";
@@ -154,7 +149,6 @@
 "Create New Meeting" = "新しいミーティング";
 "Quick Recording" = "クイック録音";
 "Quick recording %@" = "クイック録音 %1$@";
-"Home" = "ホーム";
 "Good morning" = "おはようございます";
 "Good afternoon" = "こんにちは";
 "Good evening" = "こんばんは";
@@ -176,9 +170,7 @@
 "Project Options" = "プロジェクトのオプション";
 "Pin Project" = "プロジェクトをピン留め";
 "Unpin Project" = "ピン留めを外す";
-"Open Project" = "プロジェクトを開く";
 "No meetings in this project" = "ミーティングはありません";
-"Project Management" = "プロジェクト管理";
 "Instructions" = "Instructions";
 "Context" = "Context";
 "Action Items" = "Action Items";
@@ -186,8 +178,6 @@
 "Ask" = "Ask";
 "New Project" = "新規プロジェクト";
 "Create Project" = "プロジェクトを作成";
-"New Subproject" = "新規サブプロジェクト";
-"New Project at Workspace Top" = "Workspaceトップにプロジェクトを作成";
 "Create a subproject inside %@." = "「%@」の配下にサブプロジェクトを作成します。";
 "Create a project at the top level of the workspace." = "Workspaceのトップ階層にプロジェクトを作成します。";
 "Could Not Create Project" = "プロジェクトを作成できませんでした";
@@ -197,8 +187,6 @@
 "Context changed to %@" = "コンテキストが %@ に切り替わりました";
 "The selected meeting is no longer available." = "選択中のミーティングを読み込めませんでした。";
 "Project Name" = "プロジェクト名";
-"Project Icon" = "プロジェクトアイコン";
-"Theme Color" = "テーマカラー";
 "Neutral" = "標準";
 "Red" = "赤";
 "Orange" = "オレンジ";
@@ -233,17 +221,13 @@
 "Science" = "科学";
 "Ideas" = "アイデア";
 "Favorite" = "お気に入り";
-"Rename Project" = "プロジェクト名を変更";
-"Renaming updates the logical Project path and tracked Summary outputs. Unrelated directories and files are not moved." = "名前を変更すると、Project の論理パスと追跡中の Summary 出力を更新します。無関係なディレクトリやファイルは移動しません。";
 "Location" = "場所";
 "Latest Meeting" = "最新の meeting";
-"Open in Finder" = "Finder で開く";
 "Open in Obsidian" = "Obsidian で開く";
 "Open in Browser" = "ブラウザで開く";
 "Home is under construction." = "Home は工事中です。";
 "Action items will appear here." = "Action Items は今後ここに表示されます。";
 "Select a project from Projects." = "Projects からプロジェクトを選択してください。";
-"Open Projects" = "Projects を開く";
 "Title" = "タイトル";
 "All" = "すべて";
 "Filter" = "フィルター";
@@ -275,16 +259,11 @@
 "Searching…" = "検索中…";
 "No meetings match your search" = "条件に一致するミーティングはありません";
 "Try changing the keywords or filters." = "キーワードや絞り込み条件を変更してください。";
-"Search is limited to %lld characters. Extra text was not entered." = "検索は %lld 文字までです。超過したテキストは入力されませんでした。";
 "Clear All" = "すべてクリア";
 "Selected (Outside Results)" = "選択中（検索結果外）";
 "Period" = "期間";
 "Tag" = "タグ";
-"Projects (match any)" = "プロジェクト（いずれかに一致）";
-"Tags (match any)" = "タグ（いずれかに一致）";
-"Includes subprojects" = "配下を含む";
 "No tags yet" = "まだタグがありません";
-"No matching tags" = "一致するタグがありません";
 "Loading Tags…" = "タグを読み込み中…";
 "Past 7 days" = "過去7日";
 "Past 30 days" = "過去30日";
@@ -323,25 +302,14 @@
 "Create a project to organize meetings and summaries." = "プロジェクトを作成してmeetingと要約を整理できます。";
 "Clear Search" = "検索をクリア";
 "No project" = "プロジェクトなし";
-"Summary Destinations" = "要約の書き出し先";
-"The logical Project path determines this destination. The folder is created when a Summary is exported." = "論理 Project パスから書き出し先を決定し、Summary の書き出し時にフォルダを作成します。";
-"Local Summary Folder" = "ローカルの要約フォルダ";
 "The Summary output destination must resolve inside the Workspace without symlink or file path components." = "Summary の書き出し先は Workspace 内に解決され、パス上にシンボリックリンクやファイルを含めることはできません。";
-"The Summary output folder has not been created yet." = "Summary の書き出しフォルダはまだ作成されていません。";
 "Project Description" = "プロジェクトの説明";
 "The description is provided as context when generating summaries. For example, you can include project members." = "要約生成時にコンテキストとして渡されます。例えば、プロジェクトメンバーなどを記載できます。";
 "Describe this project..." = "このプロジェクトについて説明してください...";
-"Could not save the project description." = "プロジェクトの説明を保存できませんでした。";
 "Saving…" = "保存中…";
 "Saved" = "保存済み";
-"Danger Zone" = "危険な操作";
-"Project Overview" = "プロジェクトの概要";
 "Project Location" = "プロジェクトの場所";
-"Included Subprojects" = "含まれるサブプロジェクト";
-"Meetings in This Project" = "このプロジェクトのmeeting";
-"Meetings in Hierarchy" = "階層全体のmeeting";
 "Delete Project" = "プロジェクトを削除";
-"Deletes this Project and its subprojects from Dahlia. Export directories and unrelated files are kept." = "この Project とサブ Project を Dahlia から削除します。書き出しディレクトリと無関係なファイルは残します。";
 "Delete %@?" = "%@を削除しますか？";
 "This affects %lld projects and %lld meetings." = "%lld件のプロジェクトと%lld件のmeetingが対象です。";
 "Project directories and unrelated files will be kept." = "Project ディレクトリと無関係なファイルは残します。";
@@ -369,7 +337,6 @@
 "A summary file named %@ already exists in the destination." = "移動先には「%@」という要約ファイルがすでにあります。";
 "The summary file %@ is linked to multiple meetings and cannot be moved safely." = "要約ファイル「%@」は複数のmeetingから参照されているため、安全に移動できません。";
 "The project operation failed (%@), and Dahlia could not restore the Summary output (%@)." = "Project 操作に失敗し（%@）、Summary 出力も復元できませんでした（%@）。";
-"Select a project to manage summary destinations and instructions." = "要約の書き出し先と instruction を管理するプロジェクトを選択してください。";
 "Open a workspace before managing project settings." = "プロジェクト設定を管理するにはワークスペースを開いてください。";
 "Today" = "今日";
 "Tomorrow" = "明日";
@@ -378,8 +345,6 @@
 "No meetings match the current filter." = "現在のフィルターに一致する meeting はありません。";
 "%lld meetings" = "%lld 件のミーティング";
 "%lld" = "%lld件";
-"%lld subprojects included" = "%lld件のサブプロジェクトを含む";
-"Search meetings..." = "ミーティングを検索...";
 "Selected Meeting" = "選択中のミーティング";
 "Loading Meetings…" = "ミーティングを読み込み中…";
 "Loading More…" = "さらに読み込み中…";
@@ -414,14 +379,12 @@
 "Preparing speech recognition..." = "音声認識を準備中...";
 "Recognizing..." = "認識中...";
 "Transcription" = "文字起こし";
-"%lld segments" = "%lld セグメント";
 "Stop" = "停止";
 "Start Recording" = "録音を開始";
 "Stop Recording" = "録音を停止";
 "A recording session is already active." = "すでに録音セッションが実行中です。";
 "No recording session is active." = "実行中の録音セッションはありません。";
 "Stop transcribing" = "文字起こしを停止";
-"Pause" = "一時停止";
 "Resume" = "再開";
 "Record" = "録音";
 "Export" = "書き出し";
@@ -461,7 +424,6 @@
 "Subtitles" = "字幕";
 "Live subtitles on" = "表示中";
 "Live subtitles off" = "非表示";
-"Live Subtitle Overlay" = "字幕の表示";
 "Show live subtitles when recording starts." = "録音開始時にライブ字幕を表示します。";
 "Show speech as subtitles during recording. The final transcript is created separately after recording stops." = "録音中の発話を字幕で表示します。最終的な文字起こしは、録音停止後に別途作成します。";
 "Include Microphone" = "マイク入力を含める";
@@ -477,14 +439,12 @@
 "Screenshots" = "スクリーンショット";
 "Meeting Content" = "ミーティング内容";
 "Transcript" = "文字起こし";
-"Assignee" = "担当者";
 "Assign to me" = "自分に割り当てる";
 "Edit assignee" = "担当者を編集";
 "Mark action item complete" = "アクションアイテムを完了にする";
 "Mark action item incomplete" = "アクションアイテムを未完了に戻す";
 
 /* Audio Source Mode */
-"Audio source" = "音声ソース";
 "Microphone" = "マイク";
 "Mic" = "マイク";
 "System" = "システム";
@@ -537,7 +497,6 @@
 "Model" = "モデル";
 "Reasoning Effort" = "推論の強度";
 "Controls how much reasoning Pi uses for each summary." = "要約ごとに Pi が使用する推論の強度を設定します。";
-"Summary Output" = "要約の出力";
 "Detail Level" = "詳細度";
 "Event Play-by-Play" = "イベント実況中継";
 "Event Session" = "イベントセッション";
@@ -545,7 +504,6 @@
 "Concise" = "簡潔";
 "Detailed" = "詳細";
 "Output Language" = "出力言語";
-"Select the language used for generated summaries." = "生成する要約の言語を選択します。";
 "Minimal" = "最小";
 "Low" = "低";
 "Medium" = "中";
@@ -554,9 +512,7 @@
 "Max" = "最大";
 "Ultra" = "ウルトラ";
 "Workspace" = "ワークスペース";
-"Accounts and Workspaces" = "アカウントとワークスペース";
 "Dahlia Account" = "Dahlia アカウント";
-"%@ - %@" = "%@ - %@";
 "Dahlia Server is not configured." = "Dahlia Server が設定されていません。";
 "Signed in" = "サインイン済み";
 "Not signed in" = "サインインしていません";
@@ -566,7 +522,6 @@
 "Sign In to Dahlia Cloud" = "Dahlia Cloud にサインイン";
 "Dahlia Cloud (Coming Soon)" = "Dahlia Cloud（近日公開）";
 "Or connect to a server" = "または Server に接続";
-"Connect to Dahlia Server" = "Dahlia Server に接続";
 "Server URL" = "Server URL";
 "Connect" = "接続";
 "Dahlia account" = "Dahlia アカウント";
@@ -579,25 +534,11 @@
 "Dahlia credentials could not be saved securely." = "Dahlia の認証情報を安全に保存できませんでした。";
 "A Dahlia connection already exists for this server." = "この Server への Dahlia 接続はすでに存在します。";
 "Sign in with the same Dahlia account, or add a new connection." = "同じ Dahlia アカウントでサインインするか、新しい接続を追加してください。";
-"%lld Dahlia accounts" = "%lld 件の Dahlia アカウント";
 "Sign out of %@?" = "%@ からサインアウトしますか？";
-"Move to Server" = "Server へ移行";
-"Reconnect Server Workspace" = "Server Workspace に再接続";
-"Keep in Local Account" = "ローカルアカウントのままにする";
-"Reconnect %@ to this Server?" = "%@ をこの Server に再接続しますか？";
-"Move %@ to this Server?" = "%@ をこの Server へ移行しますか？";
-"A Workspace with the same ID exists on the Server. Member access uses the Server version; owners can choose which version to use if records conflict." = "同じ ID の Workspace が Server にあります。member は Server 版を使用し、owner は競合時にどちらの版を使うか選択できます。";
-"This Workspace will move from the Local Account to the Server and synchronize automatically. Its working copy remains on this Mac." = "この Workspace をローカルアカウントから Server へ移行し、自動的に同期します。作業コピーはこの Mac に残ります。";
-"Signed in as %@" = "%@ としてサインイン済み";
 "Dahlia request failed (HTTP %lld)." = "Dahlia へのリクエストに失敗しました（HTTP %lld）。";
-"Coming Soon" = "準備中";
 "Loading Workspaces…" = "ワークスペースを読み込み中…";
 "Deleting Workspace…" = "ワークスペースを削除中…";
-"Confirm Meeting Deletions" = "ミーティング削除を確認";
-"Continue Deleting" = "削除を続行";
-"%lld server meeting deletions are waiting. Continue deleting them?" = "Server 上の %lld 件のミーティング削除が保留中です。削除を続行しますか？";
 "Current Workspace" = "現在のワークスペース";
-"Choose the workspace used for recordings and sync." = "録音と同期に使用するワークスペースを選択します。";
 "No workspace selected" = "ワークスペースが選択されていません";
 "Appearance" = "外観";
 "settings.appearance.menuBar" = "メニューバー";
@@ -606,16 +547,13 @@
 "Typography" = "文字";
 "Font Size" = "フォントサイズ";
 "%lld pt" = "%lld pt";
-"Meeting Sidebar" = "会議サイドバー";
 "Sidebar Display Style" = "サイドバーの表示スタイル";
-"Controls how meetings appear in the sidebar." = "サイドバーに表示する会議の見た目を設定します。";
 "App Language" = "表示言語";
 "appearance.textSize" = "文字サイズ";
 "appearance.textSize.description" = "アプリ全体の文字の大きさです。";
 "appearance.textSize.footer" = "開いている画面の一部は、表示し直すかアプリを再起動すると新しい文字サイズになります。";
 "appearance.textSize.points %lld" = "%lld pt";
 "appearance.textSize.default %lld" = "%lld pt（標準）";
-"Set the display language for the app." = "アプリの表示言語を設定します。";
 "Follow System" = "システムに従う";
 "Choose one or both conditions. Calendar notifications use events from enabled calendar sources." = "1つまたは両方の条件を選択できます。カレンダー通知には、有効なカレンダーソースの予定が使用されます。";
 "Choose which languages are available for transcription and automatic detection." = "文字起こしと自動判定で利用する言語を選びます。";
@@ -626,8 +564,6 @@
 "liveSubtitleTranslationDisabledForMatchingLiveTranscriptionLanguage" = "翻訳先の言語がライブ字幕言語と同じ場合、翻訳は自動的に無効になります。";
 "Google Calendar" = "Google カレンダー";
 "macOS Calendar" = "macOS カレンダー";
-"Calendar Source" = "カレンダーソース";
-"Choose which calendar service provides upcoming events." = "今後の予定を取得するカレンダーサービスを選びます。";
 "Calendar Sources" = "カレンダーソース";
 "Turn on registered providers to combine their calendars. Add Google accounts in Providers. Each connection keeps its own calendar selection." = "登録済みのプロバイダーをオンにすると、それぞれの予定をまとめて表示します。Google アカウントは「プロバイダー」で追加できます。表示するカレンダーは接続ごとに選択します。";
 "Calendar Providers" = "カレンダーのプロバイダー";
@@ -660,10 +596,7 @@
 "Automatically start recording when this event begins." = "この予定の開始時刻になったら自動的に録音を開始します。";
 "From calendar event" = "カレンダーイベント由来";
 "Calendar event: %@" = "カレンダーイベント: %@";
-"Connect a Google account and choose which calendars appear on Home." = "Google アカウントを接続し、Home に表示するカレンダーを選びます。";
-"Use events from the Calendar app on this Mac." = "この Mac のカレンダーアプリの予定を使用します。";
 "Display Calendars" = "表示するカレンダー";
-"Only selected calendars are shown on Home." = "選択したカレンダーのみを Home に表示します。";
 "Connect" = "接続";
 "Disconnect" = "切断";
 "Sign in with Google in your Databricks workspace. The browser opens the connection page; Dahlia connects once you finish." = "Databricks ワークスペースで Google にサインインします。ブラウザで接続ページが開き、完了すると Dahlia が接続します。";
@@ -677,7 +610,6 @@
 "Loading Google Calendar…" = "Google カレンダーを読み込み中…";
 "Loading macOS Calendar…" = "macOS カレンダーを読み込み中…";
 "Retry" = "再試行";
-"Retry Sync" = "同期を再試行";
 "Join" = "参加";
 "All day" = "終日";
 "Google Calendar is not configured" = "Google カレンダーが未設定です";
@@ -734,7 +666,6 @@
 /* Workspace Picker */
 "Create New Workspace" = "ワークスペースを新規作成する";
 "Add Workspace" = "ワークスペースを追加";
-"Registered Workspaces" = "登録済みのワークスペース";
 "Open Folder as Workspace" = "ワークスペースとしてフォルダを開く";
 "Delete Workspace" = "ワークスペースを削除";
 "Open a different workspace before deleting this one." = "削除するには、先に別のワークスペースを開いてください。";
@@ -763,12 +694,8 @@
 "No matching languages" = "該当する言語がありません";
 "%lld languages selected" = "%lld 言語を選択中";
 "%lld more languages" = "ほか%lld言語";
-"Transcription Languages" = "文字起こし言語";
 "App Languages" = "アプリで扱う言語";
 "Limits languages shown for transcription and live subtitles, automatic language detection, and screenshot text extraction." = "文字起こしとライブ字幕の選択肢、自動言語判定、スクリーンショットの文字抽出に使う言語を絞り込みます。";
-"Screenshot Text Languages" = "スクリーンショットの文字言語";
-"Pi uses the app languages selected in Language settings as hints when extracting screenshot text." = "Piは「言語」で選択した言語を、スクリーンショットから文字を抽出する際のヒントとして使用します。";
-"Open Language Settings" = "言語設定を開く";
 "Recorded Languages" = "録音時に使用した言語";
 "Transcription Language" = "文字起こし言語";
 "liveTranscriptionLanguage" = "ライブ字幕言語";
@@ -776,8 +703,6 @@
 "Language Range" = "言語の範囲";
 "All Supported Languages" = "対応するすべての言語";
 "Selected Languages" = "選択した言語";
-"All Apple Speech languages appear in pickers. Automatic detection uses the languages also supported by WhisperKit." = "Apple Speechが対応するすべての言語をピッカーに表示します。自動判定には、そのうちWhisperKitも対応する言語を使用します。";
-"Selected languages appear in pickers, and WhisperKit-supported selections become automatic detection candidates." = "選択した言語のみをピッカーに表示し、そのうちWhisperKit対応言語を自動判定の候補にします。";
 
 /* Settings - LLM */
 "Empty response from server" = "サーバーから空のレスポンスが返されました";
@@ -844,7 +769,6 @@
 "Stop and save after both recording and supported meeting-app activity have lasted at least 30 seconds. Browser activity also requires a recognized meeting window. In-person meetings are not detected." = "録音と対応会議アプリの利用がどちらも30秒以上続いた後に終了したら、停止して保存します。ブラウザでは対応する会議ウィンドウも必要です。対面会議は検出しません。";
 
 /* Sidebar Footer */
-"Switch Workspace" = "ワークスペースを切り替え";
 "MCP Settings" = "MCP の設定";
 "Settings" = "設定";
 "Help" = "ヘルプ";
@@ -916,9 +840,6 @@
 "No screenshots yet." = "スクリーンショットはまだありません。";
 
 /* Keychain */
-"Cloud Storage" = "Cloud Storage";
-"Notion" = "Notion";
-"Export summaries to Notion." = "要約を Notion に書き出します。";
 "No previous Google session was found." = "以前の Google セッションは見つかりませんでした。";
 "Google sign-in timed out. Please try again." = "Google サインインがタイムアウトしました。もう一度お試しください。";
 "This build of Dahlia has no Google OAuth client ID, so it can't connect Google services." = "このビルドの Dahlia には Google OAuth クライアント ID が設定されていないため、Google サービスに接続できません。";
@@ -927,11 +848,9 @@
 "Google account connected, but Calendar access has not been granted yet." = "Google アカウントは接続済みですが、カレンダー権限はまだ付与されていません。";
 
 /* Batch Transcription */
-"Transcription Method" = "文字起こし方式";
 "Real-time Transcription" = "リアルタイム文字起こし";
 "Batch Transcription" = "バッチ文字起こし";
 "Show the transcript while recording. Accuracy may be lower than transcription after recording, and audio files are not saved. Real-time transcription uses the live subtitle language. Change it in Language settings or from the recording panel." = "録音中に文字起こしを表示します。録音後の文字起こしより精度が低下する場合があり、音声ファイルは保存されません。リアルタイム文字起こしにはライブ字幕言語を使用します。言語設定または録音パネルから変更できます。";
-"Record audio first, then create a higher-accuracy transcript after recording stops." = "先に音声を録音し、録音終了後に高精度な文字起こしを作成します。";
 "Recording Retention" = "録音データの保存期間";
 "Recordings become eligible for deletion this long after both recording and transcription finish. Audio with failed or unfinished transcription is kept." = "録音と文字起こしの両方が完了してから、指定期間後に音声が削除対象になります。文字起こしに失敗した音声や未処理の音声は保持します。";
 "Forever" = "無期限";
@@ -977,19 +896,10 @@
 "Generate this summary?" = "要約を生成しますか？";
 "Review the context and export options before generating the summary." = "要約を生成する前に、コンテキストと書き出し設定を確認してください。";
 "summary.source.title" = "今回の生成ソース";
-"summary.source.transcript" = "文字起こし";
 "summary.source.transcript.description" = "最新の文字起こしから要約だけを再生成します。";
-"summary.source.audio" = "録音音声";
-"summary.source.audio.description" = "すべての録音から文字起こしと要約を再生成します。";
 "summary.source.checking" = "利用可能なソースを確認中…";
 "summary.source.checkFailed" = "利用可能なソースを確認できませんでした。同期と接続を確認して再試行してください。";
-"summary.source.unsupported" = "このサーバーはこのソースに対応していません。";
 "summary.source.transcript.unavailable" = "最新の文字起こしが空か、まだサーバーに保存されていません。";
-"summary.source.audio.unavailable" = "確定済みの録音音声がありません。アップロード完了後に再試行してください。";
-"summary.source.audio.requiresServer" = "録音音声からの生成はサーバー処理で利用できます。";
-"summary.source.noneAvailable" = "すべての対象で利用できる共通ソースがありません。";
-"%lld selected meetings do not have an available transcript." = "選択したミーティングのうち%lld件で、文字起こしを利用できません。";
-"%lld selected meetings do not have completed recording audio." = "選択したミーティングのうち%lld件で、確定済みの録音音声を利用できません。";
 "Regenerate Summaries" = "要約を再生成";
 "Regenerate selected summaries?" = "選択したミーティングの要約を再生成しますか？";
 "Each selected meeting is regenerated independently. Existing summaries are replaced only after generation succeeds." = "選択したミーティングごとに要約を再生成します。既存の要約は、再生成に成功した場合のみ置き換えられます。";
@@ -1012,7 +922,6 @@
 "Speech analysis could not read the recorded audio." = "音声解析で録音データを読み取れませんでした。";
 
 /* Debug */
-"Debug" = "デバッグ";
 "Microphone & Speech Recognition Test" = "マイク・音声認識テスト";
 "Test microphone input and speech recognition without creating a recording." = "録音データを作成せずに、マイク入力と音声認識を確認します。";
 "Captures raw microphone PCM through ScreenCaptureKit without opening AVAudioEngine device I/O." = "AVAudioEngine のデバイス I/O を開かず、ScreenCaptureKit からマイクの raw PCM を取得します。";
@@ -1100,10 +1009,6 @@
 "The AI backend was restarted to stop an unconfirmed operation safely." = "未確認の操作を安全に停止するため、AI バックエンドを再起動しました。";
 "This approval request is no longer pending." = "この承認リクエストはすでに処理済みです。";
 "Account" = "アカウント";
-"Selected Workspace" = "選択中のワークスペース";
-"Local Account Model Provider" = "ローカルアカウントのモデルプロバイダー";
-"Choose the model provider used by the Local Account." = "ローカルアカウントで使用するモデルプロバイダーを選択します。";
-"This setting is shared by all Local Account workspaces. Dahlia Server and Cloud use hosted models automatically." = "この設定はローカルアカウントのすべてのワークスペースで共通です。Dahlia Server と Cloud は hosted モデルを自動的に使用します。";
 "ChatGPT Subscription" = "ChatGPT Subscription";
 "Databricks" = "Databricks";
 "Unity Gateway" = "Unity Gateway";
@@ -1121,15 +1026,10 @@
 "View Databricks Privacy Notice" = "Databricks Privacy Notice を見る";
 "Dahlia could not control Terminal. The installation command was copied and Terminal was opened. Paste the command and press Return." = "Dahlia からターミナルを操作できませんでした。インストールコマンドをコピーしてターミナルを開きました。コマンドを貼り付け、Return キーを押してください。";
 "Enter a valid HTTPS Databricks workspace root URL." = "有効な HTTPS の Databricks ワークスペース URL を入力してください。";
-"Enter the HTTPS URL of the workspace used by Pi." = "Pi で使用するワークスペースの HTTPS URL を入力します。";
 "https://your-workspace.cloud.databricks.com" = "https://your-workspace.cloud.databricks.com";
-"Create New Profile" = "プロファイルを新規作成";
-"Databricks Workspace ID" = "Databricks ワークスペース ID";
-"Workspace ID unavailable from profile" = "プロファイルからワークスペース ID を取得できません";
 "Could not update the Pi configuration: %@" = "Pi 設定を更新できませんでした: %@";
 "The selected AI account is not ready. Open Accounts and Workspaces in Settings and finish its configuration." = "選択した AI アカウントの準備が完了していません。設定の「アカウントとワークスペース」を開き、設定を完了してください。";
 "Pi returned no available models. Try again." = "Pi から利用可能なモデルが返されませんでした。再試行してください。";
-"The saved model is used when available; otherwise the first available model is selected." = "保存済みモデルが利用可能なら使用し、それ以外は一覧の先頭のモデルを選択します。";
 
 /* Codex Chat */
 "Chat" = "チャット";
@@ -1188,8 +1088,6 @@
 "Waiting for your response or approval" = "回答または承認を待っています";
 "This chat is no longer available." = "このチャットは利用できなくなりました。";
 "Resize" = "サイズを変更";
-"Show all chats" = "すべて表示";
-"Presets" = "プリセット";
 "Organize meetings and Projects from the last %lld days" = "直近%lld日のミーティングとProjectを整理";
 "Project organization chat shortcut prompt" = "$projects-optimizer を使って、直近%1$lld日の Dahlia ミーティングと Project を整理してください。\ncreated_from: %2$@\ncreated_before: %3$@\n\nこの期間のミーティングと既存の Project 階層をまとめて確認し、根拠がある場合は Project の説明を改善して、ミーティングの割り当てを更新してください。";
 "Review meeting speech" = "ミーティングの発話をレビュー";
@@ -1211,12 +1109,7 @@
 "MCP" = "MCP";
 "Parent Project" = "親 Project";
 "Project Type" = "Project の種類";
-"Hierarchy and Type" = "階層と種類";
-"Move Project" = "Project を移動";
-"Update Project Type" = "Project Type を更新";
-"Moving or changing a root type also updates every descendant's path or inherited type." = "移動やルートの種類変更は、すべての子孫のパスまたは継承される種類にも反映されます。";
 "This subproject inherits its Project Type from the root Project." = "このサブプロジェクトはルート Project から種類を継承します。";
-"Inherited from %@" = "%@ から継承";
 "Customer" = "顧客";
 "Internal" = "社内";
 "Personal" = "個人";
@@ -1251,7 +1144,6 @@
 "Add" = "追加";
 "Save" = "保存";
 "Name" = "名前";
-"Danger Zone" = "危険な操作";
 "Needs Review" = "未承認";
 "Edit" = "編集";
 "Reload" = "再読み込み";
@@ -1264,7 +1156,6 @@
 "No text was detected." = "テキストは検出されませんでした。";
 "Text recognition failed." = "文字認識に失敗しました。";
 "Recognizing text..." = "文字を認識中…";
-"Close search" = "検索を閉じる";
 "Remove search filter" = "検索フィルターを削除";
 "Search unavailable" = "検索を利用できません";
 "search.indexRecovery" = "検索インデックスを準備できません。設定 → 検索 → 全文検索を再構築から再試行してください。";
@@ -1279,7 +1170,6 @@
 "Updated" = "更新日時";
 "Ascending" = "昇順";
 "Descending" = "降順";
-"Conversation analytics will be available after recording and transcription finish." = "録音と文字起こしが完了すると会話分析を確認できます。";
 "Your Speaking Pace" = "自分の発話速度";
 "Calculated in %@-minute windows using merged speech intervals." = "間を埋めた発話区間を使い、%@分単位で算出しています。";
 "From %@ to %@: %@ chars/min" = "%@〜%@：%@文字/分";
@@ -1302,43 +1192,7 @@
 "%@ · %@–%@" = "%@・%@〜%@";
 "Transcript gaps up to %@ seconds are treated as continuous speech for the timeline, speaking time, ratios, and pace; short overlaps may include recognition timing differences." = "文字起こし区間の間隔が%@秒以内なら、タイムライン、発話時間、割合、発話ペースで連続した発話として扱います。短い重なりには認識時刻のずれが含まれる場合があります。";
 "The longest monologue joins same-source gaps up to %@ seconds, even when the other side speaks in between." = "最長連続発話では、間に相手側の発話があっても、同じ音源の区間を%@秒以内の間隔で結合します。";
-"Some older transcript segments use an estimated timeline." = "一部の旧文字起こしは推定タイムラインで集計しています。";
-"Voice Analysis Unavailable" = "音声分析を利用できません";
-"Voice analysis is available for meetings transcribed from retained batch audio." = "保存音声からバッチ文字起こしした会議で音声分析を利用できます。";
-"There are not enough measured speech segments for reliable voice analysis." = "信頼できる音声分析に必要な計測サンプルが不足しています。";
-"Conversation Energy" = "会話の盛り上がり";
-"Relative changes in loudness and pitch compared with each source’s baseline." = "音源ごとの基準に対する音量と声の高さの相対変化です。";
-"No measurable conversation-energy trend." = "会話の盛り上がりを計測できません。";
-"Hotspots" = "ホットスポット";
-"No sustained hotspots detected." = "持続するホットスポットは検出されませんでした。";
-"Pitch data was limited, so some scores use loudness only." = "声の高さのデータが少ないため、一部は音量のみで算出しています。";
-"Loudness" = "音量";
-"Pitch" = "声の高さ";
-"Loudness and pitch" = "音量と声の高さ";
-"From %@ to %@: %@" = "%@〜%@：%@";
-"%@ · %@–%@ · Peak %@ · %@" = "%@・%@〜%@・ピーク %@・%@";
-"Voice Expression" = "声の抑揚";
-"Pitch and loudness variation are evaluated independently." = "声の高さと音量の変化を別々に評価します。";
-"Pitch Variation" = "声の高さの変化";
-"Loudness Variation" = "音量の変化";
-"Monotone" = "単調";
-"Steady" = "一定";
-"Expressive" = "豊か";
-"Dynamic" = "ダイナミック";
-"Pitch Alignment" = "声の高さの同調";
-"Distance between microphone and system-audio pitch over time." = "マイクとシステム音声の声の高さの距離を時系列で示します。";
-"Voice pitch moved closer over the course of the meeting." = "会議の進行に伴い、声の高さが近づく傾向があります。";
-"No clear convergence in voice pitch was detected." = "声の高さが近づく明確な傾向は検出されませんでした。";
-"This is an experimental indicator and does not establish rapport or psychological state." = "実験的な指標であり、ラポールや心理状態を断定するものではありません。";
-"Both audio sources need sufficient pitch measurements." = "両方の音源に十分な声の高さの計測が必要です。";
-"semitones" = "半音";
-"Voice Energy Over Time" = "声のエネルギー推移";
-"Loudness relative to each recording session’s baseline." = "録音セッションごとの基準に対する相対音量です。";
-"No measurable voice-energy trend." = "声のエネルギー推移を計測できません。";
-"Voice energy trends downward toward the end of the meeting." = "終盤にかけて声のエネルギーが低下する傾向があります。";
-"Relative dB" = "相対dB";
 "Voice indicators show relative changes from speaker and recording-session baselines; they do not determine emotions or psychological state." = "音声指標は話者・録音セッションごとの基準からの相対変化であり、感情や心理状態を断定するものではありません。";
-"Voice features are measured only during batch transcription." = "音声特徴はバッチ文字起こし時のみ計測されます。";
 "Batch transcription stopped because Apple Speech made no progress for %@. The recording audio was kept for retry." = "Apple Speech に %@進捗がなかったため、バッチ文字起こしを停止しました。再試行できるよう録音音声は保持されています。";
 "No-progress Timeout" = "進捗停止の検出時間";
 "Stop batch transcription when Apple Speech makes no progress for this long." = "Apple Speech の処理に進捗がない状態がこの時間続くと、バッチ文字起こしを停止します。";
@@ -1394,22 +1248,16 @@
 "Setup Complete" = "セットアップ完了";
 "Continue" = "続ける";
 "Start Dahlia" = "Dahliaを始める";
-"Local Account" = "ローカルアカウント";
 "Continue with Local Account" = "ローカルアカウントで続ける";
 "Or continue without signing in" = "またはログインせずに続ける";
-"Choose the AI account used by this Workspace." = "このワークスペースで使用するAIアカウントを選びます。";
 "Choose the languages Dahlia should recognize. Set the AI output language in Manage Workspaces." = "Dahliaが認識する言語を選びます。AIの出力言語は「ワークスペース」で変更できます。";
 "Recognition and OCR Languages" = "認識・OCR対象の言語";
-"Primary Language" = "要約・画像説明の言語";
-"Used for summaries and screenshot captions." = "要約とスクリーンショットの画像説明に使用します。";
-"Summaries and Image Captions" = "要約と画像説明";
 "setup.modelProviderDescription" = "要約などのAI機能で使うモデルプロバイダーにサインインします。複数同時に使えます。スキップすると要約などは使えませんが、後から設定の「Dahlia AI」で設定できます。";
 "Allow access to the audio sources Dahlia records. You can continue and grant access later." = "Dahliaが録音するオーディオへのアクセスを許可します。後から許可することもできます。";
 "Calendar (Optional)" = "カレンダー（オプション）";
 "Connect a calendar to see upcoming meetings in Dahlia. You can set this up later." = "カレンダーを接続すると、Dahliaで今後のミーティングを確認できます。後から設定することもできます。";
 "setup.completionDescription" = "選択内容を確認して、Dahliaを始めます。";
 "Setup Summary" = "セットアップ内容";
-"Choose Local Folder" = "ローカルフォルダを選択";
 "No local export folder" = "ローカル書き出しフォルダなし";
 "Set Local Export Folder" = "ローカル書き出しフォルダを設定";
 "Change Local Export Folder" = "ローカル書き出しフォルダを変更";
@@ -1448,14 +1296,8 @@
 "text.content.empty" = "本文なし";
 "text.content.deleted" = "本文は削除されました";
 "text.content.searchLocal" = "この端末のメタデータと保持した本文を検索（タグ・カレンダーを含む）";
-"text.content.searchComplete" = "Server全体と端末のタグ・カレンダー・未送信変更を検索済み";
-"text.content.searchFailed" = "Server検索は未完了です。この端末の結果のみ表示しています。";
-"text.content.searchMore" = "Server検索の続きがあります。「さらに表示」で検索範囲を広げます。";
 
 // Server account language settings
-"account.settings.imageLanguages" = "画像解析の対象言語";
-"account.settings.description" = "このアカウントの端末間で共有します。出力言語は要約と画像の説明に適用されます。録音・文字起こしの言語設定は変更しません。";
-"account.settings.notLoaded" = "アカウント設定は未取得です。";
 
 
 "search.server.kind" = "結果の種類";
@@ -1466,26 +1308,15 @@
 "serverSummaryTranscript" = "文字起こしと画像";
 
 "settings.processing.title" = "文字起こしと要約";
-"settings.processing.account" = "適用対象";
-"settings.processing.scope" = "保存先";
-"settings.processing.synced" = "Dahliaアカウント（同期）";
 "settings.processing.location" = "処理する場所";
 "settings.processing.local" = "このMac";
-"settings.processing.remote" = "サーバー";
-"settings.processing.localScope" = "このMacのローカルアカウントに属する、すべてのワークスペースに適用されます。";
-"settings.processing.syncedScope" = "このアカウントのすべてのワークスペースに適用され、ほかの端末にも同期されます。";
-"settings.processing.localDescription" = "このMacのApple Speechで文字起こしし、このMacに設定したAI接続先で要約します。";
-"settings.processing.transcribeFirst" = "先に文字起こしする";
 "settings.processing.thisMac" = "このMac";
 "settings.processing.thisMacDescription" = "このMacだけに適用されます。アカウントを切り替えても変わりません。";
 
-"transcription.initial" = "初回文字起こし";
 "transcription.retranscription" = "再文字起こし";
 "transcription.retranscription.appleSpeech" = "Apple Speech（区間別自動言語判定）";
 "transcription.retranscription.localDescription" = "保持期間内のCAF録音を使い、区間ごとに言語を自動判定してこのMacで処理します。";
 "transcription.retranscription.keepsSummary" = "再文字起こしでは文字起こしだけを置き換え、既存の要約は変更しません。";
-"transcription.retranscription.checkFailed" = "Serverの再文字起こし対応を確認できませんでした。";
-"transcription.retranscription.unsupported" = "このServerはGemini再文字起こしに対応していません。";
 "Local CAF Recording Retention" = "Local WorkspaceのCAF録音保持期間";
 "Local Workspace CAF recordings become eligible for deletion this long after both recording and transcription finish. Failed, unfinished, or active retranscription audio is kept. Server M4A storage is not affected." = "Local WorkspaceのCAF録音は、録音と文字起こしの完了後、この期間を過ぎると削除対象になります。失敗・未完了・再文字起こし中の音声は保持します。ServerのM4A保存には適用されません。";
 
@@ -1553,7 +1384,6 @@
 "Sign out before connecting to another Databricks workspace." = "別の Databricks ワークスペースに接続する前にサインアウトしてください。";
 
 // Sync progress
-"sync.serverError" = "Server エラー";
 
 
 
@@ -1562,8 +1392,6 @@
 "For this generation only" = "今回の生成のみ";
 "Workspace default" = "既定";
 
-"summary.source.useSaved" = "保存済みの文字起こしを使う";
-"summary.source.useSaved.description" = "サーバーの最新版を取得せず、このMacに保存された版から生成します。内容が古い可能性があります。オフライン時に選択できます。";
 
 "settings.serverConnections" = "推論（要約・画像解析）";
 
@@ -1644,7 +1472,6 @@
 "settings.agents.signInAgain" = "サインインし直す";
 "settings.providers.registered" = "登録済み";
 "settings.providers.registeredSignInAgainHint" = "Databricks は登録済みです。再認証するには、初期設定の完了後に設定の「プロバイダー」で「サインインし直す」を選んでください。ここでは別のワークスペースを追加できます。";
-"settings.agents.providerAdded %@" = "%@（追加済み）";
 "settings.agents.mcpSearchPrompt" = "コネクタを検索";
 "settings.agents.mcpNoProviders" = "「モデル」の「プロバイダー」で Databricks ワークスペースを追加すると、その Unity AI Gateway の MCP をここでオンにできます。";
 "settings.agents.mcpProviderSignInRequired" = "サインインが必要です。「モデル」の「プロバイダー」でサインインし直してください。";
@@ -1747,7 +1574,6 @@
 "Chat notice expanded" = "展開中";
 "Chat notice collapsed" = "折りたたみ中";
 
-"Queued until the response finishes: %@" = "応答完了後に実行: %@";
 
 /* Additional chat file access */
 "settings.agents.security" = "セキュリティ";
@@ -1836,14 +1662,6 @@
 "A file could not be read or saved. Check disk space and installation-folder permissions." = "ファイルを読み書きできませんでした。ディスクの空き容量とインストール先のアクセス権を確認してください。";
 
 /* Workspace selection after signing in to a new account */
-"Choose a workspace" = "ワークスペースを選択";
-"Move an existing workspace to the account you just signed in to. Its meetings and files stay on this Mac. Chat history stays with the original account." = "既存のワークスペースをサインインしたアカウントへ移動できます。ミーティングやファイルはこの Mac に保持されます。チャット履歴は元のアカウントに残ります。";
-"Move existing workspace" = "既存ワークスペースを移動";
-"Stop recording before transferring a workspace." = "録音を停止してからワークスペースを移管してください。";
-"To start fresh, create a new workspace named Default." = "新しく始める場合は、Default ワークスペースを作成します。";
-"Create new workspace" = "新規作成";
-"Choose the workspace to use with this account." = "このアカウントで使用するワークスペースを選択してください。";
-"New workspace (Default)" = "新規作成（Default）";
 
 "Local Export Folder" = "ローカル書き出しフォルダ";
 
@@ -1882,8 +1700,6 @@
 "Search NEologd unsupported" = "非対応・取得済み";
 "Search NEologd upgrade required" = "適用中の旧版辞書は、このバージョンでは利用できません。内蔵 IPADIC または対応版を選び、全文検索を再構築してください。";
 
-"mcp.allAccounts" = "すべてのアカウント";
-"mcp.accountWorkspaces" = "このアカウントのすべて";
 "mcp.chooseApp" = "1. 接続するアプリ";
 "mcp.chooseScope" = "2. AI に公開する範囲";
 "mcp.permissions" = "3. 操作の権限";
@@ -1894,7 +1710,7 @@
 "mcp.jsonInstructions" = "接続先のアプリの MCP 設定ファイルに、この内容を追加してください。既存の Dahlia 設定がある場合は置き換え、アプリを再起動してください。";
 "mcp.includedWorkspaces" = "対象のワークスペース（%lld 件）";
 "mcp.noWorkspaces" = "この Mac に追加済みのワークスペースはありません。";
-"mcp.scopeUnavailable" = "選択したアカウントまたはワークスペースが見つかりません。公開する範囲を選び直してください。";
+"mcp.scopeUnavailable" = "選択したワークスペースが見つかりません。公開する範囲を選び直してください。";
 "mcp.otherApps" = "その他のアプリ（JSON）";
 "Chat resume state missing" = "このチャットの実行用ファイルがありません。履歴は表示できますが、続けるには新しいチャットを開始してください。";
 "Search meetings, screenshots, projects, and chats" = "ミーティング・スクリーンショット・プロジェクト・チャットを検索";

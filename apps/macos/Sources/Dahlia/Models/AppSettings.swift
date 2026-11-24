@@ -139,13 +139,11 @@ final class AppSettings: ObservableObject {
     @AppStorage(AppSettings.chatDeliveryModeUserDefaultsKey) var chatDeliveryMode: CodexChatDeliveryMode = .queue
 
     init(
-        meetingSettingsDefaults: UserDefaults = .standard,
         appearanceDefaults: UserDefaults = .standard,
         generalDefaults: UserDefaults = .standard
     ) {
         _chatDeliveryMode = AppStorage(wrappedValue: .queue, Self.chatDeliveryModeUserDefaultsKey, store: generalDefaults)
         _appAppearanceRawValue = AppStorage(wrappedValue: AppAppearance.system.rawValue, AppAppearance.userDefaultsKey, store: appearanceDefaults)
-        self.meetingSettingsDefaults = meetingSettingsDefaults
         Self.migrateCalendarEventFilterSettings(in: .standard)
         Self.migrateLiveSubtitleLocaleSetting(in: .standard)
         Self.migrateAppLanguageSettings(in: .standard)
@@ -307,8 +305,8 @@ final class AppSettings: ObservableObject {
 
     // MARK: - アカウント別のミーティング設定
 
-    /// Meeting settings belong to an account. These keys hold the open account's values, which every reader and KVO
-    /// observer uses; switching accounts stashes them and restores the next account's.
+    /// Meeting settings that released builds kept per account under `meetingSettings.<account>`; the single-account
+    /// migration restores the source account's values into these keys.
     nonisolated static let accountMeetingSettingKeys = [
         transcriptionLocaleUserDefaultsKey,
         automaticTranscriptionLanguageDetectionUserDefaultsKey,
@@ -333,36 +331,9 @@ final class AppSettings: ObservableObject {
         slackMeetingLinkOpenTargetUserDefaultsKey,
     ]
     nonisolated static let meetingSettingsAccountUserDefaultsKey = "meetingSettingsAccount"
-    private let meetingSettingsDefaults: UserDefaults
-
-    /// Set while a recording starts, runs, or finalizes. An account change meanwhile, such as a sign-out moving the open
-    /// workspace to the Local Account, switches the meeting settings only when it ends, so the recording keeps its own.
-    var holdsMeetingSettings = false {
-        didSet { if oldValue, !holdsMeetingSettings { switchMeetingSettingsToCurrentAccount() } }
-    }
-
-    private func switchMeetingSettingsToCurrentAccount() {
-        guard !holdsMeetingSettings, currentWorkspace != nil else { return }
-        Self.switchMeetingSettings(in: meetingSettingsDefaults)
-    }
 
     nonisolated static func meetingSettingsUserDefaultsKey(for accountKey: String) -> String {
         "meetingSettings.\(accountKey)"
-    }
-
-    /// An account opened for the first time starts from the previous account's values.
-    nonisolated static func switchMeetingSettings(in defaults: UserDefaults) {
-        let owner = defaults.string(forKey: meetingSettingsAccountUserDefaultsKey)
-        guard owner != AppAccount.key else { return }
-        defaults.set(AppAccount.key, forKey: meetingSettingsAccountUserDefaultsKey)
-        // Before per-account meeting settings, the values belonged to whichever account opens first.
-        guard let owner else { return }
-        let current = accountMeetingSettingKeys.reduce(into: [String: Any]()) { $0[$1] = defaults.object(forKey: $1) }
-        defaults.set(current, forKey: meetingSettingsUserDefaultsKey(for: owner))
-        guard let saved = defaults.dictionary(forKey: meetingSettingsUserDefaultsKey(for: AppAccount.key)) else { return }
-        for key in accountMeetingSettingKeys {
-            defaults.set(saved[key], forKey: key)
-        }
     }
 
     nonisolated static func migrateLiveSubtitleLocaleSetting(in userDefaults: UserDefaults) {
@@ -500,11 +471,7 @@ final class AppSettings: ObservableObject {
     // MARK: - ワークスペース（ランタイム状態）
 
     /// 現在開いているワークスペース。DB の `workspaces` テーブルから選択される。
-    @Published var currentWorkspace: WorkspaceRecord? {
-        didSet {
-            switchMeetingSettingsToCurrentAccount()
-        }
-    }
+    @Published var currentWorkspace: WorkspaceRecord?
 
     /// 現在のワークスペースの URL。ワークスペース未選択時は nil。
     var workspaceURL: URL? {

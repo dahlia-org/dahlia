@@ -57,15 +57,17 @@ conflict, and update the tenet only after the user explicitly approves the chang
 
 Use these terms in code, docs, and reports.
 
-- **Local Account / Server Account**: a Local Account keeps its data only on the Mac. A Server Account belongs to a Dahlia Server, which holds the canonical records; Desktop SQLite is its offline working copy.
-- **Workspace** (formerly *Vault*): the container of Projects, Meetings, and files that belongs to one account. Every Server Workspace belongs to an Organization; a personal Workspace is the private Workspace of one Organization member.
+- **App account**: the macOS app's one account, keyed `local` (`AppAccount.key`) in settings and rows. There is no account switching.
+- **Provider account**: a sign-in the app account uses for capabilities (model, MCP, calendar, storage): Databricks connections, Google, and Dahlia accounts in `provider_accounts`, plus the ChatGPT and Anthropic subscriptions that Pi holds.
+- **Dahlia account**: a sign-in to a Dahlia Server. On the Desktop it is only a provider account for the Server's model Gateway; the Desktop does not sync with the Server.
+- **Workspace** (formerly *Vault*): the container of Projects, Meetings, and files. Desktop Workspaces belong to no account. On the Server, every Workspace belongs to an Organization; a personal Workspace is the private Workspace of one Organization member.
 - **Project**: a database record in one Workspace, either a root or a subproject one level below it. Directories are derived Summary export destinations and never define Project identity or hierarchy.
 - **Meeting**: the record users browse; it collects recordings, the transcript, the Summary, Notes, and screenshots.
 - **Recording session**: one capture run within a Meeting. It fixes its processing location and settings when recording starts.
 - **Processing location**: `local` uses Apple Speech and the installed Pi on the Mac; `remote` has the Server process saved recordings.
 - **Finalized transcript**: transcript segments durably saved in SQLite. Previews and live captions are not finalized.
 - **Projection**: display or derived data rebuilt from a durable source of truth, such as `TranscriptStore`, live captions, or the search index. Projections may be bounded, coalesced, or discarded under load.
-- **Thread**: a persistent desktop AI conversation owned by its execution account. Its append-only **Items** are stored separately from Pi's runtime session file; Databricks calls the corresponding conversation a session.
+- **Thread**: a persistent desktop AI conversation owned by the app account. Its append-only **Items** are stored separately from Pi's runtime session file; Databricks calls the corresponding conversation a session.
 - **Document**: a collaborative Yjs document in a Workspace. A Meeting's Notes are its `notes` Document. The Summary is not a Document yet, even though the schema reserves a `summary` kind.
 
 ## Engineering Constraints
@@ -123,7 +125,7 @@ Stop an app only by the PID you captured when launching it; `run-dev.sh` `exec`s
 - Changes to public behavior, settings, or schemas include the corresponding tests, localization, and documentation. When a documented contract or decision changes, rewrite or remove the affected text instead of appending a new account. Put the reason for the change in the commit message or pull request, not in the docs. Keep contracts such as allowlists, schemas, and required ordering current, but do not restate implementation details the code already records or add per-PR summaries.
 - A user-reachable behavior change covers every surface it applies to. Decide each item below, and in the final report name the surfaces you changed and those you deliberately left out:
   - Clients: the macOS app, Private Web, and the Electron alpha, which share `packages/ui`.
-  - Accounts: Local Accounts and Server Accounts.
+  - Accounts: the Desktop app account and its provider accounts, and Server accounts on the Web and Server.
   - Entry points: menu commands, keyboard shortcuts, Settings, context menus, and other views that expose the same operation.
   - AI access: whether Local MCP (`dahlia-mcp`) or Server MCP needs the same capability. Route every transport through the same service method.
   - Reverse paths: each new way in has a way out and a visible state, such as cancel, undo, disable, or restore.

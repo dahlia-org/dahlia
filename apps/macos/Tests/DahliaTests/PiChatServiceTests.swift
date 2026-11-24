@@ -1022,7 +1022,7 @@ import Synchronization
             let work = fixture.pi.rootURL.appending(path: "work")
             #expect(launch.cwd == work)
             #expect(launch.arguments.contains("builtin:mcp"))
-            #expect(launch.environment["DAHLIA_PI_MCP_COMMAND"]?.contains("--account") == true)
+            #expect(launch.environment["DAHLIA_PI_MCP_COMMAND"]?.contains("--account") == false)
             // Commands and file tools run under Seatbelt, confined to the working folder.
             #expect(launch.fileAccess.grants.isEmpty)
             #expect(launch.environment["DAHLIA_PI_MCP_SERVERS"] == #"["dahlia"]"#)
@@ -1392,8 +1392,7 @@ import Synchronization
             let reopenedFile = URL(filePath: reopened.arguments[sessionArgument + 1])
             #expect(reopenedFile.resolvingSymlinksInPath().path == file.resolvingSymlinksInPath().path)
             let helperCommand = try #require(reopened.environment["DAHLIA_PI_MCP_COMMAND"])
-            #expect(helperCommand.contains("--account"))
-            #expect(helperCommand.contains(AppAccount.key))
+            #expect(!helperCommand.contains("--account"))
             #expect(!helperCommand.contains("--workspace-id"))
 
             /// A settings change leaves the open process alone; the next process the thread starts uses the new MCPs.

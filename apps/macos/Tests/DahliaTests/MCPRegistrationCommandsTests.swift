@@ -116,33 +116,30 @@ import Foundation
         }
 
         @Test
-        func accountScopeMatchesCLIAndJSONForEveryClientAndRuntime() throws {
-            for account in [WorkspaceAccountChoice.local] {
-                for profile in [DahliaRuntimeProfile.production, .development] {
-                    for writeEnabled in [false, true] {
-                        let commands = MCPRegistrationCommands(
-                            helperURL: URL(filePath: "/Applications/Dahlia.app/Contents/Helpers/dahlia-mcp"),
-                            scope: .account(account),
-                            runtimeProfile: profile
-                        )
-                        let value = "local"
-                        for client in [MCPClient.codex, .claude] {
-                            let command = try #require(commands.registrationCommand(for: client, writeEnabled: writeEnabled))
-                            #expect(command.contains(" --account '\(value)'"))
-                            #expect(!command.contains("--workspace"))
-                            #expect(command.hasSuffix(" --write") == writeEnabled)
-                        }
-                        let sample = try JSONDecoder().decode(
-                            MCPJSONSample.self,
-                            from: Data(#require(commands.mcpJSONSample(writeEnabled: writeEnabled)).utf8)
-                        )
-                        let server = try #require(sample.mcpServers["dahlia"])
-                        let helperArgs = profile == .development ? Array(server.args.dropFirst(2)) : server.args
-                        let parsed = try MCPCommandLineOptions(arguments: helperArgs)
-                        #expect(parsed.accountScope == .local)
-                        #expect(parsed.workspaceID == nil)
-                        #expect(parsed.allowsWrites == writeEnabled)
+        func allWorkspacesScopeMatchesCLIAndJSONForEveryClientAndRuntime() throws {
+            for profile in [DahliaRuntimeProfile.production, .development] {
+                for writeEnabled in [false, true] {
+                    let commands = MCPRegistrationCommands(
+                        helperURL: URL(filePath: "/Applications/Dahlia.app/Contents/Helpers/dahlia-mcp"),
+                        scope: .all,
+                        runtimeProfile: profile
+                    )
+                    for client in [MCPClient.codex, .claude] {
+                        let command = try #require(commands.registrationCommand(for: client, writeEnabled: writeEnabled))
+                        #expect(!command.contains("--account"))
+                        #expect(!command.contains("--workspace"))
+                        #expect(command.hasSuffix(" --write") == writeEnabled)
                     }
+                    let sample = try JSONDecoder().decode(
+                        MCPJSONSample.self,
+                        from: Data(#require(commands.mcpJSONSample(writeEnabled: writeEnabled)).utf8)
+                    )
+                    let server = try #require(sample.mcpServers["dahlia"])
+                    let helperArgs = profile == .development ? Array(server.args.dropFirst(2)) : server.args
+                    let parsed = try MCPCommandLineOptions(arguments: helperArgs)
+                    #expect(parsed.accountScope == nil)
+                    #expect(parsed.workspaceID == nil)
+                    #expect(parsed.allowsWrites == writeEnabled)
                 }
             }
         }

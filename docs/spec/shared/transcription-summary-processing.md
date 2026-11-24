@@ -2,13 +2,13 @@
 
 対象: Desktop / Server / Private Web。採択: 2026-09-10。
 
-Desktop の実行場所、AI 設定のスコープ、生成 runtime の切替は [アカウント別 Desktop 推論](account-scoped-desktop-inference.md) に従う。本文は処理場所（local / remote）、Server Account の生成設定、再文字起こし、設定の構造を定める。
+Desktop の実行場所と AI 設定のスコープは [アカウント別 Desktop 推論](account-scoped-desktop-inference.md) に従う。本文は処理場所（local / remote）、Web から開始する Server 処理の生成設定、再文字起こし、設定の構造を定める。
 
 ## 決定
 
-文字起こしと要約を別々の処理方式として選ばせない。Desktop で開始した文字起こしと要約は常に Mac で行い（`local`）、Desktop に処理場所の選択はない。Server での処理（`remote`）は、Web から明示的に開始した保存済み録音だけに使う（[アカウント別 Desktop 推論](account-scoped-desktop-inference.md)）。Local Account の処理場所は `local` 固定とする。Web 用の生成設定は Workspace の `generationSettings` に保存する。Desktop と共有する Workspace の既定値は出力言語のみとし、設定の所有・保存先は [アカウント別 Desktop 推論](account-scoped-desktop-inference.md) に従う。
+文字起こしと要約を別々の処理方式として選ばせない。Desktop で開始した文字起こしと要約は常に Mac で行い（`local`）、Desktop に処理場所の選択はない。Server での処理（`remote`）は、Web から明示的に開始した保存済み録音だけに使う（[アカウント別 Desktop 推論](account-scoped-desktop-inference.md)）。Desktop は保存済みの `remote` も `local` として読む。Web 用の生成設定は Workspace の `generationSettings` に保存する。Desktop と共有する Workspace の既定値は出力言語のみとし、設定の所有・保存先は [アカウント別 Desktop 推論](account-scoped-desktop-inference.md) に従う。
 
-`local` はApple Speechで確定文字起こしを作り、内蔵 Pi で要約する。Server Account の要約の推論先は自身の Gateway に固定する（[アカウント別 Desktop 推論](account-scoped-desktop-inference.md)）。Desktop の設定の適用範囲は同仕様に従う。チャットの Workspace / Gateway context と Mac 推論 context を分離し、推論先からデータの所属アカウントを推定しない。
+`local` はApple Speechで確定文字起こしを作り、内蔵 Pi で要約する。Desktop の設定の適用範囲は [アカウント別 Desktop 推論](account-scoped-desktop-inference.md) に従う。チャットの Workspace / Gateway context と Mac 推論 context を分離し、推論先からデータの所属アカウントを推定しない。
 
 `remote` は Web から明示的に開始した保存・同期済み録音を Server で処理する。方式は既定で `combined`（Geminiが音声から直接要約し、同じ処理で文字起こしも生成）とし、`transcribeThenSummarize`（Geminiで文字起こし後、その文字起こしから要約）も選べる。Server文字起こしでは保存済みの言語設定を送らずGeminiが処理中に判定する。`combined` だけ要約モデルと推論強度を上書きでき、二段階処理は文字起こし用Geminiと文字起こし要約に対応するモデルをそれぞれ自動選択する。モデルの有無で処理方式を推定せず、失敗時に処理場所を自動変更しない。
 
@@ -58,4 +58,4 @@ Desktop の設定画面と適用範囲は [アカウント](../desktop/accounts.
 
 ## Product境界
 
-これは T5 のクラウド音声処理禁止に対する明示的な例外である。例外は Web から明示的に開始した保存済み録音の処理だけに限定する。capture、録音保存、Local Account、`local` 処理を Server や network へ依存させず、外部障害で録音・既存の文字起こし・要約を失わない。
+これは T5 のクラウド音声処理禁止に対する明示的な例外である。例外は Web から明示的に開始した保存済み録音の処理だけに限定する。capture、録音保存、Desktop の `local` 処理を Server や network へ依存させず、外部障害で録音・既存の文字起こし・要約を失わない。

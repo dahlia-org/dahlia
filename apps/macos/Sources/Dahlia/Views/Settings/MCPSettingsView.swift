@@ -7,7 +7,6 @@ struct MCPSettingsView: View {
     private let helperURL: URL?
 
     @State private var selectedClient = MCPClient.claude
-    @State private var selectedAccount: WorkspaceAccountChoice?
     @State private var isWorkspacesExpanded = false
     @State private var selectedWorkspaceID: UUID?
     @State private var isWriteEnabled = false
@@ -38,23 +37,12 @@ struct MCPSettingsView: View {
             }
 
             Section {
-                MCPPreviewOptionsView(
-                    selectedAccount: $selectedAccount,
-                    selectedWorkspaceID: $selectedWorkspaceID,
-                    accounts: accounts,
-                    availableWorkspaces: accountWorkspaces,
-                    accountName: accountName
-                )
+                MCPPreviewOptionsView(selectedWorkspaceID: $selectedWorkspaceID, availableWorkspaces: sortedWorkspaces)
                 DisclosureGroup(L10n.mcpIncludedWorkspaces(visibleWorkspaces.count), isExpanded: $isWorkspacesExpanded) {
-                    ForEach(accounts, id: \.self) { account in
-                        let included = visibleWorkspaces.filter { WorkspaceAccountChoice($0) == account }
-                        ForEach(included) { workspace in
-                            Text(MCPWorkspaceDisplayName.resolve(
-                                for: workspace, among: included, accountName: accountName(account)
-                            ))
+                    ForEach(visibleWorkspaces) { workspace in
+                        Text(MCPWorkspaceDisplayName.resolve(for: workspace, among: visibleWorkspaces))
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .textSelection(.enabled)
-                        }
                     }
                     if visibleWorkspaces.isEmpty {
                         Text(L10n.mcpNoWorkspaces).foregroundStyle(.secondary)
@@ -123,9 +111,6 @@ struct MCPSettingsView: View {
         .formStyle(.grouped)
         .disclosureGroupStyle(MCPDisclosureGroupStyle())
         .font(.dahliaBody)
-        .onChange(of: selectedAccount) {
-            isWorkspacesExpanded = selectedAccount != nil
-        }
         .onDisappear {
             copyFeedbackTask?.cancel()
         }
@@ -139,30 +124,20 @@ struct MCPSettingsView: View {
         return [currentWorkspace] + workspaces
     }
 
-    private var accounts: [WorkspaceAccountChoice] { [.local] }
-
-    private func accountName(_ account: WorkspaceAccountChoice) -> String {
-        account.displayName
-    }
-
-    private var accountWorkspaces: [WorkspaceRecord] {
-        availableWorkspaces.filter { WorkspaceAccountChoice($0) == selectedAccount }
-            .sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+    private var sortedWorkspaces: [WorkspaceRecord] {
+        availableWorkspaces.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
     }
 
     private var visibleWorkspaces: [WorkspaceRecord] {
-        let workspaces = selectedAccount == nil ? availableWorkspaces : accountWorkspaces
-        return selectedWorkspaceID.map { id in workspaces.filter { $0.id == id } } ?? workspaces
+        selectedWorkspaceID.map { id in sortedWorkspaces.filter { $0.id == id } } ?? sortedWorkspaces
     }
 
     private var scopeIsUnavailable: Bool {
-        !(selectedAccount.map { accounts.contains($0) } ?? true)
-            || MCPAccessScope.resolve(account: selectedAccount, workspaceID: selectedWorkspaceID, workspaces: availableWorkspaces) == nil
+        MCPAccessScope.resolve(workspaceID: selectedWorkspaceID, workspaces: availableWorkspaces) == nil
     }
 
     private var commands: MCPRegistrationCommands? {
-        guard selectedAccount.map({ accounts.contains($0) }) ?? true,
-              let scope = MCPAccessScope.resolve(account: selectedAccount, workspaceID: selectedWorkspaceID, workspaces: availableWorkspaces),
+        guard let scope = MCPAccessScope.resolve(workspaceID: selectedWorkspaceID, workspaces: availableWorkspaces),
               let helperURL else { return nil }
         return MCPRegistrationCommands(helperURL: helperURL, scope: scope)
     }

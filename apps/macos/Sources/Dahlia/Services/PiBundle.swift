@@ -71,9 +71,10 @@ enum DahliaMCPBundle {
     }
 }
 
-/// The app's one account keeps its agent's files in `agent`: credentials, `models.json`, and chat sessions. The name
-/// names neither Pi nor an account, so another agent could use it. A Dahlia Server account still has its own
-/// `accounts/<account id>/pi`. Pi never reads `~/.pi`.
+/// The app's one account keeps its agent's files in `agent` (`~/.dahlia/agent` in a released build): credentials,
+/// `models.json`, and chat sessions. The name names neither Pi nor an account, so another agent could use it.
+/// `accounts/<account id>/pi` is only read as the migration source and removed with its Dahlia account. Pi never
+/// reads `~/.pi`.
 struct PiAgentDirectoryLocator: Sendable {
     private let applicationSupportURL: URL?
 
@@ -88,8 +89,11 @@ struct PiAgentDirectoryLocator: Sendable {
 
     private var accountsURL: URL { rootURL.appending(path: "accounts", directoryHint: .isDirectory) }
 
-    /// The agent directory of the app's one account.
-    var sharedAgentURL: URL { rootURL.appending(path: "agent", directoryHint: .isDirectory) }
+    /// The agent directory of the app's one account. A locator given a folder (tests) keeps it inside that folder.
+    var sharedAgentURL: URL {
+        guard applicationSupportURL == nil else { return rootURL.appending(path: "agent", directoryHint: .isDirectory) }
+        return DahliaApplicationSupport.agentDirectoryURL(profile: DahliaApplicationSupport.profile())
+    }
 
     /// An account's agent directory before the app had one account (`accounts/<local or account id>/pi`).
     func legacyAgentURL(accountKey: String) -> URL {

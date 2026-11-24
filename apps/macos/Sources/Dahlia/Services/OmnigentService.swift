@@ -30,7 +30,7 @@ enum OmnigentService {
 
     nonisolated static func enabledKey(_ account: String) -> String { "omnigentEnabled.\(account)" }
 
-    /// The Databricks workspace to call, when the account is a Databricks account that turned Omnigent on (it is off by default).
+    /// The Databricks workspace to call, when a connection exists and Omnigent is on (it is off by default).
     nonisolated static func connectionID(defaults: UserDefaults = .standard) -> UUID? {
         guard let connectionID = ProviderAccountDirectory.databricksConnectionID,
               defaults.bool(forKey: enabledKey(AppAccount.key)) else { return nil }

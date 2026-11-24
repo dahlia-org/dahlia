@@ -55,11 +55,9 @@ Read models expose the explicit value, effective value, type-owning root Project
 
 ## Workspace settings
 
-The macOS Workspace settings list groups workspaces by account. Each row shows the workspace name and output language;
-clicking the name opens details, including the local export folder. Local and Unity Gateway account headings have an
-add button that creates a workspace under that account, including when the account has no workspaces. Server workspace
-creation remains on the Server. The row's options menu contains account moves and
-export-folder actions. Account moves retain the existing recording and Server migration restrictions.
+The macOS Workspace settings list shows every workspace; workspaces belong to no account. Each row shows the workspace
+name and output language; clicking the name opens details, including the local export folder. The row's options menu
+contains export-folder actions.
 
 ## Derived Summary output directories
 
@@ -92,10 +90,7 @@ Meeting UUID suffix when its preferred filename is already occupied.
 
 Summary Markdown embeds each screenshot by the absolute `file://` URL of its original in Dahlia's Application Support
 FileStore, so the paths are specific to one Mac. Exports do not copy screenshots into the Workspace. A screenshot with
-no stored original renders only its caption. For a Server Account the FileStore is a cache: summary generation fetches
-the Meeting's originals when it exports, but an original that was evicted, or first referenced through
-`update_meeting_summary` without being fetched on this Mac, shows nothing until Dahlia fetches it again, for example
-when the screenshot is opened. Copies that older versions wrote to `_dahlia/screenshots/` remain in place and are
+no stored original renders only its caption. Copies that older versions wrote to `_dahlia/screenshots/` remain in place and are
 removed only when Dahlia deletes the screenshot.
 
 ## Workspace mutations
@@ -123,7 +118,7 @@ For multi-workspace read access and live transcripts, see [Live MCP](live-mcp.md
 
 Transcript provenance uses `rec_` for recording-session IDs. Desktop storage retains UUIDs; provider metadata and domain names keep their original values.
 
-`dahlia-mcp --workspace-id <ws_TypeID>` is read-only. Alternatively, `--account <UUID|local>` scopes access to one account’s added Workspaces; it cannot be combined with a Workspace flag. Omitting both scopes includes every added Workspace. Adding the sole capability flag, `--write`, publishes update tools within the selected scope.
+`dahlia-mcp --workspace-id <ws_TypeID>` is read-only. Omitting it includes every added Workspace; `--account local` or `--account <Dahlia account UUID>` is still accepted for existing registrations and cannot be combined with a Workspace flag. Adding the sole capability flag, `--write`, publishes update tools within the selected scope.
 Full-Workspace in-app chat starts the helper with `--write`; summary-generation threads disable MCP tools.
 The in-app chat loads its preset skills from the app bundle into each Pi chat process.
 Skill details show the name and description separately and omit YAML frontmatter from the rendered Markdown body.
