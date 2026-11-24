@@ -638,8 +638,9 @@ final class GoogleCalendarStore: ObservableObject, CalendarConnectionStore {
 
     private static func loadSelectedCalendarIDs(from userDefaults: UserDefaults, provider: GoogleCalendarProvider, scoped: Bool) -> Set<String> {
         let key = selectedCalendarIDsStorageKey(for: provider, scoped: scoped)
-        // Only the previously selected Databricks registration inherits the old shared selection.
-        if scoped, provider.databricksConnectionID?.uuidString == userDefaults.string(forKey: GoogleCalendarProvider.userDefaultsKey),
+        // The original account is immutable; the saved Google route now belongs to Drive.
+        if scoped, let original = SingleAccountMigration.originalDatabricksConnectionID(in: userDefaults),
+           provider.databricksConnectionID == original,
            userDefaults.object(forKey: key) == nil {
             userDefaults.set(
                 userDefaults.string(forKey: accountSelectedCalendarIDsKey) ?? userDefaults.string(forKey: selectedCalendarIDsKey),

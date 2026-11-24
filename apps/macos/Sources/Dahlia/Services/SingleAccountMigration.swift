@@ -15,6 +15,10 @@ struct SingleAccountMigration {
     static let accountKey = AppAccount.key
     static let providerIDsKey = "singleAccountMigration.providerIDs"
 
+    static func originalDatabricksConnectionID(in defaults: UserDefaults) -> UUID? {
+        defaults.string(forKey: sourceKey).flatMap(UUID.init(uuidString:))
+    }
+
     var dbQueue: any DatabaseWriter
     var locator: PiAgentDirectoryLocator
     var defaults: UserDefaults

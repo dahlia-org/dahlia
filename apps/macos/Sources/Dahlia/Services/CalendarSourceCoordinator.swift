@@ -133,7 +133,6 @@ final class CalendarSourceCoordinator: ObservableObject {
             let snapshot = CalendarSource.allCases
                 .filter { self.persistedSources.contains($0) }
                 .flatMap { self.storesBySource[$0]?.loadedEvents ?? [] }
-                .deduplicatedAcrossSources(mergingMissingMetadata: false)
             do {
                 try await dbQueue.write { db in
                     try CalendarEventRecord.refreshLinked(events: snapshot, now: .now, in: db)

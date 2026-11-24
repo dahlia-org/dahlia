@@ -47,9 +47,8 @@ final class CalendarProviderCollection: ObservableObject, CalendarEventSourceSto
         if let saved = defaults.stringArray(forKey: Self.enabledConnectionsKey) {
             enabledIDs = Set(saved)
         } else if AppSettings.enabledCalendarSources(in: defaults).contains(.google),
-                  let saved = defaults.string(forKey: GoogleCalendarProvider.userDefaultsKey) {
-            let id = saved.hasPrefix("google-") ? UUID(uuidString: String(saved.dropFirst(7))) : UUID(uuidString: saved)
-            enabledIDs = Set(id.map { ["googleCalendar.\($0.uuidString)"] } ?? [])
+                  let id = SingleAccountMigration.originalDatabricksConnectionID(in: defaults) {
+            enabledIDs = ["googleCalendar.\(id.uuidString)"]
             defaults.set(Array(enabledIDs).sorted(), forKey: Self.enabledConnectionsKey)
         } else {
             enabledIDs = []
@@ -131,7 +130,7 @@ final class CalendarProviderCollection: ObservableObject, CalendarEventSourceSto
     var isLoaded: Bool { state == .loaded }
     var hasLoadedConnection: Bool { enabledIDs.contains { states[$0] == .loaded } }
     var loadedEvents: [CalendarEvent] {
-        enabledIDs.sorted().filter { states[$0] == .loaded }.flatMap { events[$0] ?? [] }.deduplicatedAcrossSources()
+        enabledIDs.sorted().filter { states[$0] == .loaded }.flatMap { events[$0] ?? [] }
     }
 
     var lastErrorMessage: String? { enabledIDs.sorted().compactMap { stores[$0]?.lastErrorMessage }.first ?? catalogError }

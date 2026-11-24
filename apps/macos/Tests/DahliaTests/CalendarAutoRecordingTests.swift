@@ -6,6 +6,39 @@ import Foundation
 
     @MainActor
     struct CalendarAutoRecordingTests {
+        @Test(arguments: [false, true])
+        func legacyGoogleFallbackReservationsRetainOnlyTheKnownOriginalProvider(knownProvider: Bool) throws {
+            let (defaults, suiteName) = try temporaryUserDefaults()
+            defer { defaults.removePersistentDomain(forName: suiteName) }
+            let original = UUID.v7()
+            let other = UUID.v7()
+            let providerID = "googleCalendar.\(original.uuidString)"
+            let google = makeEvent(icalUid: nil)
+            let mac = makeEvent(platform: CalendarEventPlatform.macOSCalendar, icalUid: nil)
+            let shared = makeEvent(icalUid: "shared")
+            let alreadyScoped = makeEvent(id: "scoped", icalUid: nil).scoped(to: "googleCalendar.\(other.uuidString)")
+            let selections = [google, mac, shared, alreadyScoped].map(CalendarAutoRecordingSelection.init(event:))
+            let encoded = try JSONEncoder().encode(selections)
+            // Released source fallback IDs had no providerID field at all.
+            var json = try #require(try JSONSerialization.jsonObject(with: encoded) as? [[String: Any]])
+            for index in 0 ..< 3 {
+                var identity = try #require(json[index]["eventID"] as? [String: Any])
+                identity.removeValue(forKey: "providerID")
+                json[index]["eventID"] = identity
+            }
+            try defaults.set(JSONSerialization.data(withJSONObject: json), forKey: CalendarAutoRecordingStore.selectionsUserDefaultsKey)
+            if knownProvider { defaults.set(original.uuidString, forKey: SingleAccountMigration.sourceKey) }
+            GoogleCalendarProvider.save(.databricks(connectionID: other), defaults: defaults)
+            let store = CalendarAutoRecordingStore(userDefaults: defaults)
+            #expect(store.isEnabled(for: google.scoped(to: providerID)) == knownProvider)
+            #expect(!store.isEnabled(for: google.scoped(to: "googleCalendar.\(other.uuidString)")))
+            #expect(store.isEnabled(for: mac))
+            #expect(store.isEnabled(for: shared))
+            #expect(store.isEnabled(for: alreadyScoped))
+            let reopened = CalendarAutoRecordingStore(userDefaults: defaults)
+            #expect(reopened.selections == store.selections)
+        }
+
         @Test
         func identifiesTheSameOccurrenceAcrossCalendarSources() {
             let startDate = Date(timeIntervalSince1970: 1_776_387_600)

@@ -8,6 +8,66 @@ import GRDB
 
     @MainActor
     struct CalendarProviderCollectionTests {
+        @Test(arguments: [false, true])
+        func releasedDatabricksEnablementUsesTheOriginalAccountRatherThanTheDriveChoice(explicitlyDisabled: Bool) async {
+            let original = connection()
+            let drive = connection()
+            let defaults = defaults(enabling: [])
+            defaults.removeObject(forKey: CalendarProviderCollection.enabledConnectionsKey)
+            defaults.set(original.provider.connectionID.uuidString, forKey: SingleAccountMigration.sourceKey)
+            defaults.set("[\"google\"]", forKey: CalendarSource.accountEnabledSourcesUserDefaultsKey)
+            if explicitlyDisabled { defaults.set([], forKey: CalendarProviderCollection.enabledConnectionsKey) }
+            let collection = CalendarProviderCollection(
+                defaults: defaults, observesChanges: false, loadConnections: { [original, drive] }, makeStore: { _ in Store() }
+            )
+            await collection.reloadConnections()
+            #expect(collection.enabledIDs == (explicitlyDisabled ? [] : [original.id]))
+            GoogleCalendarProvider.save(.databricks(connectionID: drive.provider.connectionID), defaults: defaults)
+            let reopened = CalendarProviderCollection(
+                defaults: defaults, observesChanges: false, loadConnections: { [original, drive] }, makeStore: { _ in Store() }
+            )
+            await reopened.reloadConnections()
+            #expect(reopened.enabledIDs == collection.enabledIDs)
+        }
+
+        @Test
+        func displayMergesProviderRostersWhileLinkedMeetingsKeepOneLiveCopy() async throws {
+            let catalog = [connection(), connection()]
+            let first = event("first", uid: "shared", participants: [participant("one"), participant("two")])
+            let second = event("second", uid: "shared", participants: [participant("three")])
+            let stores = [catalog[0].id: Store(events: [first]), catalog[1].id: Store(events: [second])]
+            let collection = CalendarProviderCollection(
+                defaults: defaults(enabling: catalog), observesChanges: false,
+                loadConnections: { catalog }, makeStore: { stores[$0.id]! }
+            )
+            await collection.reloadConnections()
+            let database = try AppDatabaseManager(path: ":memory:")
+            try await database.dbQueue.write { db in
+                let workspace = WorkspaceRecord(id: .v7(), path: nil, name: "Local", createdAt: .now, lastOpenedAt: .now)
+                try workspace.insert(db)
+                try CalendarEventRecord.upsert(event: first, now: .now, in: db)
+                try MeetingRecord(
+                    id: .v7(), workspaceId: workspace.id, name: "Meeting", createdAt: .now, updatedAt: .now,
+                    calendarEventIcalUid: "shared", calendarEventRecurrenceId: ""
+                ).insert(db)
+            }
+            let coordinator = CalendarSourceCoordinator(stores: [collection], dbQueue: database.dbQueue)
+            await coordinator.refreshEnabledSources([.google])
+            await coordinator.waitForPersistence()
+            #expect(collection.upcomingEvents.first?.participants.count == 3)
+            #expect(collection.loadedEvents.count == 2)
+            try await database.dbQueue.read { db in
+                let record = try #require(try CalendarEventRecord.fetch(key: .init(icalUid: "shared", recurrenceId: ""), in: db))
+                #expect(record.attendees == first.participants.attendeeSnapshots)
+            }
+            collection.setEnabled(false, for: catalog[0].id)
+            await coordinator.waitForPersistence()
+            try await database.dbQueue.read { db in
+                let record = try #require(try CalendarEventRecord.fetch(key: .init(icalUid: "shared", recurrenceId: ""), in: db))
+                #expect(record.attendees == second.participants.attendeeSnapshots)
+            }
+        }
+
         @Test(arguments: [Notification.Name.databricksConnectionDidChange, GoogleCalendarProvider.didChange])
         func backgroundRegistrationAndSignOutNotificationsReloadTheCatalog(name: Notification.Name) async {
             let center = NotificationCenter()
@@ -251,11 +311,15 @@ import GRDB
             return defaults
         }
 
-        private func event(_ id: String, title: String? = nil, uid: String? = nil) -> CalendarEvent {
+        private func participant(_ name: String) -> CalendarParticipant {
+            CalendarParticipant(email: "\(name)@example.com", displayName: name, kind: .person, isCurrentUser: false)
+        }
+
+        private func event(_ id: String, title: String? = nil, uid: String? = nil, participants: [CalendarParticipant] = []) -> CalendarEvent {
             CalendarEvent(
                 id: id, calendarID: "primary", calendarName: "Calendar", calendarColorHex: nil, platformId: id,
                 title: title ?? id, description: "", icalUid: uid ?? id, startDate: Date(timeIntervalSince1970: 1000),
-                endDate: Date(timeIntervalSince1970: 2000), isAllDay: false, conferenceURI: nil
+                endDate: Date(timeIntervalSince1970: 2000), isAllDay: false, participants: participants, conferenceURI: nil
             )
         }
     }

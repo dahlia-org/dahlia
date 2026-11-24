@@ -65,7 +65,14 @@ final class CalendarAutoRecordingStore: ObservableObject {
         guard let data = userDefaults.data(forKey: selectionsUserDefaultsKey),
               let decoded = try? JSONDecoder().decode([CalendarAutoRecordingSelection].self, from: data)
         else { return [] }
-        return decoded.sorted { $0.eventID.sortKey < $1.eventID.sortKey }
+        let original = SingleAccountMigration.originalDatabricksConnectionID(in: userDefaults)
+        let migrated = decoded.map {
+            CalendarAutoRecordingSelection(
+                eventID: $0.eventID.retainingLegacyGoogleProvider(original), startDate: $0.startDate, endDate: $0.endDate
+            )
+        }.sorted { $0.eventID.sortKey < $1.eventID.sortKey }
+        if migrated != decoded { persist(migrated, to: userDefaults) }
+        return migrated
     }
 
     private static func persist(_ selections: [CalendarAutoRecordingSelection], to userDefaults: UserDefaults) {

@@ -8,6 +8,30 @@ import Foundation
     @MainActor
     struct GoogleCalendarConnectionTests {
         @Test(arguments: [false, true])
+        func legacySelectionBelongsOnlyToTheOriginalDatabricksAccount(explicitEmpty: Bool) throws {
+            let suite = "GoogleCalendarConnectionTests.\(UUID())"
+            let defaults = try #require(UserDefaults(suiteName: suite))
+            defer { defaults.removePersistentDomain(forName: suite) }
+            let original = UUID.v7()
+            let other = UUID.v7()
+            defaults.set(original.uuidString, forKey: SingleAccountMigration.sourceKey)
+            defaults.set("[\"primary\"]", forKey: GoogleCalendarStore.accountSelectedCalendarIDsKey)
+            if explicitEmpty {
+                defaults.set("[]", forKey: "\(GoogleCalendarStore.accountSelectedCalendarIDsKey).databricks.\(original.uuidString)")
+            }
+            func store(_ id: UUID) -> GoogleCalendarStore {
+                GoogleCalendarStore(
+                    signInProvider: SignIn(), provider: .databricks(connectionID: id), initiallyActive: false,
+                    apiClient: Client(), userDefaults: defaults
+                )
+            }
+            #expect(store(original).selectedCalendarIDs == (explicitEmpty ? [] : ["primary"]))
+            GoogleCalendarProvider.save(.databricks(connectionID: other), defaults: defaults)
+            #expect(store(other).selectedCalendarIDs.isEmpty)
+            #expect(store(original).selectedCalendarIDs == (explicitEmpty ? [] : ["primary"]))
+        }
+
+        @Test(arguments: [false, true])
         func fixedConnectionsKeepSeparateSelectionsAndDiscardADisabledFetch(google: Bool) async throws {
             let suite = "GoogleCalendarConnectionTests.\(UUID())"
             let defaults = try #require(UserDefaults(suiteName: suite))
