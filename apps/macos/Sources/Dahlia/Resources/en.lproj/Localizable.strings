@@ -506,6 +506,7 @@
 "Output Language" = "Output Language";
 "Minimal" = "Minimal";
 "Low" = "Low";
+"Medium" = "Medium";
 "High" = "High";
 "Extra High" = "Extra High";
 "Max" = "Max";
@@ -1163,6 +1164,7 @@
 "Shown" = "Shown";
 "Hidden" = "Hidden";
 "Recent Meetings" = "Recent Meetings";
+"Standard" = "Standard";
 "Compact" = "Compact";
 "Edit Project" = "Edit Project";
 "Updated" = "Updated";

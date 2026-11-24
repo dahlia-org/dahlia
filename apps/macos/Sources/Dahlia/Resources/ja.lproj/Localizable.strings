@@ -506,6 +506,7 @@
 "Output Language" = "出力言語";
 "Minimal" = "最小";
 "Low" = "低";
+"Medium" = "中";
 "High" = "高";
 "Extra High" = "非常に高い";
 "Max" = "最大";
@@ -1163,6 +1164,7 @@
 "Shown" = "表示中";
 "Hidden" = "非表示";
 "Recent Meetings" = "最近のミーティング";
+"Standard" = "標準";
 "Compact" = "コンパクト";
 "Edit Project" = "プロジェクトを編集";
 "Updated" = "更新日時";
