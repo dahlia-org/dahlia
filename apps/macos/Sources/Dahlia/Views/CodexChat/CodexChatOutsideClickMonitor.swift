@@ -41,7 +41,7 @@ struct CodexChatOutsideClickMonitor: NSViewRepresentable {
         }
 
         func startMonitoring(view: NSView) {
-            eventMonitor = NSEvent.addLocalMonitorForEvents(matching: .leftMouseUp) { [weak self, weak view] event in
+            eventMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .leftMouseUp]) { [weak self, weak view] event in
                 guard let self, let view else { return event }
                 return handle(event, in: view)
             }
@@ -52,6 +52,13 @@ struct CodexChatOutsideClickMonitor: NSViewRepresentable {
 
             let location = view.convert(event.locationInWindow, from: nil)
             guard !view.bounds.contains(location) else { return event }
+
+            // Text selection consumes mouse-up; other controls must finish their release action first.
+            if event.type == .leftMouseDown {
+                guard let contentView = event.window?.contentView,
+                      contentView.hitTest(contentView.convert(event.locationInWindow, from: nil)) is NSTextView
+                else { return event }
+            }
 
             Task { @MainActor [weak self] in
                 self?.onOutsideClick()

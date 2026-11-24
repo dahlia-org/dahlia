@@ -5,6 +5,35 @@
 
     @MainActor
     struct CodexChatOutsideClickMonitorTests {
+        final class FocusOnlyTextView: NSTextView {
+            override func mouseDown(with _: NSEvent) {
+                // Avoid AppKit's nested event-tracking loop in the test runner.
+                window?.makeFirstResponder(self)
+            }
+        }
+
+        @Test
+        func textInputClickDismissesAndKeepsFocus() async throws {
+            let fixture = try makeFixture(eventLocation: CGPoint(x: 150, y: 150), eventType: .leftMouseDown)
+            let textView = FocusOnlyTextView(frame: CGRect(x: 100, y: 100, width: 100, height: 100))
+            textView.string = "Draft"
+            fixture.window.contentView?.addSubview(textView)
+            fixture.window.isReleasedWhenClosed = false
+            defer { fixture.window.close() }
+            fixture.window.makeKeyAndOrderFront(nil)
+            var dismissCount = 0
+            let coordinator = CodexChatOutsideClickMonitor.Coordinator {
+                dismissCount += 1
+            }
+            coordinator.startMonitoring(view: fixture.view)
+            defer { coordinator.stopMonitoring() }
+
+            NSApplication.shared.sendEvent(fixture.event)
+
+            #expect(await pollUntil(timeout: .seconds(1)) { dismissCount == 1 })
+            #expect(fixture.window.firstResponder === textView)
+        }
+
         @Test
         func clickInsidePanelIsForwardedWithoutDismissal() async throws {
             let fixture = try makeFixture(eventLocation: CGPoint(x: 50, y: 50))
@@ -15,10 +44,8 @@
 
             let handledEvent = coordinator.handle(fixture.event, in: fixture.view)
 
-            #expect(dismissCount == 0)
-            await Task.yield()
-
             #expect(handledEvent === fixture.event)
+            #expect(!(await pollUntil(timeout: .milliseconds(100)) { dismissCount > 0 }))
             #expect(dismissCount == 0)
         }
 
@@ -33,7 +60,7 @@
             let handledEvent = coordinator.handle(fixture.event, in: fixture.view)
 
             #expect(dismissCount == 0)
-            await Task.yield()
+            #expect(await pollUntil { dismissCount == 1 })
 
             #expect(handledEvent === fixture.event)
             #expect(dismissCount == 1)
@@ -65,23 +92,26 @@
             }
 
             let handledEvent = coordinator.handle(otherEvent, in: fixture.view)
-            await Task.yield()
 
             #expect(handledEvent === otherEvent)
+            #expect(!(await pollUntil(timeout: .milliseconds(100)) { dismissCount > 0 }))
             #expect(dismissCount == 0)
         }
 
-        private func makeFixture(eventLocation: CGPoint) throws -> (event: NSEvent, view: NSView, window: NSWindow) {
+        private func makeFixture(
+            eventLocation: CGPoint,
+            eventType: NSEvent.EventType = .leftMouseUp
+        ) throws -> (event: NSEvent, view: NSView, window: NSWindow) {
             let window = NSWindow(
                 contentRect: CGRect(x: 0, y: 0, width: 200, height: 200),
-                styleMask: .borderless,
+                styleMask: .titled,
                 backing: .buffered,
                 defer: false
             )
             let view = NSView(frame: CGRect(x: 0, y: 0, width: 100, height: 100))
             window.contentView?.addSubview(view)
             let event = try #require(NSEvent.mouseEvent(
-                with: .leftMouseUp,
+                with: eventType,
                 location: eventLocation,
                 modifierFlags: [],
                 timestamp: 0,
