@@ -2096,7 +2096,7 @@
 
 "settings.agents.optimization.agentLegacyReviewRuns" = "以前の共通履歴";
 
-"Add your Google account using your name and email. Calendar and Drive ask for access when you use them. Adding this account does not change your calendar provider." = "名前とメールアドレスを使って Google アカウントを追加します。カレンダーと Drive の権限は、それぞれを使う際に確認します。追加してもカレンダーのプロバイダーは変更されません。";
+"Add your Google account with read-only access to calendars, events, and Drive backup files. Choose where to use this account in each feature’s settings." = "カレンダーと Drive の読み取り権限で Google アカウントを追加します。カレンダーではカレンダー一覧と予定を、Drive では取り込むバックアップファイルを読み取ります。利用先は各機能の設定で選択します。";
 
 "Disconnect this Google account from Calendar and Drive in Dahlia? Databricks connections are not affected." = "この Google アカウントを Dahlia のカレンダーと Drive から切断しますか？ Databricks の接続には影響しません。";
 

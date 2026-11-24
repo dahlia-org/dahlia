@@ -14,6 +14,115 @@ import Synchronization
     struct DatabricksProxyGoogleSignInProviderTests {
         private let connection = DatabricksConnection(id: proxyConnectionID, host: "https://example.cloud.databricks.com")
 
+        @Test(arguments: [GoogleAuthSessionKind.calendar, .drive], [false, true])
+        func directConnectionsReuseGrantedScopesIncludingAfterDisconnect(kind: GoogleAuthSessionKind, hasAccess: Bool) async throws {
+            let configuration = URLSessionConfiguration.ephemeral
+            configuration.protocolClasses = [DirectDriveIdentityURLProtocol.self]
+            let transport = URLSession(configuration: configuration)
+            defer { transport.invalidateAndCancel() }
+            let direct = FakeDirectProvider(hasPreviousSignIn: true)
+            direct.session = GoogleSession(
+                account: direct.session.account, accessToken: "shared-token",
+                grantedScopes: hasAccess ? GoogleOAuthScope.calendar.union(GoogleOAuthScope.drive) : GoogleOAuthScope.base
+            )
+            let provider = DatabricksProxyGoogleSignInProvider(
+                sessionKind: kind, provider: .google(accountID: .v7()), direct: direct,
+                storage: DatabricksTestStorage(connection: nil).storage,
+                apiClient: FakeAPIClient(result: .success([])), driveClient: GoogleDriveBackupClient(urlSession: transport),
+                userDefaults: makeDefaults()
+            )
+            _ = NSApplication.shared
+            let window = NSWindow()
+            let session = try await provider.signIn(withPresentingWindow: window, requestedScopes: kind.serviceScopes)
+            #expect(session == direct.session)
+            #expect(direct.restoreCallCount == 1)
+            #expect(direct.signInCallCount == (hasAccess ? 0 : 1))
+            #expect(direct.requestedScopes == (hasAccess ? nil : kind.serviceScopes))
+
+            try await provider.disconnect()
+            #expect(await provider.hasPreviousSignIn == false)
+            #expect(direct.disconnectCallCount == 0)
+            _ = try await provider.signIn(withPresentingWindow: window, requestedScopes: kind.serviceScopes)
+            #expect(await provider.hasPreviousSignIn)
+            #expect(direct.restoreCallCount == 2)
+            #expect(direct.signInCallCount == (hasAccess ? 0 : 2))
+        }
+
+        @Test
+        func directConnectionWithoutSavedCredentialsRequestsAuthentication() async throws {
+            let direct = FakeDirectProvider()
+            let provider = makeProvider(connection: nil, direct: direct)
+            _ = NSApplication.shared
+            _ = try await provider.signIn(withPresentingWindow: NSWindow(), requestedScopes: GoogleOAuthScope.calendar)
+            #expect(direct.restoreCallCount == 0)
+            #expect(direct.signInCallCount == 1)
+            #expect(direct.requestedScopes == GoogleOAuthScope.calendar)
+        }
+
+        @Test
+        func directRestoreFailureSurfacesWithoutStartingAuthentication() async throws {
+            _ = NSApplication.shared
+            for error in [GoogleSignInError.invalidTokenResponse, URLError(.notConnectedToInternet), CancellationError()] as [any Error] {
+                let direct = FakeDirectProvider(hasPreviousSignIn: true)
+                direct.restoreError = error
+                let provider = makeProvider(connection: nil, direct: direct)
+                do {
+                    _ = try await provider.signIn(withPresentingWindow: NSWindow(), requestedScopes: GoogleOAuthScope.calendar)
+                    Issue.record("Expected the saved session failure")
+                } catch {}
+                #expect(direct.restoreCallCount == 1)
+                #expect(direct.signInCallCount == 0)
+            }
+        }
+
+        @Test(arguments: [GoogleAuthSessionKind.calendar, .drive])
+        func directConnectionCanReauthenticateAnUnusableSavedCredential(kind: GoogleAuthSessionKind) async throws {
+            let direct = FakeDirectProvider(hasPreviousSignIn: true)
+            direct.restoreError = GoogleSignInError.reauthenticationRequired
+            let provider = DatabricksProxyGoogleSignInProvider(
+                sessionKind: kind, provider: .google(accountID: .v7()), direct: direct,
+                storage: DatabricksTestStorage(connection: nil).storage, userDefaults: makeDefaults()
+            )
+            _ = NSApplication.shared
+            try await provider.disconnect()
+            _ = try await provider.signIn(withPresentingWindow: NSWindow(), requestedScopes: kind.serviceScopes)
+            #expect(direct.restoreCallCount == 1)
+            #expect(direct.signInCallCount == 1)
+            #expect(direct.requestedScopes == kind.serviceScopes)
+            #expect(await provider.hasPreviousSignIn)
+        }
+
+        @Test(arguments: [GoogleAuthSessionKind.calendar, .drive], [401, 403, 429, 500])
+        func explicitConnectReauthenticatesOnlyWhenGoogleRejectsTheSavedToken(kind: GoogleAuthSessionKind, statusCode: Int) async throws {
+            let configuration = URLSessionConfiguration.ephemeral
+            configuration.protocolClasses = [DirectDriveIdentityURLProtocol.self]
+            let transport = URLSession(configuration: configuration)
+            defer { transport.invalidateAndCancel() }
+            let direct = FakeDirectProvider(hasPreviousSignIn: true)
+            direct.session = GoogleSession(
+                account: direct.session.account, accessToken: String(statusCode),
+                grantedScopes: GoogleOAuthScope.calendar.union(GoogleOAuthScope.drive)
+            )
+            let provider = DatabricksProxyGoogleSignInProvider(
+                sessionKind: kind, provider: .google(accountID: .v7()), direct: direct,
+                storage: DatabricksTestStorage(connection: nil).storage,
+                apiClient: FakeAPIClient(result: .failure(GoogleCalendarAPIError.httpError(statusCode: statusCode, detail: "test"))),
+                driveClient: GoogleDriveBackupClient(urlSession: transport),
+                userDefaults: makeDefaults()
+            )
+            _ = NSApplication.shared
+            try await provider.disconnect()
+            do {
+                _ = try await provider.signIn(withPresentingWindow: NSWindow(), requestedScopes: kind.serviceScopes)
+                #expect(statusCode == 401)
+            } catch {
+                #expect(statusCode != 401)
+            }
+            #expect(direct.restoreCallCount == 1)
+            #expect(direct.signInCallCount == (statusCode == 401 ? 1 : 0))
+            #expect(await provider.hasPreviousSignIn == (statusCode == 401))
+        }
+
         @Test(arguments: [false, true])
         func driveImportResolvesTheCurrentGoogleUserOnTheSameProxy(identityFails: Bool) async throws {
             let host = "grant-\(UUID().uuidString.lowercased()).example"
@@ -517,6 +626,26 @@ import Synchronization
         override func stopLoading() {}
     }
 
+    private final class DirectDriveIdentityURLProtocol: URLProtocol, @unchecked Sendable {
+        override static func canInit(with _: URLRequest) -> Bool { true }
+        override static func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+        override func startLoading() {
+            let url = request.url!
+            #expect(url.path == "/drive/v3/about")
+            let status = Int(request.value(forHTTPHeaderField: "Authorization")?.replacingOccurrences(of: "Bearer ", with: "") ?? "") ?? 200
+            let body = #"{"user":{"displayName":"Drive","emailAddress":"drive@example.com","permissionId":"drive-user"}}"#
+            client?.urlProtocol(
+                self,
+                didReceive: HTTPURLResponse(url: url, statusCode: status, httpVersion: nil, headerFields: nil)!,
+                cacheStoragePolicy: .notAllowed
+            )
+            client?.urlProtocol(self, didLoad: Data(body.utf8))
+            client?.urlProtocolDidFinishLoading(self)
+        }
+
+        override func stopLoading() {}
+    }
+
     private final class DriveIdentityURLProtocol: URLProtocol, @unchecked Sendable {
         override static func canInit(with _: URLRequest) -> Bool { true }
         override static func canonicalRequest(for request: URLRequest) -> URLRequest { request }
@@ -563,8 +692,11 @@ import Synchronization
         let hasPreviousSignIn: Bool
         let sessionDidChangeNotification = Notification.Name("FakeDirectProvider.\(UUID().uuidString)")
         private(set) var restoreCallCount = 0
+        private(set) var signInCallCount = 0
+        private(set) var requestedScopes: Set<String>?
         private(set) var disconnectCallCount = 0
-        private let session = GoogleSession(
+        var restoreError: (any Error)?
+        var session = GoogleSession(
             account: GoogleCalendarAccount(id: "direct", displayName: "Direct", email: "direct@example.com"),
             accessToken: "direct-token",
             grantedScopes: GoogleOAuthScope.calendar
@@ -577,10 +709,16 @@ import Synchronization
 
         func restorePreviousSignIn() async throws -> GoogleSession {
             restoreCallCount += 1
+            if let restoreError { throw restoreError }
             return session
         }
 
-        func signIn(withPresentingWindow _: NSWindow, requestedScopes _: Set<String>) async throws -> GoogleSession { session }
+        func signIn(withPresentingWindow _: NSWindow, requestedScopes: Set<String>) async throws -> GoogleSession {
+            signInCallCount += 1
+            self.requestedScopes = requestedScopes
+            return session
+        }
+
         func refreshCurrentSession() async throws -> GoogleSession? { session }
         func disconnect() async throws { disconnectCallCount += 1 }
     }

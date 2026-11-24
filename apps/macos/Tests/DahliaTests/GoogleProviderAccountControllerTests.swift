@@ -13,7 +13,7 @@ import Foundation
         }
 
         @Test
-        func addingGoogleOnlyRequestsIdentityAndKeepsTheSelectedCalendarProvider() async throws {
+        func addingGoogleRequestsCalendarAndDriveAndKeepsTheSelectedCalendarProvider() async throws {
             let suite = "GoogleProvider.\(UUID())"
             let defaults = try #require(UserDefaults(suiteName: suite))
             defer { defaults.removePersistentDomain(forName: suite) }
@@ -25,7 +25,7 @@ import Foundation
             _ = NSApplication.shared
             let window = NSWindow()
             #expect(await controller.signIn(window: window))
-            #expect(signIn.requestedScopes?.isEmpty == true)
+            #expect(signIn.requestedScopes == GoogleOAuthScope.calendar.union(GoogleOAuthScope.drive))
             #expect(controller.hasConnection)
             #expect(controller.account?.id == "google-user")
             #expect(defaults.string(forKey: GoogleCalendarProvider.userDefaultsKey) == selected)

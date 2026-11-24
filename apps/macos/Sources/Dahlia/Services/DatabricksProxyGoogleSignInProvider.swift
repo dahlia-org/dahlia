@@ -152,7 +152,29 @@ final class DatabricksProxyGoogleSignInProvider: GoogleSignInProviding {
         guard let connection else {
             guard let direct else { throw GoogleSignInError.noPreviousSignIn }
             let selected = selectedProvider
-            let session = try await direct.signIn(withPresentingWindow: window, requestedScopes: requestedScopes)
+            var restored: GoogleSession?
+            do {
+                restored = await direct.hasPreviousSignIn ? try await direct.restorePreviousSignIn() : nil
+            } catch GoogleSignInError.reauthenticationRequired {
+                restored = nil
+            }
+            if let session = restored, session.hasScopes(requestedScopes) {
+                do {
+                    if sessionKind == .drive {
+                        _ = try await driveClient.fetchAccount(session: session)
+                    } else {
+                        _ = try await apiClient.fetchCalendarList(session: session)
+                    }
+                } catch GoogleCalendarAPIError.httpError(statusCode: 401, detail: _) {
+                    restored = nil
+                }
+            }
+            try Task.checkCancellation()
+            let session = if let restored, restored.hasScopes(requestedScopes) {
+                restored
+            } else {
+                try await direct.signIn(withPresentingWindow: window, requestedScopes: requestedScopes)
+            }
             userDefaults.removeObject(forKey: directDisconnectedKey(for: selected))
             return session
         }

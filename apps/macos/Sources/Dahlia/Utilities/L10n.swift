@@ -2140,7 +2140,7 @@ enum L10n { // swiftlint:disable:this type_body_length
         bundle: bundle
     ) }
     static var googleProviderSignInDescription: String { String(
-        localized: "Add your Google account using your name and email. Calendar and Drive ask for access when you use them. Adding this account does not change your calendar provider.",
+        localized: "Add your Google account with read-only access to calendars, events, and Drive backup files. Choose where to use this account in each feature’s settings.",
         bundle: bundle
     ) }
 

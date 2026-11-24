@@ -87,7 +87,10 @@ final class GoogleProviderAccountController: Identifiable {
         do {
             guard let window = window ?? NSApp.keyWindow ?? NSApp.mainWindow else { throw GoogleSignInError.missingPresentingWindow }
             (signInProvider as? GoogleSignInAdapter)?.expectedAccountID = registeredAccount?.account.id
-            let session = try await signInProvider.signIn(withPresentingWindow: window, requestedScopes: [])
+            let session = try await signInProvider.signIn(
+                withPresentingWindow: window,
+                requestedScopes: GoogleOAuthScope.calendar.union(GoogleOAuthScope.drive)
+            )
             guard self.revision == revision else { return false }
             if let registeredAccount, registeredAccount.account.id != session.account.id { throw GoogleSignInError.accountMismatch }
             let record = GoogleProviderAccount(id: id, account: session.account, name: name)

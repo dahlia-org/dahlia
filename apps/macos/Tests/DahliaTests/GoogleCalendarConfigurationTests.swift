@@ -42,6 +42,24 @@ import Security
             #expect(body["grant_type"] == "refresh_token")
         }
 
+        @Test(arguments: [400, 429, 500], ["refresh_token", "authorization_code"])
+        func onlyAnInvalidRefreshGrantRequiresReauthentication(statusCode: Int, grantType: String) {
+            let data = Data(#"{"error":"invalid_grant","error_description":"Token expired or revoked"}"#.utf8)
+            let error = GoogleSignInAdapter.tokenRequestError(statusCode: statusCode, data: data, grantType: grantType)
+            if case .reauthenticationRequired = error {
+                #expect(statusCode == 400 && grantType == "refresh_token")
+            } else {
+                #expect(statusCode != 400 || grantType != "refresh_token")
+            }
+            let temporary = GoogleSignInAdapter.tokenRequestError(
+                statusCode: statusCode, data: Data(#"{"error":"temporarily_unavailable"}"#.utf8), grantType: grantType
+            )
+            guard case .authorizationFailed = temporary else {
+                Issue.record("Transient OAuth failures must remain errors")
+                return
+            }
+        }
+
         /// Google is one provider account: Calendar and Drive share its sign-in, and each hears the other's changes.
         @Test
         func calendarAndDriveShareOneSignIn() {
