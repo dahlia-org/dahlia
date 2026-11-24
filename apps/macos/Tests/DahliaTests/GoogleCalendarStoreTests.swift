@@ -65,8 +65,8 @@ import Foundation
             #expect(store.upcomingEvents == [fixtureEvent])
         }
 
-        @Test
-        func restoreShowsLastFetchedEventsUntilTheFreshFetchFinishes() async {
+        @Test(arguments: [false, true])
+        func restoreShowsLastFetchedEventsUntilTheFreshFetchFinishes(identityVerified: Bool) async {
             let defaults = isolatedUserDefaults()
             seedSelectedCalendars(["primary", secondaryCalendar.id], defaults: defaults)
             let cacheDirectory = temporaryCacheDirectory()
@@ -100,11 +100,16 @@ import Foundation
             // Selection persists before its network refresh, so the saved snapshot can still contain a hidden calendar.
             seedSelectedCalendars(["primary"], defaults: defaults)
 
-            let signInProvider = MockGoogleCalendarSignInProvider(hasPreviousSignIn: true, suspendsRestore: true)
+            var restoredSession = fixtureSession
+            restoredSession.isAccountIdentityVerified = identityVerified
+            let signInProvider = MockGoogleCalendarSignInProvider(
+                hasPreviousSignIn: true, restoreResult: .success(restoredSession), refreshResult: .success(restoredSession), suspendsRestore: true
+            )
             let freshEvent = calendarEvent(id: "fresh")
+            let client = ControllableGoogleCalendarAPIClient(initialEvents: [freshEvent], suspendsCalendarList: true)
             let nextLaunch = GoogleCalendarStore(
                 signInProvider: signInProvider,
-                apiClient: MockGoogleCalendarAPIClient(calendars: [primaryCalendar], events: [freshEvent]),
+                apiClient: client,
                 userDefaults: defaults,
                 now: { fixtureNow },
                 eventsCacheDirectory: cacheDirectory
@@ -112,11 +117,15 @@ import Foundation
             let restore = Task { await nextLaunch.restoreSessionIfNeeded() }
             #expect(await pollUntil { signInProvider.restoreCallCount == 1 })
 
+            #expect(nextLaunch.upcomingEvents.isEmpty)
+            signInProvider.finishRestore()
+            await client.waitUntilCalendarListFetchStarts()
             #expect(nextLaunch.state == .loading)
-            #expect(nextLaunch.upcomingEvents == [fixtureEvent])
+            #expect(nextLaunch.upcomingEvents == (identityVerified ? [fixtureEvent] : []))
             #expect(!nextLaunch.isLoaded)
 
-            signInProvider.finishRestore()
+            client.suspendsCalendarList = false
+            client.finishCalendarListFetch()
             await restore.value
             #expect(nextLaunch.upcomingEvents == [freshEvent])
             #expect(nextLaunch.state == .loaded)
@@ -284,10 +293,101 @@ import Foundation
                     #expect(await pollUntil { store.isLoaded })
                     await store.waitForEventsCacheWrite()
                 }
-                #expect(FileManager.default.fileExists(atPath: directory.appending(path: "local-google.json").path))
-                #expect(FileManager.default.fileExists(atPath: directory.appending(path: "local-databricks-\(first.uuidString).json").path))
-                #expect(FileManager.default.fileExists(atPath: directory.appending(path: "local-databricks-\(second.uuidString).json").path))
+                let files = try FileManager.default.contentsOfDirectory(atPath: directory.path)
+                #expect(files.count == 3)
+                #expect(files.contains { $0.hasPrefix("local-google-") })
+                for id in [first, second] {
+                    #expect(files.contains { $0.hasPrefix("local-databricks-\(id.uuidString)-") })
+                }
+                await store.disconnect()
+                await store.waitForEventsCacheWrite()
+                let remaining = try FileManager.default.contentsOfDirectory(atPath: directory.path)
+                #expect(remaining.count == 2)
+                #expect(!remaining.contains { $0.hasPrefix("local-databricks-\(second.uuidString)-") })
             }
+        }
+
+        @Test(arguments: [false, true])
+        func returningToAProxyVerifiesItsGoogleUserBeforeShowingCache(identityFails: Bool) async throws {
+            let connectionID = UUID.v7()
+            try await ProviderAccountDirectory.$connections.withValue([
+                .init(id: connectionID, workspaceURL: #require(URL(string: "https://calendar.example"))),
+            ]) {
+                let defaults = isolatedUserDefaults()
+                defaults.set(connectionID.uuidString, forKey: GoogleCalendarProvider.userDefaultsKey)
+                seedSelectedCalendars(["primary"], defaults: defaults)
+                let directory = temporaryCacheDirectory()
+                defer { try? FileManager.default.removeItem(at: directory) }
+                let route = Notification.Name("CalendarIdentity.\(UUID())")
+                let signIn = MockGoogleCalendarSignInProvider(hasPreviousSignIn: true)
+                let client = ControllableGoogleCalendarAPIClient(initialEvents: [fixtureEvent])
+                let store = GoogleCalendarStore(
+                    signInProvider: signIn, apiClient: client, userDefaults: defaults, now: { fixtureNow },
+                    eventsCacheDirectory: directory, providerChangeNotification: route
+                )
+                await store.restoreSessionIfNeeded()
+                await store.waitForEventsCacheWrite()
+                #expect(store.upcomingEvents == [fixtureEvent])
+                signIn.suspendsRestore = true
+                defaults.set("google", forKey: GoogleCalendarProvider.userDefaultsKey)
+                NotificationCenter.default.post(name: route, object: nil)
+                #expect(await pollUntil { signIn.restoreCallCount == 2 })
+                defaults.set(connectionID.uuidString, forKey: GoogleCalendarProvider.userDefaultsKey)
+                NotificationCenter.default.post(name: route, object: nil)
+                #expect(await pollUntil { signIn.restoreCallCount == 3 })
+                #expect(store.upcomingEvents.isEmpty)
+                let replacement = GoogleSession(
+                    account: GoogleCalendarAccount(id: "replacement-user", displayName: "Replacement", email: "replacement@example.com"),
+                    accessToken: "same-proxy-token", grantedScopes: GoogleOAuthScope.calendar
+                )
+                signIn.restoreResult = identityFails ? .failure(CalendarRefreshTestError.requestFailed) : .success(replacement)
+                signIn.refreshResult = .success(replacement)
+                client.suspendsCalendarList = true
+                signIn.finishRestore()
+                signIn.finishRestore()
+                if identityFails {
+                    #expect(await pollUntil { store.state == .failed })
+                    #expect(store.upcomingEvents.isEmpty)
+                    await store.disconnect()
+                    await store.waitForEventsCacheWrite()
+                    let remaining = try FileManager.default.contentsOfDirectory(atPath: directory.path)
+                    #expect(remaining.isEmpty)
+                } else {
+                    await client.waitUntilCalendarListFetchStarts()
+                    #expect(store.account?.id == replacement.account.id)
+                    #expect(store.upcomingEvents.isEmpty)
+                    client.finishCalendarListFetch()
+                    await client.waitForFetchEventsCallCount(2)
+                    let fresh = calendarEvent(id: "replacement-event")
+                    client.resumePendingRequest(at: 0, with: [fresh])
+                    #expect(await pollUntil { store.upcomingEvents == [fresh] })
+                }
+                await store.waitForEventsCacheWrite()
+            }
+        }
+
+        @Test
+        func refreshWithAChangedGoogleUserDropsOldEventsEvenIfFetchingFails() async {
+            let defaults = isolatedUserDefaults()
+            seedSelectedCalendars(["primary"], defaults: defaults)
+            let signIn = MockGoogleCalendarSignInProvider(hasPreviousSignIn: true)
+            let client = ControllableGoogleCalendarAPIClient(initialEvents: [fixtureEvent])
+            let store = GoogleCalendarStore(signInProvider: signIn, apiClient: client, userDefaults: defaults, now: { fixtureNow })
+            await store.restoreSessionIfNeeded()
+            signIn.refreshResult = .success(GoogleSession(
+                account: GoogleCalendarAccount(id: "new-user", displayName: "New", email: "new@example.com"),
+                accessToken: "same-token", grantedScopes: GoogleOAuthScope.calendar
+            ))
+            let refresh = Task { await store.refreshIfNeeded(force: true) }
+            await client.waitForFetchEventsCallCount(2)
+            #expect(store.account?.id == "new-user")
+            #expect(store.state == .loading)
+            #expect(!store.isLoaded)
+            #expect(store.upcomingEvents.isEmpty)
+            client.failPendingRequest(at: 0)
+            await refresh.value
+            #expect(store.upcomingEvents.isEmpty)
+            #expect(store.state == .failed)
         }
 
         @Test
@@ -296,7 +396,6 @@ import Foundation
             seedSelectedCalendars(["primary"], defaults: defaults)
             let cacheDirectory = temporaryCacheDirectory()
             defer { try? FileManager.default.removeItem(at: cacheDirectory) }
-            let cacheFile = cacheDirectory.appending(path: "local-google.json")
             let store = GoogleCalendarStore(
                 signInProvider: MockGoogleCalendarSignInProvider(hasPreviousSignIn: true),
                 apiClient: MockGoogleCalendarAPIClient(calendars: [primaryCalendar], events: [fixtureEvent]),
@@ -306,12 +405,12 @@ import Foundation
             )
             await store.restoreSessionIfNeeded()
             await store.waitForEventsCacheWrite()
-            #expect(FileManager.default.fileExists(atPath: cacheFile.path))
+            #expect((try? FileManager.default.contentsOfDirectory(atPath: cacheDirectory.path).count) == 1)
 
             await store.disconnect()
             await store.waitForEventsCacheWrite()
 
-            #expect(!FileManager.default.fileExists(atPath: cacheFile.path))
+            #expect((try? FileManager.default.contentsOfDirectory(atPath: cacheDirectory.path).count) == 0)
         }
 
         @Test
@@ -1113,7 +1212,7 @@ private final class MockGoogleCalendarAPIClient: GoogleCalendarAPIClientProvidin
 @MainActor
 private final class ControllableGoogleCalendarAPIClient: GoogleCalendarAPIClientProviding {
     private let initialEvents: [CalendarEvent]
-    private let suspendsCalendarList: Bool
+    var suspendsCalendarList: Bool
     private var calendarListContinuation: CheckedContinuation<Void, Never>?
     private var pendingRequests: [CheckedContinuation<[CalendarEvent], any Error>] = []
     private(set) var fetchEventsCallCount = 0

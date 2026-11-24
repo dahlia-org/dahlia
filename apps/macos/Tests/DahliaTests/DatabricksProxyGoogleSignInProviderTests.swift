@@ -294,6 +294,15 @@ import Synchronization
             #expect(apiClient.sessions.first?.apiBaseURL == session.apiBaseURL)
         }
 
+        @Test(arguments: [false, true])
+        func onlyAPrimaryCalendarVerifiesTheProxyGoogleIdentity(hasPrimary: Bool) async throws {
+            let calendar = CalendarListItem(id: "shared@example.com", title: "Shared", colorHex: nil, isPrimary: hasPrimary)
+            let provider = makeProvider(connection: connection, direct: FakeDirectProvider(), apiClient: FakeAPIClient(result: .success([calendar])))
+            let session = try await provider.restorePreviousSignIn()
+            #expect(session.isAccountIdentityVerified == hasPrimary)
+            #expect(session.account.id == calendar.id)
+        }
+
         @Test
         func restoreWithoutDatabricksCredentialNeverOpensTheBrowser() async throws {
             let memory = DatabricksTestStorage(connection: connection)

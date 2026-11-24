@@ -7,6 +7,8 @@ struct GoogleSession: Equatable, Sendable {
     let account: GoogleCalendarAccount
     let accessToken: String
     let grantedScopes: Set<String>
+    /// A proxy without a primary calendar can read calendars, but cannot identify the Google user.
+    var isAccountIdentityVerified = true
     /// Google API origin, or a Databricks Unity Catalog connection proxy that forwards to it.
     var apiBaseURL = GoogleCalendarAPIClient.googleAPIBaseURL
 

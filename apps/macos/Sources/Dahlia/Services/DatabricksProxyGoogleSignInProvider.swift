@@ -162,7 +162,7 @@ final class DatabricksProxyGoogleSignInProvider: GoogleSignInProviding {
         }
     }
 
-    /// Resolves the account from the primary calendar when none is cached; the connection grants
+    /// Resolves the account from the primary calendar; the connection grants
     /// calendar.readonly only, so userinfo is unavailable.
     private func proxySession(
         for connection: DatabricksConnection,
@@ -183,9 +183,12 @@ final class DatabricksProxyGoogleSignInProvider: GoogleSignInProviding {
             return session(resolved)
         }
         let calendars = try await apiClient.fetchCalendarList(session: session(placeholder))
-        let primary = calendars.first(where: \.isPrimary) ?? calendars.first
-        let resolved = primary.map { GoogleCalendarAccount(id: $0.id, displayName: $0.title, email: "") } ?? placeholder
-        return session(resolved)
+        let primary = calendars.first(where: \.isPrimary)
+        let displayed = primary ?? calendars.first
+        let resolved = displayed.map { GoogleCalendarAccount(id: $0.id, displayName: $0.title, email: "") } ?? placeholder
+        var result = session(resolved)
+        result.isAccountIdentityVerified = primary != nil
+        return result
     }
 
     /// A route Databricks rejected for this user: no Databricks credential, a Databricks token request rejected with a

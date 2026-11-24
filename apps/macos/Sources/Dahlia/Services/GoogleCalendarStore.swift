@@ -1,5 +1,6 @@
 import AppKit
 import Combine
+import CryptoKit
 import DahliaRuntimeSupport
 import Foundation
 
@@ -143,16 +144,18 @@ final class GoogleCalendarStore: ObservableObject {
         defer {
             if isCurrentRefresh(generation) { isLoadingAccountData = false }
         }
-        if upcomingEvents.isEmpty, !selectedCalendarIDs.isEmpty, let url = eventsCacheURL() {
-            let cached = await cachedEventsLoader(url)
-            guard isCurrentRefresh(generation) else { return }
-            cachedEventsSnapshot = cached
-            let currentDate = now()
-            upcomingEvents = cached.filter { $0.endDate > currentDate && selectedCalendarIDs.contains($0.calendarID) }
-        }
         do {
             let session = try await signInProvider.restorePreviousSignIn()
             guard isCurrentRefresh(generation) else { return }
+            applySession(session)
+            if session.hasScopes(GoogleOAuthScope.calendar), upcomingEvents.isEmpty, !selectedCalendarIDs.isEmpty,
+               let url = eventsCacheURL() {
+                let cached = await cachedEventsLoader(url)
+                guard isCurrentRefresh(generation) else { return }
+                cachedEventsSnapshot = cached
+                let currentDate = now()
+                upcomingEvents = cached.filter { $0.endDate > currentDate && selectedCalendarIDs.contains($0.calendarID) }
+            }
             try await loadAccountData(
                 session: session,
                 refreshEvents: true,
@@ -290,16 +293,7 @@ final class GoogleCalendarStore: ObservableObject {
         let generation = refreshGeneration
         beginLoadingIfNeeded()
         do {
-            guard let session = try await signInProvider.refreshCurrentSession() ?? currentSession else {
-                guard isCurrentRefresh(generation) else { return }
-                clearRuntimeState(clearSelection: false)
-                recomputeState()
-                return
-            }
-            guard isCurrentRefresh(generation) else { return }
-
-            currentSession = session
-            if account != session.account { account = session.account }
+            guard let session = try await refreshedSession(generation: generation) else { return }
             let selectedCalendars = availableCalendars.filter { selectedCalendarIDs.contains($0.id) }
             let events = try await apiClient.fetchUpcomingEvents(
                 session: session,
@@ -353,8 +347,7 @@ final class GoogleCalendarStore: ObservableObject {
         refreshInCurrentTask: Bool = false
     ) async throws {
         guard isCurrentRefresh(generation) else { return }
-        currentSession = session
-        if account != session.account { account = session.account }
+        applySession(session)
         if lastErrorMessage != nil { lastErrorMessage = nil }
 
         guard session.hasScopes(GoogleOAuthScope.calendar) else {
@@ -384,6 +377,39 @@ final class GoogleCalendarStore: ObservableObject {
         } else {
             recomputeState()
         }
+    }
+
+    private func refreshedSession(generation: UInt64) async throws -> GoogleSession? {
+        let refreshed = try await signInProvider.refreshCurrentSession() ?? currentSession
+        guard isCurrentRefresh(generation) else { return nil }
+        guard let session = refreshed else {
+            clearRuntimeState(clearSelection: false)
+            recomputeState()
+            return nil
+        }
+        if applySession(session) {
+            let calendars = try await apiClient.fetchCalendarList(session: session)
+            guard isCurrentRefresh(generation) else { return nil }
+            availableCalendars = calendars
+            pruneSelectedCalendars()
+        }
+        return session
+    }
+
+    /// A route can retain its ID while its Google grant changes.
+    @discardableResult
+    private func applySession(_ session: GoogleSession) -> Bool {
+        let identityChanged = !session.isAccountIdentityVerified || currentSession?.account.id != session.account.id
+        if identityChanged {
+            beginLoading()
+            availableCalendars = []
+            upcomingEvents = []
+            cachedEventsSnapshot = nil
+            lastRefreshAt = nil
+        }
+        currentSession = session
+        if account != session.account { account = session.account }
+        return identityChanged
     }
 
     private func beginLoading() {
@@ -449,6 +475,7 @@ final class GoogleCalendarStore: ObservableObject {
 
     private func clearRuntimeState(clearSelection: Bool) {
         invalidateCurrentRefresh()
+        if clearSelection { writeEventsCache(nil) }
         currentSession = nil
         if account != nil { account = nil }
         if !availableCalendars.isEmpty { availableCalendars = [] }
@@ -457,7 +484,6 @@ final class GoogleCalendarStore: ObservableObject {
 
         if clearSelection {
             updateSelectedCalendarIDs([])
-            writeEventsCache(nil)
         }
     }
 
@@ -522,24 +548,39 @@ final class GoogleCalendarStore: ObservableObject {
         await eventsCacheWriteTask?.value
     }
 
-    private func eventsCacheURL() -> URL? {
+    private var eventsCachePrefix: String {
         let identity = provider?.databricksConnectionID.map { "databricks-\($0.uuidString)" } ?? "google"
-        return eventsCacheDirectory?.appending(path: "\(AppAccount.key)-\(identity).json")
+        return "\(AppAccount.key)-\(identity)-"
     }
 
-    /// Writes run in order off MainActor; `nil` removes the file. A lost write only costs the spinner on the next launch.
+    private func eventsCacheURL() -> URL? {
+        guard let session = currentSession, session.isAccountIdentityVerified else { return nil }
+        let accountID = session.account.id
+        let principal = SHA256.hash(data: Data(accountID.utf8)).map { String(format: "%02x", $0) }.joined()
+        return eventsCacheDirectory?.appending(path: "\(eventsCachePrefix)\(principal).json")
+    }
+
+    /// Ordered off MainActor; disconnect removes this provider's snapshots even when session verification failed.
     private func writeEventsCache(_ events: [CalendarEvent]?) {
-        guard let url = eventsCacheURL() else { return }
-        if let events, cachedEventsSnapshot == events { return }
+        guard let directory = eventsCacheDirectory else { return }
+        let url = eventsCacheURL()
+        if let events {
+            guard url != nil else { return }
+            if cachedEventsSnapshot == events { return }
+        }
         cachedEventsSnapshot = events
+        let prefix = eventsCachePrefix
         let previousTask = eventsCacheWriteTask
         eventsCacheWriteTask = Task.detached {
             await previousTask?.value
-            guard let events else {
-                try? FileManager.default.removeItem(at: url)
+            guard let events, let url else {
+                let files = (try? FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)) ?? []
+                for file in files where file.lastPathComponent.hasPrefix(prefix) && file.pathExtension == "json" {
+                    try? FileManager.default.removeItem(at: file)
+                }
                 return
             }
-            try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
             try? JSONEncoder().encode(events).write(to: url, options: .atomic)
         }
     }
