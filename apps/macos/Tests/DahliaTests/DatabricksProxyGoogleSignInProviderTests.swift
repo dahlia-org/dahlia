@@ -54,6 +54,30 @@ import Synchronization
         }
 
         @Test
+        func fixedCalendarRoutesIgnoreTheIndependentDriveChoiceAndDisconnectOnlyThemselves() async throws {
+            let other = DatabricksConnection(id: .v7(), host: "https://other.cloud.databricks.com")
+            let memory = DatabricksTestStorage(connection: connection)
+            memory.state.withLock { $0.connections.append(other) }
+            let defaults = makeDefaults()
+            let oauth = DatabricksOAuthService(storage: memory.storage)
+            let first = DatabricksProxyGoogleSignInProvider(
+                provider: .databricks(connectionID: connection.id), oauth: oauth, storage: memory.storage, userDefaults: defaults
+            )
+            let second = DatabricksProxyGoogleSignInProvider(
+                provider: .databricks(connectionID: other.id), oauth: oauth, storage: memory.storage, userDefaults: defaults
+            )
+            defaults.set("unassigned", forKey: GoogleCalendarProvider.userDefaultsKey)
+            #expect(first.connectionPageURL?.host == "example.cloud.databricks.com")
+            #expect(second.connectionPageURL?.host == "other.cloud.databricks.com")
+            #expect(await first.hasPreviousSignIn)
+            #expect(await second.hasPreviousSignIn)
+            try await first.disconnect()
+            #expect(await !(first.hasPreviousSignIn))
+            #expect(await second.hasPreviousSignIn)
+            #expect(GoogleCalendarProvider.current(defaults: defaults) == .unassigned)
+        }
+
+        @Test
         func proxyBaseURLUsesAPI20Route() {
             #expect(
                 DatabricksProxyGoogleSignInProvider.proxyBaseURL(for: connection).absoluteString

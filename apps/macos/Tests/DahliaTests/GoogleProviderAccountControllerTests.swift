@@ -60,7 +60,7 @@ import Foundation
             #expect(await second.signIn(window: window))
             let model = GoogleProviderAccountsModel(worker: worker)
             await model.activate()
-            #expect(Set(model.accounts.map(\.id)) == [first.id, second.id])
+            #expect(await pollUntil { Set(model.accounts.map(\.id)) == [first.id, second.id] })
             await first.rename("Personal")
             #expect(await pollUntil { model.accounts.first { $0.id == first.id }?.name == "Personal" })
             await first.disconnect()

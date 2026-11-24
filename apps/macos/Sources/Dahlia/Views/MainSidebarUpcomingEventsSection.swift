@@ -51,11 +51,11 @@ struct MainSidebarUpcomingEventsSection: View {
         }
 
         if isExpanded {
-            ForEach(visibleEvents) { event in
+            ForEach(visibleEvents, id: \.displayID) { event in
                 MainSidebarUpcomingEventRow(
                     event: event,
                     now: now,
-                    isSelected: event.id == openDraftEventID,
+                    isSelected: event.displayID == openDraftEventID,
                     canStartRecording: canStartRecording,
                     isAutoRecordingEnabled: calendarAutoRecordingStore.isEnabled(for: event),
                     onSelect: { onSelectEvent(event) },

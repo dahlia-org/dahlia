@@ -10,6 +10,7 @@ struct CalendarAutoRecordingEventID: Codable, Hashable, Sendable {
     private let kind: Kind
     private let icalUid: String?
     private let recurrenceId: String
+    private let providerID: String?
     private let platform: String?
     private let calendarID: String?
     private let platformId: String?
@@ -19,6 +20,7 @@ struct CalendarAutoRecordingEventID: Codable, Hashable, Sendable {
             kind = .iCalendar
             icalUid = key.icalUid
             recurrenceId = key.recurrenceId
+            providerID = nil
             platform = nil
             calendarID = nil
             platformId = nil
@@ -26,6 +28,7 @@ struct CalendarAutoRecordingEventID: Codable, Hashable, Sendable {
             kind = .source
             icalUid = nil
             recurrenceId = event.recurrenceId
+            providerID = event.providerID
             platform = event.platform
             calendarID = event.calendarID
             platformId = Self.fallbackPlatformId(for: event)
@@ -37,7 +40,7 @@ struct CalendarAutoRecordingEventID: Codable, Hashable, Sendable {
         case .iCalendar:
             "icalendar:\(icalUid ?? ""):\(recurrenceId)"
         case .source:
-            "source:\(platform ?? ""):\(calendarID ?? ""):\(platformId ?? ""):\(recurrenceId)"
+            "source:\(providerID ?? ""):\(platform ?? ""):\(calendarID ?? ""):\(platformId ?? ""):\(recurrenceId)"
         }
     }
 

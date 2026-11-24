@@ -404,14 +404,6 @@
         }
 
         @Test
-        func setupNormalizesCalendarSelectionToOneSource() {
-            #expect(CalendarSettingsView.exclusiveSetupSource(from: [.macOS]) == .macOS)
-            #expect(CalendarSettingsView.exclusiveSetupSource(from: [.google]) == .google)
-            #expect(CalendarSettingsView.exclusiveSetupSource(from: [.macOS, .google]) == .google)
-            #expect(CalendarSettingsView.exclusiveSetupSource(from: []) == .google)
-        }
-
-        @Test
         func providerLogosAreBundledAndLoadable() throws {
             for name in ["ProviderOpenAI", "ProviderDatabricks"] {
                 let url = try #require(Bundle.appModule.url(forResource: name, withExtension: "svg"))

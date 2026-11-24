@@ -11,6 +11,8 @@ final class DatabricksProxyGoogleSignInProvider: GoogleSignInProviding {
     static let connectionName = "system_ai_agent_google_calendar"
     static let driveConnectionName = "system_ai_agent_google_drive"
     private let sessionKind: GoogleAuthSessionKind
+    private let configuredProvider: GoogleCalendarProvider?
+    private var selectedProvider: GoogleCalendarProvider { configuredProvider ?? GoogleCalendarProvider.current(defaults: userDefaults) }
 
     private static func connectionName(for kind: GoogleAuthSessionKind) -> String {
         kind == .drive ? driveConnectionName : connectionName
@@ -26,7 +28,7 @@ final class DatabricksProxyGoogleSignInProvider: GoogleSignInProviding {
     private let directProviderFactory: @MainActor (GoogleProviderAccount) -> any GoogleSignInProviding
     private var direct: (any GoogleSignInProviding)? {
         if let directOverride { return directOverride }
-        guard let id = GoogleCalendarProvider.current(defaults: userDefaults).googleAccountID,
+        guard let id = selectedProvider.googleAccountID,
               let account = ProviderAccountDirectory.googleConnections().first(where: { $0.id == id }) else { return nil }
         return directProviderFactory(account)
     }
@@ -43,6 +45,7 @@ final class DatabricksProxyGoogleSignInProvider: GoogleSignInProviding {
 
     init(
         sessionKind: GoogleAuthSessionKind = .calendar,
+        provider: GoogleCalendarProvider? = nil,
         direct: (any GoogleSignInProviding)? = nil,
         directProviderFactory: (@MainActor (GoogleProviderAccount) -> any GoogleSignInProviding)? = nil,
         oauth: DatabricksOAuthService = .shared,
@@ -53,6 +56,7 @@ final class DatabricksProxyGoogleSignInProvider: GoogleSignInProviding {
         connectionChangeNotification: Notification.Name = .databricksConnectionDidChange
     ) {
         self.sessionKind = sessionKind
+        self.configuredProvider = provider
         self.directOverride = direct
         self.directProviderFactory = directProviderFactory ?? {
             GoogleSignInAdapter(accountID: $0.id, expectedAccountID: $0.account.id, sessionKind: sessionKind)
@@ -71,7 +75,7 @@ final class DatabricksProxyGoogleSignInProvider: GoogleSignInProviding {
         registeredSessionObserver = NotificationCenter.default.publisher(for: GoogleProviderAccount.sessionDidChange)
             .sink { [weak self] notification in
                 guard let self, let change = notification.object as? GoogleProviderAccountSessionChange,
-                      GoogleCalendarProvider.current(defaults: userDefaults).googleAccountID == change.accountID else { return }
+                      selectedProvider.googleAccountID == change.accountID else { return }
                 NotificationCenter.default.post(name: sessionDidChangeNotification, object: nil)
             }
         // Provider credentials are independent: a direct Google sign-out must not disconnect a selected proxy.
@@ -91,7 +95,7 @@ final class DatabricksProxyGoogleSignInProvider: GoogleSignInProviding {
     }
 
     private var connection: DatabricksConnection? {
-        guard let connectionID = GoogleCalendarProvider.current(defaults: userDefaults).databricksConnectionID
+        guard let connectionID = selectedProvider.databricksConnectionID
         else { return nil }
         return try? storage.loadConnections().first { $0.id == connectionID }
     }
@@ -117,7 +121,7 @@ final class DatabricksProxyGoogleSignInProvider: GoogleSignInProviding {
     }
 
     private var isDirectDisconnected: Bool {
-        userDefaults.bool(forKey: directDisconnectedKey(for: GoogleCalendarProvider.current(defaults: userDefaults)))
+        userDefaults.bool(forKey: directDisconnectedKey(for: selectedProvider))
     }
 
     var hasPreviousSignIn: Bool {
@@ -147,7 +151,7 @@ final class DatabricksProxyGoogleSignInProvider: GoogleSignInProviding {
     func signIn(withPresentingWindow window: NSWindow, requestedScopes: Set<String>) async throws -> GoogleSession {
         guard let connection else {
             guard let direct else { throw GoogleSignInError.noPreviousSignIn }
-            let selected = GoogleCalendarProvider.current(defaults: userDefaults)
+            let selected = selectedProvider
             let session = try await direct.signIn(withPresentingWindow: window, requestedScopes: requestedScopes)
             userDefaults.removeObject(forKey: directDisconnectedKey(for: selected))
             return session
@@ -185,7 +189,7 @@ final class DatabricksProxyGoogleSignInProvider: GoogleSignInProviding {
 
     func disconnect() async throws {
         guard let connection else {
-            let selected = GoogleCalendarProvider.current(defaults: userDefaults)
+            let selected = selectedProvider
             if selected.googleAccountID != nil {
                 userDefaults.set(true, forKey: directDisconnectedKey(for: selected))
                 NotificationCenter.default.post(name: sessionDidChangeNotification, object: nil)

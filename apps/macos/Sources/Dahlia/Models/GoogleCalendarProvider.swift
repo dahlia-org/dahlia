@@ -1,6 +1,7 @@
 import Foundation
 
-/// One explicitly selected, registered provider. A missing selection never starts Google OAuth or selects a proxy.
+/// A Google transport route. Calendar pins one per connection; Drive selects its route explicitly.
+/// The saved key retains its previous name for the existing Drive selection.
 enum GoogleCalendarProvider: Hashable, Sendable {
     case unassigned
     case google(accountID: UUID)

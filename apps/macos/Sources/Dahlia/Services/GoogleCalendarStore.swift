@@ -5,7 +5,7 @@ import DahliaRuntimeSupport
 import Foundation
 
 @MainActor
-final class GoogleCalendarStore: ObservableObject {
+final class GoogleCalendarStore: ObservableObject, CalendarConnectionStore {
     /// The selection saved before it became per account; read only as each account's default.
     static let selectedCalendarIDsKey = "googleCalendarSelectedCalendarIDs"
 
@@ -14,18 +14,9 @@ final class GoogleCalendarStore: ObservableObject {
         "\(selectedCalendarIDsKey).\(AppAccount.key)"
     }
 
-    enum State: Equatable {
-        case unconfigured
-        case signedOut
-        case loading
-        case needsCalendarSelection
-        case loaded
-        case failed
-    }
+    var connectionStatePublisher: AnyPublisher<CalendarConnectionState, Never> { $state.eraseToAnyPublisher() }
 
-    static let shared = GoogleCalendarStore(
-        eventsCacheDirectory: DahliaApplicationSupport.currentDirectoryURL.appending(path: "Caches/GoogleCalendar", directoryHint: .isDirectory)
-    )
+    typealias State = CalendarConnectionState
 
     @Published private(set) var state: State
     @Published private(set) var account: GoogleCalendarAccount?
@@ -60,6 +51,9 @@ final class GoogleCalendarStore: ObservableObject {
     }
 
     private let signInProvider: any GoogleSignInProviding
+    private let configuredProvider: GoogleCalendarProvider?
+    private var currentProvider: GoogleCalendarProvider { configuredProvider ?? GoogleCalendarProvider.current(defaults: userDefaults) }
+    private var isActive: Bool
     private let apiClient: any GoogleCalendarAPIClientProviding
     private let userDefaults: UserDefaults
     /// The account whose selection is loaded; a load still running for the previous account saves to it, not the new one.
@@ -89,6 +83,8 @@ final class GoogleCalendarStore: ObservableObject {
 
     init(
         signInProvider: any GoogleSignInProviding = DatabricksProxyGoogleSignInProvider(),
+        provider: GoogleCalendarProvider? = nil,
+        initiallyActive: Bool = true,
         apiClient: any GoogleCalendarAPIClientProviding = GoogleCalendarAPIClient(),
         userDefaults: UserDefaults = .standard,
         now: @escaping () -> Date = Date.init,
@@ -104,6 +100,8 @@ final class GoogleCalendarStore: ObservableObject {
         self.eventsCacheDirectory = eventsCacheDirectory
         self.cachedEventsLoader = cachedEventsLoader
         self.signInProvider = signInProvider
+        self.configuredProvider = provider
+        self.isActive = initiallyActive
         self.apiClient = apiClient
         self.userDefaults = userDefaults
         self.now = now
@@ -111,7 +109,11 @@ final class GoogleCalendarStore: ObservableObject {
         self.daysAhead = daysAhead
         self.presentingWindowProvider = presentingWindowProvider
         let sessionDidChangeNotification = signInProvider.sessionDidChangeNotification
-        self.selectedCalendarIDs = Self.loadSelectedCalendarIDs(from: userDefaults)
+        self.selectedCalendarIDs = Self.loadSelectedCalendarIDs(
+            from: userDefaults,
+            provider: provider ?? GoogleCalendarProvider.current(defaults: userDefaults),
+            scoped: provider != nil
+        )
         self.state = signInProvider.isConfigured ? .signedOut : .unconfigured
         authChangeObserver = GoogleAuthSessionObserver(notificationName: sessionDidChangeNotification) { [weak self] forceSignOut in
             await self?.handleAuthSessionChanged(forceSignOut: forceSignOut)
@@ -119,7 +121,7 @@ final class GoogleCalendarStore: ObservableObject {
         // Direct identity management is independent of the selected Calendar route.
         directSignOutObserver = GoogleAuthSessionObserver(notificationName: directSessionChangeNotification) { [weak self] disconnected in
             guard let self, disconnected else { return }
-            if provider == .unassigned {
+            if self.provider == .unassigned {
                 clearRuntimeState(clearSelection: true)
                 didAttemptRestore = false
                 recomputeState()
@@ -130,18 +132,27 @@ final class GoogleCalendarStore: ObservableObject {
         registeredSignOutObserver = NotificationCenter.default.publisher(for: registeredSessionChangeNotification)
             .sink { [weak self] notification in
                 guard let self, let change = notification.object as? GoogleProviderAccountSessionChange, change.disconnected else { return }
-                reloadIfProviderChanged()
                 let source = GoogleCalendarProvider.google(accountID: change.accountID)
+                if let configuredProvider, configuredProvider != source { return }
+                reloadIfProviderChanged()
                 userDefaults.removeObject(forKey: "\(Self.accountSelectedCalendarIDsKey).google.\(change.accountID.uuidString)")
-                if provider == source {
+                if self.provider == source {
                     clearRuntimeState(clearSelection: true)
                     didAttemptRestore = false
                     recomputeState()
                 } else { removeEventsCache(for: source) }
             }
-        provider = GoogleCalendarProvider.current(defaults: userDefaults)
+        self.provider = currentProvider
         providerChangeObserver = NotificationCenter.default.publisher(for: providerChangeNotification)
             .sink { [weak self] _ in self?.reloadIfProviderChanged() }
+    }
+
+    func setActive(_ active: Bool) {
+        guard isActive != active else { return }
+        isActive = active
+        clearRuntimeState(clearSelection: false)
+        didAttemptRestore = false
+        recomputeState()
     }
 
     func restoreSessionIfNeeded() async {
@@ -150,11 +161,11 @@ final class GoogleCalendarStore: ObservableObject {
 
     /// Startup constructs the store before the account migration copies its saved calendar selection.
     func reloadSelectedCalendarsAfterMigration() {
-        selectedCalendarIDs = Self.loadSelectedCalendarIDs(from: userDefaults)
+        selectedCalendarIDs = Self.loadSelectedCalendarIDs(from: userDefaults, provider: currentProvider, scoped: configuredProvider != nil)
     }
 
     private func restoreSessionIfNeeded(startedByRefreshTask: Bool) async {
-        guard !isDisconnecting, !didAttemptRestore else { return }
+        guard isActive, !isDisconnecting, !didAttemptRestore else { return }
         didAttemptRestore = true
 
         guard isConfigured else {
@@ -200,6 +211,7 @@ final class GoogleCalendarStore: ObservableObject {
     }
 
     func signIn() async {
+        guard isActive else { return }
         guard !isDisconnecting else { return }
         guard isConfigured else {
             transitionToUnconfiguredState()
@@ -246,6 +258,7 @@ final class GoogleCalendarStore: ObservableObject {
     }
 
     func refreshIfNeeded(force: Bool = false) async {
+        guard isActive else { return }
         if isLoadingAccountData {
             if let refreshTask {
                 await refreshTask.value
@@ -504,11 +517,11 @@ final class GoogleCalendarStore: ObservableObject {
     /// Another provider reads Google Calendar now: its own sign-in, calendars, and cached events.
     @discardableResult
     private func reloadIfProviderChanged() -> Bool {
-        let current = GoogleCalendarProvider.current(defaults: userDefaults)
+        let current = currentProvider
         guard current != provider else { return false }
         provider = current
         clearRuntimeState(clearSelection: false)
-        selectedCalendarIDs = Self.loadSelectedCalendarIDs(from: userDefaults)
+        selectedCalendarIDs = Self.loadSelectedCalendarIDs(from: userDefaults, provider: currentProvider, scoped: configuredProvider != nil)
         cachedEventsSnapshot = nil
         didAttemptRestore = false
         recomputeState()
@@ -537,7 +550,7 @@ final class GoogleCalendarStore: ObservableObject {
         }
         guard selectedCalendarIDs != filtered else { return }
         selectedCalendarIDs = filtered
-        Self.persistSelectedCalendarIDs(filtered, to: userDefaults)
+        Self.persistSelectedCalendarIDs(filtered, to: userDefaults, provider: provider ?? currentProvider, scoped: configuredProvider != nil)
     }
 
     private func pruneSelectedCalendars() {
@@ -615,19 +628,26 @@ final class GoogleCalendarStore: ObservableObject {
         }.value
     }
 
-    private static func selectedCalendarIDsStorageKey(for provider: GoogleCalendarProvider) -> String {
+    private static func selectedCalendarIDsStorageKey(for provider: GoogleCalendarProvider, scoped: Bool) -> String {
         switch provider {
         case .unassigned: "\(accountSelectedCalendarIDsKey).unassigned"
         case let .google(id): "\(accountSelectedCalendarIDsKey).google.\(id.uuidString)"
-        case .databricks: accountSelectedCalendarIDsKey
+        case let .databricks(id): scoped ? "\(accountSelectedCalendarIDsKey).databricks.\(id.uuidString)" : accountSelectedCalendarIDsKey
         }
     }
 
-    private static func loadSelectedCalendarIDs(from userDefaults: UserDefaults) -> Set<String> {
-        let provider = GoogleCalendarProvider.current(defaults: userDefaults)
-        let key = selectedCalendarIDsStorageKey(for: provider)
-        let json = userDefaults
-            .string(forKey: key) ?? (provider.databricksConnectionID != nil ? userDefaults.string(forKey: selectedCalendarIDsKey) : nil)
+    private static func loadSelectedCalendarIDs(from userDefaults: UserDefaults, provider: GoogleCalendarProvider, scoped: Bool) -> Set<String> {
+        let key = selectedCalendarIDsStorageKey(for: provider, scoped: scoped)
+        // Only the previously selected Databricks registration inherits the old shared selection.
+        if scoped, provider.databricksConnectionID?.uuidString == userDefaults.string(forKey: GoogleCalendarProvider.userDefaultsKey),
+           userDefaults.object(forKey: key) == nil {
+            userDefaults.set(
+                userDefaults.string(forKey: accountSelectedCalendarIDsKey) ?? userDefaults.string(forKey: selectedCalendarIDsKey),
+                forKey: key
+            )
+        }
+        let json = userDefaults.string(forKey: key)
+            ?? (!scoped && provider.databricksConnectionID != nil ? userDefaults.string(forKey: selectedCalendarIDsKey) : nil)
         guard let json,
               let data = json.data(using: .utf8),
               let ids = try? JSONDecoder().decode([String].self, from: data)
@@ -637,15 +657,19 @@ final class GoogleCalendarStore: ObservableObject {
         return Set(ids)
     }
 
-    private static func persistSelectedCalendarIDs(_ ids: Set<String>, to userDefaults: UserDefaults) {
+    private static func persistSelectedCalendarIDs(
+        _ ids: Set<String>,
+        to userDefaults: UserDefaults,
+        provider: GoogleCalendarProvider,
+        scoped: Bool
+    ) {
         let sorted = Array(ids).sorted()
         guard let data = try? JSONEncoder().encode(sorted),
               let json = String(data: data, encoding: .utf8)
         else {
             return
         }
-        let provider = GoogleCalendarProvider.current(defaults: userDefaults)
-        let key = selectedCalendarIDsStorageKey(for: provider)
+        let key = selectedCalendarIDsStorageKey(for: provider, scoped: scoped)
         userDefaults.set(json, forKey: key)
     }
 }

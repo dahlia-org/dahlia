@@ -544,9 +544,9 @@ final class MeetingNotificationService: NSObject, UNUserNotificationCenterDelega
         )
     }
 
-    private static func calendarNotificationIdentifier(for event: CalendarEvent) -> String {
+    static func calendarNotificationIdentifier(for event: CalendarEvent) -> String {
         let timestamp = Int(event.startDate.timeIntervalSince1970)
-        return "\(calendarRequestPrefix)\(event.platform).\(event.platformId).\(timestamp)"
+        return "\(calendarRequestPrefix)\(CalendarAutoRecordingEventID(event: event).sortKey).\(timestamp)"
     }
 
     private static func isCalendarNotificationIdentifier(_ identifier: String) -> Bool {

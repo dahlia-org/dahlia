@@ -5,7 +5,7 @@ struct CalendarScheduleView: View {
     @ObservedObject private var settings = AppSettings.shared
     @ObservedObject private var calendarSourceCoordinator = CalendarSourceCoordinator.shared
     @ObservedObject private var calendarAutoRecordingStore = CalendarAutoRecordingStore.shared
-    private let googleCalendarStore = GoogleCalendarStore.shared
+    @ObservedObject private var googleCalendarStore = CalendarProviderCollection.shared
     private let macCalendarStore = MacCalendarStore.shared
     @Environment(MainWindowNavigation.self) private var mainWindowNavigation
 
@@ -55,11 +55,32 @@ struct CalendarScheduleView: View {
     @ViewBuilder
     private var sourceStatusCards: some View {
         if settings.isCalendarSourceEnabled(.google) {
-            googleCalendarStatusCard
+            ForEach(googleCalendarStore.enabledConnections) { connection in
+                if let store = googleCalendarStore.stores[connection.id], store.state.requiresUserAttention {
+                    statusCard(
+                        title: connection.displayName,
+                        message: store.lastErrorMessage ?? calendarConnectionMessage(store.state),
+                        actionTitle: L10n.settings,
+                        action: openCalendarSettings
+                    )
+                }
+            }
+            if googleCalendarStore.enabledConnections.isEmpty { googleCalendarStatusCard }
         }
 
         if settings.isCalendarSourceEnabled(.macOS) {
             macCalendarStatusCard
+        }
+    }
+
+    private func calendarConnectionMessage(_ state: CalendarConnectionState) -> String {
+        switch state {
+        case .unconfigured: L10n.googleCalendarClientIDMissingMessage
+        case .signedOut: L10n.googleCalendarScheduleSignInRequiredMessage
+        case .needsCalendarSelection: L10n.googleCalendarScheduleSelectionRequiredMessage
+        case .failed: L10n.googleCalendarUnexpectedResponse
+        case .loading: L10n.googleCalendarLoading
+        case .loaded: L10n.googleCalendarConnected
         }
     }
 
@@ -240,7 +261,7 @@ struct CalendarScheduleView: View {
     }
 
     private var hasLoadedEnabledSource: Bool {
-        (settings.isCalendarSourceEnabled(.google) && googleCalendarStore.state == .loaded)
+        (settings.isCalendarSourceEnabled(.google) && googleCalendarStore.hasLoadedConnection)
             || (settings.isCalendarSourceEnabled(.macOS) && macCalendarStore.state == .loaded)
     }
 
@@ -286,17 +307,6 @@ struct CalendarScheduleView: View {
     }
 }
 
-private extension GoogleCalendarStore.State {
-    var requiresUserAttention: Bool {
-        switch self {
-        case .unconfigured, .signedOut, .needsCalendarSelection, .failed:
-            true
-        case .loading, .loaded:
-            false
-        }
-    }
-}
-
 private extension MacCalendarStore.State {
     var requiresUserAttention: Bool {
         switch self {
@@ -329,7 +339,7 @@ private struct CalendarScheduleSectionView: View {
                 .foregroundStyle(DahliaDesign.secondaryTextColor)
 
             VStack(spacing: 8) {
-                ForEach(section.events) { event in
+                ForEach(section.events, id: \.displayID) { event in
                     CalendarScheduleEventRow(
                         event: event,
                         onSelect: { onSelectEvent(event) },

@@ -8,6 +8,7 @@ enum CalendarEventPlatform {
 
 struct CalendarEvent: Identifiable, Equatable, Codable {
     let id: String
+    var providerID: String?
     let calendarID: String
     let calendarName: String
     let calendarColorHex: String?
@@ -77,6 +78,15 @@ struct CalendarEvent: Identifiable, Equatable, Codable {
 }
 
 extension CalendarEvent {
+    func scoped(to providerID: String) -> CalendarEvent {
+        var event = self
+        event.providerID = providerID
+        return event
+    }
+
+    /// UI identity includes the registration; physical meeting identity remains the iCalendar key.
+    var displayID: String { providerID.map { "\($0)::\(id)" } ?? id }
+
     var key: CalendarEventKey? {
         CalendarEventKey(icalUid: icalUid, recurrenceId: recurrenceId)
     }
@@ -105,10 +115,8 @@ extension CalendarEvent {
 }
 
 extension [CalendarEvent] {
-    /// Google と macOS の両ソースが同じ物理イベントを返した場合に 1 件へ畳み込む。
-    /// iCalendar の UID と RECURRENCE-ID で照合し、会議 URI などの情報が揃っている
-    /// Google 側を優先する。同一ソース内の重複
-    /// （複数カレンダーに同じ予定がある場合）は従来どおり残す。
+    /// 接続や OS をまたぐ同じ物理イベントは UID と RECURRENCE-ID で 1 件へまとめ、Google の情報を優先する。
+    /// 同じ接続内の複数カレンダーにある予定は残す。
     func deduplicatedAcrossSources(mergingMissingMetadata: Bool = true) -> [CalendarEvent] {
         var indexByKey: [CalendarEventKey: Int] = [:]
         var result: [CalendarEvent] = []
@@ -126,7 +134,7 @@ extension [CalendarEvent] {
             }
 
             let existing = result[existingIndex]
-            if existing.platform == event.platform {
+            if existing.platform == event.platform, existing.providerID == event.providerID {
                 result.append(event)
             } else {
                 let preferred = event.platform == CalendarEventPlatform.googleCalendar ? event : existing
@@ -142,7 +150,8 @@ extension [CalendarEvent] {
 
 private extension CalendarEvent {
     func mergingMissingMetadata(from fallback: CalendarEvent) -> CalendarEvent {
-        CalendarEvent(
+        let differentRegistrations = providerID != nil && fallback.providerID != nil && providerID != fallback.providerID
+        var event = CalendarEvent(
             id: id,
             calendarID: calendarID,
             calendarName: calendarName,
@@ -157,7 +166,7 @@ private extension CalendarEvent {
             endDate: endDate,
             isAllDay: isAllDay,
             hasOtherAttendees: hasOtherAttendees || fallback.hasOtherAttendees,
-            isDeclined: isDeclined || fallback.isDeclined,
+            isDeclined: differentRegistrations ? isDeclined && fallback.isDeclined : isDeclined || fallback.isDeclined,
             isAttending: isAttending || fallback.isAttending,
             isOutOfOffice: isOutOfOffice || fallback.isOutOfOffice,
             participants: mergedParticipants(with: fallback.participants),
@@ -165,6 +174,8 @@ private extension CalendarEvent {
             conferenceURI: conferenceURI ?? fallback.conferenceURI,
             url: url ?? fallback.url
         )
+        event.providerID = providerID
+        return event
     }
 
     func mergedParticipants(with fallbackParticipants: [CalendarParticipant]) -> [CalendarParticipant] {
@@ -190,6 +201,7 @@ private extension CalendarEvent {
 extension CalendarEvent {
     private enum CodingKeys: String, CodingKey {
         case id
+        case providerID
         case calendarID
         case calendarName
         case calendarColorHex
@@ -221,6 +233,7 @@ extension CalendarEvent {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         let legacyContainer = try decoder.container(keyedBy: LegacyCodingKeys.self)
         id = try container.decode(String.self, forKey: .id)
+        providerID = try container.decodeIfPresent(String.self, forKey: .providerID)
         calendarID = try container.decode(String.self, forKey: .calendarID)
         calendarName = try container.decode(String.self, forKey: .calendarName)
         calendarColorHex = try container.decodeIfPresent(String.self, forKey: .calendarColorHex)

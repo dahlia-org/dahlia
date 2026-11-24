@@ -2118,9 +2118,10 @@ enum L10n { // swiftlint:disable:this type_body_length
     ) }
     static var calendarSources: String { String(localized: "Calendar Sources", bundle: bundle) }
     static var calendarSourcesDescription: String { String(
-        localized: "Choose a registered provider for Google Calendar. Add Google accounts in Providers. One Google account or Databricks connection is used at a time.",
+        localized: "Turn on registered providers to combine their calendars. Add Google accounts in Providers. Each connection keeps its own calendar selection.",
         bundle: bundle
     ) }
+    static var calendarProviderUnassigned: String { String(localized: "No provider selected", bundle: bundle) }
     static var calendarProviders: String { String(localized: "Calendar Providers", bundle: bundle) }
     static var renameProviderAccount: String { String(localized: "Rename Provider Account", bundle: bundle) }
     static var providerAccounts: String { String(localized: "Providers", bundle: bundle) }
@@ -2136,7 +2137,7 @@ enum L10n { // swiftlint:disable:this type_body_length
         bundle: bundle
     ) }
     static var googleDriveChooseProvider: String { String(
-        localized: "Choose a registered provider in Calendar settings to use Google Drive.",
+        localized: "Choose a registered provider here to read Google Drive backups. This choice is independent of Calendar.",
         bundle: bundle
     ) }
     static var googleProviderDisconnectPending: String { String(

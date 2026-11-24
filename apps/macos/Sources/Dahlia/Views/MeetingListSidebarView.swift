@@ -127,7 +127,7 @@ struct MeetingListSidebarView: View {
     private var upcomingEventsSection: some View {
         MainSidebarUpcomingEventsSection(
             isShowingSchedule: isShowingUpcomingSchedule,
-            openDraftEventID: viewModel.draftMeeting?.linkedCalendarEvent?.id,
+            openDraftEventID: viewModel.draftMeeting?.linkedCalendarEvent?.displayID,
             onSelectEvent: recordingCoordinator.openCalendarEvent,
             onShowSchedule: onShowUpcomingSchedule,
             canStartRecording: recordingCoordinator.canStartNewMeeting,
