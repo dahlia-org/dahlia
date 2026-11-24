@@ -2140,7 +2140,11 @@ enum L10n { // swiftlint:disable:this type_body_length
         bundle: bundle
     ) }
     static var googleProviderSignInDescription: String { String(
-        localized: "Google sign-in requests read-only access to calendars, events, and all Drive files. Dahlia uses Drive to find and read Dahlia/Backup backups.",
+        localized: "Connect Calendar and Drive with read-only access, including all Drive files. Dahlia reads selected Dahlia/Backup backups. You can decline Drive and use Calendar.",
+        bundle: bundle
+    ) }
+    static var googleProviderConnectBoth: String { String(
+        localized: "Connect Calendar and Drive",
         bundle: bundle
     ) }
 

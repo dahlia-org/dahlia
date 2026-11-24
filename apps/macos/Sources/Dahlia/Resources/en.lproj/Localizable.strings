@@ -2096,7 +2096,7 @@
 
 "settings.agents.optimization.agentLegacyReviewRuns" = "Earlier shared review history";
 
-"Google sign-in requests read-only access to calendars, events, and all Drive files. Dahlia uses Drive to find and read Dahlia/Backup backups." = "Google sign-in requests read-only access to calendars, events, and all Drive files. Dahlia uses Drive to find and read Dahlia/Backup backups.";
+"Connect Calendar and Drive with read-only access, including all Drive files. Dahlia reads selected Dahlia/Backup backups. You can decline Drive and use Calendar." = "Connect Calendar and Drive with read-only access, including all Drive files. Dahlia reads selected Dahlia/Backup backups. You can decline Drive and use Calendar.";
 
 "Disconnect this Google account from Calendar and Drive in Dahlia? Databricks connections are not affected." = "Disconnect this Google account from Calendar and Drive in Dahlia? Databricks connections are not affected.";
 
@@ -2104,3 +2104,5 @@
 "Sign in with the same Google account. To use another account, add a provider." = "Sign in with the same Google account. To use another account, add a provider.";
 "Choose a registered provider here to read Google Drive backups. This choice is independent of Calendar." = "Choose a registered provider here to read Google Drive backups. This choice is independent of Calendar.";
 "No provider selected" = "No provider selected";
+
+"Connect Calendar and Drive" = "Connect Calendar and Drive";

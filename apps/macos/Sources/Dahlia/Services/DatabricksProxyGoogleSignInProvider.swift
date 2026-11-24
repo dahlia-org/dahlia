@@ -209,7 +209,12 @@ final class DatabricksProxyGoogleSignInProvider: GoogleSignInProviding {
                 try await direct.signIn(withPresentingWindow: window, requestedScopes: requestedScopes)
             }
             try checkCurrentRoute(selected, revision: revision)
-            userDefaults.removeObject(forKey: directDisconnectedKey(for: selected))
+            let key = directDisconnectedKey(for: selected)
+            let wasDisconnected = userDefaults.bool(forKey: key)
+            userDefaults.removeObject(forKey: key)
+            if wasDisconnected {
+                NotificationCenter.default.post(name: sessionDidChangeNotification, object: nil)
+            }
             return session
         }
         // Only this pre-check may open the Databricks login; every later token use is unattended.

@@ -12,8 +12,8 @@ import Foundation
             return GoogleProviderAccountWorker(storage: .local(database: { database.dbQueue }), pendingDisconnects: { [] })
         }
 
-        @Test
-        func addingGoogleRequestsCalendarAndDriveAndKeepsTheSelectedCalendarProvider() async throws {
+        @Test(arguments: [GoogleOAuthScope.base, GoogleOAuthScope.base.union(GoogleOAuthScope.calendar)])
+        func addingGoogleRequestsCalendarAndDriveAndKeepsTheSelectedCalendarProvider(grantedScopes: Set<String>) async throws {
             let suite = "GoogleProvider.\(UUID())"
             let defaults = try #require(UserDefaults(suiteName: suite))
             defer { defaults.removePersistentDomain(forName: suite) }
@@ -21,6 +21,7 @@ import Foundation
             defaults.set(selected, forKey: GoogleCalendarProvider.userDefaultsKey)
             let worker = try providerWorker()
             let signIn = ProviderGoogleSignIn()
+            signIn.session = GoogleSession(account: signIn.session.account, accessToken: "synthetic", grantedScopes: grantedScopes)
             let controller = GoogleProviderAccountController(signInProvider: signIn, worker: worker)
             _ = NSApplication.shared
             let window = NSWindow()

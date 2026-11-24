@@ -2096,7 +2096,7 @@
 
 "settings.agents.optimization.agentLegacyReviewRuns" = "以前の共通履歴";
 
-"Google sign-in requests read-only access to calendars, events, and all Drive files. Dahlia uses Drive to find and read Dahlia/Backup backups." = "Google サインインでは、カレンダー・予定と Drive 内のすべてのファイルへの読み取り権限を要求します。Dahlia は Drive で Dahlia/Backup を検索し、選択したバックアップを読み取ります。";
+"Connect Calendar and Drive with read-only access, including all Drive files. Dahlia reads selected Dahlia/Backup backups. You can decline Drive and use Calendar." = "カレンダーと Drive を接続し、Drive 内のすべてのファイルを含む読み取り権限を要求します。Dahlia は Dahlia/Backup を検索し、選択したバックアップを読み取ります。Drive を許可しなくてもカレンダーを利用できます。";
 
 "Disconnect this Google account from Calendar and Drive in Dahlia? Databricks connections are not affected." = "この Google アカウントを Dahlia のカレンダーと Drive から切断しますか？ Databricks の接続には影響しません。";
 
@@ -2104,3 +2104,5 @@
 "Sign in with the same Google account. To use another account, add a provider." = "同じ Google アカウントでサインインしてください。別のアカウントを使うにはプロバイダーを追加してください。";
 "Choose a registered provider here to read Google Drive backups. This choice is independent of Calendar." = "Google Drive のバックアップを読み取るプロバイダーを選択します。カレンダーの設定とは独立しています。";
 "No provider selected" = "プロバイダー未選択";
+
+"Connect Calendar and Drive" = "カレンダーと Drive を接続";

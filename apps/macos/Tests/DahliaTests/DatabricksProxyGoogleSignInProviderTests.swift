@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 import Foundation
 import Synchronization
 @testable import Dahlia
@@ -230,6 +231,57 @@ import Synchronization
             #expect(await !(first.hasPreviousSignIn))
             #expect(await second.hasPreviousSignIn)
             #expect(GoogleCalendarProvider.current(defaults: defaults) == .unassigned)
+        }
+
+        @Test
+        func reconnectPublishesActivationAfterAScopeChangeDuringTheDriveProbe() async throws {
+            let defaults = makeDefaults()
+            let route = GoogleCalendarProvider.google(accountID: .v7())
+            let host = "reconnect-\(UUID().uuidString.lowercased()).example"
+            let probeConfiguration = URLSessionConfiguration.ephemeral
+            probeConfiguration.protocolClasses = [DirectDriveIdentityURLProtocol.self]
+            let probeTransport = URLSession(configuration: probeConfiguration)
+            let listingConfiguration = URLSessionConfiguration.ephemeral
+            listingConfiguration.protocolClasses = [DriveBackupURLProtocol.self]
+            let listingTransport = URLSession(configuration: listingConfiguration)
+            defer { probeTransport.invalidateAndCancel()
+                listingTransport.invalidateAndCancel()
+            }
+            let direct = FakeDirectProvider(hasPreviousSignIn: true)
+            direct.session = try GoogleSession(
+                account: direct.session.account, accessToken: "suspended", grantedScopes: GoogleOAuthScope.drive,
+                apiBaseURL: #require(URL(string: "https://\(host)"))
+            )
+            direct.postsScopeChangeOnRestore = true
+            let provider = DatabricksProxyGoogleSignInProvider(
+                sessionKind: .drive, provider: route, direct: direct,
+                storage: DatabricksTestStorage(connection: nil).storage,
+                driveClient: GoogleDriveBackupClient(urlSession: probeTransport), userDefaults: defaults,
+                connectionChangeNotification: Notification.Name("UnchangedConnection.\(UUID())")
+            )
+            try await provider.disconnect()
+            let model = GoogleDriveBackupModel(
+                signIn: provider, client: GoogleDriveBackupClient(urlSession: listingTransport),
+                routeChangeNotification: Notification.Name("UnchangedDriveRoute.\(UUID())")
+            )
+            let key = "googleCapabilityDisconnected.\(route.storageKey).drive"
+            var disconnectedStates: [Bool] = []
+            let observer = NotificationCenter.default.publisher(for: provider.sessionDidChangeNotification).sink { _ in
+                disconnectedStates.append(defaults.bool(forKey: key))
+            }
+            defer { observer.cancel() }
+            _ = NSApplication.shared
+            let window = NSWindow()
+            let connect = Task { try await provider.signIn(withPresentingWindow: window, requestedScopes: GoogleOAuthScope.drive) }
+            defer { connect.cancel() }
+            #expect(await pollUntil { disconnectedStates == [true] && DirectDriveIdentityURLProtocol.pending.withLock { $0[host] != nil } })
+            let completeProbe = try #require(DirectDriveIdentityURLProtocol.pending.withLock { $0.removeValue(forKey: host) })
+            completeProbe(200)
+            _ = try await connect.value
+            #expect(disconnectedStates == [true, false])
+            #expect(await pollUntil { model.isAuthorized && model.files.count == 2 })
+            #expect(model.hasConnection)
+            #expect(direct.signInCallCount == 0)
         }
 
         enum ConnectInvalidation: CaseIterable, Sendable {
@@ -838,6 +890,7 @@ import Synchronization
         private(set) var requestedScopes: Set<String>?
         private(set) var disconnectCallCount = 0
         var restoreError: (any Error)?
+        var postsScopeChangeOnRestore = false
         var session = GoogleSession(
             account: GoogleCalendarAccount(id: "direct", displayName: "Direct", email: "direct@example.com"),
             accessToken: "direct-token",
@@ -852,6 +905,10 @@ import Synchronization
         func restorePreviousSignIn() async throws -> GoogleSession {
             restoreCallCount += 1
             if let restoreError { throw restoreError }
+            if postsScopeChangeOnRestore {
+                postsScopeChangeOnRestore = false
+                NotificationCenter.default.post(name: sessionDidChangeNotification, object: nil)
+            }
             return session
         }
 

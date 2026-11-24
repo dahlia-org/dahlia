@@ -256,7 +256,7 @@ struct AgentProviderRegistrationView: View {
     }
 
     private func signInButton(_ choice: Kind) -> some View {
-        Button(L10n.dahliaSignIn) { signIn(choice) }
+        Button(choice == .google ? L10n.googleProviderConnectBoth : L10n.dahliaSignIn) { signIn(choice) }
             .buttonStyle(.dahlia(.primary))
             .keyboardShortcut(isEmbedded ? nil : .defaultAction)
             .disabled(!canSignIn(choice))
