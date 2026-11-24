@@ -288,6 +288,56 @@ import os
         }
 
         @Test
+        func aProviderChangeDuringChildStartupClosesAndRetriesTheLaunch() async throws {
+            let firstID = UUID.v7()
+            let secondID = UUID.v7()
+            try await ProviderAccountDirectory.$connections.withValue([
+                .init(id: firstID, workspaceURL: #require(URL(string: "https://first.example"))),
+                .init(id: secondID, workspaceURL: #require(URL(string: "https://second.example"))),
+            ]) {
+                let transports = TestPiTransportLog()
+                let resolved = ResolvedAccounts()
+                let pi = TestPiRuntime(tokenResolver: { account in
+                    resolved.append(account)
+                    return "test-token"
+                }) { _ in
+                    let transport = transports.all.isEmpty ? TestPiTransport(delaysStartup: true) : TestPiTransport()
+                    transports.append(transport)
+                    return transport
+                }
+                pi.contextStore.apply(providers: [.databricks(connectionID: firstID)])
+                let startup = Task { try await pi.service.connect(.init(mode: .summary, cwd: pi.rootURL)) }
+                let first = await transports.transport(at: 0)
+                let ready = await first.command("get_state")
+                pi.contextStore.beginActivation()
+                pi.contextStore.apply(providers: [.databricks(connectionID: secondID)])
+                try await first.emit(TestPiTransport.response(id: #require(ready["id"])))
+                let connection = try await startup.value
+                #expect(await first.isClosed)
+                #expect(transports.all.count == 2)
+                let second = await transports.transport(at: 1)
+                await second.emit(TestPiTransport.bridgeRequest(
+                    id: "fresh", method: "token", payload: .object(["provider": .string("second.example")])
+                ))
+                let response = await second.command("extension_ui_response")
+                #expect(response["cancelled"] != .bool(true))
+                #expect(resolved.all == [.databricks(connectionID: secondID)])
+                await pi.service.close(connection)
+            }
+        }
+
+        @Test
+        func cancellingChildStartupClosesItsProcess() async throws {
+            let transport = TestPiTransport(delaysStartup: true)
+            let pi = TestPiRuntime { _ in transport }
+            let startup = Task { try await pi.service.connect(.init(mode: .summary, cwd: pi.rootURL)) }
+            _ = await transport.command("get_state")
+            startup.cancel()
+            await #expect(throws: CancellationError.self) { try await startup.value }
+            #expect(await transport.isClosed)
+        }
+
+        @Test
         func aLiveProcessCannotResolveAReplacementGatewaysToken() async throws {
             let oldID = UUID.v7()
             let newID = UUID.v7()

@@ -116,7 +116,13 @@ final class GoogleDriveBackupModel {
         guard !isBusy, isAuthorized, files.contains(file), let listingSession else { throw GoogleSignInError.noPreviousSignIn }
         isBusy = true
         defer { if self.revision == revision { isBusy = false } }
-        let current = try await signIn.refreshCurrentSession()
+        let current: GoogleSession?
+        do {
+            current = try await signIn.refreshCurrentSession()
+        } catch {
+            if self.revision == revision { reset() }
+            throw error
+        }
         guard self.revision == revision else { throw CancellationError() }
         guard let session = current, session.hasScopes(GoogleOAuthScope.drive),
               session.account.id == listingSession.account.id, session.apiBaseURL == listingSession.apiBaseURL else {

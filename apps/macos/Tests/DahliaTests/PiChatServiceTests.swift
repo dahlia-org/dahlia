@@ -844,7 +844,7 @@ import Synchronization
             #expect(launch.arguments.contains(creator.path))
             #expect(launch.arguments.contains("builtin:mcp"))
             #expect(await fixture.chatTransport.isClosed)
-            #expect(await fixture.chatTransport.commands.allSatisfy { $0["type"]?.stringValue == "get_commands" })
+            #expect(await fixture.chatTransport.commands.allSatisfy { ["get_state", "get_commands"].contains($0["type"]?.stringValue ?? "") })
         }
 
         @Test

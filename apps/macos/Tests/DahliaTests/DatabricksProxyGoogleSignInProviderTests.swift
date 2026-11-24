@@ -14,6 +14,45 @@ import Synchronization
     struct DatabricksProxyGoogleSignInProviderTests {
         private let connection = DatabricksConnection(id: proxyConnectionID, host: "https://example.cloud.databricks.com")
 
+        @Test(arguments: [false, true])
+        func driveImportResolvesTheCurrentGoogleUserOnTheSameProxy(identityFails: Bool) async throws {
+            let host = "grant-\(UUID().uuidString.lowercased()).example"
+            let connection = DatabricksConnection(id: proxyConnectionID, host: "https://\(host)")
+            ChangingDriveGrantURLProtocol.states.withLock { $0[host] = .init() }
+            defer { ChangingDriveGrantURLProtocol.states.withLock { $0[host] = nil } }
+            let configuration = URLSessionConfiguration.ephemeral
+            configuration.protocolClasses = [ChangingDriveGrantURLProtocol.self]
+            let transport = URLSession(configuration: configuration)
+            defer { transport.invalidateAndCancel() }
+            let memory = DatabricksTestStorage(connection: connection)
+            memory.state.withLock { $0.credentials[connection.id] = Self.credential }
+            let client = GoogleDriveBackupClient(urlSession: transport)
+            let provider = DatabricksProxyGoogleSignInProvider(
+                sessionKind: .drive, direct: FakeDirectProvider(),
+                oauth: DatabricksOAuthService(storage: memory.storage) { _ in throw CancellationError() },
+                storage: memory.storage, driveClient: client, userDefaults: makeDefaults(),
+                connectionChangeNotification: Notification.Name("DriveConnection.\(UUID())")
+            )
+            let model = GoogleDriveBackupModel(signIn: provider, client: client, routeChangeNotification: Notification.Name("DriveRoute.\(UUID())"))
+            await model.refresh()
+            #expect(model.account?.id == "A")
+            let file = try #require(model.files.first)
+            ChangingDriveGrantURLProtocol.states.withLock {
+                $0[host]?.identity = "B"
+                $0[host]?.fails = identityFails
+            }
+            let database = try AppDatabaseManager(path: ":memory:")
+            let service = BackupService(
+                dbQueue: database.dbQueue, applicationSupportURL: FileManager.default.temporaryDirectory.appending(path: "unused-\(UUID())")
+            )
+            await #expect(throws: (any Error).self) { try await model.importBackup(file, using: service) }
+            #expect(model.files.isEmpty)
+            #expect(!model.isAuthorized)
+            let state = try #require(ChangingDriveGrantURLProtocol.states.withLock { $0[host] })
+            #expect(state.aboutRequests == 2)
+            #expect(state.downloads == 0)
+        }
+
         @Test
         func proxyBaseURLUsesAPI20Route() {
             #expect(
@@ -40,7 +79,8 @@ import Synchronization
                 sessionKind: .drive, direct: direct,
                 oauth: DatabricksOAuthService(storage: memory.storage) { _ in throw CancellationError() },
                 storage: memory.storage, driveClient: GoogleDriveBackupClient(urlSession: transport),
-                userDefaults: defaults)
+                userDefaults: defaults
+            )
             let session = try await provider.restorePreviousSignIn()
             #expect(session.grantedScopes == GoogleOAuthScope.drive)
             #expect(session.account.email == "drive@example.com")
@@ -103,10 +143,13 @@ import Synchronization
         }
 
         @Test
-        func theChoiceFallsBackToTheAccountsConnectionWhenItIsGone() {
+        func theChoiceFallsBackToTheAccountsConnectionWhenItIsGone() throws {
             let defaults = makeDefaults()
             let id = UUID.v7()
-            ProviderAccountDirectory.$connections.withValue([.init(id: id, workspaceURL: URL(string: "https://dbc-1.cloud.databricks.com")!)]) {
+            try ProviderAccountDirectory.$connections.withValue([.init(
+                id: id,
+                workspaceURL: #require(URL(string: "https://dbc-1.cloud.databricks.com"))
+            )]) {
                 #expect(GoogleCalendarProvider.current(defaults: defaults) == .databricks(connectionID: id))
                 defaults.set("google", forKey: GoogleCalendarProvider.userDefaultsKey)
                 #expect(GoogleCalendarProvider.current(defaults: defaults) == .google)
@@ -207,7 +250,8 @@ import Synchronization
             let direct = FakeDirectProvider()
             let provider = DatabricksProxyGoogleSignInProvider(
                 direct: direct, oauth: service, storage: memory.storage,
-                apiClient: FakeAPIClient(result: .success([])), userDefaults: makeDefaults())
+                apiClient: FakeAPIClient(result: .success([])), userDefaults: makeDefaults()
+            )
             _ = try await provider.restorePreviousSignIn()
             let (posts, continuation) = AsyncStream.makeStream(of: Void.self)
             let token = NotificationCenter.default.addObserver(
@@ -260,7 +304,8 @@ import Synchronization
             }
             let provider = DatabricksProxyGoogleSignInProvider(
                 direct: FakeDirectProvider(), oauth: service, storage: memory.storage,
-                apiClient: FakeAPIClient(result: .success([])), userDefaults: makeDefaults())
+                apiClient: FakeAPIClient(result: .success([])), userDefaults: makeDefaults()
+            )
 
             let error = await #expect(throws: GoogleSignInError.self) { try await provider.restorePreviousSignIn() }
             #expect(error?.errorDescription == L10n.googleAccountNoPreviousSession)
@@ -269,7 +314,7 @@ import Synchronization
         }
 
         @Test
-        func refreshReusesTheResolvedAccountWithoutRefetchingCalendars() async throws {
+        func refreshResolvesTheCurrentAccountAgain() async throws {
             let apiClient = FakeAPIClient(result: .success([Self.primaryCalendar]))
             let provider = makeProvider(connection: connection, direct: FakeDirectProvider(), apiClient: apiClient)
 
@@ -277,7 +322,7 @@ import Synchronization
             let refreshed = try await provider.refreshCurrentSession()
 
             #expect(refreshed?.account == restored.account)
-            #expect(apiClient.sessions.count == 1)
+            #expect(apiClient.sessions.count == 2)
         }
 
         @Test
@@ -306,14 +351,14 @@ import Synchronization
         }
 
         @Test
-        func disconnectIsScopedToTheConnection() async {
+        func disconnectIsScopedToTheConnection() async throws {
             let defaults = makeDefaults()
             defaults.set(true, forKey: DatabricksProxyGoogleSignInProvider.disconnectedKey(for: connection))
             let readded = DatabricksConnection(id: UUID(), host: connection.host)
             let provider = makeProvider(connection: readded, direct: FakeDirectProvider(), userDefaults: defaults)
 
             // The re-added connection is the app account's connection, so the account must list it.
-            let readdedConnections = [ProviderAccountDirectory.Connection(id: readded.id, workspaceURL: URL(string: readded.host)!)]
+            let readdedConnections = try [ProviderAccountDirectory.Connection(id: readded.id, workspaceURL: #require(URL(string: readded.host)))]
             #expect(await ProviderAccountDirectory.$connections.withValue(readdedConnections) { await provider.hasPreviousSignIn })
         }
 
@@ -352,7 +397,7 @@ import Synchronization
             connection: DatabricksConnection?,
             direct: FakeDirectProvider,
             userDefaults: UserDefaults? = nil,
-            apiClient: FakeAPIClient = FakeAPIClient(result: .success([])),
+            apiClient: FakeAPIClient = FakeAPIClient(result: .success([]))
         ) -> DatabricksProxyGoogleSignInProvider {
             let memory = DatabricksTestStorage(connection: connection)
             if let connection {
@@ -363,8 +408,52 @@ import Synchronization
                 oauth: DatabricksOAuthService(storage: memory.storage) { _ in throw CancellationError() },
                 storage: memory.storage,
                 apiClient: apiClient,
-                userDefaults: userDefaults ?? makeDefaults())
+                userDefaults: userDefaults ?? makeDefaults()
+            )
         }
+    }
+
+    private final class ChangingDriveGrantURLProtocol: URLProtocol, @unchecked Sendable {
+        struct State: Sendable {
+            var identity = "A"
+            var fails = false
+            var aboutRequests = 0
+            var downloads = 0
+        }
+
+        static let states = Mutex<[String: State]>([:])
+        override static func canInit(with _: URLRequest) -> Bool { true }
+        override static func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+        override func startLoading() {
+            let url = request.url!
+            let about = url.path.hasSuffix("/about")
+            let query = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
+            let download = query.contains { $0.name == "alt" && $0.value == "media" }
+            let state = Self.states.withLock { states in
+                if about { states[url.host!]?.aboutRequests += 1 }
+                if download { states[url.host!]?.downloads += 1 }
+                return states[url.host!]!
+            }
+            let status = about && state.fails ? 401 : 200
+            let body: String
+            if about {
+                body = "{\"user\":{\"displayName\":\"Drive\",\"emailAddress\":\"drive@example.com\",\"permissionId\":\"\(state.identity)\"}}"
+            } else {
+                let parent = query.first { $0.name == "q" }?.value ?? ""
+                let id = parent.contains("'root'") ? "dahlia" : parent.contains("'dahlia'") ? "backups" : "backup"
+                let name = id == "backup" ? "backup.tar.gz" : id
+                body = "{\"files\":[{\"id\":\"\(id)\",\"name\":\"\(name)\"}]}"
+            }
+            client?.urlProtocol(
+                self,
+                didReceive: HTTPURLResponse(url: url, statusCode: status, httpVersion: nil, headerFields: nil)!,
+                cacheStoragePolicy: .notAllowed
+            )
+            client?.urlProtocol(self, didLoad: Data(body.utf8))
+            client?.urlProtocolDidFinishLoading(self)
+        }
+
+        override func stopLoading() {}
     }
 
     private final class DriveIdentityURLProtocol: URLProtocol, @unchecked Sendable {

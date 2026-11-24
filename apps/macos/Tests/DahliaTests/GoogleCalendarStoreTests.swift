@@ -253,12 +253,50 @@ import Foundation
         }
 
         @Test
+        func switchingProvidersNeverRestoresAnotherProvidersCachedEvents() async throws {
+            let first = UUID.v7()
+            let second = UUID.v7()
+            try await ProviderAccountDirectory.$connections.withValue([
+                .init(id: first, workspaceURL: #require(URL(string: "https://first.example"))),
+                .init(id: second, workspaceURL: #require(URL(string: "https://second.example"))),
+            ]) {
+                let defaults = isolatedUserDefaults()
+                defaults.set("google", forKey: GoogleCalendarProvider.userDefaultsKey)
+                seedSelectedCalendars(["primary"], defaults: defaults)
+                let directory = temporaryCacheDirectory()
+                defer { try? FileManager.default.removeItem(at: directory) }
+                let signIn = MockGoogleCalendarSignInProvider(hasPreviousSignIn: true)
+                let routeNotification = Notification.Name("CalendarRoute.\(UUID())")
+                let store = GoogleCalendarStore(
+                    signInProvider: signIn, apiClient: MockGoogleCalendarAPIClient(calendars: [primaryCalendar], events: [fixtureEvent]),
+                    userDefaults: defaults, now: { fixtureNow }, eventsCacheDirectory: directory, providerChangeNotification: routeNotification
+                )
+                await store.restoreSessionIfNeeded()
+                await store.waitForEventsCacheWrite()
+                #expect(!store.upcomingEvents.isEmpty)
+                signIn.suspendsRestore = true
+                for (index, id) in [first, second].enumerated() {
+                    defaults.set(id.uuidString, forKey: GoogleCalendarProvider.userDefaultsKey)
+                    NotificationCenter.default.post(name: routeNotification, object: nil)
+                    #expect(await pollUntil { signIn.restoreCallCount == index + 2 })
+                    #expect(store.upcomingEvents.isEmpty)
+                    signIn.finishRestore()
+                    #expect(await pollUntil { store.isLoaded })
+                    await store.waitForEventsCacheWrite()
+                }
+                #expect(FileManager.default.fileExists(atPath: directory.appending(path: "local-google.json").path))
+                #expect(FileManager.default.fileExists(atPath: directory.appending(path: "local-databricks-\(first.uuidString).json").path))
+                #expect(FileManager.default.fileExists(atPath: directory.appending(path: "local-databricks-\(second.uuidString).json").path))
+            }
+        }
+
+        @Test
         func disconnectDropsTheCachedEvents() async {
             let defaults = isolatedUserDefaults()
             seedSelectedCalendars(["primary"], defaults: defaults)
             let cacheDirectory = temporaryCacheDirectory()
             defer { try? FileManager.default.removeItem(at: cacheDirectory) }
-            let cacheFile = cacheDirectory.appending(path: "local.json")
+            let cacheFile = cacheDirectory.appending(path: "local-google.json")
             let store = GoogleCalendarStore(
                 signInProvider: MockGoogleCalendarSignInProvider(hasPreviousSignIn: true),
                 apiClient: MockGoogleCalendarAPIClient(calendars: [primaryCalendar], events: [fixtureEvent]),
@@ -971,7 +1009,7 @@ private final class MockGoogleCalendarSignInProvider: GoogleSignInProviding {
     var refreshResult: Result<GoogleSession?, Error>
     private let suspendsDisconnect: Bool
     private var disconnectContinuation: CheckedContinuation<Void, Never>?
-    private let suspendsRestore: Bool
+    var suspendsRestore: Bool
     private var restoreContinuations: [CheckedContinuation<Void, Never>] = []
     private(set) var restoreCallCount = 0
     private(set) var disconnectCallCount = 0

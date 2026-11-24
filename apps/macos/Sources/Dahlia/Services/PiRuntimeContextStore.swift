@@ -7,6 +7,7 @@ final class PiRuntimeContextStore: Sendable {
     static let shared = PiRuntimeContextStore()
 
     private struct State: Sendable {
+        var generation = 0
         var isConfigured = false
         var isActivating = false
         var providers: [String: ProviderAccount] = [:]
@@ -14,6 +15,7 @@ final class PiRuntimeContextStore: Sendable {
     }
 
     struct Configuration: Sendable {
+        let generation: Int
         let isConfigured: Bool
         let providers: [String: ProviderAccount]
         let dahliaBaseURL: URL?
@@ -26,11 +28,19 @@ final class PiRuntimeContextStore: Sendable {
     }
 
     var configuration: Configuration {
-        state.withLock { Configuration(isConfigured: $0.isConfigured, providers: $0.providers, dahliaBaseURL: $0.dahliaBaseURL) }
+        state.withLock {
+            Configuration(
+                generation: $0.generation,
+                isConfigured: $0.isConfigured,
+                providers: $0.providers,
+                dahliaBaseURL: $0.dahliaBaseURL
+            )
+        }
     }
 
     func beginActivation() {
         state.withLock {
+            $0.generation += 1
             $0.isConfigured = false
             $0.isActivating = true
         }
@@ -48,6 +58,7 @@ final class PiRuntimeContextStore: Sendable {
     func apply(providers: [ProviderAccount] = [], dahliaBaseURL: URL? = nil) {
         let bindings = Dictionary(providers.map { ($0.piProviderID, $0) }, uniquingKeysWith: { first, _ in first })
         state.withLock {
+            $0.generation += 1
             $0.providers = bindings
             $0.dahliaBaseURL = dahliaBaseURL
             $0.isConfigured = true

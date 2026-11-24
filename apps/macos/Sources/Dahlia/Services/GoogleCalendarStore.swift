@@ -93,6 +93,7 @@ final class GoogleCalendarStore: ObservableObject {
         daysAhead: Int = 7,
         presentingWindowProvider: @escaping @MainActor () -> NSWindow? = { NSApp.keyWindow ?? NSApp.mainWindow },
         eventsCacheDirectory: URL? = nil,
+        providerChangeNotification: Notification.Name = GoogleCalendarProvider.didChange,
         cachedEventsLoader: @escaping @Sendable (URL) async -> [CalendarEvent] = GoogleCalendarStore.readCachedEvents
     ) {
         self.eventsCacheDirectory = eventsCacheDirectory
@@ -111,7 +112,7 @@ final class GoogleCalendarStore: ObservableObject {
             await self?.handleAuthSessionChanged(forceSignOut: forceSignOut)
         }
         provider = GoogleCalendarProvider.current(defaults: userDefaults)
-        providerChangeObserver = NotificationCenter.default.publisher(for: GoogleCalendarProvider.didChange)
+        providerChangeObserver = NotificationCenter.default.publisher(for: providerChangeNotification)
             .sink { [weak self] _ in self?.reloadIfProviderChanged() }
     }
 
@@ -463,18 +464,21 @@ final class GoogleCalendarStore: ObservableObject {
     /// The route changes with the account: drop the previous account's session, calendars, events, and every load still
     /// running for it before any of them can publish, then restore with the new account's selection and route.
     /// Another provider reads Google Calendar now: its own sign-in, calendars, and cached events.
-    private func reloadIfProviderChanged() {
+    @discardableResult
+    private func reloadIfProviderChanged() -> Bool {
         let current = GoogleCalendarProvider.current(defaults: userDefaults)
-        guard current != provider else { return }
+        guard current != provider else { return false }
         provider = current
         clearRuntimeState(clearSelection: false)
         cachedEventsSnapshot = nil
         didAttemptRestore = false
         recomputeState()
         Task { await restoreSessionIfNeeded() }
+        return true
     }
 
     private func handleAuthSessionChanged(forceSignOut: Bool) async {
+        if reloadIfProviderChanged() { return }
         didAttemptRestore = false
         guard !isDisconnecting else { return }
         guard !forceSignOut, await signInProvider.hasPreviousSignIn else {
@@ -519,7 +523,8 @@ final class GoogleCalendarStore: ObservableObject {
     }
 
     private func eventsCacheURL() -> URL? {
-        eventsCacheDirectory?.appending(path: "\(AppAccount.key).json")
+        let identity = provider?.databricksConnectionID.map { "databricks-\($0.uuidString)" } ?? "google"
+        return eventsCacheDirectory?.appending(path: "\(AppAccount.key)-\(identity).json")
     }
 
     /// Writes run in order off MainActor; `nil` removes the file. A lost write only costs the spinner on the next launch.

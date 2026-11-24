@@ -7,6 +7,7 @@ actor TestPiTransport: CodexAppServerTransport {
     typealias Reply = @Sendable (_ command: [String: JSONValue]) -> [JSONValue]
 
     private let reply: Reply
+    private let delaysStartup: Bool
     private let onClose: @Sendable () async -> Void
     private var lines: [Data] = []
     private var receiver: CheckedContinuation<Data?, Never>?
@@ -17,12 +18,20 @@ actor TestPiTransport: CodexAppServerTransport {
 
     init(reply: @escaping Reply = TestPiTransport.acknowledge) {
         self.reply = reply
+        delaysStartup = false
         onClose = {}
     }
 
     init(onClose: @escaping @Sendable () async -> Void, reply: @escaping Reply) {
         self.reply = reply
+        delaysStartup = false
         self.onClose = onClose
+    }
+
+    init(delaysStartup: Bool) {
+        self.delaysStartup = delaysStartup
+        reply = TestPiTransport.acknowledge
+        onClose = {}
     }
 
     func sendLine(_ data: Data) async throws {
@@ -36,7 +45,11 @@ actor TestPiTransport: CodexAppServerTransport {
             if waiter.0(command) { waiter.1.resume(returning: command) } else { waiting.append(waiter) }
         }
         commandWaiters = waiting
-        reply(command).forEach(emit)
+        if command["type"]?.stringValue == "get_state" {
+            if !delaysStartup, let id = command["id"] { emit(Self.response(id: id)) }
+        } else {
+            reply(command).forEach(emit)
+        }
     }
 
     func receiveLine() async -> Data? {

@@ -103,8 +103,11 @@ actor PiRuntimeService {
                 && (options.environment["DAHLIA_PI_MEMORY_ENABLED"] != "1" || AgentLearningSettings.memoryReviewEnabled(account))
             guard allowed, !AgentBackgroundActivity.isRecording else { throw CancellationError() }
         }
+        try await contextStore.waitUntilActive()
+        guard !isShuttingDown else { throw CancellationError() }
+        let configuration = contextStore.configuration
         let agentURL = try agentLocator.agentURL()
-        let providers = contextStore.configuration.providers
+        let providers = configuration.providers
         let contextStore = contextStore
         let transport = try launcher(options, agentURL)
         let tokenResolver = tokenResolver
@@ -147,6 +150,19 @@ actor PiRuntimeService {
         }
         connections[ObjectIdentifier(connection)] = (connection, options.mode)
         await connection.start()
+        do {
+            // RPC commands are handled only after Pi has loaded models.json and initialized its session.
+            _ = try await connection.request("get_state", timeout: Self.controlTimeout)
+            try await contextStore.waitUntilActive()
+            try Task.checkCancellation()
+        } catch {
+            await close(connection)
+            throw error
+        }
+        guard contextStore.configuration.generation == configuration.generation else {
+            await close(connection)
+            return try await connect(options, chatBridge: chatBridge)
+        }
         return connection
     }
 

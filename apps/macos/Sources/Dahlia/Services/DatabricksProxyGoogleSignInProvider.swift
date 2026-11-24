@@ -27,8 +27,6 @@ final class DatabricksProxyGoogleSignInProvider: GoogleSignInProviding {
     private let driveClient: GoogleDriveBackupClient
     private let apiClient: any GoogleCalendarAPIClientProviding
     private let userDefaults: UserDefaults
-    /// The Google identity resolved for one connection; another account's connection never reuses it.
-    private var cachedAccount: (connectionID: UUID, account: GoogleCalendarAccount)?
     private var connectionObserver: GoogleAuthSessionObserver?
 
     init(
@@ -38,7 +36,8 @@ final class DatabricksProxyGoogleSignInProvider: GoogleSignInProviding {
         storage: DatabricksOAuthStorage = .local(),
         apiClient: any GoogleCalendarAPIClientProviding = GoogleCalendarAPIClient(),
         driveClient: GoogleDriveBackupClient = GoogleDriveBackupClient(),
-        userDefaults: UserDefaults = .standard
+        userDefaults: UserDefaults = .standard,
+        connectionChangeNotification: Notification.Name = .databricksConnectionDidChange
     ) {
         self.sessionKind = sessionKind
         self.direct = direct ?? GoogleSignInAdapter(sessionKind: sessionKind)
@@ -49,9 +48,8 @@ final class DatabricksProxyGoogleSignInProvider: GoogleSignInProviding {
         self.userDefaults = userDefaults
         // Adding or removing the Databricks connection changes the route; the store re-evaluates through its own
         // notification.
-        connectionObserver = GoogleAuthSessionObserver(notificationName: .databricksConnectionDidChange) { [weak self] _ in
+        connectionObserver = GoogleAuthSessionObserver(notificationName: connectionChangeNotification) { [weak self] _ in
             guard let self else { return }
-            cachedAccount = nil
             NotificationCenter.default.post(name: sessionDidChangeNotification, object: nil)
         }
     }
@@ -137,15 +135,13 @@ final class DatabricksProxyGoogleSignInProvider: GoogleSignInProviding {
     func refreshCurrentSession() async throws -> GoogleSession? {
         guard let connection else { return try await direct.refreshCurrentSession() }
         guard !isDisconnected(connection) else { return nil }
-        let account = cachedAccount.flatMap { $0.connectionID == connection.id ? $0.account : nil }
-        return try await proxySession(for: connection, account: account, interactive: false)
+        return try await proxySession(for: connection, interactive: false)
     }
 
     func disconnect() async throws {
         guard let connection else { return try await direct.disconnect() }
         // The Google grant stays in Databricks; revoke it on the connection page.
         userDefaults.set(true, forKey: Self.disconnectedKey(for: connection, sessionKind: sessionKind))
-        cachedAccount = nil
         NotificationCenter.default.post(name: sessionDidChangeNotification, object: nil)
     }
 
@@ -170,7 +166,6 @@ final class DatabricksProxyGoogleSignInProvider: GoogleSignInProviding {
     /// calendar.readonly only, so userinfo is unavailable.
     private func proxySession(
         for connection: DatabricksConnection,
-        account: GoogleCalendarAccount? = nil,
         interactive: Bool
     ) async throws -> GoogleSession {
         let token = try await oauth.accessToken(connectionID: connection.id, interactive: interactive)
@@ -182,17 +177,14 @@ final class DatabricksProxyGoogleSignInProvider: GoogleSignInProviding {
                 apiBaseURL: Self.proxyBaseURL(for: connection, sessionKind: sessionKind)
             )
         }
-        if let account { return session(account) }
         let placeholder = GoogleCalendarAccount(id: connection.host, displayName: L10n.googleCalendarUnknownAccount, email: "")
         if sessionKind == .drive {
             let resolved = try await driveClient.fetchAccount(session: session(placeholder))
-            cachedAccount = (connection.id, resolved)
             return session(resolved)
         }
         let calendars = try await apiClient.fetchCalendarList(session: session(placeholder))
         let primary = calendars.first(where: \.isPrimary) ?? calendars.first
         let resolved = primary.map { GoogleCalendarAccount(id: $0.id, displayName: $0.title, email: "") } ?? placeholder
-        cachedAccount = (connection.id, resolved)
         return session(resolved)
     }
 
