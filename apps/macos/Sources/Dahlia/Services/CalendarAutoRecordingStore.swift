@@ -16,6 +16,15 @@ final class CalendarAutoRecordingStore: ObservableObject {
         selections = Self.loadSelections(from: userDefaults)
     }
 
+    func activateAfterAccountMigration() {
+        let original = SingleAccountMigration.originalDatabricksConnectionID(in: userDefaults)
+        replaceSelections(Self.loadSelections(from: userDefaults).map {
+            CalendarAutoRecordingSelection(
+                eventID: $0.eventID.retainingLegacyGoogleProvider(original), startDate: $0.startDate, endDate: $0.endDate
+            )
+        })
+    }
+
     var hasSelections: Bool {
         !selections.isEmpty
     }
@@ -65,14 +74,7 @@ final class CalendarAutoRecordingStore: ObservableObject {
         guard let data = userDefaults.data(forKey: selectionsUserDefaultsKey),
               let decoded = try? JSONDecoder().decode([CalendarAutoRecordingSelection].self, from: data)
         else { return [] }
-        let original = SingleAccountMigration.originalDatabricksConnectionID(in: userDefaults)
-        let migrated = decoded.map {
-            CalendarAutoRecordingSelection(
-                eventID: $0.eventID.retainingLegacyGoogleProvider(original), startDate: $0.startDate, endDate: $0.endDate
-            )
-        }.sorted { $0.eventID.sortKey < $1.eventID.sortKey }
-        if migrated != decoded { persist(migrated, to: userDefaults) }
-        return migrated
+        return decoded.sorted { $0.eventID.sortKey < $1.eventID.sortKey }
     }
 
     private static func persist(_ selections: [CalendarAutoRecordingSelection], to userDefaults: UserDefaults) {

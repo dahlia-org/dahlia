@@ -357,8 +357,9 @@ struct DahliaApp: App {
         AccountsDatabase.configure(db.dbQueue)
         // Account consumers require the completed migration. A failure blocks launch and retries next time.
         try await SingleAccountMigration.runAtLaunch(dbQueue: db.dbQueue)
+        CalendarAutoRecordingStore.shared.activateAfterAccountMigration()
         await GoogleProviderAccountsModel.shared.activate()
-        await CalendarProviderCollection.shared.reloadConnections()
+        await CalendarProviderCollection.shared.activateAfterAccountMigration()
         DatabricksOAuthStorage.removeLegacyConnections()
         // Accounts are in the database now; listeners such as the Google Calendar proxy re-read them.
         NotificationCenter.default.post(name: .databricksConnectionDidChange, object: nil)

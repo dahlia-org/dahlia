@@ -30,6 +30,7 @@ import Foundation
             if knownProvider { defaults.set(original.uuidString, forKey: SingleAccountMigration.sourceKey) }
             GoogleCalendarProvider.save(.databricks(connectionID: other), defaults: defaults)
             let store = CalendarAutoRecordingStore(userDefaults: defaults)
+            store.activateAfterAccountMigration()
             #expect(store.isEnabled(for: google.scoped(to: providerID)) == knownProvider)
             #expect(!store.isEnabled(for: google.scoped(to: "googleCalendar.\(other.uuidString)")))
             #expect(store.isEnabled(for: mac))

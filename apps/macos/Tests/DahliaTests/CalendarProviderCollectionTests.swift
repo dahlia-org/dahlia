@@ -9,6 +9,54 @@ import GRDB
     @MainActor
     struct CalendarProviderCollectionTests {
         @Test(arguments: [false, true])
+        func firstLaunchHydratesExistingStoresAfterAccountMigration(explicitlyDisabled: Bool) async throws {
+            let original = connection()
+            let defaults = defaults(enabling: [])
+            defaults.removeObject(forKey: CalendarProviderCollection.enabledConnectionsKey)
+            let legacy = CalendarEvent(
+                id: "legacy", calendarID: "primary", calendarName: "Calendar", calendarColorHex: nil,
+                platformId: "legacy", title: "Meeting", description: "", icalUid: nil,
+                startDate: .distantPast, endDate: .distantFuture, isAllDay: false, conferenceURI: nil
+            )
+            try defaults.set(
+                JSONEncoder().encode([CalendarAutoRecordingSelection(event: legacy)]),
+                forKey: CalendarAutoRecordingStore.selectionsUserDefaultsKey
+            )
+            let reservations = CalendarAutoRecordingStore(userDefaults: defaults)
+            let center = NotificationCenter()
+            var catalogLoads = 0
+            let collection = CalendarProviderCollection(
+                defaults: defaults, notificationCenter: center, loadConnections: {
+                    catalogLoads += 1
+                    return [original]
+                }, makeStore: { _ in Store(events: [legacy]) }
+            )
+            await Task.detached { center.post(name: .databricksConnectionDidChange, object: nil) }.value
+            await collection.reloadConnections()
+            await collection.refreshIfNeeded(force: true)
+            #expect(catalogLoads == 0)
+            #expect(defaults.object(forKey: CalendarProviderCollection.enabledConnectionsKey) == nil)
+            // Account migration publishes the original owner and copies its settings after the shared stores exist.
+            defaults.set(original.provider.connectionID.uuidString, forKey: SingleAccountMigration.sourceKey)
+            defaults.set("[\"google\"]", forKey: CalendarSource.accountEnabledSourcesUserDefaultsKey)
+            if explicitlyDisabled { defaults.set([], forKey: CalendarProviderCollection.enabledConnectionsKey) }
+            reservations.activateAfterAccountMigration()
+            await collection.activateAfterAccountMigration()
+            #expect(collection.enabledIDs == (explicitlyDisabled ? [] : [original.id]))
+            #expect(reservations.isEnabled(for: legacy.scoped(to: original.id)))
+            let due = CalendarAutoRecordingPlanner.dueEvents(
+                events: collection.loadedEvents, selections: reservations.selections, now: .now
+            )
+            #expect(due.count == (explicitlyDisabled ? 0 : 1))
+            collection.setEnabled(false, for: original.id)
+            reservations.setEnabled(false, for: legacy.scoped(to: original.id))
+            reservations.activateAfterAccountMigration()
+            await collection.activateAfterAccountMigration()
+            #expect(collection.enabledIDs.isEmpty)
+            #expect(reservations.selections.isEmpty)
+        }
+
+        @Test(arguments: [false, true])
         func releasedDatabricksEnablementUsesTheOriginalAccountRatherThanTheDriveChoice(explicitlyDisabled: Bool) async {
             let original = connection()
             let drive = connection()
@@ -20,13 +68,13 @@ import GRDB
             let collection = CalendarProviderCollection(
                 defaults: defaults, observesChanges: false, loadConnections: { [original, drive] }, makeStore: { _ in Store() }
             )
-            await collection.reloadConnections()
+            await collection.activateAfterAccountMigration()
             #expect(collection.enabledIDs == (explicitlyDisabled ? [] : [original.id]))
             GoogleCalendarProvider.save(.databricks(connectionID: drive.provider.connectionID), defaults: defaults)
             let reopened = CalendarProviderCollection(
                 defaults: defaults, observesChanges: false, loadConnections: { [original, drive] }, makeStore: { _ in Store() }
             )
-            await reopened.reloadConnections()
+            await reopened.activateAfterAccountMigration()
             #expect(reopened.enabledIDs == collection.enabledIDs)
         }
 
@@ -40,7 +88,7 @@ import GRDB
                 defaults: defaults(enabling: catalog), observesChanges: false,
                 loadConnections: { catalog }, makeStore: { stores[$0.id]! }
             )
-            await collection.reloadConnections()
+            await collection.activateAfterAccountMigration()
             let database = try AppDatabaseManager(path: ":memory:")
             try await database.dbQueue.write { db in
                 let workspace = WorkspaceRecord(id: .v7(), path: nil, name: "Local", createdAt: .now, lastOpenedAt: .now)
@@ -78,11 +126,12 @@ import GRDB
                 loadConnections: {
                     MainActor.assertIsolated()
                     loadCount += 1
-                    return loadCount == 1 ? [registered] : []
+                    return loadCount <= 2 ? [registered] : []
                 }, makeStore: { _ in Store() }
             )
+            await collection.activateAfterAccountMigration()
             await Task.detached { center.post(name: name, object: nil) }.value
-            _ = await pollUntil { collection.connections == [registered] }
+            _ = await pollUntil { loadCount == 2 && collection.connections == [registered] }
             #expect(collection.connections == [registered])
             #expect(collection.enabledIDs == [registered.id])
             await Task.detached { center.post(name: name, object: nil) }.value
@@ -100,7 +149,7 @@ import GRDB
             let collection = CalendarProviderCollection(
                 defaults: defaults, observesChanges: false, loadConnections: { catalog }, makeStore: { stores[$0.id]! }
             )
-            await collection.reloadConnections()
+            await collection.activateAfterAccountMigration()
             await collection.refreshIfNeeded(force: true)
             #expect(collection.upcomingEvents.count == 4)
             #expect(stores.values.allSatisfy { $0.refreshCount == 1 })
@@ -113,7 +162,7 @@ import GRDB
             #expect(stores[disabled]?.active == false)
             let othersAreActive = stores.filter { $0.key != disabled }.values.allSatisfy(\.active)
             #expect(othersAreActive)
-            await collection.reloadConnections()
+            await collection.activateAfterAccountMigration()
             #expect(collection.enabledIDs.count == 3)
             #expect(collection.upcomingEvents.count == 3)
             #expect(defaults.string(forKey: GoogleCalendarProvider.userDefaultsKey) == nil)
@@ -149,7 +198,7 @@ import GRDB
                 defaults: defaults(enabling: catalog), observesChanges: false, loadConnections: { catalog },
                 makeStore: { $0.id == catalog[0].id ? blocked : ready }
             )
-            await collection.reloadConnections()
+            await collection.activateAfterAccountMigration()
             let coordinator = CalendarSourceCoordinator(stores: [collection], dbQueue: database.dbQueue)
             let refresh = Task { await coordinator.refreshEnabledSources([.google]) }
             await blocked.waitUntilStarted()
@@ -187,7 +236,7 @@ import GRDB
                 defaults: defaults(enabling: catalog), observesChanges: false, loadConnections: { catalog },
                 makeStore: { $0.id == original[0].id ? blocked : ready }
             )
-            await collection.reloadConnections()
+            await collection.activateAfterAccountMigration()
             let refresh = Task { await collection.refreshIfNeeded(force: true) }
             await blocked.waitUntilStarted()
             catalog.removeFirst()
@@ -210,7 +259,7 @@ import GRDB
                     return Store()
                 }
             )
-            await collection.reloadConnections()
+            await collection.activateAfterAccountMigration()
             await collection.refreshIfNeeded(force: true)
             #expect(collection.connections.isEmpty)
             #expect(collection.enabledIDs.isEmpty)
@@ -227,7 +276,7 @@ import GRDB
                 defaults: defaults(enabling: [google, microsoft]), observesChanges: false,
                 loadConnections: { [google, microsoft] }, makeStore: { Store(events: [event("same-transport-id", uid: $0.id)]) }
             )
-            await collection.reloadConnections()
+            await collection.activateAfterAccountMigration()
             await collection.refreshIfNeeded(force: true)
             #expect(collection.upcomingEvents.count == 2)
             #expect(Set(collection.upcomingEvents.map(\.displayID)).count == 2)

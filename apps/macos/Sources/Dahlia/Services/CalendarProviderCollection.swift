@@ -30,6 +30,7 @@ final class CalendarProviderCollection: ObservableObject, CalendarEventSourceSto
     private var observers: Set<AnyCancellable> = []
     private var catalogRevision = 0
     private var didLoadCatalog = false
+    private var isActive = false
     private let defaults: UserDefaults
     private let loadConnections: @MainActor () async throws -> [CalendarProviderConnection]
     private let makeStore: @MainActor (CalendarProviderConnection) -> any CalendarConnectionStore
@@ -44,15 +45,7 @@ final class CalendarProviderCollection: ObservableObject, CalendarEventSourceSto
         self.defaults = defaults
         self.loadConnections = loadConnections
         self.makeStore = makeStore
-        if let saved = defaults.stringArray(forKey: Self.enabledConnectionsKey) {
-            enabledIDs = Set(saved)
-        } else if AppSettings.enabledCalendarSources(in: defaults).contains(.google),
-                  let id = SingleAccountMigration.originalDatabricksConnectionID(in: defaults) {
-            enabledIDs = ["googleCalendar.\(id.uuidString)"]
-            defaults.set(Array(enabledIDs).sorted(), forKey: Self.enabledConnectionsKey)
-        } else {
-            enabledIDs = []
-        }
+        enabledIDs = Set(defaults.stringArray(forKey: Self.enabledConnectionsKey) ?? [])
         if observesChanges {
             for name in [GoogleCalendarProvider.didChange, .databricksConnectionDidChange] {
                 notificationCenter.publisher(for: name)
@@ -64,7 +57,21 @@ final class CalendarProviderCollection: ObservableObject, CalendarEventSourceSto
         }
     }
 
+    func activateAfterAccountMigration() async {
+        if let saved = defaults.stringArray(forKey: Self.enabledConnectionsKey) {
+            enabledIDs = Set(saved)
+        } else if AppSettings.enabledCalendarSources(in: defaults).contains(.google),
+                  let id = SingleAccountMigration.originalDatabricksConnectionID(in: defaults) {
+            enabledIDs = ["googleCalendar.\(id.uuidString)"]
+        } else {
+            enabledIDs = []
+        }
+        isActive = true
+        await reloadConnections()
+    }
+
     func reloadConnections() async {
+        guard isActive else { return }
         catalogRevision += 1
         let revision = catalogRevision
         do {
@@ -117,6 +124,7 @@ final class CalendarProviderCollection: ObservableObject, CalendarEventSourceSto
     }
 
     func refreshIfNeeded(force: Bool) async {
+        guard isActive else { return }
         if !didLoadCatalog { await reloadConnections() }
         await withTaskGroup(of: Void.self) { group in
             for id in enabledIDs.sorted() {
