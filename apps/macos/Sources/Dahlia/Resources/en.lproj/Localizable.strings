@@ -1648,6 +1648,7 @@
 "settings.agents.variableNameInvalid" = "Use letters, digits, and _ in a variable name, not starting with a digit. This variable is not passed.";
 "settings.agents.providers" = "Providers";
 "settings.agents.providerModels" = "Models";
+"settings.agents.providerStorage" = "Storage";
 "settings.agents.mcpAccountSignInRequired" = "The account's sign-in has expired. Sign in again from the account menu at the bottom of the sidebar.";
 "settings.agents.addProvider" = "Add Provider…";
 "settings.agents.addProviderTitle" = "Add Provider";
@@ -1660,10 +1661,9 @@
 "settings.agents.mcpWorkspaceIsAccount" = "This is the account's own workspace. Its MCPs are already available.";
 "settings.agents.enabledCount %lld" = "%lld on";
 "settings.agents.mcpServiceWithServerName %@ %@" = "%1$@ (%2$@)";
-"settings.agents.unityGatewayHost %@" = "Unity Gateway (%@)";
+"settings.agents.unityGatewayHost %@" = "Databricks (%@)";
 "settings.agents.workspaceURL" = "Workspace URL";
 "settings.agents.mcps" = "Connector";
-"settings.agents.databricksUnityGateway" = "Databricks (Unity Gateway)";
 "settings.agents.mcpLoadingServices" = "Loading Unity AI Gateway MCPs…";
 "settings.agents.mcpNoServices" = "This workspace's Unity AI Gateway (system.ai) has no MCPs you can use.";
 "settings.agents.mcpRemoveWorkspaceDescription" = "Signs out of this workspace and deletes every MCP server registered on it.";

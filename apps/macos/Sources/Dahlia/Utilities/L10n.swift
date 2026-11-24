@@ -2611,7 +2611,6 @@ enum L10n { // swiftlint:disable:this type_body_length
     static var settingsMeetingsIntro: String { String(localized: "settings.meetings.intro", bundle: bundle) }
     static var settingsDahliaMCPIntro: String { String(localized: "settings.dahliaMCP.intro", bundle: bundle) }
     static var unityGatewayMCPs: String { String(localized: "settings.agents.unityGatewayMCPs", bundle: bundle) }
-    static var databricksUnityGateway: String { String(localized: "settings.agents.databricksUnityGateway", bundle: bundle) }
     static var mcpLoadingServices: String { String(localized: "settings.agents.mcpLoadingServices", bundle: bundle) }
     static var mcpNoServices: String { String(localized: "settings.agents.mcpNoServices", bundle: bundle) }
     static var mcpRemoveWorkspaceDescription: String { String(localized: "settings.agents.mcpRemoveWorkspaceDescription", bundle: bundle) }
@@ -2683,6 +2682,7 @@ enum L10n { // swiftlint:disable:this type_body_length
     static var agentVariableNameInvalid: String { String(localized: "settings.agents.variableNameInvalid", bundle: bundle) }
     static var agentProviders: String { String(localized: "settings.agents.providers", bundle: bundle) }
     static var agentProviderModels: String { String(localized: "settings.agents.providerModels", bundle: bundle) }
+    static var agentProviderStorage: String { String(localized: "settings.agents.providerStorage", bundle: bundle) }
 
     static var mcpAccountSignInRequired: String { String(localized: "settings.agents.mcpAccountSignInRequired", bundle: bundle) }
 
