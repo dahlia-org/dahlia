@@ -691,7 +691,7 @@
 "External Sharing" = "External Sharing";
 "When you generate a summary, enable automatic summary generation, or use AI chat, the linked event's title, description, and dates may be sent to the AI provider you configured. Dahlia does not use Google data to train general-purpose AI models." = "When you generate a summary, enable automatic summary generation, or use AI chat, the linked event's title, description, and dates may be sent to the AI provider you configured. Dahlia does not use Google data to train general-purpose AI models.";
 "Manage and Delete" = "Manage and Delete";
-"Disconnecting Calendar removes only its local OAuth session and saved calendar selection identifiers. Delete linked meetings to remove saved calendar details from the active database, and delete database backups separately." = "Disconnecting Calendar removes only its local OAuth session and saved calendar selection identifiers. Delete linked meetings to remove saved calendar details from the active database, and delete database backups separately.";
+"Disconnecting Calendar stops its use in Dahlia and clears its calendar selection. The shared Google credential remains for Drive. Sign out of the provider to remove it from this Mac. Delete linked meetings to remove saved calendar details from the active database, and delete database backups separately." = "Disconnecting Calendar stops its use in Dahlia and clears its calendar selection. The shared Google credential remains for Drive. Sign out of the provider to remove it from this Mac. Delete linked meetings to remove saved calendar details from the active database, and delete database backups separately.";
 "View Privacy Policy" = "View Privacy Policy";
 "Continue to Google" = "Continue to Google";
 "Connect Google Calendar from Settings to show your upcoming events on Home." = "Connect Google Calendar from Settings to show your upcoming events on Home.";
@@ -1804,7 +1804,7 @@
 
 "Google grants read-only access to all Drive files. Dahlia uses metadata to find Dahlia/Backup and downloads only the backups you select." = "Google grants read-only access to all Drive files. Dahlia uses metadata to find Dahlia/Backup and downloads only the backups you select.";
 
-"Downloaded backups are stored on this Mac and validated before restore. The authorization token is stored in Keychain separately from Google Calendar." = "Downloaded backups are stored on this Mac and validated before restore. The authorization token is stored in Keychain separately from Google Calendar.";
+"Downloaded backups are stored on this Mac and validated before restore. Calendar and Drive share the registered Google account’s Keychain credential." = "Downloaded backups are stored on this Mac and validated before restore. Calendar and Drive share the registered Google account’s Keychain credential.";
 
 "Listing and downloading send requests to Google Drive. Uploads are a separate action by Dahlia AI through your configured MCP server and follow chat approval settings." = "Listing and downloading send requests to Google Drive. Uploads are a separate action by Dahlia AI through your configured MCP server and follow chat approval settings.";
 
