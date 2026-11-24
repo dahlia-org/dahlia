@@ -174,24 +174,6 @@
         }
 
         @Test
-        func openingDahliaSignInPreservesTheCurrentScreen() {
-            let navigation = MainWindowNavigation(
-                openMainWindow: {},
-                initialSettingsCategory: .calendar
-            )
-
-            navigation.openDahliaSignIn()
-
-            #expect(!navigation.isShowingSettings)
-            #expect(navigation.settingsCategory == .calendar)
-            #expect(navigation.isShowingDahliaSignIn)
-
-            navigation.dismissDahliaSignIn()
-
-            #expect(!navigation.isShowingDahliaSignIn)
-        }
-
-        @Test
         func openingWorkspaceSettingsPreservesCurrentAppLocation() {
             let meetingID = UUID.v7()
             let navigation = MainWindowNavigation(

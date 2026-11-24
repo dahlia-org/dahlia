@@ -5,10 +5,11 @@ enum SetupTourPresentationPolicy {
     static let progressStepUserDefaultsKey = "setupTourProgressStep"
     static let providerUserDefaultsKey = "setupTourProvider"
     static let databricksProfileUserDefaultsKey = "setupTourDatabricksProfile"
+    // Saved by releases with an account step; only cleared now.
     static let accountConnectionIDUserDefaultsKey = "setupTourAccountConnectionID"
     static let databricksConnectionIDUserDefaultsKey = "setupTourDatabricksConnectionID"
     static let accountSelectionConfirmedUserDefaultsKey = "setupTourAccountSelectionConfirmed"
-    /// Marks progress saved after the model provider step moved to right after account selection.
+    /// Marks progress saved after the model provider step moved to the start of the tour.
     static let modelProviderFirstUserDefaultsKey = "setupTourModelProviderFirst"
     static let currentVersion = 1
 
@@ -27,34 +28,20 @@ enum SetupTourPresentationPolicy {
         clearProgress(in: defaults)
     }
 
-    static func restoredStep(in defaults: UserDefaults = .standard) -> SetupTourStep {
-        guard defaults.object(forKey: progressStepUserDefaultsKey) != nil else { return .account }
-        return SetupTourStep(rawValue: defaults.integer(forKey: progressStepUserDefaultsKey)) ?? .account
+    /// `nil` when nothing is saved or the saved step was removed, such as the account step.
+    static func restoredStep(in defaults: UserDefaults = .standard) -> SetupTourStep? {
+        guard defaults.object(forKey: progressStepUserDefaultsKey) != nil else { return nil }
+        return SetupTourStep(rawValue: defaults.integer(forKey: progressStepUserDefaultsKey))
     }
 
-    static func saveProgress(
-        step: SetupTourStep,
-        databricksConnectionID: UUID? = nil,
-        isAccountSelectionConfirmed: Bool = false,
-        in defaults: UserDefaults = .standard
-    ) {
+    static func saveProgress(step: SetupTourStep, in defaults: UserDefaults = .standard) {
         defaults.set(step.rawValue, forKey: progressStepUserDefaultsKey)
-        defaults.set(databricksConnectionID?.uuidString, forKey: databricksConnectionIDUserDefaultsKey)
-        defaults.set(isAccountSelectionConfirmed, forKey: accountSelectionConfirmedUserDefaultsKey)
         defaults.set(true, forKey: modelProviderFirstUserDefaultsKey)
     }
 
     /// Progress saved by v0.29.0 or earlier, which asked for model providers after permissions.
     static func hasProgressBeforeModelProviderMoved(in defaults: UserDefaults = .standard) -> Bool {
         hasSavedProgress(in: defaults) && defaults.object(forKey: modelProviderFirstUserDefaultsKey) == nil
-    }
-
-    static func restoredDatabricksConnectionID(in defaults: UserDefaults = .standard) -> UUID? {
-        defaults.string(forKey: databricksConnectionIDUserDefaultsKey).flatMap(UUID.init(uuidString:))
-    }
-
-    static func isAccountSelectionConfirmed(in defaults: UserDefaults = .standard) -> Bool {
-        defaults.bool(forKey: accountSelectionConfirmedUserDefaultsKey)
     }
 
     static func saveProviderDraft(

@@ -1,167 +1,91 @@
 import SwiftUI
 
+/// The footer's settings menu: quick language and appearance changes, then the full Settings.
 struct MainSidebarAccountRootMenuView: View {
+    enum Item: Int, CaseIterable {
+        case language
+        case appearance
+        case settings
+
+        var title: String {
+            switch self {
+            case .language: L10n.language
+            case .appearance: L10n.appearance
+            case .settings: L10n.settings
+            }
+        }
+    }
+
     var navigation: MainSidebarAccountMenuNavigationState
 
-    let connections: [DahliaAccountConnection]
-    let currentConnectionID: UUID?
-    let isLocalAccount: Bool
-    let showsLocalAccount: Bool
-    let showsAddAccount: Bool
-    let showsAccountAction: Bool
     let onShowAppearance: (CGFloat?) -> Void
     let onShowLanguages: (CGFloat?) -> Void
     let onDismissSubmenu: () -> Void
-    let onOpenSettings: (SettingsCategory?) -> Void
-    let onSelectAccount: (DahliaAccountConnection?) -> Void
-    let onAddAccount: () -> Void
-    let onAccountAction: () -> Void
-    var unprocessedRecordingCount = 0
-    let onShowUnprocessedRecordings: () -> Void
+    let onOpenSettings: () -> Void
 
     @State private var pendingHoverTask: Task<Void, Never>?
 
     var body: some View {
         VStack(spacing: 2) {
-            if let currentAccount = currentConnection?.account {
-                Text(currentAccount.email ?? currentAccount.displayName)
-                    .font(.dahliaBody)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, 8)
-                    .padding(.top, 6)
-
-            }
-
-            ForEach(connections.enumerated(), id: \.element.id) { index, connection in
-                MainSidebarAccountMenuRow(
-                    title: connection.displayName,
-                    subtitle: connection.isCloud ? L10n.dahliaCloud : L10n.dahliaServer,
-                    selectionState: connection.id == currentConnectionID,
-                    // A Dahlia account owns no workspace; the row only shows that it is signed in.
-                    isEnabled: false,
-                    isKeyboardHighlighted: navigation.activeMenu == .root && navigation.rootSelection == index,
-                    showsHelp: false,
-                    onHoverStart: { hover(index: index, opensSubmenu: false, action: onDismissSubmenu) },
-                    onHoverEnd: cancelPendingHover,
-                    action: {}
-                )
-            }
-
-            if showsLocalAccount {
-                MainSidebarAccountMenuRow(
-                    title: L10n.localAccount,
-                    image: Image(systemName: "person.2"),
-                    selectionState: isLocalAccount,
-                    isKeyboardHighlighted: navigation.activeMenu == .root && navigation.rootSelection == connections.count,
-                    showsHelp: false,
-                    onHoverStart: { hover(index: connections.count, opensSubmenu: false, action: onDismissSubmenu) },
-                    onHoverEnd: cancelPendingHover,
-                    action: { activate(index: connections.count, action: { onSelectAccount(nil) }) }
-                )
-            }
-
-            if showsAddAccount {
-                MainSidebarAccountMenuRow(
-                    title: L10n.addAccount,
-                    image: Image(systemName: "person.badge.plus"),
-                    isKeyboardHighlighted: navigation.activeMenu == .root && navigation.rootSelection == menuOffset - 1,
-                    showsHelp: false,
-                    onHoverStart: { hover(index: menuOffset - 1, opensSubmenu: false, action: onDismissSubmenu) },
-                    onHoverEnd: cancelPendingHover,
-                    action: { activate(index: menuOffset - 1, action: onAddAccount) }
-                )
-            }
-
-            Divider()
-                .padding(.vertical, 4)
-
             MainSidebarAccountMenuRow(
                 title: L10n.language,
                 image: Image(systemName: "globe"),
                 showsDisclosure: true,
-                isKeyboardHighlighted: navigation.activeMenu == .root && navigation.rootSelection == menuOffset,
+                isKeyboardHighlighted: isHighlighted(.language),
                 showsHelp: false,
                 onHoverStartAtY: { minY in
-                    hover(index: menuOffset, opensSubmenu: true, action: { onShowLanguages(minY) })
+                    hover(.language, opensSubmenu: true, action: { onShowLanguages(minY) })
                 },
                 onHoverEnd: cancelPendingHover,
-                action: { activate(index: menuOffset, action: { onShowLanguages(nil) }) }
+                action: { activate(.language, action: { onShowLanguages(nil) }) }
             )
 
             MainSidebarAccountMenuRow(
                 title: L10n.appearance,
                 image: Image(systemName: "circle.lefthalf.filled"),
                 showsDisclosure: true,
-                isKeyboardHighlighted: navigation.activeMenu == .root && navigation.rootSelection == menuOffset + 1,
+                isKeyboardHighlighted: isHighlighted(.appearance),
                 showsHelp: false,
                 onHoverStartAtY: { minY in
-                    hover(index: menuOffset + 1, opensSubmenu: true, action: { onShowAppearance(minY) })
+                    hover(.appearance, opensSubmenu: true, action: { onShowAppearance(minY) })
                 },
                 onHoverEnd: cancelPendingHover,
-                action: { activate(index: menuOffset + 1, action: { onShowAppearance(nil) }) }
+                action: { activate(.appearance, action: { onShowAppearance(nil) }) }
             )
+
+            Divider()
+                .padding(.vertical, 4)
 
             MainSidebarAccountMenuRow(
                 title: L10n.settings,
                 image: Image(systemName: "gearshape"),
-                isKeyboardHighlighted: navigation.activeMenu == .root && navigation.rootSelection == menuOffset + 2,
+                isKeyboardHighlighted: isHighlighted(.settings),
                 showsHelp: false,
-                onHoverStart: { hover(index: menuOffset + 2, opensSubmenu: false, action: onDismissSubmenu) },
+                onHoverStart: { hover(.settings, opensSubmenu: false, action: onDismissSubmenu) },
                 onHoverEnd: cancelPendingHover,
-                action: { activate(index: menuOffset + 2, action: { onOpenSettings(nil) }) }
+                action: { activate(.settings, action: onOpenSettings) }
             )
-
-            MainSidebarAccountMenuRow(
-                title: L10n.unprocessedRecordings,
-                subtitle: unprocessedRecordingCount > 0 ? unprocessedRecordingCount.formatted() : nil,
-                image: Image(systemName: "waveform.badge.exclamationmark"),
-                isKeyboardHighlighted: navigation.activeMenu == .root && navigation.rootSelection == menuOffset + 3,
-                showsHelp: false,
-                onHoverStart: { hover(index: menuOffset + 3, opensSubmenu: false, action: onDismissSubmenu) },
-                onHoverEnd: cancelPendingHover,
-                action: { activate(index: menuOffset + 3, action: onShowUnprocessedRecordings) }
-            )
-
-            if showsAccountAction {
-                Divider()
-                    .padding(.vertical, 4)
-
-                MainSidebarAccountMenuRow(
-                    title: signsOut ? L10n.signOut : L10n.dahliaSignIn,
-                    image: Image(systemName: signsOut ? "rectangle.portrait.and.arrow.right" : "person"),
-                    isKeyboardHighlighted: navigation.activeMenu == .root && navigation.rootSelection == menuOffset + 4,
-                    showsHelp: false,
-                    onHoverStart: { hover(index: menuOffset + 4, opensSubmenu: false, action: onDismissSubmenu) },
-                    onHoverEnd: cancelPendingHover,
-                    action: { activate(index: menuOffset + 4, action: onAccountAction) }
-                )
-            }
         }
         .onDisappear(perform: cancelPendingHover)
     }
 
-    private var menuOffset: Int { connections.count + (showsLocalAccount ? 1 : 0) + (showsAddAccount ? 1 : 0) }
-    /// A Dahlia account signs out; the Local Account signs in to add one.
-    private var signsOut: Bool { currentConnection != nil }
-    private var currentConnection: DahliaAccountConnection? {
-        connections.first { $0.id == currentConnectionID }
+    private func isHighlighted(_ item: Item) -> Bool {
+        navigation.activeMenu == .root && navigation.rootSelection == item.rawValue
     }
 
     private func hover(
-        index: Int,
+        _ item: Item,
         opensSubmenu: Bool,
         action: @escaping () -> Void
     ) {
         cancelPendingHover()
         guard opensSubmenu else {
             action()
-            navigation.selectRoot(index)
+            navigation.selectRoot(item.rawValue)
             return
         }
         let applyHover = {
-            navigation.selectRoot(index)
+            navigation.selectRoot(item.rawValue)
             action()
         }
         guard navigation.activeMenu != .root else {
@@ -176,9 +100,9 @@ struct MainSidebarAccountRootMenuView: View {
         }
     }
 
-    private func activate(index: Int, action: () -> Void) {
+    private func activate(_ item: Item, action: () -> Void) {
         cancelPendingHover()
-        navigation.selectRoot(index)
+        navigation.selectRoot(item.rawValue)
         action()
     }
 

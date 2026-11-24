@@ -2,7 +2,6 @@ import CoreGraphics
 
 enum MainSidebarAccountMenuLayout {
     static let menuWidth: CGFloat = 180
-    static let rootMenuWidth: CGFloat = 280
     static let menuRowHeight: CGFloat = 30
     static let panelGap: CGFloat = 6
     static let screenInset: CGFloat = 6

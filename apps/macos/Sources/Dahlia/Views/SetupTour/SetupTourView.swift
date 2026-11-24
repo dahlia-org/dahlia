@@ -4,11 +4,9 @@ struct SetupTourView: View {
     @Environment(MainWindowNavigation.self) private var mainWindowNavigation
     @ObservedObject private var settings = AppSettings.shared
     @State private var model: SetupTourModel
-    @State private var accountController: DahliaCloudAccountController
     @State private var isLanguageMenuHovered = false
     @State private var isCloseHovered = false
     @State private var isInstallingPi = false
-    @State private var accountAdvanceTask: Task<Void, Never>?
 
     private let workspaceManagementModel: WorkspaceManagementModel
     private let canComplete: () -> Bool
@@ -19,14 +17,12 @@ struct SetupTourView: View {
         mode: SetupTourMode,
         currentWorkspace: WorkspaceRecord?,
         workspaceManagementModel: WorkspaceManagementModel,
-        accountController: DahliaCloudAccountController,
         canComplete: @escaping () -> Bool,
         onComplete: @escaping (WorkspaceRecord) async -> Bool
     ) {
         self.workspaceManagementModel = workspaceManagementModel
         self.canComplete = canComplete
         self.onComplete = onComplete
-        _accountController = State(initialValue: accountController)
         let initialWorkspace = mode == .initial ? currentWorkspace : currentWorkspace ?? workspaceManagementModel.workspaces.first
         _model = State(initialValue: SetupTourModel(
             mode: mode,
@@ -41,20 +37,6 @@ struct SetupTourView: View {
                 Text(L10n.setupDahlia)
                     .font(.dahliaHeadline)
 
-                // Account-scoped settings, such as model providers and calendars, apply to this account.
-                if model.currentStep != .account, model.isAccountSelectionConfirmed {
-                    Label {
-                        Text(selectedAccountTitle)
-                    } icon: {
-                        selectedAccountIcon
-                    }
-                    .font(.dahliaBody)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                    .accessibilityElement(children: .ignore)
-                    .accessibilityLabel("\(L10n.account), \(selectedAccountTitle)")
-                }
-
                 Spacer()
             }
 
@@ -62,12 +44,14 @@ struct SetupTourView: View {
                 ZStack(alignment: .topTrailing) {
                     ScrollView {
                         VStack(spacing: 28) {
-                            if model.currentStep != .account {
+                            if model.isCheckingPi {
+                                ProgressView()
+                            } else {
                                 SetupTourStepHeaderView(step: model.currentStep)
-                            }
 
-                            stepContent
-                                .frame(maxWidth: 900)
+                                stepContent
+                                    .frame(maxWidth: 900)
+                            }
                         }
                         .frame(maxWidth: .infinity)
                         .padding(.horizontal, 40)
@@ -106,7 +90,7 @@ struct SetupTourView: View {
                         }
                         .buttonStyle(.plain)
                         .menuIndicator(.hidden)
-                        .disabled(isInstallingPi || model.isAccountSetupInProgress)
+                        .disabled(isInstallingPi)
                         .fixedSize()
                         .onHover { isLanguageMenuHovered = $0 }
                         .accessibilityLabel(L10n.appLanguage)
@@ -148,38 +132,22 @@ struct SetupTourView: View {
                 onContinue: continueTour
             )
         }
-        .task(id: model.isAccountSelectionConfirmed
-            ? model.selectedDatabricksConnectionID.map { "databricks.\($0)" } ?? "local"
-            : nil) {
-                guard model.mode == .initial, model.isAccountSelectionConfirmed else { return }
-                _ = await prepareInitialWorkspace()
+        .task { await model.checkPi() }
+        .task {
+            guard model.mode == .initial else { return }
+            _ = await prepareInitialWorkspace()
         }
         .id(settings.appLanguage)
-        .onDisappear { accountAdvanceTask?.cancel() }
         .background(Color(nsColor: .windowBackgroundColor))
         .accessibilityElement(children: .contain)
         .windowDismissBehavior(
-            !model.canDismiss || accountController.isBusy || isInstallingPi ? .disabled : .automatic
+            !model.canDismiss || isInstallingPi ? .disabled : .automatic
         )
     }
 
     @ViewBuilder
     private var stepContent: some View {
         switch model.currentStep {
-        case .account:
-            // Dahlia Cloud and Server sign-in are hidden for now; existing connections stay usable from Settings.
-            DatabricksSignInView(
-                isEmbedded: true,
-                showsLocalAccount: true,
-                onCancel: {},
-                onContinueWithDatabricks: continueWithDatabricks,
-                onContinueLocally: continueWithLocalAccount,
-                onInteractionStateChange: { model.isAccountSetupInProgress = $0 }
-            )
-            .disabled(model.isCheckingPi)
-            .overlay {
-                if model.isCheckingPi { ProgressView() }
-            }
         case .workingLanguages:
             WorkingLanguagesSetupStepView()
         case .pi:
@@ -203,34 +171,13 @@ struct SetupTourView: View {
     private func continueTour() {
         if model.currentStep == .completion {
             completeTour()
-        } else if model.currentStep == .account {
-            advanceFromAccount()
         } else {
             model.advance()
         }
     }
 
-    private func continueWithLocalAccount() {
-        model.selectAccount()
-        advanceFromAccount()
-    }
-
-    private func continueWithDatabricks(_ connectionID: UUID) {
-        model.selectAccount(databricks: connectionID)
-        advanceFromAccount()
-    }
-
-    private func advanceFromAccount() {
-        guard accountAdvanceTask == nil else { return }
-        accountAdvanceTask = Task {
-            await model.advanceFromAccount()
-            accountAdvanceTask = nil
-        }
-    }
-
     private var canContinue: Bool {
         guard model.canContinue, !isInstallingPi else { return false }
-        guard model.currentStep != .account || !accountController.isBusy else { return false }
         guard model.currentStep == .workingLanguages,
               settings.appLanguageScope == .selected else { return true }
         return !settings.enabledLanguageIdentifiers.isEmpty
@@ -238,15 +185,11 @@ struct SetupTourView: View {
 
     private func dismissTour() {
         guard model.canDismiss, !isInstallingPi else { return }
-        accountController.cancelAccountTask()
         mainWindowNavigation.dismissSetupTour()
     }
 
     private func prepareInitialWorkspace() async -> WorkspaceRecord? {
-        if model.selectedDatabricksConnectionID != nil {
-            return await model.prepareInitialWorkspace { await WorkspaceAISettingsModel.shared.accountWorkspace() }
-        }
-        return await model.prepareInitialWorkspace {
+        await model.prepareInitialWorkspace {
             let workspace = await workspaceManagementModel.resolveInitialWorkspace()
             if workspace == nil { workspaceManagementModel.isShowingError = false }
             return workspace
@@ -271,7 +214,7 @@ struct SetupTourView: View {
             } else if let originalWorkspace = model.originalWorkspace, model.keepsOriginalWorkspace {
                 originalWorkspace
             } else {
-                // A Databricks sign-in only adds a provider account, so the tour opens the app's account workspace.
+                // A manual tour without an open workspace opens the account's workspace.
                 await WorkspaceAISettingsModel.shared.accountWorkspace()
             }
             guard let workspace else {
@@ -292,22 +235,4 @@ struct SetupTourView: View {
     private var requiresWorkspaceSwitch: Bool {
         !model.keepsOriginalWorkspace
     }
-
-    private var selectedAccountTitle: String {
-        if let databricksID = model.selectedDatabricksConnectionID {
-            return WorkspaceAISettingsModel.shared.databricksConnections.first { $0.id == databricksID }
-                .map { L10n.unityGatewayHost($0.hostName) } ?? L10n.databricks
-        }
-        return L10n.localAccount
-    }
-
-    @ViewBuilder
-    private var selectedAccountIcon: some View {
-        if model.selectedDatabricksConnectionID != nil {
-            Image.databricksLogo.resizable().scaledToFit().frame(width: 16, height: 16)
-        } else {
-            Image(systemName: "person.2")
-        }
-    }
-
 }

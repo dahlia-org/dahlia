@@ -1,7 +1,7 @@
 import Foundation
 import Observation
 
-/// Adds Databricks workspaces; the account menu signs out of them. `WorkspaceAISettingsModel.databricksConnections` lists them.
+/// Adds Databricks workspaces; Settings > Providers signs out of them. `WorkspaceAISettingsModel.databricksConnections` lists them.
 @MainActor
 @Observable
 final class DatabricksAccountController {

@@ -73,9 +73,8 @@ struct SettingsDetailView: View {
         }
         .scrollContentBackground(.hidden)
         .scrollEdgeEffectHidden()
-        .onChange(of: selection) { _, selection in
+        .onChange(of: selection) {
             workspaceDetailsID = nil
-            if selection != .agents { mainWindowNavigation.dismissDahliaSignIn() }
         }
     }
 

@@ -2,7 +2,8 @@ import SwiftUI
 
 /// Adds a Pi subscription, Databricks workspace, or direct Google account through browser sign-in. Providers are one
 /// list: a subscription row starts its sign-in when clicked, and a row that needs more before it (Databricks's
-/// workspace URL, Google's disclosure) expands in place with its own sign-in button.
+/// workspace URL, Google's disclosure) expands in place with its own sign-in button. The setup tour embeds the list
+/// for one capability; it stays open after a sign-in and marks the providers already added.
 struct AgentProviderRegistrationView: View {
     enum Kind: Hashable, Identifiable {
         case subscription(PiSubscription)
@@ -43,9 +44,11 @@ struct AgentProviderRegistrationView: View {
     /// The Local Account's subscriptions; other accounts have none.
     let subscriptions: [PiSubscriptionController]
     let google: GoogleProviderAccountController
+    let isEmbedded: Bool
     let onClose: () -> Void
 
     @State private var capability: AgentProviderCapability?
+    @State private var workspaceSettings = WorkspaceAISettingsModel.shared
     @State private var expanded: Kind?
     @State private var hovered: Kind?
     @State private var workspaceURL = ""
@@ -54,16 +57,56 @@ struct AgentProviderRegistrationView: View {
     @State private var errorMessage: String?
     @FocusState private var isWorkspaceURLFocused: Bool
 
-    var body: some View {
-        ZStack {
-            Button(action: cancel) {
-                Color.black.opacity(0.16).ignoresSafeArea()
-            }
-            .buttonStyle(.plain)
-            .focusable(false)
-            .accessibilityHidden(true)
+    init(
+        model: AgentMCPSettingsModel,
+        subscriptions: [PiSubscriptionController],
+        google: GoogleProviderAccountController,
+        capability: AgentProviderCapability? = nil,
+        isEmbedded: Bool = false,
+        onClose: @escaping () -> Void
+    ) {
+        self.model = model
+        self.subscriptions = subscriptions
+        self.google = google
+        self.isEmbedded = isEmbedded
+        self.onClose = onClose
+        _capability = State(initialValue: capability)
+    }
 
-            VStack(alignment: .leading, spacing: 16) {
+    var body: some View {
+        Group {
+            if isEmbedded {
+                content
+            } else {
+                ZStack {
+                    Button(action: cancel) {
+                        Color.black.opacity(0.16).ignoresSafeArea()
+                    }
+                    .buttonStyle(.plain)
+                    .focusable(false)
+                    .accessibilityHidden(true)
+
+                    content
+                        .padding(24)
+                        .frame(width: 520)
+                        .dahliaModalSurface()
+                }
+                .transition(.identity)
+            }
+        }
+        .onChange(of: capability) { _, _ in
+            if let expanded, !visibleKinds.contains(expanded) { self.expanded = nil }
+        }
+        .onChange(of: expanded) { _, newValue in
+            errorMessage = nil
+            isWorkspaceURLFocused = newValue == .databricks
+        }
+        .onDisappear { signInTask?.cancel() }
+    }
+
+    private var content: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            if !isEmbedded {
                 Text(L10n.addProviderTitle)
                     .font(.dahliaTitle2)
                     .accessibilityAddTraits(.isHeader)
@@ -77,46 +120,36 @@ struct AgentProviderRegistrationView: View {
                 .accessibilityElement(children: .contain)
                 .accessibilityLabel(L10n.filter)
                 .disabled(signInTask != nil)
+            }
 
-                VStack(spacing: 0) {
-                    ForEach(Array(visibleKinds.enumerated()), id: \.element) { index, choice in
-                        if index > 0 { Divider() }
-                        row(choice)
-                    }
+            VStack(spacing: 0) {
+                ForEach(Array(visibleKinds.enumerated()), id: \.element) { index, choice in
+                    if index > 0 { Divider() }
+                    row(choice)
                 }
-                .clipShape(.rect(cornerRadius: DahliaDesign.Card.regularCornerRadius))
-                .dahliaCardSurface()
+            }
+            .clipShape(.rect(cornerRadius: DahliaDesign.Card.regularCornerRadius))
+            .dahliaCardSurface()
 
-                if let errorMessage {
-                    Label(errorMessage, systemImage: "exclamationmark.triangle.fill")
-                        .foregroundStyle(.orange)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
+            if let errorMessage {
+                Label(errorMessage, systemImage: "exclamationmark.triangle.fill")
+                    .foregroundStyle(.orange)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
 
+            if signInTask != nil || !isEmbedded {
                 HStack {
                     if signInTask != nil {
                         ProgressView().controlSize(.small)
                         Text(L10n.dahliaWaitingForBrowser).foregroundStyle(.secondary)
                     }
                     Spacer()
-                    Button(signInTask == nil ? L10n.cancel : L10n.cancelSignIn, action: cancel)
+                    Button(signInTask == nil ? L10n.cancel : L10n.cancelSignIn, action: cancelOrStop)
                         .buttonStyle(.dahlia())
                         .keyboardShortcut(.cancelAction)
                 }
             }
-            .padding(24)
-            .frame(width: 520)
-            .dahliaModalSurface()
         }
-        .transition(.identity)
-        .onChange(of: capability) { _, _ in
-            if let expanded, !visibleKinds.contains(expanded) { self.expanded = nil }
-        }
-        .onChange(of: expanded) { _, newValue in
-            errorMessage = nil
-            isWorkspaceURLFocused = newValue == .databricks
-        }
-        .onDisappear { signInTask?.cancel() }
     }
 
     private func row(_ choice: Kind) -> some View {
@@ -235,9 +268,17 @@ struct AgentProviderRegistrationView: View {
         }
     }
 
+    /// Databricks can be added more than once, so only the embedded list, which has no other place to show
+    /// connections, marks it as added.
     private func isAdded(_ kind: Kind) -> Bool {
-        guard case let .subscription(subscription) = kind else { return false }
-        return subscriptions.first { $0.subscription == subscription }?.accountStatus?.isAuthenticated == true
+        switch kind {
+        case let .subscription(subscription):
+            subscriptions.first { $0.subscription == subscription }?.accountStatus?.isAuthenticated == true
+        case .databricks:
+            isEmbedded && !workspaceSettings.databricksConnections.isEmpty
+        case .google:
+            false
+        }
     }
 
     private func canSignIn(_ kind: Kind) -> Bool {
@@ -298,6 +339,8 @@ struct AgentProviderRegistrationView: View {
             signInTask = Task {
                 do {
                     _ = try await model.addWorkspace(workspaceURL: workspaceURL)
+                    expanded = nil
+                    workspaceURL = ""
                     onClose()
                 } catch is CancellationError {
                     // Closing the modal stops the browser sign-in.
@@ -318,6 +361,15 @@ struct AgentProviderRegistrationView: View {
     private func cancel() {
         signInTask?.cancel()
         onClose()
+    }
+
+    /// The embedded list has nothing to close, so its button only stops the browser sign-in, which then finishes itself.
+    private func cancelOrStop() {
+        if isEmbedded {
+            signInTask?.cancel()
+        } else {
+            cancel()
+        }
     }
 }
 

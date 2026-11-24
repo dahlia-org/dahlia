@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// `footer` keeps the main sidebar's account footer, and so the account menu, while Settings is open.
+/// `footer` keeps the main sidebar's footer while Settings is open.
 struct SettingsSidebarView<Footer: View>: View {
     @Binding var selection: SettingsCategory
     let onReturnToApp: () -> Void

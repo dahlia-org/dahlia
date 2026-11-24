@@ -4,7 +4,7 @@
 "settings.organization.searchSettings" = "Search settings";
 "settings.organization.settingsAccountIntro" = "AI settings for the selected account. They apply only on this Mac across all workspaces in the account, and do not sync to other Macs or the web.";
 "settings.organization.settingsWorkspaceManagementIntro" = "View workspaces from all accounts and manage each workspace’s name, account membership, sharing, export folder, and output language.";
-"settings.organization.settingsAccountsIntro" = "Manage the model providers and AI settings of the selected account. Switch accounts from the account menu at the bottom of the sidebar.";
+"settings.organization.settingsAccountsIntro" = "Manage the model providers and AI settings of the account.";
 "settings.organization.settingsAccountSelectionDescription" = "Choosing an account here does not switch your open workspace.";
 "settings.organization.settingsLoading" = "Loading settings…";
 "settings.organization.settingsApplyNextGeneration" = "Changes save automatically and apply to the next generation.";
@@ -556,8 +556,6 @@
 "Workspace" = "Workspace";
 "Accounts and Workspaces" = "Accounts and Workspaces";
 "Dahlia Account" = "Dahlia Account";
-"Dahlia Cloud" = "Dahlia Cloud";
-"Dahlia Server" = "Dahlia Server";
 "%@ - %@" = "%@ - %@";
 "Dahlia Server is not configured." = "Dahlia Server is not configured.";
 "Signed in" = "Signed in";
@@ -600,7 +598,6 @@
 "%lld server meeting deletions are waiting. Continue deleting them?" = "%lld server meeting deletions are waiting. Continue deleting them?";
 "Current Workspace" = "Current Workspace";
 "Choose the workspace used for recordings and sync." = "Choose the workspace used for recordings and sync.";
-"Open the account menu." = "Open the account menu.";
 "No workspace selected" = "No workspace selected";
 "Appearance" = "Appearance";
 "settings.appearance.menuBar" = "Menu Bar";
@@ -657,10 +654,6 @@
 "Include events you declined." = "Include events you declined.";
 "OOO / OOTO events" = "OOO / OOTO events";
 "Include out-of-office events and events whose title includes OOO or OOTO." = "Include out-of-office events and events whose title includes OOO or OOTO.";
-"Show events from Google Calendar." = "Show events from Google Calendar.";
-"Show events from the Calendar app on this Mac." = "Show events from the Calendar app on this Mac.";
-"Use models with your ChatGPT account." = "Use models with your ChatGPT account.";
-"Use models with your Claude subscription." = "Use models with your Claude subscription.";
 "Upcoming schedule" = "Upcoming events";
 "Auto-record" = "Auto-record";
 "Auto-record scheduled" = "Auto-record scheduled";
@@ -1093,7 +1086,7 @@
 "Stopped" = "Stopped";
 "Dahlia's helper files are unavailable. Run Dahlia with scripts/run-dev.sh or install a signed app build." = "Dahlia's helper files are unavailable. Run Dahlia with scripts/run-dev.sh or install a signed app build.";
 "Could not start Pi: %@" = "Could not start Pi: %@";
-"Pi is not signed in. Sign in under Settings > Agents > Models > Providers (a Databricks or Dahlia account signs in from the account menu at the bottom of the sidebar), then try again." = "Pi is not signed in. Sign in under Settings > Dahlia AI > Models > Providers (a Databricks or Dahlia account signs in from the account menu at the bottom of the sidebar), then try again.";
+"Pi is not signed in. Sign in under Settings > Providers, then try again." = "Pi is not signed in. Sign in under Settings > Providers, then try again.";
 "Pi sign-in failed: %@" = "Pi sign-in failed: %@";
 "Pi sign-in failed." = "Pi sign-in failed.";
 "Could not open the Pi sign-in page." = "Could not open the Pi sign-in page.";
@@ -1115,7 +1108,6 @@
 "Databricks" = "Databricks";
 "Unity Gateway" = "Unity Gateway";
 "Pi" = "Pi";
-"Waiting for browser sign-in…" = "Waiting for browser sign-in…";
 "Cancel Sign-In" = "Cancel Sign-In";
 "Sign Out" = "Sign Out";
 "Your Workspaces will move to the Local Account and remain on this Mac. You will need to sign in again to use this account's AI models." = "Your Workspaces will move to the Local Account and remain on this Mac. You will need to sign in again to use this account's AI models.";
@@ -1129,11 +1121,9 @@
 "View Databricks Privacy Notice" = "View Databricks Privacy Notice";
 "Dahlia could not control Terminal. The installation command was copied and Terminal was opened. Paste the command and press Return." = "Dahlia could not control Terminal. The installation command was copied and Terminal was opened. Paste the command and press Return.";
 "Enter a valid HTTPS Databricks workspace root URL." = "Enter a valid HTTPS Databricks workspace URL.";
-"Databricks Workspace URL" = "Databricks Workspace URL";
 "Enter the HTTPS URL of the workspace used by Pi." = "Enter the HTTPS URL of the workspace used by Pi.";
 "https://your-workspace.cloud.databricks.com" = "https://your-workspace.cloud.databricks.com";
 "Create New Profile" = "Create New Profile";
-"Sign in with Databricks" = "Sign in with Databricks";
 "Databricks Workspace ID" = "Databricks Workspace ID";
 "Workspace ID unavailable from profile" = "Workspace ID unavailable from profile";
 "Could not update the Pi configuration: %@" = "Could not update the Pi configuration: %@";
@@ -1406,9 +1396,7 @@
 "Start Dahlia" = "Start Dahlia";
 "Local Account" = "Local Account";
 "Continue with Local Account" = "Continue with Local Account";
-"Use the Local Account, or connect a Databricks workspace to use its account. Both keep their data on this Mac." = "Use the Local Account, or connect a Databricks workspace to use its account. Both keep their data on this Mac.";
 "Or continue without signing in" = "Or continue without signing in";
-"Switching AI account…" = "Switching AI account…";
 "Choose the AI account used by this Workspace." = "Choose the AI account used by this Workspace.";
 "Choose the languages Dahlia should recognize. Set the AI output language in Manage Workspaces." = "Choose the languages Dahlia should recognize. Set the AI output language in Workspace settings.";
 "Recognition and OCR Languages" = "Recognition and OCR Languages";
@@ -1649,7 +1637,7 @@
 "settings.agents.providers" = "Providers";
 "settings.agents.providerModels" = "Models";
 "settings.agents.providerStorage" = "Storage";
-"settings.agents.mcpAccountSignInRequired" = "The account's sign-in has expired. Sign in again from the account menu at the bottom of the sidebar.";
+"settings.agents.mcpAccountSignInRequired" = "The account's sign-in has expired. Sign in again under Settings > Providers.";
 "settings.agents.addProvider" = "Add Provider…";
 "settings.agents.addProviderTitle" = "Add Provider";
 "settings.agents.providersEmpty" = "No providers yet.";
@@ -1670,7 +1658,7 @@
 "settings.agents.mcpRemoveWorkspace %@" = "Delete “%@”?";
 "settings.agents.mcpServerNameInvalid" = "Use up to 40 lowercase letters, digits, and _ in the server name.";
 "settings.agents.mcpServerNameTaken" = "Another server already has this name.";
-"chat.mcpSignInRequired %@" = "%@ needs sign-in. Sign in again under Settings > Dahlia AI > Models > Providers (for the account's own workspace, from the account menu at the bottom of the sidebar).";
+"chat.mcpSignInRequired %@" = "%@ needs sign-in. Sign in again under Settings > Providers.";
 "settings.agents.piCommandInUse" = "Command in use";
 "settings.agents.workingDirectory" = "Working folder";
 "settings.agents.workingDirectory.notAllowed" = "Set the working folder to a full path, or one that starts with ~. It cannot be the home folder, a folder that contains it, inside Library, a folder that holds commands (a PATH folder), or a folder containing shell startup files.";
@@ -1924,7 +1912,6 @@
 
 "Response model" = "Response model";
 
-"Add Account" = "Add Account";
 
 "oauth.callback.language" = "en";
 "oauth.callback.received" = "Authorization received";

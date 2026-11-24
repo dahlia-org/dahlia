@@ -67,8 +67,7 @@ struct ContentView: View {
                             onOpenOmnigentSession: openOmnigentSession,
                             onShowUnprocessedRecordings: showUnprocessedRecordings,
                             onCreateProject: presentProjectCreation,
-                            onOpenProject: handleMeetingSidebarProjectAction,
-                            onSelectWorkspace: onSelectWorkspace
+                            onOpenProject: handleMeetingSidebarProjectAction
                         )
                     } settingsContent: {
                         SettingsSidebarView(
@@ -80,7 +79,6 @@ struct ContentView: View {
                                 sidebarViewModel: sidebarViewModel,
                                 recordingCoordinator: recordingCoordinator,
                                 updateController: updateController,
-                                onSelectWorkspace: onSelectWorkspace,
                                 onShowUnprocessedRecordings: showUnprocessedRecordings
                             )
                         }

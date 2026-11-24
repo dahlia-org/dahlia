@@ -1,15 +1,13 @@
-/// Raw values are persisted between launches; 0 was the removed workspace step and restores as `account`.
+/// Raw values are persisted between launches; 0 (workspace) and 6 (account) were removed steps and restore as the first step.
 enum SetupTourStep: Int, CaseIterable, Identifiable {
     case workingLanguages = 1
     case permissions = 2
     case modelProvider = 3
     case calendar = 4
     case completion = 5
-    case account = 6
     case pi = 7
 
     static let allCases: [Self] = [
-        .account,
         .pi,
         .modelProvider,
         .workingLanguages,
@@ -22,7 +20,6 @@ enum SetupTourStep: Int, CaseIterable, Identifiable {
 
     var title: String {
         switch self {
-        case .account: L10n.account
         case .pi: L10n.installPi
         case .workingLanguages: L10n.workingLanguages
         case .permissions: L10n.permissions
@@ -34,7 +31,6 @@ enum SetupTourStep: Int, CaseIterable, Identifiable {
 
     var description: String {
         switch self {
-        case .account: L10n.accountSetupDescription
         case .pi: L10n.piSetupDescription
         case .workingLanguages: L10n.workingLanguagesSetupDescription
         case .permissions: L10n.audioPermissionSetupDescription

@@ -9,18 +9,14 @@ final class SetupTourModel {
 
     private(set) var currentStep: SetupTourStep
     private(set) var isCompleting = false
-    var isAccountSetupInProgress = false
-    private(set) var isCheckingPi = false
+    /// A tour that starts from the beginning checks for Pi before showing provider sign-in, which needs Pi itself.
+    private(set) var isCheckingPi: Bool
     private(set) var needsPiSetup = false
     private(set) var errorMessage: String?
-    /// The Databricks account: local data listed under the connected Databricks workspace.
-    private(set) var selectedDatabricksConnectionID: UUID?
-    private(set) var isAccountSelectionConfirmed: Bool
     private let progressDefaults: UserDefaults?
     private(set) var isPreparingWorkspace = false
     @ObservationIgnored private var preparationTask: Task<WorkspaceRecord?, Never>?
     private var preparationGeneration = 0
-    private var accountSelectionGeneration = 0
 
     init(
         mode: SetupTourMode,
@@ -29,88 +25,59 @@ final class SetupTourModel {
     ) {
         self.mode = mode
         originalWorkspace = currentWorkspace
-        isAccountSelectionConfirmed = currentWorkspace != nil
         self.progressDefaults = progressDefaults
-        currentStep = .account
+        currentStep = .modelProvider
+        isCheckingPi = true
 
-        if mode == .initial, currentWorkspace == nil, let progressDefaults {
-            let restoredStep = SetupTourPresentationPolicy.restoredStep(in: progressDefaults)
+        if mode == .initial, currentWorkspace == nil, let progressDefaults,
+           let restoredStep = SetupTourPresentationPolicy.restoredStep(in: progressDefaults) {
+            isCheckingPi = false
             needsPiSetup = restoredStep == .pi
-            // Databricks connections load after launch; one removed mid-tour fails at completion instead.
-            let restoredAccountConfirmed = SetupTourPresentationPolicy.isAccountSelectionConfirmed(in: progressDefaults)
-            selectedDatabricksConnectionID = SetupTourPresentationPolicy.restoredDatabricksConnectionID(in: progressDefaults)
-            isAccountSelectionConfirmed = restoredAccountConfirmed
-            if restoredAccountConfirmed {
-                // An earlier release asked for model providers later, so its unfinished tour has not reached them yet.
-                let skippedModelProvider = SetupTourPresentationPolicy.hasProgressBeforeModelProviderMoved(in: progressDefaults)
-                    && [.workingLanguages, .permissions].contains(restoredStep)
-                    && visibleSteps.contains(.modelProvider)
-                currentStep = if skippedModelProvider {
-                    .modelProvider
-                } else if visibleSteps.contains(restoredStep) {
-                    restoredStep
-                } else {
-                    .workingLanguages
-                }
-            }
+            // An earlier release asked for model providers later, so its unfinished tour has not reached them yet.
+            let skippedModelProvider = SetupTourPresentationPolicy.hasProgressBeforeModelProviderMoved(in: progressDefaults)
+                && [.workingLanguages, .permissions].contains(restoredStep)
+            currentStep = skippedModelProvider ? .modelProvider : restoredStep
         }
     }
 
     var canGoBack: Bool {
-        currentStep != .account && !isCompleting && !isCheckingPi && !isAccountSetupInProgress
+        currentStep != visibleSteps.first && !isCompleting && !isCheckingPi
     }
 
     var canContinue: Bool {
-        !isCompleting && !isCheckingPi && !isAccountSetupInProgress && (currentStep != .account || isAccountSelectionConfirmed)
+        !isCompleting && !isCheckingPi
     }
 
     var canDismiss: Bool {
-        mode == .manual && !isCompleting && !isAccountSetupInProgress
+        mode == .manual && !isCompleting
     }
 
     var visibleSteps: [SetupTourStep] {
-        SetupTourStep.allCases.filter {
-            if $0 == .pi { return needsPiSetup }
-            // A Databricks sign-in during account selection already provides models.
-            return selectedDatabricksConnectionID == nil || $0 != .modelProvider
-        }
+        SetupTourStep.allCases.filter { $0 != .pi || needsPiSetup }
     }
 
-    /// Resolve the selected account's Pi before opening provider sign-in, which needs Pi itself.
-    func advanceFromAccount(
+    /// Offers Pi's installation first when it is missing. A cancelled check runs again when the tour reappears.
+    func checkPi(
         isPiAvailable: () async -> Bool = {
             await Task.detached { (try? PiBundle.executableURL()) != nil }.value
         }
     ) async {
-        guard currentStep == .account, canContinue else { return }
-        let generation = accountSelectionGeneration
-        isCheckingPi = true
+        guard isCheckingPi else { return }
         let available = await isPiAvailable()
+        guard !Task.isCancelled else { return }
         isCheckingPi = false
-        guard !Task.isCancelled, generation == accountSelectionGeneration else { return }
         needsPiSetup = !available
-        advance()
-    }
-
-    /// `databricks` is the Databricks connection signed in during the tour, if any.
-    func selectAccount(databricks: UUID? = nil) {
-        if databricks != selectedDatabricksConnectionID {
-            accountSelectionGeneration += 1
-            preparationGeneration += 1
-            preparationTask?.cancel()
-            preparationTask = nil
-            isPreparingWorkspace = false
+        // Nothing can move the tour while it checks, so it is still at its first step.
+        if needsPiSetup {
+            currentStep = .pi
+            persistProgress()
         }
-        selectedDatabricksConnectionID = databricks
-        isAccountSelectionConfirmed = true
-        errorMessage = nil
-        persistProgress()
     }
 
     func prepareInitialWorkspace(
         resolve: @escaping @MainActor () async -> WorkspaceRecord?
     ) async -> WorkspaceRecord? {
-        guard mode == .initial, isAccountSelectionConfirmed else { return nil }
+        guard mode == .initial else { return nil }
         let task: Task<WorkspaceRecord?, Never>
         if let preparationTask {
             task = preparationTask
@@ -172,11 +139,6 @@ final class SetupTourModel {
 
     private func persistProgress() {
         guard mode == .initial, let progressDefaults else { return }
-        SetupTourPresentationPolicy.saveProgress(
-            step: currentStep,
-            databricksConnectionID: selectedDatabricksConnectionID,
-            isAccountSelectionConfirmed: isAccountSelectionConfirmed,
-            in: progressDefaults
-        )
+        SetupTourPresentationPolicy.saveProgress(step: currentStep, in: progressDefaults)
     }
 }

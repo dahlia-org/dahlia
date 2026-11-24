@@ -17,7 +17,6 @@ struct MeetingListSidebarView: View {
     let onShowUnprocessedRecordings: () -> Void
     let onCreateProject: () -> Void
     let onOpenProject: (UUID, ProjectNavigationIntent) -> Void
-    let onSelectWorkspace: (WorkspaceRecord) -> Void
 
     @State private var renderedMeetingSelection: Set<UUID> = []
     @State private var editingMeetingId: UUID?
@@ -90,7 +89,6 @@ struct MeetingListSidebarView: View {
                 sidebarViewModel: sidebarViewModel,
                 recordingCoordinator: recordingCoordinator,
                 updateController: updateController,
-                onSelectWorkspace: onSelectWorkspace,
                 onShowUnprocessedRecordings: onShowUnprocessedRecordings
             )
         }

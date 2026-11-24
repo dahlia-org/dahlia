@@ -1880,26 +1880,17 @@ enum L10n { // swiftlint:disable:this type_body_length
     }
 
     static var currentWorkspaceDescription: String { String(localized: "Choose the workspace used for recordings and sync.", bundle: bundle) }
-    static var accountMenuDescription: String { String(localized: "Open the account menu.", bundle: bundle) }
     static var noWorkspaceSelected: String { String(localized: "No workspace selected", bundle: bundle) }
     static var accountsAndWorkspaces: String { String(localized: "Accounts and Workspaces", bundle: bundle) }
     static var dahliaAccount: String { String(localized: "Dahlia Account", bundle: bundle) }
-    static var addAccount: String { String(localized: "Add Account", bundle: bundle) }
 
     static var localAccount: String { String(localized: "Local Account", bundle: bundle) }
     static var continueWithLocalAccount: String { String(localized: "Continue with Local Account", bundle: bundle) }
-    static var accountSetupDescription: String { String(
-        localized: "Use the Local Account, or connect a Databricks workspace to use its account. Both keep their data on this Mac.",
-        bundle: bundle
-    ) }
     static var orContinueWithoutSigningIn: String { String(localized: "Or continue without signing in", bundle: bundle) }
-    static var switchingAIAccount: String { String(localized: "Switching AI account…", bundle: bundle) }
     static var workspaceAIAccountDescription: String { String(
         localized: "Choose the AI account used by this Workspace.",
         bundle: bundle
     ) }
-    static var dahliaCloud: String { String(localized: "Dahlia Cloud", bundle: bundle) }
-    static var dahliaServer: String { String(localized: "Dahlia Server", bundle: bundle) }
     static var dahliaServerNotConfigured: String { String(localized: "Dahlia Server is not configured.", bundle: bundle) }
     static var dahliaNotSignedIn: String { String(localized: "Not signed in", bundle: bundle) }
     static var dahliaWaitingForBrowser: String { String(localized: "Waiting for browser sign-in…", bundle: bundle) }
@@ -2206,22 +2197,6 @@ enum L10n { // swiftlint:disable:this type_body_length
     ) }
     static var calendarNoEventsMatchFiltersMessage: String { String(
         localized: "Upcoming events were found, but none match the event types you chose to include.",
-        bundle: bundle
-    ) }
-    static var googleCalendarSourceDescription: String { String(
-        localized: "Show events from Google Calendar.",
-        bundle: bundle
-    ) }
-    static var macOSCalendarSourceDescription: String { String(
-        localized: "Show events from the Calendar app on this Mac.",
-        bundle: bundle
-    ) }
-    static var openAISubscriptionSetupDescription: String { String(
-        localized: "Use models with your ChatGPT account.",
-        bundle: bundle
-    ) }
-    static var anthropicSubscriptionSetupDescription: String { String(
-        localized: "Use models with your Claude subscription.",
         bundle: bundle
     ) }
     static var calendarScheduleTitle: String { String(localized: "Upcoming schedule", bundle: bundle) }
@@ -2549,10 +2524,7 @@ enum L10n { // swiftlint:disable:this type_body_length
         bundle: bundle
     ) }
     static var codexNotLoggedIn: String { String(
-        localized: """
-        Pi is not signed in. Sign in under Settings > Agents > Models > Providers (a Databricks or Dahlia account signs in \
-        from the account menu at the bottom of the sidebar), then try again.
-        """,
+        localized: "Pi is not signed in. Sign in under Settings > Providers, then try again.",
         bundle: bundle
     ) }
     static func codexLoginFailed(_ detail: String) -> String { String(
@@ -2821,7 +2793,6 @@ enum L10n { // swiftlint:disable:this type_body_length
         bundle: bundle
     ) }
     static var codexSignedIn: String { String(localized: "Signed in", bundle: bundle) }
-    static var codexWaitingForBrowserSignIn: String { String(localized: "Waiting for browser sign-in…", bundle: bundle) }
     static var cancelSignIn: String { String(localized: "Cancel Sign-In", bundle: bundle) }
     static var signOut: String { String(localized: "Sign Out", bundle: bundle) }
     static var databricksProfileRequired: String { String(localized: "Connect a Databricks workspace.", bundle: bundle) }
@@ -2830,7 +2801,6 @@ enum L10n { // swiftlint:disable:this type_body_length
         bundle: bundle
     ) }
     static var workspaceURL: String { String(localized: "settings.agents.workspaceURL", bundle: bundle) }
-    static var databricksWorkspaceURL: String { String(localized: "Databricks Workspace URL", bundle: bundle) }
     static var databricksWorkspaceURLDescription: String { String(
         localized: "Enter the HTTPS URL of the workspace used by Pi.",
         bundle: bundle
@@ -2840,7 +2810,6 @@ enum L10n { // swiftlint:disable:this type_body_length
         bundle: bundle
     ) }
     static var createNewDatabricksProfile: String { String(localized: "Create New Profile", bundle: bundle) }
-    static var signInWithDatabricks: String { String(localized: "Sign in with Databricks", bundle: bundle) }
     static var databricksWorkspaceID: String { String(localized: "Databricks Workspace ID", bundle: bundle) }
     static var workspaceIDUnavailableFromProfile: String { String(
         localized: "Workspace ID unavailable from profile",
