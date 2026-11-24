@@ -25,6 +25,39 @@ import Foundation
             #expect(signIn.disconnectCount == 1)
         }
 
+        @Test
+        func routedDirectSignOutReconcilesTheCurrentCredential() async throws {
+            let configuration = URLSessionConfiguration.ephemeral
+            configuration.protocolClasses = [DriveBackupURLProtocol.self]
+            let transport = URLSession(configuration: configuration)
+            defer { transport.invalidateAndCancel() }
+            let direct = BackupReadSignIn()
+            let memory = DatabricksTestStorage()
+            let suite = "DriveSignOut-\(UUID())"
+            let defaults = try #require(UserDefaults(suiteName: suite))
+            defer { defaults.removePersistentDomain(forName: suite) }
+            defaults.set("google", forKey: GoogleCalendarProvider.userDefaultsKey)
+            let provider = DatabricksProxyGoogleSignInProvider(
+                sessionKind: .drive, direct: direct,
+                oauth: DatabricksOAuthService(storage: memory.storage) { _ in throw CancellationError() },
+                storage: memory.storage, userDefaults: defaults,
+                connectionChangeNotification: Notification.Name("DriveConnection-\(UUID())")
+            )
+            let model = GoogleDriveBackupModel(
+                signIn: provider, client: GoogleDriveBackupClient(urlSession: transport),
+                routeChangeNotification: Notification.Name("DriveRoute-\(UUID())")
+            )
+            await model.refresh()
+            #expect(model.isAuthorized)
+            #expect(model.files.count == 2)
+            direct.hasPreviousSignIn = false
+            NotificationCenter.default.post(name: direct.sessionDidChangeNotification, object: GoogleAuthSessionChangeReason.disconnected)
+            #expect(await pollUntil { !model.hasConnection && !model.isBusy })
+            #expect(!model.isAuthorized)
+            #expect(model.account == nil)
+            #expect(model.files.isEmpty)
+        }
+
         @Test(arguments: [false, true])
         func externalSessionAndRouteChangesRejectAnOlderRestore(routeChanges: Bool) async {
             let configuration = URLSessionConfiguration.ephemeral

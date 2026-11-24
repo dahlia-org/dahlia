@@ -48,12 +48,10 @@ final class DatabricksProxyGoogleSignInProvider: GoogleSignInProviding {
         self.apiClient = apiClient
         self.driveClient = driveClient
         self.userDefaults = userDefaults
-        directObserver = GoogleAuthSessionObserver(notificationName: self.direct.sessionDidChangeNotification) { [weak self] disconnected in
+        directObserver = GoogleAuthSessionObserver(notificationName: self.direct.sessionDidChangeNotification) { [weak self] _ in
             guard let self, !isProxyActive else { return }
-            NotificationCenter.default.post(
-                name: sessionDidChangeNotification,
-                object: disconnected ? GoogleAuthSessionChangeReason.disconnected : nil
-            )
+            // A queued hint must reconcile the current route; direct sign-out cleanup has its own observer.
+            NotificationCenter.default.post(name: sessionDidChangeNotification, object: nil)
         }
         // Provider credentials are independent: a direct Google sign-out must not disconnect a selected proxy.
         connectionObserver = GoogleAuthSessionObserver(notificationName: connectionChangeNotification) { [weak self] _ in
