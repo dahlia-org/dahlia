@@ -210,6 +210,39 @@
             #expect(try store.run(id: queued.id)?.executionSequence == executionSequence)
         }
 
+        @Test(arguments: ["interrupted", "failed"], [false, true])
+        func terminalUnstartedRunsKeepTheirAcceptancePosition(terminal: String, queuedReplacement: Bool) throws {
+            let store = ChatThreadStore(dbQueue: try AppDatabaseManager(path: ":memory:").dbQueue)
+            let parent = thread(), target = thread()
+            try store.createThread(parent)
+            try store.createThread(target)
+            // More acceptances than starts must not put the two positions on incomparable counters.
+            for _ in 0 ..< 10 {
+                let neverStarted = try store.enqueueRun(run(target: target.id))
+                try store.interruptQueuedRun(neverStarted.id)
+            }
+            let old = try store.enqueueRun(run(target: target.id, requester: parent.id))
+            if terminal == "failed" {
+                _ = try #require(try store.failQueuedRun(old))
+            } else {
+                try store.interruptQueuedRun(old.id)
+            }
+            var replacement = run(target: target.id, requester: parent.id)
+            replacement.status = queuedReplacement ? "queued" : "running"
+            let accepted = try store.enqueueRun(replacement)
+            let started = try #require(try queuedReplacement ? store.claimQueuedRun(accepted) : accepted)
+            #expect(try #require(started.executionSequence) > #require(accepted.logicalSequence))
+            #expect(try store.latestRun(threadID: target.id)?.id == started.id)
+            try store.setRunStatus(started.id, status: "completed")
+            #expect(try store.latestRun(threadID: target.id)?.id == started.id)
+            #expect(try store.undeliveredRuns(requesterID: parent.id).map(\.id) == [old.id, started.id])
+            // The inverse case: a newer request that fails before starting still has a visible result.
+            let newest = try store.enqueueRun(run(target: target.id, requester: parent.id))
+            _ = try #require(try store.failQueuedRun(newest))
+            #expect(try store.latestRun(threadID: target.id)?.id == newest.id)
+            #expect(try store.undeliveredRuns(requesterID: parent.id).map(\.id) == [old.id, started.id, newest.id])
+        }
+
         @Test(arguments: ["thread", "requester", "nilRequester"], [false, true])
         func queuedTransitionsRejectPreparationForAnOldRoute(change: String, failing: Bool) throws {
             let store = try ChatThreadStore(dbQueue: AppDatabaseManager(path: ":memory:").dbQueue)

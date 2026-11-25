@@ -171,10 +171,11 @@ extension ChatThreadStore {
         }
     }
 
-    /// Started turns keep execution order; untouched work follows in acceptance order, then attempts.
+    /// Only untouched queued work is still ahead; terminal work keeps its acceptance or actual start position.
     static func runOrderSQL(descending: Bool = false) -> String {
         let direction = descending ? "DESC" : "ASC"
-        return "(executionSequence IS NULL) \(direction), executionSequence \(direction), logicalSequence \(direction), rowid \(direction)"
+        return "(status='queued' AND executionSequence IS NULL) \(direction), "
+            + "COALESCE(executionSequence, logicalSequence) \(direction), logicalSequence \(direction), rowid \(direction)"
     }
 
     func queuedRuns(accountID: String) throws -> [ChatRunRecord] {

@@ -104,6 +104,68 @@
             await fixture.service.releaseThreadLease(threadID: target.id, leaseID: lease)
         }
 
+        @Test(.timeLimit(.minutes(1)), arguments: ["interrupted", "failed"], [false, true])
+        func terminalUnstartedRunDoesNotHideReplacement(terminal: String, endAfterStart: Bool) async throws {
+            let fixture = try fixture()
+            defer { try? FileManager.default.removeItem(at: fixture.runtime.rootURL) }
+            let parent = try await fixture.service.startThread(model: nil, effort: "medium")
+            let child = try await fixture.service.startThread(model: nil, effort: "medium")
+            try fixture.store.setParent(child.id, parentID: parent.id, accountID: "local")
+            _ = try await fixture.service.beginTurn(
+                threadID: parent.id, inputs: [.text("Coordinate")], model: nil, effort: "medium", approvalMethod: .ask
+            )
+            let parentSession = try #require(await fixture.service.sessions[parent.id])
+            let oldID = UUID.v7()
+            let old = try fixture.store.enqueueRun(ChatRunRecord(
+                id: oldID, threadID: child.id, requestedByThreadID: parent.id, rootRunID: oldID,
+                status: "queued", input: "Old work", effort: "medium", approvalMethod: "ask", createdAt: .now
+            ))
+            func endOldRun() throws {
+                if terminal == "failed" {
+                    _ = try #require(try fixture.store.failQueuedRun(old))
+                } else {
+                    try fixture.store.interruptQueuedRun(old.id)
+                }
+            }
+            if !endAfterStart { try endOldRun() }
+            let handle = try await fixture.service.beginTurn(
+                threadID: child.id, inputs: [.text("Replacement")], model: nil, effort: "medium", approvalMethod: .ask
+            )
+            let transport = await fixture.transports.transport(at: 1)
+            if endAfterStart { try endOldRun() }
+            #expect(try fixture.store.run(id: old.id)?.executionSequence == nil)
+            #expect(try fixture.store.latestRun(threadID: child.id)?.id == handle.id)
+            let status = try await fixture.service.threadTool(
+                "task_status", payload: .object(["task_id": .string(child.id)]),
+                threadID: parent.id, processID: parentSession.processID
+            )
+            #expect(status.objectValue?["run_id"] == .string(handle.id.uuidString))
+            #expect(status.objectValue?["status"] == .string("running"))
+            #expect(try await fixture.service.relatedThreads(parentThreadID: parent.id).first?.status == "running")
+            // A previously received cancellation must not be mistaken for the replacement's completion.
+            try fixture.store.markRunsDelivered([old])
+            let wait = Task {
+                try await fixture.service.threadTool(
+                    "thread_wait", payload: .object(["thread_id": .string(child.id), "timeout_ms": .number(1000)]),
+                    threadID: parent.id, processID: parentSession.processID
+                )
+            }
+            #expect(await pollUntil { await fixture.service.waitingParents.contains(parent.id) })
+            await transport.emit(TestPiTransport.assistantEnd("Replacement result"))
+            await transport.emit(TestPiTransport.settled())
+            let waited = try await wait.value
+            #expect(waited.objectValue?["run"]?.objectValue?["run_id"] == .string(handle.id.uuidString))
+            #expect(waited.objectValue?["run"]?.objectValue?["status"] == .string("completed"))
+            #expect(try fixture.store.latestRun(threadID: child.id)?.id == handle.id)
+            let completed = try await fixture.service.threadTool(
+                "task_status", payload: .object(["task_id": .string(child.id)]),
+                threadID: parent.id, processID: parentSession.processID
+            )
+            #expect(completed.objectValue?["summary"] == .string("Replacement result"))
+            #expect(try await fixture.service.relatedThreads(parentThreadID: parent.id).first?.status == "completed")
+            await fixture.service.stopAccountRuns(except: "other")
+        }
+
         @Test(.timeLimit(.minutes(1)), arguments: [false, true])
         func taskStatusAcknowledgesOnlyTheReturnedResultOwnedByItsCaller(foreignLatest: Bool) async throws {
             let fixture = try fixture()
