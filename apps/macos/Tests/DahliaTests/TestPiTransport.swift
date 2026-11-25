@@ -180,11 +180,12 @@ struct TestPiRuntime {
             ].map { ($0, true) })
         },
         gatewayWorkspaces: @escaping @Sendable () -> [AgentMCPProvider] = { [] },
+        contextStore: PiRuntimeContextStore? = nil,
         transport: @escaping @Sendable (PiRuntimeService.LaunchOptions) -> TestPiTransport
     ) {
         let rootURL = FileManager.default.temporaryDirectory
             .appending(path: "dahlia-pi-test-\(UUID().uuidString)", directoryHint: .isDirectory)
-        let contextStore = PiRuntimeContextStore()
+        let contextStore = contextStore ?? PiRuntimeContextStore()
         contextStore.apply(providers:
             (ProviderAccountDirectory.connections ?? []).map { .databricks(connectionID: $0.id) }
                 + (ProviderAccountDirectory.dahliaConnections?.first.map { [.dahlia(connectionID: $0)] } ?? []))

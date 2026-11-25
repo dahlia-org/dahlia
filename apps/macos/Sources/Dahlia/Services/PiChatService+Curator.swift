@@ -104,7 +104,7 @@ extension PiChatService {
         if let connection { await runtime.close(connection) }
         run.finishedAt = .now
         let finished = run
-        try? await history().dbQueue.write { try finished.save($0) }
+        try? await history().dbQueue.write { try finished.update($0) }
         await learningSkills?.finishReview(id)
     }
 

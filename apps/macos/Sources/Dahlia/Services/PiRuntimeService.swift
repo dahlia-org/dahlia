@@ -103,6 +103,7 @@ actor PiRuntimeService {
                 && (options.environment["DAHLIA_PI_MEMORY_ENABLED"] != "1" || AgentLearningSettings.memoryReviewEnabled(account))
             guard allowed, !AgentBackgroundActivity.isRecording else { throw CancellationError() }
         }
+        if [.intake, .router, .worker].contains(options.profile), AgentBackgroundActivity.isRecording { throw CancellationError() }
         try await contextStore.waitUntilActive()
         guard !isShuttingDown else { throw CancellationError() }
         let configuration = contextStore.configuration
@@ -138,7 +139,8 @@ actor PiRuntimeService {
                  "reviewTriage", "approvalCheck", "createBackup", "thread_list", "thread_search", "thread_read",
                  "thread_start", "thread_send", "thread_wait", "thread_interrupt", "thread_update",
                  "omni_list_agents", "omni_list_sessions", "omni_create_session", "omni_get_session",
-                 "optimizerInput", "optimizerResult", "skillUsage", "skillStore", "curatorReport":
+                 "optimizerInput", "optimizerResult", "skillUsage", "skillStore", "curatorReport", "eventRecord", "intakeSeen", "intakeReadFailed",
+                 "botTool":
                 guard let chatBridge else { return .null }
                 return try await chatBridge(method, payload)
             case "approval", "approvalMode", "reviewModel":
@@ -953,7 +955,7 @@ actor PiRuntimeService {
             )
             environment["DAHLIA_PI_SANDBOX_TMPDIR"] = PiSandbox.temporaryDirectory.path
             environment["TMPDIR"] = PiSandbox.piTemporaryDirectory.path
-            if options.profile == .interactive, !(environment["DAHLIA_PI_WEB_ACCESS"] ?? "").isEmpty {
+            if [.interactive, .worker].contains(options.profile), !(environment["DAHLIA_PI_WEB_ACCESS"] ?? "").isEmpty {
                 guard let node = CommandLineToolLocator.executableURL(named: "node", environment: environment) else {
                     throw PiRuntimeError.launchFailed(L10n.webAccessNodeRequired)
                 }

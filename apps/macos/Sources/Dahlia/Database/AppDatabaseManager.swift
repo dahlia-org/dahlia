@@ -286,6 +286,10 @@ final class AppDatabaseManager: Sendable {
             try ProviderAccountsMigration.migrate(in: db)
         }
 
+        migrator.registerMigration("v68_alwaysOnAgent") { db in
+            try AlwaysOnAgentMigration.migrate(in: db)
+        }
+
         return migrator
     }()
 

@@ -463,6 +463,7 @@
                 "v65_chatRunPresentation",
                 "v66_skillCurator",
                 "v67_providerAccounts",
+                "v68_alwaysOnAgent",
             ])
             try database.dbQueue.read { db throws in
                 #expect(try Row.fetchAll(db, sql: "PRAGMA foreign_key_check").isEmpty)
@@ -572,7 +573,8 @@
                 let connection = try #require(try DahliaAccountConnectionRecord.fetchOne(db, key: databricks.id))
                 #expect(connection.origin == databricks.origin && connection.kind == DahliaAccountConnectionRecord.databricksKind)
                 #expect(connection.email == "me@example.com" && connection.name == nil)
-                #expect(try UUID.fetchOne(db, sql: "SELECT databricksConnectionId FROM workspaces WHERE id = ?", arguments: [workspaceID]) == databricks.id)
+                #expect(try UUID
+                    .fetchOne(db, sql: "SELECT databricksConnectionId FROM workspaces WHERE id = ?", arguments: [workspaceID]) == databricks.id)
                 // Every foreign key names the renamed table, so the reference still holds and still clears on delete.
                 #expect(try String.fetchAll(db, sql: #"SELECT name FROM sqlite_master WHERE sql LIKE '%REFERENCES "accounts"%'"#).isEmpty)
                 #expect(try Row.fetchAll(db, sql: "PRAGMA foreign_key_check").isEmpty)

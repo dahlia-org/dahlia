@@ -19,6 +19,21 @@ actor PiChatService: CodexChatServicing {
     var activeCurator: (id: String, account: String, connection: PiRPCConnection, consolidating: Bool)?
     /// The transitions and candidates pi-hermes-skills reported for the active Curator run.
     var curatorReport: JSONValue?
+    /// The always-on agent reads one Source at a time; see `PiChatService+AlwaysOn`.
+    var intakeTask: Task<Void, Never>?
+    var activeIntake: ActiveIntake?
+    /// When each Source was last tried, so a failing one waits its interval instead of retrying every minute.
+    var intakeAttempts: [String: Date] = [:]
+    /// Consecutive runs of each Source whose listed items were not all recorded; see `runIntake`.
+    var intakeMismatches: [String: Int] = [:]
+    /// Dahlia Bot runs one Router at a time; Workers are runs of their Task's Thread. See `PiChatService+DahliaBot`.
+    var routerTask: Task<Void, Never>?
+    var activeRouter: ActiveBotRun?
+    /// What each Home thread was last told about the open tasks and inbox, so a turn repeats it only after a change.
+    var botHomeContextKeys: [String: String] = [:]
+    /// A failed or incomplete Router run waits before retrying its durable remainder.
+    var routerRetryAt: Date?
+    var workerRetryAt: [String: Date] = [:]
     /// Upstream measures Curator idleness from process start as well as from the latest chat activity.
     let launchedAt = Date()
     private var backupService: BackupService?
@@ -34,6 +49,7 @@ actor PiChatService: CodexChatServicing {
             try db.execute(sql: "UPDATE chat_schedule_fires SET status='interrupted' WHERE status='running'")
             try db.execute(sql: "UPDATE agent_reviews SET status='interrupted' WHERE status='running'")
             try db.execute(sql: "UPDATE agent_system_runs SET status='interrupted',finishedAt=? WHERE status='running'", arguments: [Date()])
+            try AgentInboxService.recover(in: db)
             try db
                 .execute(
                     sql: "DELETE FROM jobs_background WHERE indexKind='review' AND targetKey IN (SELECT id FROM agent_reviews WHERE status='interrupted')"
@@ -82,7 +98,14 @@ actor PiChatService: CodexChatServicing {
         }
         try? history().setRunStatus(runID, status: status)
         if let run = try? history().run(id: runID) {
-            if run.origin == "schedule" {
+            if run.origin == "task" {
+                settleWorkerRun(run, accountID: accountID, status: status)
+                let processID = sessions[threadID]?.processID
+                Task {
+                    guard self.sessions[threadID]?.processID == processID, self.sessions[threadID]?.turn == nil else { return }
+                    await self.closeSession(threadID)
+                }
+            } else if run.origin == "schedule" {
                 let outcome = try? scheduleService().settled(run, status: status)
                 if outcome == "delivered" { Task { await self.notifySchedule(run) } }
                 let processID = sessions[threadID]?.processID
@@ -218,6 +241,7 @@ actor PiChatService: CodexChatServicing {
         var memoryEnabled = true
         var allowedTools: Set<String> = []
         var mcpServers: Set<String> = []
+        var workerConnections: [String: String] = [:]
         var mcpServersNeedingSignIn: [String] = []
     }
 
@@ -241,11 +265,11 @@ actor PiChatService: CodexChatServicing {
     let runtime: PiRuntimeService
     private let workingDirectory: PiWorkingDirectory
     let agentLocator: PiAgentDirectoryLocator
-    private let mcpExecutableURL: URL?
+    let mcpExecutableURL: URL?
     private let reviewModel: @Sendable () -> String
     private let reviewTriageEnabled: @Sendable () -> Bool
     private let customInstructions: @Sendable () -> String
-    private let mcpSettings: @Sendable () -> AgentMCPSettings
+    let mcpSettings: @Sendable () -> AgentMCPSettings
     /// The Databricks workspace whose Omnigent chat may call, or nil while the account has it off.
     let omnigentConnection: @Sendable () -> UUID?
     private let fileAccessSettings: @Sendable () -> PiFileAccessSettings
@@ -361,7 +385,7 @@ actor PiChatService: CodexChatServicing {
                 model: record.model,
                 reasoningEffort: record.reasoningEffort,
                 approvalMethod: approvalMethod,
-                earlierMessagesCursor: page.earlierCursor, isReadOnly: record.scheduleID != nil,
+                earlierMessagesCursor: page.earlierCursor, isReadOnly: record.scheduleID != nil || Self.isTaskThread(record.id, in: store.dbQueue),
                 parentThread: parent,
                 lastItemSeq: page.lastItemSeq
             )
@@ -500,6 +524,7 @@ actor PiChatService: CodexChatServicing {
         guard record.scheduleID == nil || scheduledRuns[threadID]?.origin == "schedule" else {
             throw HermesLearning.failure(L10n.agentScheduleReadOnly)
         }
+        guard !isTaskThread(threadID) || scheduledRuns[threadID]?.origin == "task" else { throw HermesLearning.failure(L10n.agentBotTaskReadOnly) }
         var connection = try await connection(threadID: threadID)
         let session = try live(threadID, connection)
         guard session.turn == nil else { throw PiRuntimeError.rpcError(code: nil, message: "turn already active") }
@@ -552,6 +577,7 @@ actor PiChatService: CodexChatServicing {
             throw PiRuntimeError.rpcError(code: nil, message: "turn already active")
         }
 
+        try validateUnattendedStart(threadID: threadID, account: AppAccount.key)
         try validateScheduledStart(threadID: threadID, account: AppAccount.key)
         let (events, continuation) = AsyncThrowingStream<CodexChatTurnEvent, any Error>.makeStream(bufferingPolicy: .bufferingOldest(256))
         let runID = UUID.v7()
@@ -595,7 +621,9 @@ actor PiChatService: CodexChatServicing {
             sessions[threadID]?.turn?.broadcast.yield(.mcpSignInRequired(servers: servers))
         }
         do {
-            let accepted = try await connection.request("prompt", PiRuntimeService.prompt(Self.textJoined(inputs)))
+            // The secretary's Home thread hears the open tasks and inbox first, in Pi only; the history keeps the user's words.
+            let context = run.origin == "user" ? botHomeContext(threadID: threadID) : nil
+            let accepted = try await connection.request("prompt", PiRuntimeService.prompt(Self.textJoined((context.map { [$0] } ?? []) + inputs)))
             // Pi handled the text itself (for example a `/skill:` expansion error) and starts no run.
             if accepted.objectValue?["disposition"]?.stringValue == "handled", sessions[threadID]?.turn?.id == turn.id {
                 await connection.finishHandledPrompt(turnID: turn.wireID)
@@ -764,7 +792,7 @@ actor PiChatService: CodexChatServicing {
                 guard sessions[threadID]?.connection === session.connection else { return try await connection(threadID: threadID) }
                 if sessions[threadID]?
                     .turn != nil ||
-                    (session.providerGeneration == providerGeneration && session.profile != .scheduled && session
+                    (session.providerGeneration == providerGeneration && session.profile != .scheduled && session.profile != .worker && session
                         .fileAccess == fileAccessSettings() && session.profile
                         .rawValue == (scheduledRuns[threadID]?.profile ?? "interactive") && session.memoryEnabled == AgentLearningSettings
                         .memoryEnabled(AppAccount.key)) { return session.connection }
@@ -797,9 +825,10 @@ actor PiChatService: CodexChatServicing {
                 return try await self.open(threadID: threadID, sessionFile: url, sessionArguments: ["--session", url.path])
             }
             guard let thread = self.newThreads[threadID] else { throw PiRuntimeError.invalidProtocolResponse }
+            // A Thread with no model chosen (a Dahlia Bot Task's) starts on Pi's default model.
             let connection = try await self.open(threadID: threadID, sessionArguments: [
-                "--session-dir", thread.directory.path, "--session-id", threadID, "--model", thread.model,
-            ])
+                "--session-dir", thread.directory.path, "--session-id", threadID,
+            ] + (thread.model.isEmpty ? [] : ["--model", thread.model]))
             self.sessions[threadID]?.model = thread.model
             return connection
         }
@@ -846,21 +875,27 @@ actor PiChatService: CodexChatServicing {
         let mcp = mcpSettings()
         let mcpServers = mcp.piServers
         try PiProviderConfiguration.writeMCPServers(mcpServers, agentURL: agentLocator.agentURL())
-        let serverNames = ["dahlia"] + mcpServers.keys.sorted()
+        let profile = PiExecutionProfile(rawValue: scheduledRuns[threadID]?.profile ?? "interactive") ?? .interactive
+        // A Dahlia Bot Worker reads only its Task's servers; the secretary's Home thread is an ordinary chat with one more tool.
+        let workerServers = try profile == .worker ? inboxService().task(threadID: threadID, account: AppAccount.key).map {
+            Self.workerServerNames($0, settings: mcp, allowedWorkConnections: Set(AgentBotSettings.workServers(for: AppAccount.key)))
+        } ?? [] : nil
+        let isBotHome = profile == .interactive && AgentBotSettings.homeThread(for: AppAccount.key) == threadID
+        let serverNames = ["dahlia"] + (workerServers ?? mcpServers.keys.sorted())
         // `--no-extensions` also drops Pi's MCP extension; explicitly enable it and the tools chat may call.
         let isChild = (try? history().thread(id: threadID, accountID: AppAccount.key).parentThreadID) != nil
         let threadTools = Self.readThreadTools + (isChild ? [] : Self.manageThreadTools)
             + (omnigentConnection() == nil ? [] : Self.readOmnigentTools + (isChild ? [] : ["omni_create_session"]))
-        let profile = PiExecutionProfile(rawValue: scheduledRuns[threadID]?.profile ?? "interactive") ?? .interactive
-        let memoryEnabled = AgentLearningSettings.memoryEnabled(AppAccount.key)
-        let learningTools = ["skills_list", "skill_view"] +
+        let memoryEnabled = profile != .worker && AgentLearningSettings.memoryEnabled(AppAccount.key)
+        let learningTools = profile == .worker ? [] : ["skills_list", "skill_view"] +
             (profile == .interactive ? ["skill_manage", "cronjob", "skill_optimize"] + (memoryEnabled ? ["memory"] : []) : [])
         let agentURL = try agentLocator.agentURL()
         // A scheduled run only reads approved sources. Pi reads a missing web search setting as on, Dahlia as off.
         let webAccessURL = AgentWebAccessSettings.entryURL(agentURL: agentURL)
-        let webAccess = profile == .interactive && FileManager.default.fileExists(atPath: webAccessURL.path)
-            && (try? AgentWebAccessSettings.writeDefault(agentURL: agentURL)) != nil
+        let webAccess = (profile == .interactive || (profile == .worker && AgentBotSettings.webSearch(for: AppAccount.key)))
+            && FileManager.default.fileExists(atPath: webAccessURL.path) && (try? AgentWebAccessSettings.writeDefault(agentURL: agentURL)) != nil
         let tools = profile.fileTools + learningTools + (profile == .interactive ? ["dah_create_backup"] + threadTools : [])
+            + (profile == .worker ? PiExecutionProfile.workerTools : []) + (isBotHome ? PiExecutionProfile.homeTools : [])
             + (webAccess ? AgentWebAccessSettings.toolNames : []) + serverNames.map { "mcp__\($0)__*" }
         let allowedTools = try scheduledRuns[threadID].map {
             try scheduleService().allowedTools(runID: $0.id, account: AppAccount.key)
@@ -875,12 +910,15 @@ actor PiChatService: CodexChatServicing {
         if !instructions.isEmpty {
             arguments += ["--append-system-prompt", instructions]
         }
-        arguments += ["--append-system-prompt", HermesLearning.prompts["skills_guidance"] ?? ""]
+        arguments += Self.botPromptArguments(profile: profile, isHome: isBotHome)
+        if profile != .worker {
+            arguments += ["--append-system-prompt", HermesLearning.prompts["skills_guidance"] ?? ""]
+            for skill in PiBundle.presetSkillURLs() {
+                arguments += ["--skill", skill.path]
+            }
+        }
         let memoryPrompt = try memoryEnabled ? (HermesLearning.prompts["memory_guidance"] ?? "") + "\n\n" +
             memoryService().snapshot(account: AppAccount.key) : nil
-        for skill in PiBundle.presetSkillURLs() {
-            arguments += ["--skill", skill.path]
-        }
         let reviewArguments = Array(arguments.dropFirst(sessionArguments.count))
         if let memoryPrompt { arguments += ["--append-system-prompt", memoryPrompt] }
         // The index is an optimization: without the ranking it keeps Pi's order.
@@ -898,6 +936,7 @@ actor PiChatService: CodexChatServicing {
                     "DAHLIA_PI_MCP_SERVERS": String(decoding: JSONEncoder().encode(serverNames), as: UTF8.self),
                     // Dahlia starts this standalone MCP worker under its dedicated Seatbelt profile.
                     "DAHLIA_PI_WEB_ACCESS": webAccess ? webAccessURL.path : "",
+                    "DAHLIA_PI_BOT_HOME": isBotHome ? "1" : "",
                     // The skill index keeps descriptions of recently used skills first; fixed for the process.
                     "PI_SKILL_INDEX_RANK": skillRank.joined(separator: ","),
                 ],
@@ -912,6 +951,9 @@ actor PiChatService: CodexChatServicing {
                 if method == "skillUsage" {
                     await self.recordSkillUse(payload)
                     return .null
+                }
+                if method == "botTool" {
+                    return try await self.threadBotTool(payload, threadID: threadID, processID: processID)
                 }
                 // Recorded even after the turn stopped, so the run does not stay running.
                 if method == "optimizerResult" {
@@ -948,7 +990,10 @@ actor PiChatService: CodexChatServicing {
             ],
             profile: profile, memoryEnabled: memoryEnabled, allowedTools: Set(allowedTools),
             // `omnigent` names the approvals of `omni_create_session`.
-            mcpServers: Set(serverNames + (threadTools.contains("omni_create_session") ? ["omnigent"] : []))
+            mcpServers: Set(serverNames + (threadTools.contains("omni_create_session") ? ["omnigent"] : [])),
+            workerConnections: Dictionary(uniqueKeysWithValues: (workerServers ?? []).compactMap { name in
+                mcp.connectionID(for: name).map { (name, $0) }
+            })
         )
         Task { await self.pump(threadID: threadID, processID: processID, connection: connection) }
         if let name = pendingNames.removeValue(forKey: threadID) {

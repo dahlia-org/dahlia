@@ -115,7 +115,24 @@ def http_mcp(authorizations):
                     {"name": "send_message", "inputSchema": {"type": "object"}},
                 ]}
             elif method == "tools/call":
-                result = {"content": [{"type": "text", "text": "GATEWAY_OK"}]}
+                # Gmail lists messages as JSON text; a thread listing has no threadId and is not a list of items.
+                items = msg["params"].get("arguments", {}).get("probe_items")
+                args = msg["params"].get("arguments", {})
+                next_cursor = args.get("probe_next_cursor", "")
+                if args.get("probe_case") == "pagination":
+                    messages = [{"id": "m1", "threadId": "t1"}, {"id": "m2", "threadId": "t2"}]
+                    cursor = args.get("cursor", "")
+                    if args.get("query") == "other":
+                        items, next_cursor = [], ""
+                    elif args.get("max_results") == 1:
+                        items, next_cursor = {"": (messages[:1], "p2"), "p2": (messages[1:], "p3"), "p3": ([], "")}[cursor]
+                    else:
+                        items, next_cursor = messages, ""
+                text = json.dumps({"items": items, "nextCursor": next_cursor,
+                                   "has_more": bool(next_cursor)}) if items is not None else "GATEWAY_OK"
+                result = {"content": [{"type": "text", "text": text}]}
+                if msg["params"].get("arguments", {}).get("probe_error"):
+                    result = {"isError": True, "content": [{"type": "text", "text": "Source page failed"}]}
             body = json.dumps({"jsonrpc": "2.0", "id": msg["id"], "result": result}).encode()
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
@@ -1071,6 +1088,107 @@ def main():
                                          arguments=["--no-session", *CHAT_EXTENSIONS, "--tools", "read,mcp__gmail__*,mcp__foreign__*"])
     assert "not available" in results[0] and "GATEWAY_OK" not in results[0], results
 
+    # Intake reads its one source and records events; it cannot write to the source or read files, even under fullAccess.
+    record = {"items": [{"external_id": "m1", "topic_key": "t1", "url": "https://mail.example.com/m1"}]}
+    _, results, bridge, _ = run(
+        pi, "chat",
+        [{"tool": "mcp__gmail__search_messages"}, {"tool": "event_record", "args": record}, {"tool": "mcp__gmail__send_message"},
+         {"tool": "read", "args": {"path": "inside.txt"}}, {"text": "done"}],
+        ["--no-session", *CHAT_EXTENSIONS, "--tools", "event_record,read,mcp__gmail__*"],
+        {"DAHLIA_PI_MCP_SERVERS": json.dumps(["gmail"]), "DAHLIA_PI_PROFILE": "intake"}, mcp_servers=mcp_servers, auth=auth,
+        approval_mode="fullAccess", bridge_answers={"eventRecord": {"success": True}, "intakeSeen": True})
+    assert results[0] == "GATEWAY_OK" and ("eventRecord", record) in bridge, (results, bridge)
+    assert [call for call in bridge if call[0] == "intakeSeen"] == [("intakeSeen", {"ids": []})], bridge
+    assert "only read its source" in results[2] and "GATEWAY_OK" not in results[2], results
+    assert "only read its source" in results[3] and "INSIDE_MARKER" not in results[3], results
+    assert not any(method == "approval" for method, _ in bridge), bridge
+    # Dahlia Bot: the Router reaches only its tools even when an MCP server is loaded; a Worker reads and reports but never
+    # writes or touches files, even under fullAccess.
+    route = {"title": "t", "instructions": "i", "event_ids": ["e1"]}
+    _, results, bridge, _ = run(
+        pi, "chat", [{"tool": "mcp__gmail__search_messages"}, {"tool": "task_create", "args": route}, {"text": "done"}],
+        ["--no-session", *CHAT_EXTENSIONS, "--tools", "task_create,mcp__gmail__*"],
+        {"DAHLIA_PI_MCP_SERVERS": json.dumps(["gmail"]), "DAHLIA_PI_PROFILE": "router"}, mcp_servers=mcp_servers, auth=auth,
+        approval_mode="fullAccess", bridge_answers={"botTool": {"success": True}})
+    assert "only routes" in results[0] and "GATEWAY_OK" not in results[0], results
+    assert ("botTool", {"name": "task_create", "args": route}) in bridge, bridge
+    report = {"summary": "found it"}
+    _, results, bridge, _ = run(
+        pi, "chat",
+        [{"tool": "mcp__gmail__search_messages"}, {"tool": "mcp__gmail__send_message"}, {"tool": "read", "args": {"path": "inside.txt"}},
+         {"tool": "task_create", "args": route}, {"tool": "task_report", "args": report}, {"text": "done"}],
+        ["--no-session", *CHAT_EXTENSIONS, "--tools", "task_report,task_create,read,mcp__gmail__*"],
+        {"DAHLIA_PI_MCP_SERVERS": json.dumps(["gmail"]), "DAHLIA_PI_PROFILE": "worker"}, mcp_servers=mcp_servers, auth=auth,
+        approval_mode="fullAccess", bridge_answers={"botTool": {"success": True}})
+    assert results[0] == "GATEWAY_OK", results
+    assert "only reads" in results[1] and "GATEWAY_OK" not in results[1], results
+    assert "only read its task" in results[2] and "INSIDE_MARKER" not in results[2], results
+    # A Router tool is not even registered for a Worker; the bridge check below shows it never reached Dahlia.
+    assert [call for call in bridge if call[0] == "botTool"] == [("botTool", {"name": "task_report", "args": report})], bridge
+    assert not any(method == "approval" for method, _ in bridge), bridge
+
+    suggestion = {"title": "t", "instructions": "i", "event_ids": ["e2"]}
+    _, results, bridge, _ = run(
+        pi, "chat", [{"tool": "task_suggest", "args": suggestion}, {"text": "done"}], ["--no-session", "--tools", "task_suggest"],
+        {"DAHLIA_PI_PROFILE": "router"}, bridge_answers={"botTool": {"success": True}})
+    assert ("botTool", {"name": "task_suggest", "args": suggestion}) in bridge, bridge
+    # Only the secretary's Home thread files requests; another chat does not even have the tool.
+    request = {"request": "prepare the deck"}
+    for home, expected in (("1", [("botTool", {"name": "secretary_request", "args": request})]), ("", [])):
+        _, results, bridge, _ = run(
+            pi, "chat", [{"tool": "secretary_request", "args": request}, {"text": "done"}],
+            ["--no-session", "--tools", "secretary_request"], {"DAHLIA_PI_BOT_HOME": home}, bridge_answers={"botTool": {"success": True}})
+        assert [call for call in bridge if call[0] == "botTool"] == expected, (home, bridge)
+
+    # A listing of messages tells Dahlia which items intake read; thread listings and other profiles do not.
+    listing = {"probe_items": [{"id": "m1", "threadId": "t1"}, {"id": "m2", "threadId": "t1"}, {"id": "t9"}]}
+    def request_key(args):
+        request = dict(args)
+        if request.get("cursor") == "":
+            del request["cursor"]
+        return json.dumps(["mcp__gmail__search_messages", request], sort_keys=True, separators=(",", ":"))
+
+    listed = {"ids": ["m1", "m2"], "pages": [{"requestKey": request_key(listing), "nextRequestKey": "", "root": True, "hasMore": False}]}
+    for profile, expected in (("intake", [("intakeSeen", listed)]), ("interactive", [])):
+        _, results, bridge, _ = run(
+            pi, "chat", [{"tool": "mcp__gmail__search_messages", "args": listing}, {"text": "done"}],
+            ["--no-session", *CHAT_EXTENSIONS, "--tools", "event_record,mcp__gmail__*"],
+            {"DAHLIA_PI_MCP_SERVERS": json.dumps(["gmail"]), "DAHLIA_PI_PROFILE": profile}, mcp_servers=mcp_servers, auth=auth,
+            bridge_answers={"intakeSeen": True})
+        assert [call for call in bridge if call[0] == "intakeSeen"] == expected, (profile, bridge)
+
+    # An MCP error followed by a normal assistant ending must still reach the native cursor gate. A later success
+    # does not erase the earlier failure: the native run retries the whole range.
+    _, results, bridge, _ = run(
+        pi, "chat", [{"tool": "mcp__gmail__search_messages", "args": {"probe_error": True}},
+                     {"tool": "mcp__gmail__search_messages", "args": listing}, {"text": "Could not read another page"}],
+        ["--no-session", *CHAT_EXTENSIONS, "--tools", "event_record,mcp__gmail__*"],
+        {"DAHLIA_PI_MCP_SERVERS": json.dumps(["gmail"]), "DAHLIA_PI_PROFILE": "intake"}, mcp_servers=mcp_servers, auth=auth,
+        bridge_answers={"intakeReadFailed": True, "intakeSeen": True})
+    assert [call for call in bridge if call[0] in ("intakeReadFailed", "intakeSeen")] == [
+        ("intakeReadFailed", {}), ("intakeSeen", listed)], bridge
+
+    # The same query at different page sizes creates independent exact-request paths. Response controls stay
+    # server-side, so a response's items/cursor cannot contaminate the identity of the request that produced it.
+    small = {"query": "after:2026/11/20", "max_results": 1, "probe_case": "pagination", "filter": {"b": 2, "a": 1}}
+    page_args = [small, {"query": "other", "probe_case": "pagination"},
+                 {"filter": {"a": 1, "b": 2}, "cursor": "p2", "probe_case": "pagination", "max_results": 1, "query": small["query"]},
+                 dict(small, max_results=100), dict(small, cursor="p3"),
+                 dict(small, max_results=100, filter={"a": 9, "b": 2})]
+    _, _, bridge, _ = run(
+        pi, "chat", [{"tool": "mcp__gmail__search_messages", "args": args} for args in page_args] + [{"text": "done"}],
+        ["--no-session", *CHAT_EXTENSIONS, "--tools", "event_record,mcp__gmail__*"],
+        {"DAHLIA_PI_MCP_SERVERS": json.dumps(["gmail"]), "DAHLIA_PI_PROFILE": "intake"}, mcp_servers=mcp_servers, auth=auth,
+        bridge_answers={"intakeSeen": True})
+    pages = [payload["pages"][0] for method, payload in bridge if method == "intakeSeen"]
+    expected_next = ["p2", "", "p3", "", "", ""]
+    assert pages == [{"requestKey": request_key(args),
+                      "nextRequestKey": request_key(dict(args, cursor=next_cursor)) if next_cursor else "",
+                      "root": not args.get("cursor"), "hasMore": bool(next_cursor)}
+                     for args, next_cursor in zip(page_args, expected_next)], pages
+    assert pages[0]["nextRequestKey"] == pages[2]["requestKey"], pages  # cursor and recursive key ordering only
+    assert len({pages[index]["requestKey"] for index in [0, 3, 5]}) == 3, pages  # every shaping argument retained
+
     # An expired token is refreshed once with the stored refresh token, which Databricks may keep.
     authorizations.clear()
     expired = {provider: dict(credential, expires=1)}
@@ -1080,7 +1198,7 @@ def main():
     server.shutdown()
     foreign_server.shutdown()
     workspace.shutdown()
-    print("Pi extension tests passed (token bridge, strict schema on OpenAI/Claude/Gemini, sandboxed chat and bash/sqlite3, MCP approval, model APIs, MCP sign-in, gateway models, and gateway MCP)")
+    print("Pi extension tests passed (token bridge, strict schema on OpenAI/Claude/Gemini, sandboxed chat and bash/sqlite3, MCP approval, model APIs, MCP sign-in, gateway models, gateway MCP, always-on intake, and the Dahlia Bot Router and Worker)")
 
 
 if __name__ == "__main__":

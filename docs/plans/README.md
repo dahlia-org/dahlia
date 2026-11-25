@@ -11,6 +11,8 @@
 | [ドキュメント管理方針の見直し](2026-11-20-documentation-management.md) | 試行と一括移行を実施。ユーザーのレビュー待ち |
 | [macOS アプリの応答性：構成の作り直し](2026-11-20-macos-responsiveness-rearchitecture.md) | 実装と自動検証は完了。ライブ字幕とライブ文字起こしの実機計測（録音が必要）が残る |
 | [単一アカウントへの移行とプロバイダーアカウント](2026-11-23-single-account-provider-accounts.md) | 段階 1〜4 を実装済み。実アプリでの確認、残りの片付け（計画の「段階 4 の進捗」）、旧ディレクトリと旧設定キーの削除（1 リリース後）が残る |
+| [Always-on エージェント](2026-11-19-always-on-agent.md) | 段階0〜2を実装・自動検証済み。[仕様](../spec/desktop/always-on-agent.md)はユーザー承認済み。実アプリでの設定画面の確認が残る。段階3以降は Dahlia Bot の計画に移した |
+| [Dahlia Bot（AI 秘書）](2026-11-23-dahlia-bot-secretary.md) | 3A-0、3A-2、3A-5（Router、案件ごとのスレッドで動く Worker、インボックス、手引き、秘書のスレッド）を実装・自動検証済み。実モデルでの Router と Worker の動作も確認済み。実アプリでの画面の確認が残る。3A-1、3A-3、3A-4、3B は未着手 |
 
 ## 計画の扱い
 
