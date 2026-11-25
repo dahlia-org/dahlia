@@ -317,8 +317,8 @@ extension PiChatService {
         let store = try history()
         guard let run = try store.latestRun(threadID: childID) else { throw PiRuntimeError.invalidProtocolResponse }
         let working = ["queued", "running", "waitingForUser"].contains(run.status)
-        if !working {
-            try store.markRunsDelivered(store.undeliveredRuns(requesterID: requesterID).filter { $0.threadID == childID })
+        if !working, run.requestedByThreadID == requesterID {
+            try store.markRunsDelivered([run])
         }
         return .object([
             "task_id": .string(childID),
@@ -377,12 +377,18 @@ extension PiChatService {
                 guard mode == "auto", sessions[targetID]?.turn?.id != turn.id else { throw error }
             }
         }
-        let run = try queueAgentRun(targetID: targetID, caller: caller, turn: callerTurn, input: input, requestID: requestID, arguments: args)
+        let isTaskSender = isSuperAgentThread(caller.id)
+        let run = try queueAgentRun(
+            targetID: targetID, caller: caller, turn: callerTurn, input: input, requestID: requestID, arguments: args
+        ) { db in
+            if isTaskSender {
+                try AgentInboxService.continueTask(threadID: targetID, eventIDs: eventIDs, account: caller.accountID, in: db)
+            }
+        }
         // A retry returns its earlier run; the same key for another thread would silently drop this input.
         guard run.threadID == targetID else {
             throw PiRuntimeError.rpcError(code: nil, message: "client_request_id was already used for another thread in this request")
         }
-        try continueTask(targetID, eventIDs: eventIDs, caller: caller)
         Task { await self.scheduleRuns(accountID: caller.accountID) }
         return runJSON(run, delivery: "queued")
     }
@@ -518,15 +524,18 @@ extension PiChatService {
                   sessions[caller.id]?.turn?.stopRequested == false else { throw CancellationError() }
             let (message, eventIDs) = try args["message"]?.stringValue?.nilIfBlank.map { try messageWithEvents($0, arguments: args) } ?? (nil, [])
             try store.updateThread(id: thread.id, title: String(title.prefix(256)))
+            let handoff: @Sendable (Database) throws -> Void = { db in
+                if isTask {
+                    try AgentInboxService.openTask(
+                        threadID: thread.id, title: title, instructions: args["message"]?.stringValue ?? "",
+                        eventIDs: eventIDs, account: caller.accountID, in: db
+                    )
+                }
+            }
             let run = try message.map {
                 try queueAgentRun(
                     targetID: thread.id, caller: caller, turn: callerTurn, input: $0, requestID: requestID, arguments: args,
-                    context: context, notifiesCaller: isTask
-                )
-            }
-            if isTask {
-                try inboxService().openTask(
-                    threadID: thread.id, title: title, instructions: args["message"]?.stringValue ?? "", eventIDs: eventIDs, account: caller.accountID
+                    context: context, notifiesCaller: isTask, updating: handoff
                 )
             }
             guard let run else {
@@ -534,7 +543,8 @@ extension PiChatService {
                     threadID: thread.id,
                     requesterID: caller.id,
                     rootRunID: callerTurn.run.rootRunID,
-                    clientRequestID: requestID
+                    clientRequestID: requestID,
+                    updating: handoff
                 )
                 return idleLaunchJSON(thread.id, isTask: isTask)
             }
@@ -605,7 +615,8 @@ extension PiChatService {
         requestID: String,
         arguments: [String: JSONValue],
         context: CodexChatContext? = nil,
-        notifiesCaller: Bool = true
+        notifiesCaller: Bool = true,
+        updating: @Sendable (Database) throws -> Void = { _ in }
     ) throws -> ChatRunRecord {
         guard sessions[caller.id]?.turn?.id == turn.id,
               sessions[caller.id]?.turn?.stopRequested == false else { throw CancellationError() }
@@ -633,7 +644,7 @@ extension PiChatService {
         run.suppressAutomaticNotification = !notifiesCaller
         // Super Agent's delegated tasks are its own work, recorded as its, so they stay out of learning too.
         run.profile = launchProfile(targetID).rawValue
-        let queued = try history().enqueueRun(run)
+        let queued = try history().enqueueRun(run, updating: updating)
         publishStates()
         return queued
     }

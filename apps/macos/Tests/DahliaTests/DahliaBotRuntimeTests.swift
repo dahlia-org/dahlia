@@ -219,6 +219,61 @@
                 #expect(try await botRuns(fixture).count == 1)
             }
 
+            @Test(arguments: ["launch", "send", "idle"])
+            func failedHandoffsRollBackWorkTaskAndEventsBeforeRetry(mode: String) async throws {
+                let db = try AppDatabaseManager(path: ":memory:").dbQueue
+                let fixture = fixture(db: db, provider: AppAccount.key, calls: [:], ending: [])
+                defer { cleanUp(fixture) }
+                let store = ChatThreadStore(dbQueue: db)
+                let bot = try await fixture.service.botThread()
+                let handle = try await fixture.service.beginTurn(
+                    threadID: bot, inputs: [.text("Coordinate")], model: nil, effort: "medium", approvalMethod: .ask
+                )
+                let session = try #require(await fixture.service.sessions[bot])
+                let event = UUID.v7().uuidString
+                try seedEvent(event, in: db)
+                let target = UUID.v7().uuidString
+                if mode == "send" {
+                    try store.createThread(ChatThreadRecord(id: target, accountID: AppAccount.key, title: "Existing", createdAt: .now, updatedAt: .now))
+                    try fixture.inbox.openTask(threadID: target, title: "Existing", instructions: "Work", eventIDs: [], account: AppAccount.key)
+                    try fixture.inbox.finishTask(threadID: target, status: "done", account: AppAccount.key)
+                }
+                var args: [String: JSONValue] = [
+                    "title": .string("Handoff"), "thread_id": .string(target), "client_request_id": .string("retry"), "mode": .string("queue"),
+                ]
+                if mode != "idle" {
+                    args["message"] = .string("Read this")
+                    args["event_ids"] = .array([.string(event)])
+                }
+                let method = mode == "send" ? "thread_send" : "thread_launch"
+                try await db.write {
+                    try $0.execute(sql: mode == "idle" ? """
+                    CREATE TRIGGER reject_handoff BEFORE INSERT ON chat_thread_launches
+                    BEGIN SELECT RAISE(ABORT, 'injected handoff failure'); END
+                    """ : """
+                    CREATE TRIGGER reject_handoff BEFORE UPDATE ON agent_event_inbox WHEN NEW.status='processed'
+                    BEGIN SELECT RAISE(ABORT, 'injected handoff failure'); END
+                    """)
+                }
+                await #expect(throws: (any Error).self) {
+                    _ = try await fixture.service.threadTool(method, payload: .object(args), threadID: bot, processID: session.processID)
+                }
+                #expect(try store.requestedRun(requesterID: bot, rootRunID: handle.id, clientRequestID: "retry") == nil)
+                #expect(try store.idleLaunch(requesterID: bot, rootRunID: handle.id, clientRequestID: "retry") == nil)
+                #expect(try tasks(fixture).count == (mode == "send" ? 1 : 0))
+                if mode == "send" { #expect(try tasks(fixture).first?.status == "done") }
+                #expect(try await db.read { try AgentEventRecord.fetchOne($0, key: event)?.status } == "unassigned")
+                try await db.write { try $0.execute(sql: "DROP TRIGGER reject_handoff") }
+                let result = try await fixture.service.threadTool(method, payload: .object(args), threadID: bot, processID: session.processID)
+                let replay = try await fixture.service.threadTool(method, payload: .object(args), threadID: bot, processID: session.processID)
+                #expect(result.objectValue?["thread_id"] == replay.objectValue?["thread_id"])
+                #expect(result.objectValue?["run_id"] == replay.objectValue?["run_id"])
+                #expect(try tasks(fixture).count == 1)
+                #expect(try tasks(fixture).first?.status == "active")
+                #expect(try await db.read { try AgentEventRecord.fetchOne($0, key: event)?.status } == (mode == "idle" ? "unassigned" : "processed"))
+                await fixture.service.stopAccountRuns(except: "other")
+            }
+
             @Test func anIdleLaunchRetryCreatesOnlyOneTask() async throws {
                 let db = try AppDatabaseManager(path: ":memory:").dbQueue
                 let replies = CommandLog()

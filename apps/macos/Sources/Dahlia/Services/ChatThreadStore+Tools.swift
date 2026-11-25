@@ -28,9 +28,12 @@ extension ChatThreadStore {
         """, arguments: [requesterID, rootRunID, clientRequestID])
     }
 
-    func recordIdleLaunch(threadID: String, requesterID: String, rootRunID: UUID, clientRequestID: String) throws {
-        try dbQueue.write {
-            try ChatThreadLaunchRecord(requesterID: requesterID, rootRunID: rootRunID, requestID: clientRequestID, threadID: threadID).insert($0)
+    func recordIdleLaunch(
+        threadID: String, requesterID: String, rootRunID: UUID, clientRequestID: String, updating: @Sendable (Database) throws -> Void = { _ in }
+    ) throws {
+        try dbQueue.write { db in
+            try ChatThreadLaunchRecord(requesterID: requesterID, rootRunID: rootRunID, requestID: clientRequestID, threadID: threadID).insert(db)
+            try updating(db)
         }
     }
 

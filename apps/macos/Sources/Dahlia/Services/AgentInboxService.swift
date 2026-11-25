@@ -244,29 +244,38 @@ struct AgentInboxService: Sendable {
     @discardableResult
     func openTask(threadID: String, title: String, instructions: String, eventIDs: [String], account: String, now: Date = .now) throws
         -> AgentTaskRecord {
-        try dbQueue.write { db in
-            let task = AgentTaskRecord(
-                id: UUID.v7().uuidString, accountID: account, title: String(title.prefix(Self.titleLimit)),
-                instructions: String(instructions.prefix(Self.bodyLimit)), threadID: threadID, status: "active", createdAt: now, updatedAt: now
-            )
-            try task.insert(db)
-            try Self.process(eventIDs, taskID: task.id, account: account, in: db)
-            return task
+        try dbQueue.write {
+            try Self.openTask(threadID: threadID, title: title, instructions: instructions, eventIDs: eventIDs, account: account, now: now, in: $0)
         }
+    }
+
+    @discardableResult
+    static func openTask(
+        threadID: String, title: String, instructions: String, eventIDs: [String], account: String, now: Date = .now, in db: Database
+    ) throws -> AgentTaskRecord {
+        let task = AgentTaskRecord(
+            id: UUID.v7().uuidString, accountID: account, title: String(title.prefix(Self.titleLimit)),
+            instructions: String(instructions.prefix(Self.bodyLimit)), threadID: threadID, status: "active", createdAt: now, updatedAt: now
+        )
+        try task.insert(db)
+        try Self.process(eventIDs, taskID: task.id, account: account, in: db)
+        return task
     }
 
     /// Super Agent sent more to a Task's thread: the events go to it, and a finished Task is in progress again.
     func continueTask(threadID: String, eventIDs: [String], account: String, now: Date = .now) throws {
-        try dbQueue.write { db in
-            guard let task = try AgentTaskRecord.fetchOne(db, sql: "SELECT * FROM agent_tasks WHERE threadID=? AND accountID=?", arguments: [
-                threadID, account,
-            ]) else {
-                try Self.process(eventIDs, taskID: nil, account: account, in: db)
-                return
-            }
-            try db.execute(sql: "UPDATE agent_tasks SET status='active', updatedAt=? WHERE id=?", arguments: [now, task.id])
-            try Self.process(eventIDs, taskID: task.id, account: account, in: db)
+        try dbQueue.write { try Self.continueTask(threadID: threadID, eventIDs: eventIDs, account: account, now: now, in: $0) }
+    }
+
+    static func continueTask(threadID: String, eventIDs: [String], account: String, now: Date = .now, in db: Database) throws {
+        guard let task = try AgentTaskRecord.fetchOne(db, sql: "SELECT * FROM agent_tasks WHERE threadID=? AND accountID=?", arguments: [
+            threadID, account,
+        ]) else {
+            try process(eventIDs, taskID: nil, account: account, in: db)
+            return
         }
+        try db.execute(sql: "UPDATE agent_tasks SET status='active', updatedAt=? WHERE id=?", arguments: [now, task.id])
+        try Self.process(eventIDs, taskID: task.id, account: account, in: db)
     }
 
     /// Ends a Task, done or dismissed. Its thread stays as it is.

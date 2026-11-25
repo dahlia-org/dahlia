@@ -23,7 +23,8 @@ extension ChatThreadStore {
         }
     }
 
-    func enqueueRun(_ run: ChatRunRecord, budget: Int = 12) throws -> ChatRunRecord {
+    /// Additional local handoff state commits with the run and retry key, and never repeats on a duplicate.
+    func enqueueRun(_ run: ChatRunRecord, budget: Int = 12, updating: @Sendable (Database) throws -> Void = { _ in }) throws -> ChatRunRecord {
         var run = run
         if run.rootRunID != run.id { run.origin = "thread" }
         return try dbQueue.write { db in
@@ -46,6 +47,7 @@ extension ChatThreadStore {
                 guard count < budget else { throw PiRuntimeError.rpcError(code: nil, message: "Thread run budget exhausted") }
             }
             try run.insert(db)
+            try updating(db)
             return run
         }
     }
@@ -170,7 +172,8 @@ extension ChatThreadStore {
         try dbQueue.read { db in
             try ChatRunRecord.fetchAll(db, sql: """
             SELECT r.* FROM chat_runs r JOIN chat_threads t ON t.id = r.threadID
-            WHERE t.accountID = ? AND r.status = 'queued' ORDER BY r.createdAt, r.id LIMIT 100
+            WHERE t.accountID = ? AND r.status = 'queued'
+            ORDER BY CASE r.origin WHEN 'restart' THEN 0 ELSE 1 END, r.createdAt, r.id LIMIT 100
             """, arguments: [accountID])
         }
     }
