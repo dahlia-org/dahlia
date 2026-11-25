@@ -25,7 +25,10 @@ import Foundation
             }
             try Data(#"{"allowBrowserCookies":true}"#.utf8).write(to: agent.appending(path: "web-search.json"))
             try Data("synthetic-pi-secret".utf8).write(to: agent.appending(path: "auth.json"))
-            try FileManager.default.createSymbolicLink(at: clone.appending(path: "README.md"), withDestinationURL: host.appending(path: "outside-sentinel"))
+            try FileManager.default.createSymbolicLink(
+                at: clone.appending(path: "README.md"),
+                withDestinationURL: host.appending(path: "outside-sentinel")
+            )
             try Data("public-readme".utf8).write(to: clone.appending(path: "README.txt"))
 
             func run(_ arguments: [String]) throws -> Int32 {
@@ -167,6 +170,7 @@ import Foundation
             support: URL? = nil,
             pi: URL = URL(fileURLWithPath: "/bin/sh"),
             fileAccess: PiFileAccessSettings = .init(),
+            profile: PiExecutionProfile = .interactive,
             environment: [String: String] = [:],
             home: String = NSHomeDirectory()
         ) throws -> Int32 {
@@ -177,10 +181,13 @@ import Foundation
                     piExecutableURL: pi,
                     applicationSupportURL: $0,
                     fileAccess: fileAccess,
+                    profile: profile,
                     environment: environment,
                     home: home
                 )
-            } ?? PiSandbox.command(cwd: cwd, agentURL: agent, piExecutableURL: pi, fileAccess: fileAccess, environment: environment, home: home)
+            } ?? PiSandbox.command(
+                cwd: cwd, agentURL: agent, piExecutableURL: pi, fileAccess: fileAccess, profile: profile, environment: environment, home: home
+            )
             let command = sandbox + ["/bin/sh", "-c", script]
             let process = Process()
             process.executableURL = URL(fileURLWithPath: command[0])
@@ -191,6 +198,31 @@ import Foundation
             try process.run()
             process.waitUntilExit()
             return process.terminationStatus
+        }
+
+        /// Super Agent writes only its home, never the files that steer it; ordinary chat cannot reach its home at all.
+        @Test
+        func superAgentWritesOnlyItsHome() throws {
+            let root = FileManager.default.temporaryDirectory.appending(path: "PiSandboxTests-\(UUID())")
+            defer { try? FileManager.default.removeItem(at: root) }
+            let agent = root.appending(path: "agent"), bot = root.appending(path: "bots/dahlia-bot")
+            let work = root.appending(path: "work")
+            for folder in [agent, bot, work] {
+                try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            }
+            try DahliaBotHome.ensure(bot, instructions: "rules", defaults: #require(UserDefaults(suiteName: "PiSandboxTests.\(UUID())")))
+            try Data("material".utf8).write(to: work.appending(path: "material.txt"))
+            func quoted(_ url: URL) -> String { "'\(url.path)'" }
+
+            #expect(try run("echo x > \(quoted(bot.appending(path: "notes.md")))", cwd: bot, agent: agent, profile: .bot) == 0)
+            #expect(try run("cat \(quoted(bot.appending(path: "SOUL.md")))", cwd: bot, agent: agent, profile: .bot) == 0)
+            for name in DahliaBotHome.protectedFiles {
+                #expect(try run("echo x > \(quoted(bot.appending(path: name)))", cwd: bot, agent: agent, profile: .bot) != 0)
+            }
+            #expect(try run("echo x > \(quoted(work.appending(path: "out.txt")))", cwd: bot, agent: agent, profile: .bot) != 0)
+
+            #expect(try run("cat \(quoted(bot.appending(path: "SOUL.md")))", cwd: work, agent: agent) != 0)
+            #expect(try run("echo x > \(quoted(bot.appending(path: "notes.md")))", cwd: work, agent: agent) != 0)
         }
 
         @Test

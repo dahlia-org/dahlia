@@ -83,7 +83,8 @@ struct CodexChatRelatedThreadRow: View {
 
     private var statusColor: Color? {
         switch thread.status {
-        case "queued", "running", "waitingForUser": .blue
+        case "queued", "running": .blue
+        case "waitingForUser": .orange
         case "completed": .green
         case "failed": .red
         case "interrupted": .orange
@@ -100,10 +101,13 @@ struct CodexChatRelatedThreadRow: View {
                         Text(completedAt, format: .dateTime.hour().minute())
                     }
                 }
+            } else if thread.status == "waitingForUser" {
+                // As in the sidebar: the thread needs the user, so the card says so instead of counting time.
+                Text(L10n.chatThreadWaitingShort).foregroundStyle(.orange)
             } else if let startedAt = thread.startedAt {
                 if let completedAt = thread.completedAt {
                     Text(elapsed(from: startedAt, to: completedAt))
-                } else if ["queued", "running", "waitingForUser"].contains(thread.status) {
+                } else if ["queued", "running"].contains(thread.status) {
                     TimelineView(.periodic(from: startedAt, by: 1)) { context in
                         Text(elapsed(from: startedAt, to: context.date))
                     }

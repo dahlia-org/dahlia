@@ -143,7 +143,8 @@ extension PiChatService {
     }
 
     func learningCount(thread: String, column: String) throws {
-        guard ["memoryTurns", "skillIterations"].contains(column) else { return }
+        // Dahlia Bot's threads read mail and other external text, so they never feed memory or skill reviews.
+        guard ["memoryTurns", "skillIterations"].contains(column), !isBotThread(thread) else { return }
         try history().dbQueue.write {
             try $0.execute(sql: "UPDATE chat_threads SET \(column)=\(column)+1 WHERE id=?", arguments: [thread])
         }
@@ -168,7 +169,7 @@ extension PiChatService {
     }
 
     func enqueueReview(_ run: ChatRunRecord, account: String) throws {
-        guard AgentLearningSettings.reviewEnabled(account), run.origin == "user" else { return }
+        guard AgentLearningSettings.reviewEnabled(account), run.origin == "user", !isBotThread(run.threadID) else { return }
         let store = try history()
         let thread = try store.thread(id: run.threadID, accountID: account)
         let memory = AgentLearningSettings.memoryReviewEnabled(account) && thread.memoryTurns >= AgentLearningSettings.memoryInterval(account)
@@ -273,6 +274,8 @@ extension PiChatService {
             guard !AgentBackgroundActivity.isRecording else { return }
             try scheduleService().tick(account: account)
             await scheduleRuns(accountID: account)
+            // Results a restart left undelivered, which no settling run would send on.
+            await deliverResults(accountID: account)
             // Reviews and the Curator's consolidation share one background lane.
             guard reviewTask == nil, curatorTask == nil, AgentLearningSettings.reviewEnabled(account) else { return }
             if let job = try await history().dbQueue.read({

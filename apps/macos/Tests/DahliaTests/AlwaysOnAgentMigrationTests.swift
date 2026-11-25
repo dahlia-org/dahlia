@@ -29,7 +29,8 @@
                 #expect(try DahliaAccountConnectionRecord.fetchOne(db, key: provider.id) == provider)
                 #expect(try ChatThreadRecord.fetchOne(db, key: thread.id)?.title == thread.title)
                 #expect(try db.tableExists("agent_event_sources"))
-                #expect(try db.tableExists("agent_worker_deliveries"))
+                #expect(try db.tableExists("chat_thread_launches"))
+                #expect(try db.tableExists("agent_tasks") && db.tableExists("agent_user_inbox"))
                 #expect(try Row.fetchAll(db, sql: "PRAGMA foreign_key_check").isEmpty)
             }
         }

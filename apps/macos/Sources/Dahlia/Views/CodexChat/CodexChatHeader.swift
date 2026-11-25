@@ -1,5 +1,10 @@
 import SwiftUI
 
+struct CodexChatPanelToggle {
+    let isShown: Bool
+    let action: () -> Void
+}
+
 struct CodexChatHeader: View {
     let title: String
     let showsHistory: Bool
@@ -15,6 +20,8 @@ struct CodexChatHeader: View {
     var showsTitle = true
     var parentTitle: String?
     var onOpenParent: (() -> Void)?
+    /// Opens and closes a panel beside the conversation, such as Dahlia Bot's.
+    var panelToggle: CodexChatPanelToggle?
     @State private var isParentHovered = false
 
     var body: some View {
@@ -104,6 +111,15 @@ struct CodexChatHeader: View {
                     systemImage: "arrow.up.left.and.arrow.down.right",
                     action: onShowFullScreen
                 )
+            }
+
+            if let panelToggle {
+                DahliaWindowHeaderIconButton(
+                    label: panelToggle.isShown ? L10n.agentBotHidePanel : L10n.agentBotShowPanel,
+                    systemImage: "sidebar.right",
+                    action: panelToggle.action
+                )
+                .accessibilityValue(panelToggle.isShown ? L10n.shown : L10n.hidden)
             }
 
             if reservesSidebarToggle {

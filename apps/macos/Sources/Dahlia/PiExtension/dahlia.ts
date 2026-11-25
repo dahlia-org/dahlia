@@ -3,8 +3,8 @@
 import { createBashTool, createEditTool, createLsTool, createReadTool, createWriteTool, DefaultPackageManager, SettingsManager } from "@earendil-works/pi-coding-agent";
 import { anthropicMessagesApi, createProvider, googleGenerativeAIApi, openAIResponsesApi } from "@earendil-works/pi-ai";
 import { execFile } from "node:child_process";
-import { existsSync, lstatSync, readdirSync, readFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { existsSync, lstatSync, readdirSync, readFileSync, realpathSync } from "node:fs";
+import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 import {
   registerDatabricksConnectionLoginCommand,
   registerDatabricksLoginCommand,
@@ -203,7 +203,7 @@ export default async function (pi: any) {
     registerThreadTools(pi, bridge);
     registerThreadTools(pi, bridge, omnigentTools);
     if ((env.DAHLIA_PI_PROFILE ?? "interactive") === "intake") registerEventTools(pi, bridge);
-    registerBotTools(pi, bridge, env.DAHLIA_PI_BOT_HOME === "1" ? "home" : env.DAHLIA_PI_PROFILE ?? "interactive");
+    registerBotTools(pi, bridge, env.DAHLIA_PI_PROFILE ?? "interactive");
     let blockedThisRun = false;
     pi.on("agent_start", () => { blockedThisRun = false; });
     const block = (reason: string) => {
@@ -241,8 +241,7 @@ export default async function (pi: any) {
     }
     const webServer = "dahlia_web_access";
     const webSandbox: string[] = JSON.parse(env.DAHLIA_PI_WEB_SANDBOX ?? "[]");
-    // A Dahlia Bot Worker searches the web only when the user turned it on; Dahlia then passes the worker's path.
-    const webEnabled = ["interactive", "worker"].includes(env.DAHLIA_PI_PROFILE ?? "interactive")
+    const webEnabled = (env.DAHLIA_PI_PROFILE ?? "interactive") === "interactive"
       && !!env.DAHLIA_PI_WEB_ACCESS && !!env.DAHLIA_PI_WEB_NODE && webSandbox.length > 0;
     if (webEnabled) {
       const scratch = join(env.PI_CODING_AGENT_DIR!, "web-access-runtime");
@@ -274,7 +273,7 @@ export default async function (pi: any) {
     // The real home and temporary folders are out of reach in the sandbox, which gets one folder of its own for both
     // (tools such as git keep their settings there). They are set inside the sandbox only: the shell Pi starts a
     // command with runs outside it, and Pi loads code from its own TMPDIR.
-    const home = env.DAHLIA_PI_SANDBOX_TMPDIR;
+    const home = env.DAHLIA_PI_SANDBOX_TMPDIR ?? process.cwd();
     const inSandbox = (args: string[]) => [...sandbox, "/usr/bin/env", `HOME=${home}`, `TMPDIR=${home}`, ...args];
     const sandboxed = (args: string[], input?: string) => new Promise<Buffer>((resolve, reject) => {
       const options = { encoding: "buffer" as const, maxBuffer: 1 << 30, env: sandboxEnv(process.env) };
@@ -285,14 +284,36 @@ export default async function (pi: any) {
       child.stdin?.on("error", () => {});
       child.stdin?.end(input);
     });
+    // File operations receive Pi's resolved paths, after @/tilde expansion. Runtime read exceptions are not model access.
+    const checkFilePath = (path: string, writing = false) => {
+      if (env.DAHLIA_PI_PROFILE !== "bot") return;
+      let ancestor = resolve(path);
+      for (;;) {
+        try { ancestor = realpathSync(ancestor); break; }
+        catch (error: any) {
+          if (error.code !== "ENOENT" || dirname(ancestor) === ancestor) throw error;
+          ancestor = dirname(ancestor);
+        }
+      }
+      const root = realpathSync(process.cwd());
+      const suffix = relative(root, ancestor);
+      if (suffix === ".." || suffix.startsWith("../") || isAbsolute(suffix)) throw new Error("Super Agent file tools only access its home.");
+      if (writing && dirname(ancestor) === root && ["AGENTS.md", "bot.json", "SOUL.md"].includes(basename(ancestor))) {
+        throw new Error("AGENTS.md and bot.json belong to Dahlia, and SOUL.md changes only through soul_write.");
+      }
+    };
+    const fileOperation = (path: string, args: string[], input?: string, writing = false) => {
+      checkFilePath(path, writing);
+      return sandboxed(args, input);
+    };
     const files = {
-      readFile: (path: string) => sandboxed(["/bin/cat", "--", path]),
-      writeFile: async (path: string, content: string) => void await sandboxed(["/bin/sh", "-c", 'cat > "$1"', "sh", path], content),
-      mkdir: async (path: string) => void await sandboxed(["/bin/mkdir", "-p", "--", path]),
-      access: async (path: string) => void await sandboxed(["/bin/sh", "-c", '[ -r "$1" ] || { echo "Cannot read $1" >&2; exit 1; }', "sh", path]),
+      readFile: (path: string) => fileOperation(path, ["/bin/cat", "--", path]),
+      writeFile: async (path: string, content: string) => void await fileOperation(path, ["/bin/sh", "-c", 'cat > "$1"', "sh", path], content, true),
+      mkdir: async (path: string) => void await fileOperation(path, ["/bin/mkdir", "-p", "--", path], undefined, true),
+      access: async (path: string) => void await fileOperation(path, ["/bin/sh", "-c", '[ -r "$1" ] || { echo "Cannot read $1" >&2; exit 1; }', "sh", path]),
       // Pi's own detection would open the file outside the sandbox.
       detectImageMimeType: async (path: string) => {
-        const head = (await sandboxed(["/usr/bin/head", "-c", "12", "--", path])).toString("latin1");
+        const head = (await fileOperation(path, ["/usr/bin/head", "-c", "12", "--", path])).toString("latin1");
         if (head.startsWith("\x89PNG")) return "image/png";
         if (head.startsWith("\xff\xd8\xff")) return "image/jpeg";
         if (head.startsWith("GIF8")) return "image/gif";
@@ -301,15 +322,16 @@ export default async function (pi: any) {
     };
     // `ls -p` marks folders, so listing a folder also answers the `stat` Pi asks for each entry.
     const folders = new Map<string, boolean>();
-    const succeeds = (args: string[]) => sandboxed(args).then(() => true, () => false);
+    const succeeds = (path: string, args: string[]) => fileOperation(path, args).then(() => true, () => false);
     const listing = {
-      exists: (path: string) => succeeds(["/bin/test", "-e", path]),
+      exists: (path: string) => succeeds(path, ["/bin/test", "-e", path]),
       stat: async (path: string) => {
-        const isFolder = folders.get(path) ?? await succeeds(["/bin/test", "-d", path]);
+        checkFilePath(path);
+        const isFolder = folders.get(path) ?? await succeeds(path, ["/bin/test", "-d", path]);
         return { isDirectory: () => isFolder };
       },
       readdir: async (path: string) => {
-        const entries = (await sandboxed(["/bin/ls", "-1Ap", "--", path])).toString().split("\n").filter(Boolean);
+        const entries = (await fileOperation(path, ["/bin/ls", "-1Ap", "--", path])).toString().split("\n").filter(Boolean);
         return entries.map((entry) => {
           const name = entry.replace(/\/$/, "");
           folders.set(join(path, name), entry.endsWith("/"));
@@ -318,7 +340,7 @@ export default async function (pi: any) {
       },
     };
     const quoted = (word: string) => `'${word.replaceAll("'", `'\\''`)}'`;
-    if (sandbox.length > 0) {
+    if (sandbox.length > 0 || env.DAHLIA_PI_PROFILE === "bot") {
       pi.registerTool(createReadTool(process.cwd(), { operations: files }));
       pi.registerTool(createLsTool(process.cwd(), { operations: listing }));
       pi.registerTool(createWriteTool(process.cwd(), { operations: files }));
@@ -345,13 +367,16 @@ export default async function (pi: any) {
         if (name === "event_record") return;
         if (!name.startsWith("mcp__")) return block("Intake can only read its source and record events.");
       }
-      // The Router reads nothing outside its prompt.
-      if (profile === "router") {
-        return botTools.router.some((tool) => tool.name === name) ? undefined : block("The Router only routes events and makes Items.");
-      }
-      if (profile === "worker") {
-        if (botTools.worker.some((tool) => tool.name === name)) return;
-        if (!name.startsWith("mcp__")) return block("A Worker can only read its task's sources and report.");
+      const fileTool = ["read", "ls", "write", "edit"].includes(name);
+      // Dahlia Bot reads Dahlia's meetings and its home, and acts only through its own tools.
+      if (profile === "bot") {
+        if (botTools.bot.some((tool) => tool.name === name) || threadTools.some((tool) => tool.name === name)) return;
+        if (!fileTool && !name.startsWith("mcp__dahlia__")) return block("Super Agent only reads Dahlia's meetings and its home, and works through its own tools.");
+        // The files that steer the bot change only through Dahlia; Seatbelt refuses these writes too.
+        const path = resolve(process.cwd(), String(event.input?.path ?? ""));
+        if (["write", "edit"].includes(name) && dirname(path) === process.cwd() && ["AGENTS.md", "bot.json", "SOUL.md"].includes(basename(path))) {
+          return block("AGENTS.md and bot.json belong to Dahlia, and SOUL.md changes only through soul_write.");
+        }
       }
       if (name === "memory" && env.DAHLIA_PI_MEMORY_ENABLED !== "1") return block("Memory is disabled.");
       if (learningTools.includes(name)) return;
@@ -363,8 +388,6 @@ export default async function (pi: any) {
       }
 
       if (name === "dah_create_backup" || threadTools.some((tool) => tool.name === name)) return;
-      // The secretary's Home thread only files the user's requests; Dahlia checks the thread before acting.
-      if (env.DAHLIA_PI_BOT_HOME === "1" && botTools.home.some((tool) => tool.name === name)) return;
       // Starting a session runs work outside this Mac, so it is approved like an MCP tool that writes.
       if (omnigentTools.some((tool) => tool.name === name)) {
         return name === "omni_create_session"
@@ -388,8 +411,7 @@ export default async function (pi: any) {
         const readOnly = server === "dahlia" ? readOnlyDahliaTool.test(name) : tool.annotations?.readOnlyHint === true;
         // Intake reads its one source and nothing of Dahlia's.
         if (profile === "intake") return readOnly && server !== "dahlia" ? undefined : block("Intake can only read its source.");
-        // A Worker never writes on its own; a write becomes an Action the user approves.
-        if (profile === "worker") return readOnly ? undefined : block("A Worker only reads. Describe the write in your report.");
+        if (profile === "bot") return readOnly && server === "dahlia" ? undefined : block("Super Agent only reads Dahlia's meetings.");
         if (profile === "scheduled") {
           const allowed = new Set<string>(JSON.parse(env.DAHLIA_PI_ALLOWED_TOOLS ?? "[]"));
           if (!readOnly || !allowed.has(name)) return block("This tool was not approved for this schedule.");

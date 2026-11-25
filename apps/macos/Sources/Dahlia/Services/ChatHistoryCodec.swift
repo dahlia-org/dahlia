@@ -3,6 +3,15 @@ import Foundation
 
 /// The memory-compatible envelope stays independent of Pi's resume-file format.
 enum ChatHistoryCodec {
+    /// Running work keeps its exact input until it settles, independently of Pi's session-file acknowledgement.
+    static func encodeInputs(_ inputs: [CodexAppServerInput]) throws -> String {
+        try String(decoding: JSONEncoder().encode(inputs), as: UTF8.self)
+    }
+
+    static func decodeInputs(_ input: String) throws -> [CodexAppServerInput] {
+        try JSONDecoder().decode([CodexAppServerInput].self, from: Data(input.utf8))
+    }
+
     static func message(_ message: [String: JSONValue], isSteer: Bool = false) -> JSONValue {
         let blocks = message["content"]?.arrayValue?.compactMap(\.objectValue) ?? []
         let text = message["content"]?.stringValue ?? PiChatSessionFiles.text(blocks, type: "text", key: "text")

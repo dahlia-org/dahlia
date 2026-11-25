@@ -8,7 +8,6 @@ struct AgentSettingsView: View {
         case models
         case mcps
         case schedules
-        case alwaysOn
         case packages
         case security
 
@@ -20,7 +19,6 @@ struct AgentSettingsView: View {
             case .models: L10n.agentModels
             case .mcps: L10n.agentMCPs
             case .schedules: L10n.agentSchedules
-            case .alwaysOn: L10n.agentAlwaysOn
             case .packages: L10n.agentPackages
             case .security: L10n.agentSecurity
             }
@@ -88,8 +86,6 @@ private struct AgentSettingsTabs: View {
                 AgentPackageSettingsView(model: packages)
             case .schedules:
                 AgentScheduleSettingsView()
-            case .alwaysOn:
-                AgentAlwaysOnSettingsView()
             case .mcps:
                 AgentMCPSettingsView(model: mcp, onAdd: presentMCPRegistration)
             case .security:

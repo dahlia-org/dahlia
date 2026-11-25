@@ -134,16 +134,18 @@ enum L10n { // swiftlint:disable:this type_body_length
         )
     }
 
-    static var agentAlwaysOn: String { String(localized: "settings.agents.alwaysOn.tab", bundle: bundle) }
-    static var agentAlwaysOnStatus: String { String(localized: "settings.agents.alwaysOn.status", bundle: bundle) }
-    static var agentAlwaysOnEnabled: String { String(localized: "settings.agents.alwaysOn.enabled", bundle: bundle) }
     static var agentAlwaysOnHelp: String { String(localized: "settings.agents.alwaysOn.help", bundle: bundle) }
     static var agentAlwaysOnSources: String { String(localized: "settings.agents.alwaysOn.sources", bundle: bundle) }
-    static var agentAlwaysOnSourcesEmpty: String { String(localized: "settings.agents.alwaysOn.sourcesEmpty", bundle: bundle) }
     static var agentAlwaysOnNoServers: String { String(localized: "settings.agents.alwaysOn.noServers", bundle: bundle) }
     static var agentAlwaysOnEditSource: String { String(localized: "settings.agents.alwaysOn.editSource", bundle: bundle) }
-    static var agentAlwaysOnServer: String { String(localized: "settings.agents.alwaysOn.server", bundle: bundle) }
-    static var agentAlwaysOnFixedServer: String { String(localized: "settings.agents.alwaysOn.fixedServer", bundle: bundle) }
+    static var agentAlwaysOnAddSource: String { String(localized: "settings.agents.alwaysOn.addSource", bundle: bundle) }
+    static var agentAlwaysOnChooseSource: String { String(localized: "settings.agents.alwaysOn.chooseSource", bundle: bundle) }
+    static var agentAlwaysOnSuggestedMail: String { String(localized: "settings.agents.alwaysOn.suggestedMail", bundle: bundle) }
+    static var agentAlwaysOnSuggestedSlack: String { String(localized: "settings.agents.alwaysOn.suggestedSlack", bundle: bundle) }
+    static var agentAlwaysOnInstructionsHelp: String { String(localized: "settings.agents.alwaysOn.instructionsHelp", bundle: bundle) }
+    static var agentAlwaysOnAdvanced: String { String(localized: "settings.agents.alwaysOn.advanced", bundle: bundle) }
+    static var agentAlwaysOnDeleteSource: String { String(localized: "settings.agents.alwaysOn.deleteSource", bundle: bundle) }
+    static var agentAlwaysOnDeleteSourceMessage: String { String(localized: "settings.agents.alwaysOn.deleteSourceMessage", bundle: bundle) }
     static var agentAlwaysOnInstructions: String { String(localized: "settings.agents.alwaysOn.instructions", bundle: bundle) }
     static var agentAlwaysOnInstructionsPlaceholder: String { String(localized: "settings.agents.alwaysOn.instructionsPlaceholder", bundle: bundle) }
     static var agentAlwaysOnInterval: String { String(localized: "settings.agents.alwaysOn.interval", bundle: bundle) }
@@ -168,7 +170,6 @@ enum L10n { // swiftlint:disable:this type_body_length
     static var agentAlwaysOnNeverRead: String { String(localized: "settings.agents.alwaysOn.neverRead", bundle: bundle) }
     static var agentAlwaysOnGapDismiss: String { String(localized: "settings.agents.alwaysOn.gapDismiss", bundle: bundle) }
     static var agentAlwaysOnGap: String { String(localized: "settings.agents.alwaysOn.gap", bundle: bundle) }
-    static var agentAlwaysOnUnchecked: String { String(localized: "settings.agents.alwaysOn.unchecked", bundle: bundle) }
     static var agentAlwaysOnEvents: String { String(localized: "settings.agents.alwaysOn.events", bundle: bundle) }
     static var agentAlwaysOnEventsEmpty: String { String(localized: "settings.agents.alwaysOn.eventsEmpty", bundle: bundle) }
     static var agentAlwaysOnEventIgnored: String { String(localized: "settings.agents.alwaysOn.eventIgnored", bundle: bundle) }
@@ -179,9 +180,6 @@ enum L10n { // swiftlint:disable:this type_body_length
 
     static var agentBotInbox: String { String(localized: "settings.agents.alwaysOn.botInbox", bundle: bundle) }
     static var agentBotInboxEmpty: String { String(localized: "settings.agents.alwaysOn.botInboxEmpty", bundle: bundle) }
-    static var agentBotRequest: String { String(localized: "settings.agents.alwaysOn.botRequest", bundle: bundle) }
-    static var agentBotRequestPlaceholder: String { String(localized: "settings.agents.alwaysOn.botRequestPlaceholder", bundle: bundle) }
-    static var agentBotRequestSend: String { String(localized: "settings.agents.alwaysOn.botRequestSend", bundle: bundle) }
     static var agentBotKindQuestion: String { String(localized: "settings.agents.alwaysOn.botKindQuestion", bundle: bundle) }
     static var agentBotKindReport: String { String(localized: "settings.agents.alwaysOn.botKindReport", bundle: bundle) }
     static var agentBotKindSuggestion: String { String(localized: "settings.agents.alwaysOn.botKindSuggestion", bundle: bundle) }
@@ -193,24 +191,47 @@ enum L10n { // swiftlint:disable:this type_body_length
     static var agentBotAccept: String { String(localized: "settings.agents.alwaysOn.botAccept", bundle: bundle) }
     static var agentBotAccepted: String { String(localized: "settings.agents.alwaysOn.botAccepted", bundle: bundle) }
     static var agentBotSeen: String { String(localized: "settings.agents.alwaysOn.botSeen", bundle: bundle) }
-    static var agentBotGuidance: String { String(localized: "settings.agents.alwaysOn.botGuidance", bundle: bundle) }
     static var agentBotGuidancePlaceholder: String { String(localized: "settings.agents.alwaysOn.botGuidancePlaceholder", bundle: bundle) }
-    static var agentBotGuidanceHelp: String { String(localized: "settings.agents.alwaysOn.botGuidanceHelp", bundle: bundle) }
     static var agentBotWork: String { String(localized: "settings.agents.alwaysOn.botWork", bundle: bundle) }
     static var agentBotWorkHelp: String { String(localized: "settings.agents.alwaysOn.botWorkHelp", bundle: bundle) }
-    static var agentBotWebSearch: String { String(localized: "settings.agents.alwaysOn.botWebSearch", bundle: bundle) }
-    static var agentBotWebSearchHelp: String { String(localized: "settings.agents.alwaysOn.botWebSearchHelp", bundle: bundle) }
 
-    static func agentBotRouterSummary(_ count: Int) -> String {
-        String(format: String(localized: "settings.agents.alwaysOn.routerSummary", bundle: bundle), locale: .current, count)
+    static var agentBotOpenTask: String { String(localized: "settings.agents.alwaysOn.openTask", bundle: bundle) }
+    static var agentBotFinishTask: String { String(localized: "bots.finishTask", bundle: bundle) }
+    static var agentBots: String { String(localized: "bots.section", bundle: bundle) }
+    static var agentBotName: String { String(localized: "bots.dahliaBot", bundle: bundle) }
+    static var agentBotIdle: String { String(localized: "bots.idle", bundle: bundle) }
+    static func agentBotNeedsAttention(_ count: Int) -> String {
+        String(format: String(localized: "bots.needsAttention", bundle: bundle), locale: .current, count)
     }
 
-    static var agentBotTaskReadOnly: String { String(localized: "settings.agents.alwaysOn.taskReadOnly", bundle: bundle) }
-    static var agentBotHome: String { String(localized: "settings.agents.alwaysOn.home", bundle: bundle) }
-    static var agentBotHomeOpen: String { String(localized: "settings.agents.alwaysOn.homeOpen", bundle: bundle) }
-    static var agentBotOpenTask: String { String(localized: "settings.agents.alwaysOn.openTask", bundle: bundle) }
+    static func agentBotNotice(_ count: Int) -> String {
+        String(format: String(localized: "bots.notice", bundle: bundle), locale: .current, count)
+    }
 
-    static var agentBotNoReport: String { String(localized: "settings.agents.alwaysOn.noReport", bundle: bundle) }
+    static var agentBotRetiredReadOnly: String { String(localized: "bots.retiredReadOnly", bundle: bundle) }
+    static var agentBotShowPanel: String { String(localized: "bots.showPanel", bundle: bundle) }
+    static var agentBotHidePanel: String { String(localized: "bots.hidePanel", bundle: bundle) }
+    static var agentBotTasks: String { String(localized: "bots.tasks", bundle: bundle) }
+    static var agentBotTasksEmpty: String { String(localized: "bots.tasksEmpty", bundle: bundle) }
+    static var agentBotTasksFinished: String { String(localized: "bots.tasksFinished", bundle: bundle) }
+    static func agentBotTaskStatus(_ status: String) -> String {
+        switch status {
+        case "done": String(localized: "bots.taskDone", bundle: bundle)
+        case "dismissed": String(localized: "bots.taskDismissed", bundle: bundle)
+        default: String(localized: "bots.taskActive", bundle: bundle)
+        }
+    }
+
+    static var agentBotSoulHelp: String { String(localized: "bots.soulHelp", bundle: bundle) }
+    static var agentBotSoulEmpty: String { String(localized: "bots.soulEmpty", bundle: bundle) }
+    static var agentBotShowInFinder: String { String(localized: "bots.showInFinder", bundle: bundle) }
+    static var agentBotReset: String { String(localized: "bots.reset", bundle: bundle) }
+    static var agentBotResetMessage: String { String(localized: "bots.resetMessage", bundle: bundle) }
+    static var agentBotInboxTab: String { String(localized: "bots.inboxTab", bundle: bundle) }
+    static var agentBotSettings: String { String(localized: "bots.settings", bundle: bundle) }
+    static var agentBotConversation: String { String(localized: "bots.conversation", bundle: bundle) }
+    static var agentBotPaused: String { String(localized: "bots.paused", bundle: bundle) }
+    static var agentBotResume: String { String(localized: "bots.resume", bundle: bundle) }
 
     static func agentIntakeSummary(source: String, count: Int) -> String {
         String(format: String(localized: "settings.agents.alwaysOn.intakeSummary", bundle: bundle), locale: .current, source, count)
@@ -3041,6 +3062,9 @@ enum L10n { // swiftlint:disable:this type_body_length
     static var chatQueue: String { String(localized: "Queue", bundle: bundle) }
     static var chatSendNow: String { String(localized: "Send now", bundle: bundle) }
     static var chatFollowUpBehavior: String { String(localized: "Follow-up behavior", bundle: bundle) }
+    static var chatContinueAfterRestart: String { String(localized: "Continue chats after a crash", bundle: bundle) }
+    static var chatContinueAfterRestartHelp: String { String(localized: "chat.continueAfterRestart.help", bundle: bundle) }
+    static var chatContinuedAfterRestart: String { String(localized: "chat.continuedAfterRestart", bundle: bundle) }
     static var chatFollowUpHelp: String { String(
         localized: "While responding, send using the default behavior. Hold Command or press Command-Return to use the other action.",
         bundle: bundle

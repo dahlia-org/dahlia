@@ -12,6 +12,7 @@ struct MeetingListSidebarView: View {
     let isShowingChat: Bool
     let onNewChat: () -> Void
     let onOpenChatThread: (CodexChatThreadSummary) -> Void
+    let onOpenBot: () -> Void
     let omnigentSessionID: String?
     let onOpenOmnigentSession: (String) -> Void
     let onShowUnprocessedRecordings: () -> Void
@@ -60,6 +61,7 @@ struct MeetingListSidebarView: View {
             )
             if sidebarTab == .chat {
                 List {
+                    MainSidebarBotsSection(coordinator: chatCoordinator, isShowingChat: isShowingChat, onOpen: onOpenBot)
                     MainSidebarChatHistorySection(
                         coordinator: chatCoordinator,
                         sidebarViewModel: sidebarViewModel,

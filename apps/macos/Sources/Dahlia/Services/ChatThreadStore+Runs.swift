@@ -8,14 +8,17 @@ extension ChatThreadStore {
     /// Kept apart from the status, which the run's own end overwrites.
     func markStoppedByUser(_ id: UUID) throws {
         try dbQueue.write {
-            try AgentInboxService.stopWorker(runID: id, in: $0)
-            try $0.execute(sql: "UPDATE chat_runs SET stoppedByUser = 1 WHERE id = ?", arguments: [id])
+            try $0.execute(sql: """
+            UPDATE chat_runs SET stoppedByUser=1 WHERE id=? OR id IN (
+                SELECT r.rootRunID FROM chat_runs r JOIN chat_runs root ON root.id=r.rootRunID
+                WHERE r.id=? AND root.threadID=r.threadID
+            )
+            """, arguments: [id, id])
         }
     }
 
     func interruptQueuedRun(_ id: UUID) throws {
         try dbQueue.write {
-            if try ChatRunRecord.fetchOne($0, key: id)?.status == "queued" { try AgentInboxService.stopWorker(runID: id, in: $0) }
             try $0.execute(sql: "UPDATE chat_runs SET status = 'interrupted' WHERE id = ? AND status = 'queued'", arguments: [id])
         }
     }
@@ -47,14 +50,51 @@ extension ChatThreadStore {
         }
     }
 
-    /// Claim only a still-queued run after all asynchronous process preparation has finished.
-    func claimQueuedRun(_ id: UUID) throws -> Bool {
+    /// Preparation belongs to one saved route. Reset may move its thread or requester while Pi starts.
+    func claimQueuedRun(_ expected: ChatRunRecord, input: String? = nil) throws -> ChatRunRecord? {
+        try transitionQueuedRun(expected, status: "running", input: input)
+    }
+
+    func failQueuedRun(_ expected: ChatRunRecord) throws -> ChatRunRecord? {
+        try transitionQueuedRun(expected, status: "failed")
+    }
+
+    private func transitionQueuedRun(_ expected: ChatRunRecord, status: String, input: String? = nil) throws -> ChatRunRecord? {
         try dbQueue.write { db in
-            try db.execute(
-                sql: "UPDATE chat_runs SET status = 'running', startedAt = COALESCE(startedAt, ?) WHERE id = ? AND status = 'queued'",
-                arguments: [Date(), id]
-            )
-            return db.changesCount == 1
+            try ChatRunRecord.fetchOne(db, sql: """
+            UPDATE chat_runs SET status=?, input=?,
+                startedAt=CASE WHEN ?='running' THEN COALESCE(startedAt, ?) ELSE startedAt END,
+                completedAt=CASE WHEN ?='failed' THEN COALESCE(completedAt, ?) ELSE completedAt END
+            WHERE id=? AND status='queued' AND threadID=? AND requestedByThreadID IS ?
+            RETURNING *
+            """, arguments: [
+                status,
+                status == "running" ? (input ?? expected.input) : "",
+                status,
+                Date(),
+                status,
+                Date(),
+                expected.id,
+                expected.threadID,
+                expected.requestedByThreadID,
+            ])
+        }
+    }
+
+    func appendRecoveryInputs(_ inputs: [CodexAppServerInput], runID: UUID) throws {
+        try dbQueue.write { db in
+            guard let run = try ChatRunRecord.fetchOne(db, key: runID), ["running", "waitingForUser"].contains(run.status),
+                  !run.input.isEmpty else { return }
+            let previous = try ChatHistoryCodec.decodeInputs(run.input)
+            let saved = try ChatHistoryCodec.encodeInputs(previous + [.text("Additional instruction during this turn:")] + inputs)
+            try db.execute(sql: "UPDATE chat_runs SET input=? WHERE id=?", arguments: [saved, runID])
+        }
+    }
+
+    /// A failed steer may or may not have reached Pi; the agreed input can no longer be reconstructed safely.
+    func invalidateRecoveryInput(_ runID: UUID) throws {
+        try dbQueue.write { db in
+            try db.execute(sql: "UPDATE chat_runs SET input='' WHERE id=?", arguments: [runID])
         }
     }
 
@@ -99,7 +139,7 @@ extension ChatThreadStore {
         try dbQueue.write { db in
             try db.execute(
                 sql: """
-                UPDATE chat_runs SET input = CASE WHEN ? = 'running' THEN '' ELSE input END, status = ?,
+                UPDATE chat_runs SET input = CASE WHEN ? IN ('completed', 'failed', 'interrupted') THEN '' ELSE input END, status = ?,
                     startedAt = CASE WHEN ? = 'running' THEN COALESCE(startedAt, ?) ELSE startedAt END,
                     completedAt = CASE WHEN ? IN ('completed', 'failed', 'interrupted') THEN COALESCE(completedAt, ?) ELSE completedAt END,
                     resultDeliveredAt = CASE WHEN ? IN ('completed', 'failed', 'interrupted') THEN NULL ELSE resultDeliveredAt END
@@ -118,19 +158,10 @@ extension ChatThreadStore {
 
     func interruptQueuedRuns(accountID: String, threadID: String? = nil, preservingSchedules: Bool = false) throws {
         try dbQueue.write { db in
-            if !preservingSchedules {
-                let workers = try ChatRunRecord.fetchAll(db, sql: """
-                SELECT r.* FROM chat_runs r JOIN chat_threads t ON t.id=r.threadID
-                WHERE t.accountID=? AND r.status='queued' AND r.origin='task' AND (? IS NULL OR r.threadID=?)
-                """, arguments: [accountID, threadID, threadID])
-                for worker in workers {
-                    try AgentInboxService.stopWorker(runID: worker.id, in: db)
-                }
-            }
             try db.execute(sql: """
             UPDATE chat_runs SET status = 'interrupted' WHERE status = 'queued'
                 AND threadID IN (SELECT id FROM chat_threads WHERE accountID = ?)
-                AND (? IS NULL OR threadID = ?) AND (?=0 OR origin NOT IN ('schedule','task'))
+                AND (? IS NULL OR threadID = ?) AND (?=0 OR origin <> 'schedule')
             """, arguments: [accountID, threadID, threadID, preservingSchedules])
         }
     }

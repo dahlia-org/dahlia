@@ -1,11 +1,13 @@
+import AppKit
 import Foundation
 import Observation
 
-/// The Always-on tab: the inbox of Items, the request field, the account's switch, guidance and work settings, its
-/// Sources, and the events intake recorded. The database is read off MainActor through the inbox service.
+/// Super Agent's side panel and its event source editor: the Items that need the user, its Tasks, the Sources intake
+/// reads, `SOUL.md`, and the events intake recorded. The database and the home folder are read off MainActor through
+/// `PiChatService`.
 @MainActor
 @Observable
-final class AgentAlwaysOnSettingsModel {
+final class DahliaBotPanelModel {
     struct Draft: Equatable {
         var id: String?
         var name = ""
@@ -17,11 +19,14 @@ final class AgentAlwaysOnSettingsModel {
     }
 
     static let intervals = [5, 15, 30, 60]
+    static let taskPage = 30
 
     var sources: [AgentSourceRecord] = []
     var events: [AgentEventRecord] = []
     var servers: [String] = []
     var connections: [String: String] = [:]
+    /// Each server's service, for its logo and name.
+    var services: [String: String] = [:]
     var paused = false
     var draft: Draft?
     var items: [AgentItemRecord] = []
@@ -29,60 +34,71 @@ final class AgentAlwaysOnSettingsModel {
     var taskThreads: [String: String] = [:]
     /// Typed answers to questions, by Item.
     var answers: [String: String] = [:]
-    var request = ""
-    var guidance = ""
-    var workServers: Set<String> = []
-    var webSearch = false
+    var activeTasks: [AgentTaskRecord] = []
+    var finishedTasks: [AgentTaskRecord] = []
+    var hasMoreFinishedTasks = false
+    var soul = ""
+    /// The text being edited, while the user edits `SOUL.md`.
+    var soulDraft: String?
     var error: String?
     var isBusy = false
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
-        guidance = AgentBotSettings.guidance(for: AppAccount.key, defaults: defaults)
-        workServers = Set(AgentBotSettings.workServers(for: AppAccount.key, defaults: defaults))
-        webSearch = AgentBotSettings.webSearch(for: AppAccount.key, defaults: defaults)
     }
 
     private let defaults: UserDefaults
 
-    func saveGuidance() {
-        guidance = String(guidance.prefix(AgentBotSettings.guidanceLimit))
-        defaults.set(guidance, forKey: AgentBotSettings.guidanceKey(for: AppAccount.key))
+    func editSoul() {
+        soulDraft = soul
     }
 
-    func setWorkServer(_ server: String, allowed: Bool) {
-        guard let id = connections[server] else { return }
-        if allowed { workServers.insert(id) } else { workServers.remove(id) }
-        defaults.set(workServers.sorted(), forKey: AgentBotSettings.workServersKey(for: AppAccount.key))
-    }
-
-    func isWorkServerAllowed(_ server: String) -> Bool {
-        connections[server].map(workServers.contains) ?? false
-    }
-
-    func setWebSearch(_ enabled: Bool) {
-        webSearch = enabled
-        defaults.set(enabled, forKey: AgentBotSettings.webSearchKey(for: AppAccount.key))
-    }
-
-    /// Opens the user's conversation with the secretary, making it the first time.
-    func openHome() async {
+    func saveSoul() async {
+        guard let text = soulDraft else { return }
         do {
-            let id = try await PiChatService.shared.botHomeThread()
-            NotificationCenter.default.post(name: AgentLearningSettings.openThread, object: id)
+            try await PiChatService.shared.saveBotSoul(text)
+            soul = text
+            soulDraft = nil
         } catch { self.error = error.localizedDescription }
     }
 
-    func sendRequest() async {
-        let text = request
-        await perform { inbox, key in try inbox.request(text, account: key) }
-        if error == nil { request = "" }
+    func showSoulInFinder() async {
+        guard let url = try? await PiChatService.shared.botSoulURL() else { return }
+        NSWorkspace.shared.activateFileViewerSelecting([url])
+    }
+
+    /// Starts the conversation over; returns the new thread to open.
+    func reset() async -> String? {
+        guard !isBusy else { return nil }
+        isBusy = true
+        defer { isBusy = false }
+        do {
+            return try await PiChatService.shared.resetBotThread()
+        } catch {
+            self.error = error.localizedDescription
+            return nil
+        }
+    }
+
+    func loadMoreFinishedTasks() async {
+        guard let last = finishedTasks.last else { return }
+        do {
+            let page = try await PiChatService.shared.loadBotTasks(finishedBefore: last.updatedAt, limit: Self.taskPage)
+            finishedTasks += page.finished
+            hasMoreFinishedTasks = page.finished.count == Self.taskPage
+        } catch { self.error = error.localizedDescription }
     }
 
     /// Answers the revision on screen; when the Item changed meanwhile, nothing is applied and the list reloads.
     func answer(_ item: AgentItemRecord, with text: String) async {
         await perform { inbox, key in _ = try inbox.answer(itemID: item.id, revision: item.revision, answer: text, account: key) }
         answers[item.id] = nil
+    }
+
+    /// The user ends a Task; its thread stays as it is.
+    func finish(_ task: AgentTaskRecord) async {
+        guard let thread = task.threadID else { return }
+        await perform { inbox, key in try inbox.finishTask(threadID: thread, status: "done", account: key) }
     }
 
     func dismiss(_ item: AgentItemRecord) async {
@@ -94,11 +110,25 @@ final class AgentAlwaysOnSettingsModel {
             let loaded = try await PiChatService.shared.loadAlwaysOnSettings(account: AppAccount.key)
             (sources, events, paused) = loaded
             (items, taskThreads) = try await PiChatService.shared.loadBotInbox(account: AppAccount.key)
+            // A refresh keeps the finished Tasks the user paged through.
+            let limit = max(Self.taskPage, finishedTasks.count)
+            let tasks = try await PiChatService.shared.loadBotTasks(finishedBefore: nil, limit: limit)
+            activeTasks = tasks.active
+            finishedTasks = tasks.finished
+            hasMoreFinishedTasks = tasks.finished.count == limit
+            if soulDraft == nil { soul = try await PiChatService.shared.loadBotSoul() }
             // Only servers with a sign-in reach mcp.json, so only they can be read.
             let settings = AgentMCPSettings.load()
-            servers = settings.piServers.keys.sorted()
+            servers = Self.sourceServers(in: settings)
+            services = Dictionary(settings.servers.map { ($0.name, $0.service) }) { first, _ in first }
             connections = Dictionary(uniqueKeysWithValues: servers.compactMap { name in settings.connectionID(for: name).map { (name, $0) } })
         } catch { self.error = error.localizedDescription }
+    }
+
+    static func sourceServers(in settings: AgentMCPSettings) -> [String] {
+        let excluded = Set(["system.ai.web_search", "system.ai.google_drive", "system.ai.google_calendar"])
+        let services = Dictionary(settings.servers.map { ($0.name, $0.service) }) { first, _ in first }
+        return settings.piServers.keys.filter { !excluded.contains(services[$0] ?? $0) }.sorted()
     }
 
     func setEnabled(_ enabled: Bool) async {
@@ -108,7 +138,8 @@ final class AgentAlwaysOnSettingsModel {
     func edit(_ source: AgentSourceRecord?) {
         error = nil
         guard let source else {
-            draft = Draft(server: servers.first ?? "")
+            draft = Draft()
+            if let first = servers.first { choose(server: first) }
             return
         }
         let senders = (try? JSONDecoder().decode([String].self, from: Data(source.allowedSenders.utf8))) ?? []
@@ -118,9 +149,32 @@ final class AgentAlwaysOnSettingsModel {
         )
     }
 
+    /// A new source's server; the name and what to read follow it until the user changes them.
+    func choose(server: String) {
+        guard var changed = draft, changed.id == nil else { return }
+        if changed.name.isEmpty || changed.name == displayName(changed.server) { changed.name = displayName(server) }
+        if changed.instructions.isEmpty || changed.instructions == Self.suggestedInstructions(for: changed.server) {
+            changed.instructions = Self.suggestedInstructions(for: server)
+        }
+        changed.server = server
+        draft = changed
+    }
+
+    func displayName(_ server: String) -> String {
+        server.isEmpty ? "" : AgentMCPServer.displayName(for: services[server] ?? server)
+    }
+
+    /// What most people want read from a mail or Slack server, so adding one takes a click.
+    static func suggestedInstructions(for server: String) -> String {
+        let name = server.lowercased()
+        if name.contains("slack") { return L10n.agentAlwaysOnSuggestedSlack }
+        if ["gmail", "mail", "outlook"].contains(where: name.contains) { return L10n.agentAlwaysOnSuggestedMail }
+        return ""
+    }
+
     func saveDraft() async {
         guard let draft else { return }
-        let name = draft.name.trimmingCharacters(in: .whitespacesAndNewlines)
+        let name = draft.name.trimmingCharacters(in: .whitespacesAndNewlines).nilIfBlank ?? displayName(draft.server)
         let instructions = draft.instructions.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !name.isEmpty, !draft.server.isEmpty, !instructions.isEmpty else {
             error = L10n.agentAlwaysOnRequired
@@ -155,12 +209,23 @@ final class AgentAlwaysOnSettingsModel {
         await perform { inbox, _ in try inbox.saveSource(saved) }
     }
 
+    func setInterval(_ source: AgentSourceRecord, minutes: Int) async {
+        guard minutes != source.intervalMinutes else { return }
+        var changed = source
+        changed.intervalMinutes = minutes
+        changed.updatedAt = .now
+        let saved = changed
+        await perform { inbox, _ in try inbox.saveSource(saved) }
+    }
+
     func clearGap(_ source: AgentSourceRecord) async {
         await perform { inbox, key in try inbox.clearGap(sourceID: source.id, account: key) }
     }
 
-    func delete(_ source: AgentSourceRecord) async {
-        await perform { inbox, key in try inbox.deleteSource(id: source.id, account: key) }
+    func deleteDraft() async {
+        guard let id = draft?.id else { return }
+        await perform { inbox, key in try inbox.deleteSource(id: id, account: key) }
+        if error == nil { draft = nil }
     }
 
     private func perform(_ change: @escaping @Sendable (AgentInboxService, String) throws -> Void) async {

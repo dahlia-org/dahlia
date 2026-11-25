@@ -6,6 +6,16 @@
 
     @MainActor
     struct AgentMCPSettingsViewTests {
+        @Test func eventSourceChoicesExcludeSearchDriveAndCalendarEvenWithCustomServerNames() throws {
+            let provider = try AgentMCPProvider(workspaceURL: #require(URL(string: "https://workspace.example.com")))
+            let services = ["gmail", "google_calendar", "slack", "web_search", "google_drive"]
+            let settings = AgentMCPSettings(providers: [provider], servers: services.enumerated().map { index, service in
+                AgentMCPServer(id: .v7(), name: "connector_\(index)", providerID: provider.id, service: "system.ai.\(service)")
+            })
+            #expect(DahliaBotPanelModel.sourceServers(in: settings) == ["connector_0", "connector_2"])
+            #expect(settings.piServers.count == 5)
+        }
+
         @Test(arguments: [CGFloat(560), CGFloat(1200)])
         func catalogStaysCenteredAndBoundedWithLongDescriptions(width: CGFloat) async throws {
             let suite = "AgentMCPSettingsViewTests.\(UUID())"

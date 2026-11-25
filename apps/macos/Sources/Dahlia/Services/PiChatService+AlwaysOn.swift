@@ -2,7 +2,7 @@ import DahliaRuntimeSupport
 import Foundation
 
 /// The always-on agent's clock work: timers, routing, and reading one Source at a time with its own Pi process.
-/// Intake sees only that Source's read-only MCP tools and `event_record`. The Router and Workers are in
+/// Intake sees only that Source's read-only MCP tools and `event_record`. Super Agent's thread is in
 /// `PiChatService+DahliaBot`.
 extension PiChatService {
     struct IntakePages {
@@ -106,8 +106,27 @@ extension PiChatService {
         try change(inboxService(), account)
     }
 
+    func loadBotTasks(finishedBefore: Date?, limit: Int) throws -> (active: [AgentTaskRecord], finished: [AgentTaskRecord]) {
+        try inboxService().tasks(account: AppAccount.key, finishedBefore: finishedBefore, limit: limit)
+    }
+
+    /// The whole `SOUL.md`, for the side panel to show and edit.
+    func loadBotSoul() throws -> String {
+        try DahliaBotHome.soulFile(botHome())
+    }
+
+    func saveBotSoul(_ text: String) throws {
+        try DahliaBotHome.saveSoul(text, home: botHome())
+    }
+
+    func botSoulURL() throws -> URL {
+        try botHome().appending(path: "SOUL.md")
+    }
+
     /// Housekeeping chore for the app account. Recording stops new work and closes an intake in progress.
     func drainAlwaysOn(now: Date = .now) async {
+        // Puts the bot's home back when its files were changed outside Dahlia.
+        _ = botSoul()
         do {
             try await runtime.requireConfigured()
             let account = AppAccount.key
@@ -124,9 +143,7 @@ extension PiChatService {
             }
             await closeBotRuns(account: account, stop: stop)
             guard !stop else { return }
-            try inbox.fireTimers(account: account, now: now)
-            let routing = try inbox.route(account: account, now: now)
-            try startBotRuns(routing: routing, now: now)
+            try startBotRuns(now: now)
             guard intakeTask == nil else { return }
             let due = try inbox.dueSources(account: account, now: now).first { source in
                 intakeAttempts[source.id].map { $0.addingTimeInterval(Double(source.intervalMinutes) * 60) <= now } ?? true
@@ -158,7 +175,8 @@ extension PiChatService {
             try PiProviderConfiguration.writeMCPServers(servers, agentURL: agentLocator.agentURL())
             let connection = try await runtime.connect(
                 .init(
-                    mode: .chat, cwd: agentLocator.agentURL(),
+                    // Intake is part of the bot's own work and shows in no history, so it runs in the bot's home.
+                    mode: .chat, cwd: botHome(),
                     arguments: [
                         "--no-session", "-e", "builtin:mcp", "--tools", "event_record,mcp__\(source.server)__*",
                         "--system-prompt", Self.intakeSystemPrompt,

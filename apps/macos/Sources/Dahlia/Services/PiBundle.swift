@@ -100,6 +100,12 @@ struct PiAgentDirectoryLocator: Sendable {
         accountsURL.appending(path: accountKey, directoryHint: .isDirectory).appending(path: "pi", directoryHint: .isDirectory)
     }
 
+    /// Super Agent's home (`~/.dahlia/bots/super-agent` in a released build), beside the agent directory and apart from
+    /// its credentials and settings.
+    var botHomeURL: URL {
+        sharedAgentURL.deletingLastPathComponent().appending(path: "bots/super-agent", directoryHint: .isDirectory)
+    }
+
     func agentURL() throws -> URL {
         let url = sharedAgentURL
         try Self.createPrivateDirectory(url)

@@ -1,39 +1,29 @@
+import DahliaRuntimeSupport
 import Foundation
 
-/// Dahlia Bot's standing settings, kept on this Mac for each account. Only the user edits them in Settings; the Router
-/// and Workers read them and have no tool that changes them.
+/// Super Agent's settings kept on this Mac for the account. Its guidance itself is `SOUL.md` in its home (`DahliaBotHome`).
 enum AgentBotSettings {
     static let guidanceLimit = 8000
 
     static func remove(accountKey: String, defaults: UserDefaults = .standard) {
-        for prefix in ["botGuidance", "botWorkServers", "botWebSearch", "botHomeThread"] {
-            defaults.removeObject(forKey: "\(prefix).\(accountKey)")
-        }
+        defaults.removeObject(forKey: guidanceKey(for: accountKey))
+        defaults.removeObject(forKey: botThreadKey(for: accountKey))
     }
 
+    /// Where the guidance was kept before `SOUL.md`; `DahliaBotHome.ensure` moves it there once.
     static func guidanceKey(for account: String) -> String { "botGuidance.\(account)" }
-    static func workServersKey(for account: String) -> String { "botWorkServers.\(account)" }
-    static func webSearchKey(for account: String) -> String { "botWebSearch.\(account)" }
-    static func homeThreadKey(for account: String) -> String { homeThreadKey(accountKey: account) }
-    static func homeThreadKey(accountKey: String) -> String { "botHomeThread.\(accountKey)" }
+    private static let threadScope = DahliaApplicationSupport.currentDirectoryURL.standardizedFileURL.resolvingSymlinksInPath().path
 
-    /// The Thread where the user talks with their secretary.
-    static func homeThread(for account: String, defaults: UserDefaults = .standard) -> String? {
-        defaults.string(forKey: homeThreadKey(for: account))
+    /// Development worktrees and the released app share defaults, but each owns a different database.
+    static func botThreadKey(for account: String, dataDirectory: URL? = nil) -> String {
+        let scope = dataDirectory?.standardizedFileURL.resolvingSymlinksInPath().path ?? threadScope
+        return "botThread.\(account).\(scope)"
     }
 
-    /// The user's guidance for their secretary (Orca's `SOUL.md`): whom to put first, tone, what never to do, quiet hours.
-    static func guidance(for account: String, defaults: UserDefaults = .standard) -> String {
-        String((defaults.string(forKey: guidanceKey(for: account)) ?? "").prefix(guidanceLimit))
-    }
+    static func legacyBotThreadKey(for account: String) -> String { "botThread.\(account)" }
 
-    /// Stable connection IDs a Worker may read for work the user asked for, besides the Source an event came from.
-    static func workServers(for account: String, defaults: UserDefaults = .standard) -> [String] {
-        defaults.stringArray(forKey: workServersKey(for: account)) ?? []
-    }
-
-    /// Web search for Workers. Queries leave the Mac, so it is off until the user turns it on.
-    static func webSearch(for account: String, defaults: UserDefaults = .standard) -> Bool {
-        defaults.bool(forKey: webSearchKey(for: account))
+    /// Dahlia Bot's one current thread, where the user talks with it and it routes events.
+    static func botThread(for account: String, defaults: UserDefaults = .standard) -> String? {
+        defaults.string(forKey: botThreadKey(for: account))
     }
 }

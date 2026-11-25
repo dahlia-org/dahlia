@@ -67,6 +67,9 @@ struct CodexChatRelatedThreadsView: View {
                                 } catch { self.error = error.localizedDescription }
                             }
                         }
+                        .padding(.horizontal, 12)
+                        .padding(.bottom, 12)
+                        .padding(.top, 4)
                     }
                 }
             }

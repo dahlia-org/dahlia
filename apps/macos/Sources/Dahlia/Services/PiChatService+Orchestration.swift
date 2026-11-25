@@ -3,14 +3,21 @@ import Foundation
 import GRDB
 
 extension PiChatService {
-    nonisolated static let readThreadTools = ["dah_thread_list", "dah_thread_search", "dah_thread_read"]
+    /// Modeled on T3's thread tools: a launched thread is top-level and followed by its starter; a delegated task is a
+    /// child (a subagent) whose result comes back on its own.
+    nonisolated static let readThreadTools = ["thread_list", "thread_search", "thread_read"]
     nonisolated static let manageThreadTools = [
-        "dah_thread_start",
-        "dah_thread_send",
-        "dah_thread_wait",
-        "dah_thread_interrupt",
-        "dah_thread_update",
+        "thread_launch",
+        "delegate_task",
+        "task_status",
+        "task_cancel",
+        "thread_send",
+        "thread_wait",
+        "thread_interrupt",
+        "thread_update",
     ]
+    /// The thread tools reach Dahlia under their own names.
+    nonisolated static let threadToolMethods = Set(readThreadTools + manageThreadTools)
 
     func runDidSettle(_ threadID: String, accountID: String? = nil) {
         guard let account = accountID ?? sessions[threadID].map({ _ in AppAccount.key }) else { return }
@@ -42,7 +49,7 @@ extension PiChatService {
             guard AppAccount.key == accountID else {
                 try await history().dbQueue.write {
                     try $0.execute(
-                        sql: "UPDATE chat_runs SET status='interrupted' WHERE status='queued' AND origin NOT IN ('schedule','task') AND threadID IN (SELECT id FROM chat_threads WHERE accountID=?)",
+                        sql: "UPDATE chat_runs SET status='interrupted' WHERE status='queued' AND origin <> 'schedule' AND threadID IN (SELECT id FROM chat_threads WHERE accountID=?)",
                         arguments: [accountID]
                     )
                 }
@@ -50,14 +57,12 @@ extension PiChatService {
                 return
             }
             canReschedule = true
-            let queued = try history().queuedRuns(accountID: accountID)
-            for run in queued {
+            let candidates = try history().queuedRuns(accountID: accountID).map(\.id)
+            for id in candidates {
+                guard let run = try history().run(id: id), run.status == "queued" else { continue }
                 guard unattendedRunEligible(run, account: accountID) else { continue }
                 if run.origin == "schedule" {
                     guard try scheduleService().validateStart(run, account: accountID) else { continue }
-                }
-                if run.origin == "task" {
-                    guard try validateWorkerStart(run, account: accountID) else { continue }
                 }
                 let active = sessions.filter { _, session in
                     AppAccount.key == accountID && session.turn?.run.origin != "user"
@@ -70,7 +75,7 @@ extension PiChatService {
                 do {
                     _ = try await beginTurn(
                         threadID: run.threadID,
-                        inputs: [.text(run.input)],
+                        inputs: run.origin == "restart" ? ChatHistoryCodec.decodeInputs(run.input) : [.text(run.input)],
                         model: run.model,
                         effort: run.effort,
                         approvalMethod: CodexChatApprovalMethod(rawValue: run.approvalMethod) ?? .ask
@@ -79,8 +84,8 @@ extension PiChatService {
                     scheduledRuns[run.threadID] = nil
                     // A run that failed after its turn began has already ended; one that never started ends here.
                     if !unattendedRunEligible(run, account: accountID) { continue }
-                    if try history().run(id: run.id)?.status == "queued" {
-                        endRun(run.id, threadID: run.threadID, accountID: accountID, status: "failed", savingThread: false)
+                    if let failed = try history().failQueuedRun(run) {
+                        endRun(failed.id, threadID: failed.threadID, accountID: accountID, status: "failed", savingThread: false)
                     }
                 }
             }
@@ -92,25 +97,32 @@ extension PiChatService {
 
     /// The queue and its final post-preparation claim use the same current eligibility.
     func unattendedRunEligible(_ run: ChatRunRecord, account: String) -> Bool {
-        if ["schedule", "task"].contains(run.origin), AgentBackgroundActivity.isRecording { return false }
-        if run.origin == "task" { return (try? inboxService().isPaused(account: account)) == false }
+        // Super Agent's notices, and the work it hands to threads, are the always-on agent's: none starts while recording.
+        let fromSuperAgent = (run.origin != "user" && run.profile == PiExecutionProfile.bot.rawValue)
+            || (run.requestedByThreadID.map(isBotThread) ?? false)
+        if run.origin == "schedule" || fromSuperAgent, AgentBackgroundActivity.isRecording { return false }
+        if isBotNotice(run) { return (try? inboxService().isPaused(account: account)) == false }
         return true
+    }
+
+    /// Any unattended turn in Super Agent, including task results and restart continuations.
+    func isBotNotice(_ run: ChatRunRecord) -> Bool {
+        run.origin != "user" && isSuperAgentThread(run.threadID)
+    }
+
+    /// Super Agent's current thread, the one whose thread tools also manage Tasks.
+    func isSuperAgentThread(_ threadID: String) -> Bool {
+        threadID == AgentBotSettings.botThread(for: AppAccount.key)
     }
 
     func validateUnattendedStart(threadID: String, account: String) throws {
         guard let queued = scheduledRuns[threadID] else { return }
         guard unattendedRunEligible(queued, account: account) else { throw CancellationError() }
-        if queued.origin == "task", let session = sessions[threadID] {
+        // A notice belongs to the bot's current thread; a thread replaced meanwhile gets none.
+        if queued.origin == "bot" {
             try validateBotActivity()
-            let settings = mcpSettings()
-            guard let task = try inboxService().task(threadID: threadID, account: account) else { throw CancellationError() }
-            let allowed = Set(Self.workerServerNames(
-                task, settings: settings, allowedWorkConnections: Set(AgentBotSettings.workServers(for: AppAccount.key))
-            ))
-            guard session.workerConnections.allSatisfy({ allowed.contains($0.key) && settings.connectionID(for: $0.key) == $0.value })
-            else { throw CancellationError() }
+            guard AgentBotSettings.botThread(for: account) == threadID else { throw CancellationError() }
         }
-        if queued.origin == "task", try !validateWorkerStart(queued, account: account) { throw CancellationError() }
     }
 
     func deliverResults(accountID: String) async {
@@ -131,7 +143,11 @@ extension PiChatService {
             for requester in requesters {
                 guard sessions[requester]?.turn == nil, startingTurns[requester] == nil, !waitingParents.contains(requester) else { continue }
                 guard try !history().queuedRuns(accountID: accountID).contains(where: { $0.threadID == requester }) else { continue }
-                let pending = try history().undeliveredRuns(requesterID: requester)
+                // A launched thread waiting for the user shows it on its card; its caller hears once it ends. A subagent's
+                // wait still reaches its parent.
+                let pending = try history().undeliveredRuns(requesterID: requester).filter {
+                    try $0.status != "waitingForUser" || history().thread(id: $0.threadID, accountID: accountID).parentThreadID != nil
+                }
                 let stopped = try pending.filter {
                     try $0.suppressAutomaticNotification || (history().run(id: $0.rootRunID)?.stoppedByUser == true)
                 }
@@ -141,7 +157,7 @@ extension PiChatService {
                 let text = try notificationText(runs, accountID: accountID)
                 let parent = try history().thread(id: requester, accountID: accountID)
                 let id = UUID.v7()
-                let run = try ChatRunRecord(
+                var run = try ChatRunRecord(
                     id: id,
                     threadID: requester,
                     rootRunID: first.rootRunID,
@@ -152,6 +168,7 @@ extension PiChatService {
                     approvalMethod: chosenApprovalMethod(requester)?.rawValue ?? CodexChatApprovalMethod.autoReview.rawValue,
                     createdAt: .now
                 )
+                run.profile = launchProfile(requester).rawValue
                 try history().enqueueNotification(run, deliveredRuns: runs)
             }
             await scheduleRuns(accountID: accountID)
@@ -172,7 +189,7 @@ extension PiChatService {
                 "started_at": run.startedAt.map { .number($0.timeIntervalSince1970) } ?? .null,
                 "completed_at": run.completedAt.map { .number($0.timeIntervalSince1970) } ?? .null,
                 "excerpt": .string(run.resultExcerpt),
-                // The excerpt is a prefix; the full reply stays in the thread for `dah_thread_read`.
+                // The excerpt is a prefix; the full reply stays in the thread for `thread_read`.
                 "truncated": .bool(run.resultExcerpt.count >= ChatThreadStore.resultExcerptLimit),
             ])
         }
@@ -182,7 +199,8 @@ extension PiChatService {
 
     func threadTool(_ method: String, payload: JSONValue, threadID: String, processID: UUID) async throws -> JSONValue {
         guard let callerSession = sessions[threadID], callerSession.processID == processID,
-              let callerTurn = callerSession.turn, !callerTurn.stopRequested, callerSession.profile == .interactive else { throw CancellationError() }
+              let callerTurn = callerSession.turn, !callerTurn.stopRequested, [.interactive, .bot].contains(callerSession.profile)
+        else { throw CancellationError() }
         let store = try history()
         let account = AppAccount.key
         let caller = try store.thread(id: threadID, accountID: account)
@@ -190,8 +208,15 @@ extension PiChatService {
               sessions[threadID]?.processID == processID,
               sessions[threadID]?.turn?.id == callerTurn.id,
               sessions[threadID]?.turn?.stopRequested == false else { throw CancellationError() }
-        let args = payload.objectValue ?? [:]
-        if let input = args["input"]?.stringValue, input.count > 32000 { throw PiRuntimeError.rpcError(
+        // Some models fill every optional field with "" or null; an empty value means the field was left out.
+        let args = (payload.objectValue ?? [:]).filter { _, value in
+            switch value {
+            case .null, .array([]): false
+            case let .string(text): text.nilIfBlank != nil
+            default: true
+            }
+        }
+        if let text = args["message"]?.stringValue ?? args["task"]?.stringValue, text.count > 32000 { throw PiRuntimeError.rpcError(
             code: nil,
             message: "Input exceeds 32000 characters"
         ) }
@@ -201,29 +226,13 @@ extension PiChatService {
         guard readOnly || (caller.parentThreadID == nil && callerTurn.run.requestedByThreadID == nil) else {
             throw PiRuntimeError.rpcError(code: nil, message: "Work requested by another thread has read-only thread tools")
         }
-        if method == "thread_list" {
-            return try store.toolThreadPage(accountID: account, arguments: args)
+        // Events go to a thread only from Super Agent, which reads them in its inbox.
+        guard args["event_ids"] == nil || isSuperAgentThread(threadID) else {
+            throw PiRuntimeError.rpcError(code: nil, message: "event_ids are for Super Agent's thread")
         }
-        if method == "thread_search" {
-            guard let query = args["query"]?.stringValue?.nilIfBlank else { throw PiRuntimeError.invalidProtocolResponse }
-            let page = try await MeetingRepository.searchChatPage(
-                accountID: account,
-                criteria: .init(text: String(query.prefix(1024))),
-                offset: 0,
-                limit: 50,
-                dbQueue: store.dbQueue
-            )
-            return .object([
-                "threads": .array(page.threads.map { .object(["id": .string($0.id), "title": .string($0.title)]) }),
-                "has_more": .bool(page.hasMore),
-            ])
-        }
-        if method == "thread_start" {
-            return try await startChildThread(arguments: args, caller: caller, callerSession: callerSession, callerTurn: callerTurn)
-        }
-        if method == "thread_wait" {
-            return try await waitForThreads(arguments: args, threadID: threadID, processID: processID, callerTurn: callerTurn, account: account)
-        }
+        if let result = try await untargetedThreadTool(
+            method, args: args, caller: caller, callerSession: callerSession, callerTurn: callerTurn, processID: processID
+        ) { return result }
         guard let targetID = args["thread_id"]?.stringValue else { throw PiRuntimeError.invalidProtocolResponse }
         let target = try store.thread(id: targetID, accountID: account)
         if method == "thread_read" { return try readThread(targetID, arguments: args, requesterID: threadID) }
@@ -241,6 +250,86 @@ extension PiChatService {
         }
     }
 
+    /// The thread tools that name no existing thread to act on: listing, searching, starting, and following tasks.
+    private func untargetedThreadTool(
+        _ method: String,
+        args: [String: JSONValue],
+        caller: ChatThreadRecord,
+        callerSession: Session,
+        callerTurn: Turn,
+        processID: UUID
+    ) async throws -> JSONValue? {
+        let store = try history()
+        let account = caller.accountID
+        let threadID = caller.id
+        switch method {
+        case "thread_list":
+            return try store.toolThreadPage(accountID: account, arguments: args)
+        case "thread_search":
+            return try await searchThreads(args, account: account)
+        case "thread_launch":
+            return try await launchThread(arguments: args, caller: caller, callerSession: callerSession, callerTurn: callerTurn)
+        case "delegate_task":
+            let started = try await startChildThread(arguments: args, caller: caller, callerSession: callerSession, callerTurn: callerTurn)
+            guard args["mode"]?.stringValue == "wait", let child = started.objectValue?["thread_id"]?.stringValue else { return started }
+            let seconds = min(max((args["timeout_ms"]?.intValue ?? 45000) / 1000, 1), 45)
+            return try await waitForThread(child, runID: nil, seconds: seconds, threadID: threadID, processID: processID, callerTurn: callerTurn)
+        case "task_status", "task_cancel":
+            guard let taskID = args["task_id"]?.stringValue, let child = try? store.thread(id: taskID, accountID: account),
+                  child.parentThreadID == threadID
+            else { throw PiRuntimeError.rpcError(code: nil, message: "No task with that task_id in this thread") }
+            return method == "task_status" ? try taskStatus(child.id, requesterID: threadID)
+                : try await interruptThread(child.id, arguments: [:], account: account)
+        case "thread_wait":
+            guard let targetID = args["thread_id"]?.stringValue, targetID != threadID else { throw PiRuntimeError.invalidProtocolResponse }
+            _ = try store.thread(id: targetID, accountID: account)
+            let seconds = min(max((args["timeout_ms"]?.intValue ?? 30000) / 1000, 1), 60)
+            return try await waitForThread(
+                targetID, runID: args["run_id"]?.stringValue.flatMap(UUID.init(uuidString:)), seconds: seconds,
+                threadID: threadID, processID: processID, callerTurn: callerTurn
+            )
+        default:
+            return nil
+        }
+    }
+
+    /// Full-text search over threads, leaving out subagent (child) threads as T3's search does.
+    private func searchThreads(_ args: [String: JSONValue], account: String) async throws -> JSONValue {
+        guard let query = args["query"]?.stringValue?.nilIfBlank else { throw PiRuntimeError.invalidProtocolResponse }
+        let store = try history()
+        let page = try await MeetingRepository.searchChatPage(
+            accountID: account,
+            criteria: .init(text: String(query.prefix(1024))),
+            offset: 0,
+            limit: min(max(args["limit"]?.intValue ?? 50, 1), 50),
+            dbQueue: store.dbQueue
+        )
+        let topLevel = try page.threads.filter { try store.thread(id: $0.id, accountID: account).parentThreadID == nil }
+        return .object([
+            "threads": .array(topLevel.map { .object(["id": .string($0.id), "title": .string($0.title)]) }),
+            "has_more": .bool(page.hasMore),
+        ])
+    }
+
+    /// A delegated task's state: working while its latest run is queued or running, otherwise its result, which reading
+    /// here counts as receiving.
+    private func taskStatus(_ childID: String, requesterID: String) throws -> JSONValue {
+        let store = try history()
+        guard let run = try store.latestRun(threadID: childID) else { throw PiRuntimeError.invalidProtocolResponse }
+        let working = ["queued", "running", "waitingForUser"].contains(run.status)
+        if !working {
+            try store.markRunsDelivered(store.undeliveredRuns(requesterID: requesterID).filter { $0.threadID == childID })
+        }
+        return .object([
+            "task_id": .string(childID),
+            "run_id": .string(run.id.uuidString),
+            "status": .string(run.status),
+            "work_state": .string(working ? "working" : "result_available"),
+            "summary": working ? .null : .string(run.resultExcerpt),
+            "truncated": .bool(run.resultExcerpt.count >= ChatThreadStore.resultExcerptLimit),
+        ])
+    }
+
     func readThread(_ targetID: String, arguments args: [String: JSONValue], requesterID: String) throws -> JSONValue {
         let store = try history()
         // Fetched before the read, so a run that settles during it is still announced.
@@ -256,7 +345,7 @@ extension PiChatService {
     func sendToThread(
         _ targetID: String, arguments args: [String: JSONValue], caller: ChatThreadRecord, callerTurn: Turn
     ) async throws -> JSONValue {
-        guard let input = args["input"]?.stringValue?.nilIfBlank,
+        guard let message = args["message"]?.stringValue?.nilIfBlank,
               let requestID = args["client_request_id"]?.stringValue?.nilIfBlank else { throw PiRuntimeError.invalidProtocolResponse }
         let mode = args["mode"]?.stringValue ?? "auto"
         // A retry key names one delivery, queued or steered, so it is checked before anything reaches a thread.
@@ -268,8 +357,11 @@ extension PiChatService {
             }
             return runJSON(earlier, delivery: "duplicate")
         }
+        let (input, eventIDs) = try messageWithEvents(message, arguments: args)
         // Only the requester may add input to a run: a turn the user or another thread started is never redirected.
-        let ownedTurn = sessions[targetID]?.turn.flatMap { $0.run.requestedByThreadID == caller.id ? $0 : nil }
+        let ownedTurn = try sessions[targetID]?.turn.flatMap { turn in
+            try history().run(id: turn.id)?.requestedByThreadID == caller.id ? turn : nil
+        }
         if mode == "steer" || (mode == "auto" && ownedTurn != nil) {
             guard let turn = ownedTurn else {
                 throw PiRuntimeError.rpcError(code: nil, message: "Only a running run you requested can be steered; use queue")
@@ -277,6 +369,7 @@ extension PiChatService {
             steeredRequests[steerKey] = turn.run
             do {
                 try await steer(threadID: targetID, turnID: turn.wireID, inputs: [.text(agentRequestText(input, callerID: caller.id))])
+                try continueTask(targetID, eventIDs: eventIDs, caller: caller)
                 return runJSON(turn.run, delivery: "steered")
             } catch {
                 steeredRequests[steerKey] = nil
@@ -289,8 +382,29 @@ extension PiChatService {
         guard run.threadID == targetID else {
             throw PiRuntimeError.rpcError(code: nil, message: "client_request_id was already used for another thread in this request")
         }
+        try continueTask(targetID, eventIDs: eventIDs, caller: caller)
         Task { await self.scheduleRuns(accountID: caller.accountID) }
         return runJSON(run, delivery: "queued")
+    }
+
+    /// Super Agent's message with the events it hands over appended, fenced as data, and their IDs.
+    private func messageWithEvents(_ message: String, arguments args: [String: JSONValue]) throws -> (String, [String]) {
+        let ids = args["event_ids"]?.arrayValue?.compactMap(\.stringValue) ?? []
+        guard !ids.isEmpty else { return (message, []) }
+        let inbox = try inboxService()
+        do {
+            let events = try inbox.undecidedEvents(ids, account: AppAccount.key)
+            let sources = try Dictionary(uniqueKeysWithValues: inbox.sources(account: AppAccount.key).map { ($0.id, $0.name) })
+            return (message + Self.handedEvents(events, sources: sources), ids)
+        } catch let failure as AgentInboxService.Failure {
+            throw PiRuntimeError.rpcError(code: nil, message: failure.message)
+        }
+    }
+
+    /// When Super Agent sends to a Task's thread, the Task is in progress again and the events it handed over are its.
+    private func continueTask(_ threadID: String, eventIDs: [String], caller: ChatThreadRecord) throws {
+        guard isSuperAgentThread(caller.id) else { return }
+        try inboxService().continueTask(threadID: threadID, eventIDs: eventIDs, account: caller.accountID)
     }
 
     func interruptThread(_ targetID: String, arguments args: [String: JSONValue], account: String) async throws -> JSONValue {
@@ -318,10 +432,13 @@ extension PiChatService {
         let store = try history()
         let threadID = caller.id
         let account = caller.accountID
-        guard let input = args["input"]?.stringValue?.nilIfBlank,
-              let requestID = args["client_request_id"]?.stringValue?.nilIfBlank else { throw PiRuntimeError.invalidProtocolResponse }
+        guard let input = args["task"]?.stringValue?.nilIfBlank else { throw PiRuntimeError.invalidProtocolResponse }
+        // A retry with the same key returns the task it started; without a key, each call is a new task.
+        let requestID = args["client_request_id"]?.stringValue?.nilIfBlank ?? UUID.v7().uuidString
         let rootRunID = callerTurn.run.rootRunID
-        if let existing = try store.requestedRun(requesterID: threadID, rootRunID: rootRunID, clientRequestID: requestID) { return runJSON(existing) }
+        if let existing = try store.requestedRun(requesterID: threadID, rootRunID: rootRunID, clientRequestID: requestID) {
+            return taskJSON(existing)
+        }
         let context = try store.toolContext(arguments: args, accountID: account)
         let child = try await startThread(
             model: args["model"]?.stringValue ?? callerSession.model,
@@ -331,7 +448,7 @@ extension PiChatService {
         do {
             if let existing = try store.requestedRun(requesterID: threadID, rootRunID: rootRunID, clientRequestID: requestID) {
                 try store.deleteThread(id: child.id)
-                return runJSON(existing)
+                return taskJSON(existing)
             }
             guard sessions[threadID]?.turn?.id == callerTurn.id,
                   sessions[threadID]?.turn?.stopRequested == false else { throw CancellationError() }
@@ -349,27 +466,105 @@ extension PiChatService {
                 context: context
             )
             Task { await self.scheduleRuns(accountID: account) }
-            return runJSON(run)
+            return taskJSON(run)
         } catch {
             try? store.deleteThread(id: child.id)
             throw error
         }
     }
 
-    func waitForThreads(
+    private func taskJSON(_ run: ChatRunRecord) -> JSONValue {
+        guard case var .object(json) = runJSON(run) else { return runJSON(run) }
+        json["task_id"] = .string(run.threadID)
+        return .object(json)
+    }
+
+    /// A new top-level thread, in the user's history like one they started. Its result does not come back on its own; the
+    /// launcher follows it with `thread_read` or `thread_wait`.
+    func launchThread(
         arguments args: [String: JSONValue],
-        threadID: String,
-        processID: UUID,
-        callerTurn: Turn,
-        account: String
+        caller: ChatThreadRecord,
+        callerSession: Session,
+        callerTurn: Turn
     ) async throws -> JSONValue {
         let store = try history()
-        guard let ids = args["thread_ids"]?.arrayValue?.compactMap(\.stringValue), !ids.isEmpty, ids.count <= 20,
-              !ids.contains(threadID) else { throw PiRuntimeError.invalidProtocolResponse }
-        for id in ids {
-            _ = try store.thread(id: id, accountID: account)
+        guard let title = args["title"]?.stringValue?.nilIfBlank else { throw PiRuntimeError.invalidProtocolResponse }
+        // A thread Super Agent launches is a Task: its result comes back to Super Agent, and the events it hands over go to it.
+        let isTask = isSuperAgentThread(caller.id)
+        let requestID = args["client_request_id"]?.stringValue?.nilIfBlank ?? UUID.v7().uuidString
+        if let existing = try store.idleLaunch(requesterID: caller.id, rootRunID: callerTurn.run.rootRunID, clientRequestID: requestID) {
+            return idleLaunchJSON(existing, isTask: isTask)
         }
-        let seconds = min(max(args["timeout_seconds"]?.intValue ?? 30, 1), 60)
+        if let existing = try store.requestedRun(requesterID: caller.id, rootRunID: callerTurn.run.rootRunID, clientRequestID: requestID) {
+            return runJSON(existing)
+        }
+        let context = try store.toolContext(arguments: args, accountID: caller.accountID)
+        let thread = try await startThread(
+            model: args["model"]?.stringValue ?? callerSession.model,
+            effort: args["effort"]?.stringValue ?? caller.reasoningEffort ?? "medium",
+            context: context
+        )
+        do {
+            // Model discovery yields; a concurrent call may already have committed this request.
+            if let existing = try store.idleLaunch(requesterID: caller.id, rootRunID: callerTurn.run.rootRunID, clientRequestID: requestID) {
+                try store.deleteThread(id: thread.id)
+                return idleLaunchJSON(existing, isTask: isTask)
+            }
+            if let existing = try store.requestedRun(requesterID: caller.id, rootRunID: callerTurn.run.rootRunID, clientRequestID: requestID) {
+                try store.deleteThread(id: thread.id)
+                return runJSON(existing)
+            }
+            guard sessions[caller.id]?.turn?.id == callerTurn.id,
+                  sessions[caller.id]?.turn?.stopRequested == false else { throw CancellationError() }
+            let (message, eventIDs) = try args["message"]?.stringValue?.nilIfBlank.map { try messageWithEvents($0, arguments: args) } ?? (nil, [])
+            try store.updateThread(id: thread.id, title: String(title.prefix(256)))
+            let run = try message.map {
+                try queueAgentRun(
+                    targetID: thread.id, caller: caller, turn: callerTurn, input: $0, requestID: requestID, arguments: args,
+                    context: context, notifiesCaller: isTask
+                )
+            }
+            if isTask {
+                try inboxService().openTask(
+                    threadID: thread.id, title: title, instructions: args["message"]?.stringValue ?? "", eventIDs: eventIDs, account: caller.accountID
+                )
+            }
+            guard let run else {
+                try store.recordIdleLaunch(
+                    threadID: thread.id,
+                    requesterID: caller.id,
+                    rootRunID: callerTurn.run.rootRunID,
+                    clientRequestID: requestID
+                )
+                return idleLaunchJSON(thread.id, isTask: isTask)
+            }
+            Task { await self.scheduleRuns(accountID: caller.accountID) }
+            guard case var .object(json) = runJSON(run) else { return runJSON(run) }
+            json["task"] = .bool(isTask)
+            return .object(json)
+        } catch {
+            try? store.deleteThread(id: thread.id)
+            throw error
+        }
+    }
+
+    private func idleLaunchJSON(_ threadID: String, isTask: Bool) -> JSONValue {
+        .object(["thread_id": .string(threadID), "status": .string("idle"), "task": .bool(isTask)])
+    }
+
+    /// Waits until the thread's run (its latest, or `runID`) settles or needs the user, or a result of work this thread
+    /// requested from it arrives. A result received here is not delivered again.
+    func waitForThread(
+        _ targetID: String,
+        runID: UUID?,
+        seconds: Int,
+        threadID: String,
+        processID: UUID,
+        callerTurn: Turn
+    ) async throws -> JSONValue {
+        let store = try history()
+        let account = AppAccount.key
+        if let runID { guard try store.run(id: runID)?.threadID == targetID else { throw PiRuntimeError.invalidProtocolResponse } }
         guard waitingParents.insert(threadID).inserted
         else { throw PiRuntimeError.rpcError(code: nil, message: "Already waiting in this thread") }
         defer { waitingParents.remove(threadID) }
@@ -380,20 +575,21 @@ extension PiChatService {
             // A stop or a turn that is gone ends the wait with a result, not an error the next turn would inherit.
             guard let turn = sessions[threadID]?.turn, turn.id == callerTurn.id, sessions[threadID]?.processID == processID,
                   !turn.stopRequested else { return .object(["error": .string("The wait was stopped")]) }
-            let runs = try ids.compactMap {
-                try store.latestRun(threadID: $0)
-            }
-            let delivered = try store.undeliveredRuns(requesterID: threadID).filter { ids.contains($0.threadID) }
+            let run = try runID.flatMap { try store.run(id: $0) } ?? store.latestRun(threadID: targetID)
+            let delivered = try store.undeliveredRuns(requesterID: threadID).filter { $0.threadID == targetID }
             // Results already received do not end a wait; only a new one, or nothing left to wait for, does.
-            let pending = runs.contains { ["queued", "running", "waitingForUser"].contains($0.status) }
+            let pending = run.map { ["queued", "running"].contains($0.status) } ?? false
             let timedOut = ContinuousClock.now >= deadline
             if !delivered.isEmpty || !pending || timedOut {
                 try store.markRunsDelivered(delivered)
                 return try .object([
-                    "runs": .array(runs.map { runJSON($0) }),
+                    "run": run.map { runJSON($0) } ?? .null,
                     "results": .string(notificationText(delivered, accountID: account)),
                     "timed_out": .bool(timedOut),
-                    "next": timedOut ? .string("Results reach this thread automatically once it is idle. End your turn instead of waiting again.") :
+                    "next": timedOut ?
+                        .string(
+                            "A delegated task's result reaches this thread automatically once it is idle. End your turn instead of waiting again."
+                        ) :
                         .null,
                 ])
             }
@@ -408,15 +604,18 @@ extension PiChatService {
         input: String,
         requestID: String,
         arguments: [String: JSONValue],
-        context: CodexChatContext? = nil
+        context: CodexChatContext? = nil,
+        notifiesCaller: Bool = true
     ) throws -> ChatRunRecord {
         guard sessions[caller.id]?.turn?.id == turn.id,
               sessions[caller.id]?.turn?.stopRequested == false else { throw CancellationError() }
-        guard try history().thread(id: targetID, accountID: caller.accountID).scheduleID == nil, !isTaskThread(targetID) else {
+        // Super Agent's own thread takes only the user's words and Dahlia's notices; the tasks it delegates may be sent more.
+        let target = try history().thread(id: targetID, accountID: caller.accountID)
+        guard target.scheduleID == nil, target.parentThreadID != nil || !isBotThread(targetID) else {
             throw HermesLearning.failure(L10n.agentScheduleReadOnly)
         }
         let text = context.map { CodexChatPromptCodec.encode(text: input, context: $0) } ?? input
-        let run = try history().enqueueRun(ChatRunRecord(
+        var run = try ChatRunRecord(
             id: .v7(),
             threadID: targetID,
             requestedByThreadID: caller.id,
@@ -429,16 +628,24 @@ extension PiChatService {
             clientRequestID: requestID,
             createdAt: .now,
             requestedByRunID: turn.id
-        ))
+        )
+        // A launched thread is followed by its launcher; only delegated work reports back on its own.
+        run.suppressAutomaticNotification = !notifiesCaller
+        // Super Agent's delegated tasks are its own work, recorded as its, so they stay out of learning too.
+        run.profile = launchProfile(targetID).rawValue
+        let queued = try history().enqueueRun(run)
         publishStates()
-        return run
+        return queued
     }
 
     /// JSON escaping keeps agent text (including forged closing tags) inside its provenance envelope.
     func agentRequestText(_ input: String, callerID: String) throws -> String {
+        guard input.count <= 32000 else {
+            throw PiRuntimeError.rpcError(code: nil, message: "Input including handed events exceeds 32000 characters; send fewer events.")
+        }
         let payload: JSONValue = .object([
             "thread_id": .string(callerID),
-            "input": .string(String(input.prefix(32000))),
+            "input": .string(input),
         ])
         let json = try String(decoding: JSONEncoder().encode(payload), as: UTF8.self)
         return "<thread_request source=\"dahlia\" untrusted=\"true\">\n\(json)\n</thread_request>"

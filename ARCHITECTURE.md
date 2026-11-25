@@ -235,7 +235,7 @@ Hermes のふり返りと Curator の統合パスは utility の独立した1本
 予定ごとの結果 Thread は閲覧専用で、発火ごとに新規 Pi process を使う。
 [自己学習](docs/spec/desktop/pi-self-learning.md)・[定期実行](docs/spec/desktop/scheduled-agent-scope.md)を参照。
 always-on エージェントの取り込みも同じ `Housekeeping` が毎分判定し、選択中アカウントの Source を1本ずつ、`intake` プロファイルの Pi（その Source の読み取り専用 MCP と記録ツールだけ）で読む。
-記録先は `agent_event_inbox` で、状態の遷移は `AgentInboxService` だけが行う。振り分けは `router` プロファイルの Pi（MCP なし、振り分けの tool だけ）、案件の作業は案件ごとの読み取り専用スレッドの run として `worker` プロファイルの Pi（案件に許したサーバーと Dahlia の読み取りだけ）が行い、チャットの待ち行列で無人の run と合わせて3本まで並行する（`PiChatService+DahliaBot`）。Router はアカウントごとに1本。録音中は開始せず、実行中の取り込みも閉じる。Server 同期・バックアップに含めない（[always-on](docs/spec/desktop/always-on-agent.md)）。
+記録先は `agent_event_inbox` で、状態の遷移は `AgentInboxService` だけが行う。会話と振り分けは Super Agent の1本のスレッドが `bot` プロファイルの Pi（home で動き、Dahlia の読み取りとスレッドの tool だけ）で行い、新しいイベントがあると件数だけの無人のターンがそのスレッドの待ち行列に積まれる。仕事は Super Agent が `thread_launch` で起動する通常のスレッドが行い、そのスレッドが `agent_tasks` のタスクになる。結果は既存のスレッド間の通知で Super Agent に戻る（`PiChatService+DahliaBot`）。取り込みも Super Agent の home で動く。録音中は通知のターンと Super Agent が依頼した run を開始せず、実行中の取り込みと通知のターンも閉じる。Server 同期・バックアップに含めない（[always-on](docs/spec/desktop/always-on-agent.md)）。
 
 ## Workload Classes
 

@@ -2,6 +2,7 @@ import Foundation
 import GRDB
 
 extension PiChatService {
+    /// The threads a conversation started: its children and the threads it sent work to.
     func relatedThreads(parentThreadID: String) async throws -> [CodexChatThreadSummary] {
         try await runtime.requireConfigured()
         let store = try history()
@@ -125,7 +126,7 @@ extension PiChatService {
             model: record.model,
             reasoningEffort: record.reasoningEffort,
             approvalMethod: sessions[threadID]?.approvalMethod,
-            earlierMessagesCursor: page.earlierCursor, isReadOnly: record.scheduleID != nil || isTaskThread(record.id),
+            earlierMessagesCursor: page.earlierCursor, isReadOnly: record.scheduleID != nil || Self.isRetiredBotThread(record.id, in: store.dbQueue),
             parentThread: parent,
             lastItemSeq: page.lastItemSeq
         )
@@ -173,7 +174,12 @@ extension PiChatService {
     func effectiveApprovalMethod(_ threadID: String) -> CodexChatApprovalMethod {
         guard let session = sessions[threadID], var method = session.approvalMethod else { return .ask }
         let parent = (try? history().thread(id: threadID, accountID: AppAccount.key))?.parentThreadID
-        for ceiling in [session.turn?.run.requestedByThreadID, parent].compactMap(\.self) {
+        var requester: String?
+        if let turn = session.turn {
+            guard let saved = try? history().run(id: turn.id) else { return .ask }
+            requester = saved.requestedByThreadID
+        }
+        for ceiling in [requester, parent].compactMap(\.self) {
             if let chosen = chosenApprovalMethod(ceiling) { method = Self.stricterApproval(method, chosen) }
         }
         return method

@@ -274,7 +274,7 @@ extension PiChatService {
                 throw PiRuntimeError.rpcError(code: nil, message: "Input exceeds 32000 characters")
             }
             let thread = try history().thread(id: threadID, accountID: AppAccount.key)
-            // Work done for another thread never delegates further, as with `dah_thread_start`.
+            // Work done for another thread never delegates further, as with `delegate_task`.
             guard thread.parentThreadID == nil, turn.run.requestedByThreadID == nil else {
                 throw PiRuntimeError.rpcError(code: nil, message: "Work requested by another thread cannot start Omnigent sessions")
             }

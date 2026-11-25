@@ -100,10 +100,12 @@ extension PiChatService {
             let rows = try Row.fetchAll(db, sql: """
             SELECT i.threadID, json_extract(i.data,'$.role') AS role, json_extract(i.data,'$.content') AS content, r.origin
             FROM chat_items i JOIN chat_threads t ON t.id=i.threadID LEFT JOIN chat_runs r ON r.id=i.runID
-            WHERE t.accountID=? AND t.id<>? AND t.scheduleID IS NULL AND t.id NOT IN (SELECT threadID FROM agent_tasks WHERE threadID IS NOT NULL) AND json_extract(i.data,'$.type')='message'
+            WHERE t.accountID=? AND t.id<>? AND t.scheduleID IS NULL AND t.id NOT IN (SELECT threadID FROM agent_tasks WHERE threadID IS NOT NULL)
+                AND t.id NOT IN (SELECT threadID FROM chat_runs WHERE profile='bot') AND t.id IS NOT ?
+                AND json_extract(i.data,'$.type')='message'
                 AND json_extract(i.data,'$.role') IN ('user','assistant')
             ORDER BY i.createdAt DESC, i.seq DESC LIMIT ?
-            """, arguments: [account, threadID, Self.optimizerMessageLimit * 4])
+            """, arguments: [account, threadID, AgentBotSettings.botThread(for: account), Self.optimizerMessageLimit * 4])
             var pairs: [JSONValue] = []
             // Newest first: the oldest assistant text after a user message, before the next one, is its reply.
             var replies: [String: String] = [:]

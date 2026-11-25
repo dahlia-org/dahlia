@@ -195,9 +195,9 @@
             try store.createThread(target)
             let queued = try store.enqueueRun(run(target: target.id))
             #expect(queued.startedAt == nil)
-            #expect(try store.claimQueuedRun(queued.id))
+            #expect(try store.claimQueuedRun(queued) != nil)
             let startedAt = try #require(try store.run(id: queued.id)?.startedAt)
-            #expect(try !store.claimQueuedRun(queued.id))
+            #expect(try store.claimQueuedRun(queued) == nil)
             try store.setRunStatus(queued.id, status: "running")
             #expect(try store.run(id: queued.id)?.startedAt == startedAt)
             #expect(try store.run(id: queued.id)?.completedAt == nil)
@@ -206,6 +206,32 @@
             #expect(completedAt >= startedAt)
             try store.setRunStatus(queued.id, status: "completed")
             #expect(try store.run(id: queued.id)?.completedAt == completedAt)
+        }
+
+        @Test(arguments: ["thread", "requester", "nilRequester"], [false, true])
+        func queuedTransitionsRejectPreparationForAnOldRoute(change: String, failing: Bool) throws {
+            let store = try ChatThreadStore(dbQueue: AppDatabaseManager(path: ":memory:").dbQueue)
+            let target = thread(), replacement = thread(), requester = thread()
+            for record in [target, replacement, requester] {
+                try store.createThread(record)
+            }
+            let queued = try store.enqueueRun(run(target: target.id, requester: change == "nilRequester" ? nil : requester.id))
+            try store.dbQueue.write { db in
+                if change == "thread" {
+                    try db.execute(sql: "UPDATE chat_runs SET threadID=? WHERE id=?", arguments: [replacement.id, queued.id])
+                } else {
+                    try db.execute(sql: "UPDATE chat_runs SET requestedByThreadID=? WHERE id=?", arguments: [replacement.id, queued.id])
+                }
+            }
+            #expect(try store.claimQueuedRun(queued) == nil)
+            #expect(try store.failQueuedRun(queued) == nil)
+            let current = try #require(try store.run(id: queued.id))
+            #expect(current.status == "queued" && current.startedAt == nil && current.completedAt == nil)
+            let transitioned = try #require(try failing ? store.failQueuedRun(current) : store.claimQueuedRun(current))
+            #expect(transitioned.status == (failing ? "failed" : "running"))
+            #expect(transitioned.threadID == current.threadID && transitioned.requestedByThreadID == current.requestedByThreadID)
+            #expect(try store.claimQueuedRun(current) == nil)
+            #expect(try store.failQueuedRun(current) == nil)
         }
 
         @Test func resultNotificationKeepsCompletionTimeAndSeparateRunsForOneThread() {
@@ -323,11 +349,19 @@
             try store.createThread(parent)
             try store.createThread(target)
             _ = try store.enqueueRun(run(target: target.id, requester: parent.id, key: "queued"))
-            let result = try store.toolThreadPage(accountID: "local", arguments: ["status": .string("queued")])
+            let result = try store.toolThreadPage(accountID: "local", arguments: ["statuses": .array([.string("queued")])])
             let rows = try #require(result.objectValue?["threads"]?.arrayValue)
             #expect(rows.count == 1)
             #expect(rows.first?.objectValue?["id"]?.stringValue == target.id)
             #expect(rows.first?.objectValue?["status"]?.stringValue == "queued")
+            // Subagent (child) threads are left out unless asked for.
+            try store.setParent(target.id, parentID: parent.id, accountID: "local")
+            let topLevel = try store.toolThreadPage(accountID: "local", arguments: ["statuses": .array([.string("queued")])])
+            #expect(topLevel.objectValue?["threads"]?.arrayValue?.isEmpty == true)
+            let all = try store.toolThreadPage(accountID: "local", arguments: [
+                "statuses": .array([.string("queued")]), "include_subagents": .bool(true),
+            ])
+            #expect(all.objectValue?["threads"]?.arrayValue?.count == 1)
         }
 
         @Test func crossAccountNestedAndSelfRequestsAreRejected() throws {
@@ -356,6 +390,122 @@
             #expect(try runs.prefix(3).allSatisfy { try store.run(id: $0.id)?.status == "interrupted" })
             #expect(try runs.prefix(3).allSatisfy { try store.run(id: $0.id)?.resultDeliveredAt != nil })
             #expect(try store.run(id: runs[3].id)?.status == "completed")
+        }
+
+        /// As T3 Code's "Continue threads after restarts": a cut-short run continues, a queued one still starts, and one
+        /// that cannot continue tells its requester.
+        @Test func aCrashContinuesCutShortRunsUnlessTheyWaitedWereStoppedOrKeepCrashing() throws {
+            let store = try ChatThreadStore(dbQueue: AppDatabaseManager(path: ":memory:").dbQueue)
+            let parent = thread(), worker = thread(), waiting = thread(), stopped = thread(), crashing = thread()
+            for record in [parent, worker, waiting, stopped, crashing] {
+                try store.createThread(record)
+            }
+            func saved(_ target: String, _ status: String, requester: String? = nil, change: (inout ChatRunRecord) -> Void = { _ in }) throws
+                -> ChatRunRecord {
+                var item = run(target: target, requester: requester)
+                item.status = status
+                change(&item)
+                return try store.enqueueRun(item)
+            }
+            let originalInput = try ChatHistoryCodec.encodeInputs([.text("Do work"), .imageDataURI("data:image/png;base64,aW1hZ2U=")])
+            let cut = try saved(worker.id, "running", requester: parent.id) {
+                $0.approvalMethod = "never"
+                $0.input = originalInput
+            }
+            let asked = try saved(waiting.id, "waitingForUser", requester: parent.id)
+            let halted = try saved(stopped.id, "running") { $0.stoppedByUser = true }
+            let queued = try saved(parent.id, "queued")
+            for _ in 0 ..< 2 {
+                _ = try saved(crashing.id, "interrupted") { $0.origin = "restart" }
+            }
+            let again = try saved(crashing.id, "running") { $0.origin = "restart" }
+
+            try store.recoverInterruptedThreads(continuing: true)
+
+            let continuations = try store.dbQueue.read {
+                try ChatRunRecord.fetchAll($0, sql: "SELECT * FROM chat_runs WHERE status = 'queued' AND origin = 'restart'")
+            }
+            let next = try #require(continuations.first)
+            #expect(continuations.count == 1)
+            #expect(next.threadID == worker.id && next.requestedByThreadID == parent.id && next.rootRunID == cut.rootRunID)
+            #expect(next.input == cut.input && next.approvalMethod == CodexChatApprovalMethod.autoReview.rawValue)
+            // The continuation reports for the cut run; the one that waited reports that it was interrupted.
+            #expect(try store.run(id: cut.id)?.status == "interrupted" && store.run(id: cut.id)?.resultDeliveredAt != nil)
+            #expect(try store.undeliveredRuns(requesterID: parent.id).map(\.id) == [asked.id])
+            #expect(try store.run(id: halted.id)?.status == "interrupted")
+            #expect(try store.run(id: again.id)?.status == "interrupted")
+            #expect(try store.run(id: queued.id)?.status == "queued")
+        }
+
+        @Test func repeatedRecoveryKeepsTheOriginalInputAndSkipsRecordsWithoutIt() throws {
+            let store = try ChatThreadStore(dbQueue: AppDatabaseManager(path: ":memory:").dbQueue)
+            let target = thread(), legacy = thread()
+            try store.createThread(target)
+            try store.createThread(legacy)
+            let inputs: [CodexAppServerInput] = [
+                .text("Original request"),
+                .imageMetadata("Screenshot"),
+                .imageDataURI("data:image/png;base64,aW1hZ2U="),
+            ]
+            var interrupted = run(target: target.id)
+            interrupted.status = "running"
+            interrupted.input = try ChatHistoryCodec.encodeInputs(inputs)
+            _ = try store.enqueueRun(interrupted)
+            var incomplete = run(target: legacy.id)
+            incomplete.status = "running"
+            incomplete.input = ""
+            _ = try store.enqueueRun(incomplete)
+            try store.recoverInterruptedThreads(continuing: true)
+            let first = try #require(try store.queuedRuns(accountID: "local").first)
+            #expect(try ChatHistoryCodec.decodeInputs(first.input) == inputs)
+            let restored = try store.listItems(threadID: target.id)
+            #expect(restored.count == 1 && restored.first?.runID == interrupted.id)
+            let opening = try #require(restored.first)
+            #expect(try JSONDecoder().decode(JSONValue.self, from: Data(opening.data.utf8)) == ChatHistoryCodec.user(inputs))
+            #expect(try store.run(id: incomplete.id)?.status == "interrupted")
+            let claimed = try #require(try store.claimQueuedRun(first))
+            try store.setRunStatus(claimed.id, status: "running")
+            try store.recoverInterruptedThreads(continuing: true)
+            let second = try #require(try store.queuedRuns(accountID: "local").first)
+            #expect(second.input == first.input)
+            try store.setRunStatus(second.id, status: "completed")
+            #expect(try store.run(id: second.id)?.input.isEmpty == true)
+        }
+
+        @Test func aStoppedRootAlsoPreventsItsRunningDescendantsFromResuming() throws {
+            let store = try ChatThreadStore(dbQueue: AppDatabaseManager(path: ":memory:").dbQueue)
+            let parent = thread(), child = thread()
+            try store.createThread(parent)
+            try store.createThread(child)
+            let root = try store.enqueueRun(run(target: parent.id))
+            try store.markStoppedByUser(root.id)
+            var delegated = run(target: child.id, requester: parent.id, root: root.id)
+            delegated.status = "running"
+            _ = try store.enqueueRun(delegated)
+            try store.recoverInterruptedThreads(continuing: true)
+            #expect(try store.queuedRuns(accountID: "local").allSatisfy { $0.origin != "restart" })
+            #expect(try store.run(id: delegated.id)?.status == "interrupted")
+        }
+
+        @Test func idleLaunchKeysSurviveReloadAndStayWithinTheirRequesterAndRoot() throws {
+            let db = try AppDatabaseManager(path: ":memory:").dbQueue
+            let store = ChatThreadStore(dbQueue: db)
+            let caller = thread(), target = thread(), other = thread()
+            for record in [caller, target, other] {
+                try store.createThread(record)
+            }
+            let root = UUID.v7()
+            try store.recordIdleLaunch(threadID: target.id, requesterID: caller.id, rootRunID: root, clientRequestID: "once")
+            let reloaded = ChatThreadStore(dbQueue: db)
+            #expect(try reloaded.idleLaunch(requesterID: caller.id, rootRunID: root, clientRequestID: "once") == target.id)
+            #expect(try reloaded.idleLaunch(requesterID: other.id, rootRunID: root, clientRequestID: "once") == nil)
+            #expect(try reloaded.idleLaunch(requesterID: caller.id, rootRunID: .v7(), clientRequestID: "once") == nil)
+            #expect(throws: (any Error).self) { _ = try reloaded.requestedRun(requesterID: caller.id, rootRunID: root, clientRequestID: "once") }
+            #expect(throws: (any Error).self) {
+                try reloaded.recordIdleLaunch(threadID: other.id, requesterID: caller.id, rootRunID: root, clientRequestID: "once")
+            }
+            try store.deleteThread(id: target.id)
+            #expect(try reloaded.idleLaunch(requesterID: caller.id, rootRunID: root, clientRequestID: "once") == nil)
         }
 
         @Test func notificationDisplaysResultsWithoutTheRuntimeEnvelope() {

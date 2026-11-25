@@ -1,7 +1,7 @@
 import Foundation
 import GRDB
 
-/// One row of the inbox: an external item, a Worker result, a user decision or split, or a timer firing.
+/// One row of the inbox: an item intake read, or the user's answer to an Item. `taskID` names the Task it went to.
 struct AgentEventRecord: Codable, FetchableRecord, PersistableRecord, Identifiable, Sendable {
     static let databaseTableName = "agent_event_inbox"
     var id: String
@@ -17,9 +17,7 @@ struct AgentEventRecord: Codable, FetchableRecord, PersistableRecord, Identifiab
     var ref: String?
     var occurredAt: Date?
     var taskID: String?
-    var actionID: String?
     var payload: String
     var status: String
     var createdAt: Date
-    var deliveryRunID: UUID?
 }

@@ -6,11 +6,31 @@ extension ChatThreadStore {
     /// A request key is a retry key within one user request (root run), not for the requester's lifetime.
     func requestedRun(requesterID: String, rootRunID: UUID, clientRequestID: String) throws -> ChatRunRecord? {
         try dbQueue.read { db in
-            try ChatRunRecord.fetchOne(
+            let run = try ChatRunRecord.fetchOne(
                 db,
                 sql: "SELECT * FROM chat_runs WHERE requestedByThreadID = ? AND rootRunID = ? AND clientRequestID = ?",
                 arguments: [requesterID, rootRunID, clientRequestID]
             )
+            if run == nil, try Self.idleLaunch(requesterID: requesterID, rootRunID: rootRunID, clientRequestID: clientRequestID, in: db) != nil {
+                throw PiRuntimeError.rpcError(code: nil, message: "client_request_id was already used to create an idle thread in this request")
+            }
+            return run
+        }
+    }
+
+    func idleLaunch(requesterID: String, rootRunID: UUID, clientRequestID: String) throws -> String? {
+        try dbQueue.read { try Self.idleLaunch(requesterID: requesterID, rootRunID: rootRunID, clientRequestID: clientRequestID, in: $0) }
+    }
+
+    private static func idleLaunch(requesterID: String, rootRunID: UUID, clientRequestID: String, in db: Database) throws -> String? {
+        try String.fetchOne(db, sql: """
+        SELECT threadID FROM chat_thread_launches WHERE requesterID=? AND rootRunID=? AND requestID=?
+        """, arguments: [requesterID, rootRunID, clientRequestID])
+    }
+
+    func recordIdleLaunch(threadID: String, requesterID: String, rootRunID: UUID, clientRequestID: String) throws {
+        try dbQueue.write {
+            try ChatThreadLaunchRecord(requesterID: requesterID, rootRunID: rootRunID, requestID: clientRequestID, threadID: threadID).insert($0)
         }
     }
 
@@ -63,12 +83,13 @@ extension ChatThreadStore {
                 AND status IN ('running', 'waitingForUser', 'queued')
                 ORDER BY CASE status WHEN 'queued' THEN 1 ELSE 0 END, createdAt DESC LIMIT 1), status)
             """
-            for (parameter, column) in [("status", activeStatus), ("parent_thread_id", "parentThreadID")] {
-                if let value = args[parameter]?.stringValue { conditions.append("\(column) = ?")
-                    values += [value]
-                }
+            if let statuses = args["statuses"]?.arrayValue?.compactMap(\.stringValue), !statuses.isEmpty {
+                conditions.append("\(activeStatus) IN (\(Array(repeating: "?", count: min(statuses.count, 10)).joined(separator: ",")))")
+                values += StatementArguments(statuses.prefix(10))
             }
-            if let title = args["title"]?.stringValue { conditions.append("instr(lower(title), lower(?)) > 0")
+            // Subagent (child) threads are left out unless asked for, as in T3's list.
+            if args["include_subagents"]?.boolValue != true { conditions.append("parentThreadID IS NULL") }
+            if let title = args["title_contains"]?.stringValue { conditions.append("instr(lower(title), lower(?)) > 0")
                 values += [String(title.prefix(256))]
             }
             if let raw = args["project_id"]?.stringValue {

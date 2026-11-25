@@ -3,7 +3,6 @@ import SwiftUI
 struct CodexChatReasoningView: View {
     let reasoning: String
     let isStreaming: Bool
-    let showsActivity: Bool
 
     @State private var isExpanded = false
 
@@ -14,9 +13,6 @@ struct CodexChatReasoningView: View {
                     // Collapsed, the row previews the thought itself; expanded, the body below shows it in full.
                     Text(isExpanded ? L10n.chatReasoning : preview)
                         .lineLimit(1)
-                    if showsActivity {
-                        CodexChatThinkingIndicator()
-                    }
                 }
             }
             .buttonStyle(.plain)

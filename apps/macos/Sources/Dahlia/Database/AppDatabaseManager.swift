@@ -289,7 +289,6 @@ final class AppDatabaseManager: Sendable {
         migrator.registerMigration("v68_alwaysOnAgent") { db in
             try AlwaysOnAgentMigration.migrate(in: db)
         }
-
         return migrator
     }()
 

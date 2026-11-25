@@ -51,7 +51,9 @@
   (subpath (param "APP_SUPPORT"))
   (subpath (param "RELEASED_APP_SUPPORT"))
   (subpath (param "RELEASED_AGENT"))
-  (subpath (param "AGENT")))
+  (subpath (param "AGENT"))
+  (subpath (param "BOTS"))
+  (subpath (param "RELEASED_BOTS")))
 ; Only this account's own skills are writable; credentials, settings, and installed code remain protected.
 (allow file-read* (subpath (string-append (param "AGENT") "/skills")))
 (deny file-write* (subpath (string-append (param "AGENT") "/skills")))

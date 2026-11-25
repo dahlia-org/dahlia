@@ -35,7 +35,6 @@ struct CodexChatWorkLogView: View {
                     ForEach(steps) { step in
                         CodexChatMessageRow(
                             message: step,
-                            showsInlineActivity: false,
                             showsFooter: false,
                             meetingNamesByID: meetingNamesByID,
                             meetingReferencesByID: meetingReferencesByID

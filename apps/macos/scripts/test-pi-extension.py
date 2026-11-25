@@ -62,7 +62,7 @@ def sandbox(root):
     """The command prefix that runs chat's commands and file operations under Dahlia's Seatbelt profile, as `PiSandbox` does."""
     parameters = {"WORK": root / "workspace", "TMP": root / "tmp", "PI_TMP": root / "pi-tmp", "AGENT": root / "agent",
                   "APP_SUPPORT": root / "support", "RELEASED_APP_SUPPORT": root / "released", "RELEASED_AGENT": root / "released-agent", "PI": root / "pi",
-                  "RESOURCES": EXTENSION.parent,
+                  "RESOURCES": EXTENSION.parent, "BOTS": root / "bots", "RELEASED_BOTS": root / "released-bots",
                   "SKILLS": root / "skills", "FILE_STORE": root / "FileStore", "DATABASE": root / "dahlia.sqlite"}
     defines = [arg for key, value in parameters.items() for arg in ("-D", f"{key}={os.path.realpath(value)}")]
     return ["/usr/bin/sandbox-exec", "-f", str(SANDBOX), *defines]
@@ -401,6 +401,8 @@ def run(pi, mode, script, arguments, environment, approval="accept", approval_mo
             database.execute("CREATE TABLE debug (value TEXT)")
             database.execute("INSERT INTO debug VALUES ('SQLITE_MARKER')")
         (root / "workspace/inside.txt").write_text("INSIDE_MARKER")
+        for protected in ("SOUL.md", "AGENTS.md", "bot.json"):
+            (root / "workspace" / protected).write_text("PROTECTED_MARKER")
         (root / "workspace/pixel.png").write_bytes(base64.b64decode(
             "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="))
         # Project-local Pi configuration that chat could have written must never start anything.
@@ -411,6 +413,9 @@ def run(pi, mode, script, arguments, environment, approval="accept", approval_mo
             (root / folder).mkdir()
         (root / "skills/SKILL.md").write_text("SKILL_MARKER")
         (root / "workspace/link").symlink_to(root / "agent/auth.json")
+        (root / "workspace/shared-link").symlink_to(root / "skills/SKILL.md")
+        (root / "workspace/protected-alias").symlink_to(root / "workspace/SOUL.md")
+        (root / "tmp/shared.txt").write_text("OTHER_CHAT_MARKER")
         if mcp_servers is not None:
             (root / "agent/mcp.json").write_text(json.dumps({"mcpServers": mcp_servers}))
         # Like Dahlia's models.json: no key; the extension resolves the bridged provider's credential.
@@ -665,22 +670,23 @@ def triage_denial_regression(pi):
 
 def thread_tools(pi):
     calls = [
-        ("list", {}), ("search", {"query": "research"}), ("read", {"thread_id": "other"}),
-        ("start", {"input": "research", "client_request_id": "start"}),
-        ("send", {"thread_id": "other", "input": "continue", "client_request_id": "send"}),
-        ("wait", {"thread_ids": ["other"]}), ("interrupt", {"thread_id": "other"}),
-        ("update", {"thread_id": "other", "title": "Updated"}),
+        ("thread_list", {}), ("thread_search", {"query": "research"}), ("thread_read", {"thread_id": "other"}),
+        ("thread_launch", {"title": "Research", "message": "research", "client_request_id": "launch"}),
+        ("delegate_task", {"task": "research", "client_request_id": "delegate"}),
+        ("task_status", {"task_id": "child"}), ("task_cancel", {"task_id": "child"}),
+        ("thread_send", {"thread_id": "other", "message": "continue", "client_request_id": "send"}),
+        ("thread_wait", {"thread_id": "other"}), ("thread_interrupt", {"thread_id": "other"}),
+        ("thread_update", {"thread_id": "other", "title": "Updated"}),
     ]
-    names = ["dah_thread_" + name for name, _ in calls]
-    script = [{"tool": "dah_thread_" + name, "args": args} for name, args in calls] + [{"text": "done"}]
+    script = [{"tool": name, "args": args} for name, args in calls] + [{"text": "done"}]
     requests, results, bridge, _ = run(pi, "chat", script,
-        ["--no-session", "--tools", ",".join(names)], {},
-        bridge_answers={"thread_" + name: {"ok": True} for name, _ in calls},
+        ["--no-session", "--tools", ",".join(name for name, _ in calls)], {},
+        bridge_answers={name: {"ok": True} for name, _ in calls},
         steer_message="HEADLESS_STEER_MARKER")
-    assert len(results) == 8 and all(json.loads(result)["ok"] for result in results), results
-    assert all(("thread_" + name, args) in bridge for name, args in calls), bridge
+    assert len(results) == len(calls) and all(json.loads(result)["ok"] for result in results), results
+    assert all((name, args) in bridge for name, args in calls), bridge
     assert any("HEADLESS_STEER_MARKER" in json.dumps(request["body"]) for request in requests), requests
-    print("Pi thread tools and headless steer passed (8 tools, isolated loopback gateway)")
+    print("Pi thread tools and headless steer passed (11 tools, isolated loopback gateway)")
 
 
 def schedule_approval_regression(pi):
@@ -1102,43 +1108,47 @@ def main():
     assert "only read its source" in results[2] and "GATEWAY_OK" not in results[2], results
     assert "only read its source" in results[3] and "INSIDE_MARKER" not in results[3], results
     assert not any(method == "approval" for method, _ in bridge), bridge
-    # Dahlia Bot: the Router reaches only its tools even when an MCP server is loaded; a Worker reads and reports but never
-    # writes or touches files, even under fullAccess.
-    route = {"title": "t", "instructions": "i", "event_ids": ["e1"]}
+    # Super Agent routes through ordinary thread tools, but has no external MCP or command access, even under fullAccess.
+    route = {"title": "Follow up", "message": "Read the event", "event_ids": ["e1"], "client_request_id": "launch"}
+    bot_calls = [("inbox_read", {}), ("event_close", {"event_ids": ["e2"]}),
+                 ("item_create", {"kind": "report", "title": "Read it"}),
+                 ("task_finish", {"thread_id": "task", "status": "done"}), ("soul_write", {"text": "Be concise"})]
     _, results, bridge, _ = run(
-        pi, "chat", [{"tool": "mcp__gmail__search_messages"}, {"tool": "task_create", "args": route}, {"text": "done"}],
-        ["--no-session", *CHAT_EXTENSIONS, "--tools", "task_create,mcp__gmail__*"],
-        {"DAHLIA_PI_MCP_SERVERS": json.dumps(["gmail"]), "DAHLIA_PI_PROFILE": "router"}, mcp_servers=mcp_servers, auth=auth,
-        approval_mode="fullAccess", bridge_answers={"botTool": {"success": True}})
-    assert "only routes" in results[0] and "GATEWAY_OK" not in results[0], results
-    assert ("botTool", {"name": "task_create", "args": route}) in bridge, bridge
-    report = {"summary": "found it"}
-    _, results, bridge, _ = run(
-        pi, "chat",
-        [{"tool": "mcp__gmail__search_messages"}, {"tool": "mcp__gmail__send_message"}, {"tool": "read", "args": {"path": "inside.txt"}},
-         {"tool": "task_create", "args": route}, {"tool": "task_report", "args": report}, {"text": "done"}],
-        ["--no-session", *CHAT_EXTENSIONS, "--tools", "task_report,task_create,read,mcp__gmail__*"],
-        {"DAHLIA_PI_MCP_SERVERS": json.dumps(["gmail"]), "DAHLIA_PI_PROFILE": "worker"}, mcp_servers=mcp_servers, auth=auth,
-        approval_mode="fullAccess", bridge_answers={"botTool": {"success": True}})
-    assert results[0] == "GATEWAY_OK", results
-    assert "only reads" in results[1] and "GATEWAY_OK" not in results[1], results
-    assert "only read its task" in results[2] and "INSIDE_MARKER" not in results[2], results
-    # A Router tool is not even registered for a Worker; the bridge check below shows it never reached Dahlia.
-    assert [call for call in bridge if call[0] == "botTool"] == [("botTool", {"name": "task_report", "args": report})], bridge
+        pi, "chat", [{"tool": "mcp__gmail__search_messages"}, {"tool": "thread_launch", "args": route},
+                     {"tool": "read", "args": {"path": "inside.txt"}},
+                     {"tool": "write", "args": {"path": "SOUL.md", "content": "CHANGED"}},
+                     {"tool": "bash", "args": {"command": "echo COMMAND_MARKER"}}]
+                    + [{"tool": name, "args": args} for name, args in bot_calls] + [{"text": "done"}],
+        ["--no-session", *CHAT_EXTENSIONS, "--tools", "thread_launch,read,write,bash,mcp__gmail__*," + ",".join(name for name, _ in bot_calls)],
+        {"DAHLIA_PI_MCP_SERVERS": json.dumps(["gmail"]), "DAHLIA_PI_PROFILE": "bot"}, mcp_servers=mcp_servers, auth=auth,
+        approval_mode="fullAccess", bridge_answers={"botTool": {"success": True}, "thread_launch": {"success": True}})
+    assert "only reads" in results[0] and "GATEWAY_OK" not in results[0], results
+    assert ("thread_launch", route) in bridge, bridge
+    assert "INSIDE_MARKER" in results[2] and "soul_write" in results[3], results
+    assert "only reads" in results[4] and "COMMAND_MARKER" not in results[4], results
+    assert [call for call in bridge if call[0] == "botTool"] == [("botTool", {"name": name, "args": args}) for name, args in bot_calls], bridge
     assert not any(method == "approval" for method, _ in bridge), bridge
-
-    suggestion = {"title": "t", "instructions": "i", "event_ids": ["e2"]}
-    _, results, bridge, _ = run(
-        pi, "chat", [{"tool": "task_suggest", "args": suggestion}, {"text": "done"}], ["--no-session", "--tools", "task_suggest"],
-        {"DAHLIA_PI_PROFILE": "router"}, bridge_answers={"botTool": {"success": True}})
-    assert ("botTool", {"name": "task_suggest", "args": suggestion}) in bridge, bridge
-    # Only the secretary's Home thread files requests; another chat does not even have the tool.
-    request = {"request": "prepare the deck"}
-    for home, expected in (("1", [("botTool", {"name": "secretary_request", "args": request})]), ("", [])):
-        _, results, bridge, _ = run(
-            pi, "chat", [{"tool": "secretary_request", "args": request}, {"text": "done"}],
-            ["--no-session", "--tools", "secretary_request"], {"DAHLIA_PI_BOT_HOME": home}, bridge_answers={"botTool": {"success": True}})
-        assert [call for call in bridge if call[0] == "botTool"] == expected, (home, bridge)
+    # Bot file operations cannot use runtime read exceptions, alternate spellings or symlinks to leave home.
+    denied = [("read", {"path": path}) for path in
+              ("../skills/SKILL.md", "@../skills/SKILL.md", "../tmp/shared.txt", "shared-link")]
+    denied += [("ls", {"path": "../tmp"}), ("write", {"path": "protected-alias", "content": "CHANGED"})]
+    inside = [("write", {"path": "notes/new.txt", "content": "WRITTEN"}),
+              ("edit", {"path": "notes/new.txt", "edits": [{"oldText": "WRITTEN", "newText": "EDITED"}]}),
+              ("read", {"path": "notes/new.txt"}), ("read", {"path": "pixel.png"}), ("read", {"path": "SOUL.md"})]
+    _, results, _, _ = run(pi, "chat", [{"tool": name, "args": args} for name, args in denied + inside] + [{"text": "done"}],
+        ["--no-session", "--tools", "read,ls,write,edit"], {"DAHLIA_PI_PROFILE": "bot"}, approval_mode="fullAccess")
+    assert all("SKILL_MARKER" not in result and "OTHER_CHAT_MARKER" not in result for result in results[:len(denied)]), results
+    assert all("home" in result or "Cannot read" in result or "soul_write" in result for result in results[:len(denied)]), results
+    assert "EDITED" in results[-3] and "image/png" in results[-2] and "PROTECTED_MARKER" in results[-1], results
+    # Ordinary task threads use chat's usual MCP approvals and commands, instead of the removed Worker restrictions.
+    _, results, bridge, _ = gateway_chat(
+        {"tool": "mcp__gmail__send_message"}, {"tool": "bash", "args": {"command": "echo TASK_COMMAND_MARKER"}},
+        approval_mode="fullAccess", arguments=["--no-session", *CHAT_EXTENSIONS, "--tools", "bash,mcp__gmail__*"])
+    assert results[0] == "GATEWAY_OK" and "TASK_COMMAND_MARKER" in results[1], results
+    # Bot-only tools are not registered in ordinary chats.
+    _, _, bridge, _ = run(pi, "chat", [{"tool": "inbox_read"}, {"text": "done"}],
+                           ["--no-session", "--tools", "inbox_read"], {}, bridge_answers={"botTool": {"success": True}})
+    assert not any(method == "botTool" for method, _ in bridge), bridge
 
     # A listing of messages tells Dahlia which items intake read; thread listings and other profiles do not.
     listing = {"probe_items": [{"id": "m1", "threadId": "t1"}, {"id": "m2", "threadId": "t1"}, {"id": "t9"}]}
@@ -1198,7 +1208,7 @@ def main():
     server.shutdown()
     foreign_server.shutdown()
     workspace.shutdown()
-    print("Pi extension tests passed (token bridge, strict schema on OpenAI/Claude/Gemini, sandboxed chat and bash/sqlite3, MCP approval, model APIs, MCP sign-in, gateway models, gateway MCP, always-on intake, and the Dahlia Bot Router and Worker)")
+    print("Pi extension tests passed (token bridge, strict schema on OpenAI/Claude/Gemini, sandboxed chat and bash/sqlite3, MCP approval, model APIs, MCP sign-in, gateway models, gateway MCP, always-on intake, Super Agent, and ordinary task threads)")
 
 
 if __name__ == "__main__":

@@ -126,7 +126,7 @@ import Foundation
         }
 
         @Test
-        func reasoningOnlyLatestResponseUsesInlineActivityWithoutStandaloneThinking() {
+        func reasoningOnlyLatestResponseShowsThinkingAtTheConversationTail() {
             let response = CodexChatMessage(
                 id: "response",
                 role: .assistant,
@@ -140,8 +140,22 @@ import Foundation
                 showsStandaloneThinking: true
             )
 
-            #expect(items == [.message(response, showsInlineActivity: true)])
-            #expect(!items.contains(.thinking))
+            #expect(items == [.message(response), .thinking])
+        }
+
+        @Test(arguments: [false, true])
+        func reasoningWithToolsAndRelatedCardsKeepsOneThinkingIndicatorLast(waitingForOutput: Bool) {
+            var response = CodexChatMessage(id: "response", role: .assistant, text: "", reasoning: "Reviewing sources", isStreaming: true)
+            response.recordToolActivity(.init(name: "web_search", status: .succeeded, callID: "search"))
+            let thread = CodexChatThreadSummary(id: "task", title: "Research", updatedAt: .now)
+            let items = CodexChatConversationItem.build(
+                from: [response], showsStandaloneThinking: waitingForOutput,
+                relatedThreadsByMessageID: [response.id: [thread]]
+            )
+            #expect(items == [.message(response), .relatedThreads(messageID: response.id, threads: [thread]), .thinking])
+            #expect(items.count { $0 == .thinking } == 1)
+            response.isStreaming = false
+            #expect(!CodexChatConversationItem.build(from: [response]).contains(.thinking))
         }
 
         @Test

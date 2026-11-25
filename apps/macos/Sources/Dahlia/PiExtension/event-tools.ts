@@ -89,58 +89,27 @@ const ids = (description: string) => ({ type: "array", items: { type: "string" }
 const string = (description: string) => ({ type: "string", description });
 const object = (properties: Record<string, unknown>, required: string[]) => ({ type: "object", properties, required, additionalProperties: false });
 
-// Dahlia Bot's Router and Worker tools. Dahlia checks every call against the run's own Task and the user's settings.
+// Super Agent's own tools. It hands work to threads with the thread tools every chat has; these keep its inbox and Tasks.
 export const botTools: Record<string, { name: string; description: string; parameters: unknown }[]> = {
-  router: [
-    { name: "task_create", description: "Open a task for events that need work, and assign the events to it.", parameters: object({
-      title: string("A short title the user will recognize."),
-      instructions: string("What the Worker should do and what done means."),
-      event_ids: ids("The events this task handles."),
-      servers: ids("MCP servers, from the allowed list, the Worker may read for this task."),
-    }, ["title", "instructions", "event_ids"]) },
-    { name: "task_suggest", description: "Suggest a task for events nobody asked about. The user decides; the events wait until then.", parameters: object({
-      title: string("A short title the user will recognize."),
-      instructions: string("What the Worker should do if the user agrees, and what done means."),
-      body: string("Why you suggest it, in a sentence or two."),
-      event_ids: ids("The events this task would handle."),
-      servers: ids("MCP servers, from the allowed list, the Worker may read for this task."),
-    }, ["title", "instructions", "event_ids"]) },
-    { name: "task_assign", description: "Assign events to an open task that already handles their matter.", parameters: object({
-      task_id: string("The open task."), event_ids: ids("The events to assign."),
-    }, ["task_id", "event_ids"]) },
-    { name: "event_close", description: "Close events that need nothing more: noise, or results already reported.", parameters: object({
+  bot: [
+    { name: "inbox_read", description: "Read the events waiting for your decision, your open tasks (threads you launched), and the user's open Items.", parameters: object({}, []) },
+    { name: "event_close", description: "Close events that need nothing: noise, or ones already handled. Events you hand to a thread with event_ids close by themselves.", parameters: object({
       event_ids: ids("The events to close."),
     }, ["event_ids"]) },
-    { name: "task_finish", description: "End a task that is done or no longer needed.", parameters: object({
-      task_id: string("The task."), status: { type: "string", enum: ["done", "dismissed"] },
-    }, ["task_id", "status"]) },
-    { name: "item_create", description: "Show the user a question, a report, or a suggestion in their inbox. Ask one decision per question.", parameters: object({
+    { name: "item_create", description: "Show the user a question, a report, or a suggestion in their inbox. Ask one decision per question; the answer comes back to you as an event.", parameters: object({
       kind: { type: "string", enum: ["question", "report", "suggestion"] },
       title: string("One line, under 140 characters. A question ends with ?"),
       body: string("Short context the user needs to decide."),
       options: ids("Up to five answers the user can pick."),
       recommended: { type: "integer", description: "The index of the option you recommend." },
-      task_id: string("The task the answer goes to."),
+      thread_id: string("The task's thread this Item is about."),
     }, ["kind", "title"]) },
-  ],
-  home: [
-    { name: "secretary_request", description: "Hand the user's request to their secretary, who opens or continues a task and reports in the inbox.", parameters: object({
-      request: string("The request, in the user's words."),
-      task_id: string("The open task it continues, if any."),
-    }, ["request"]) },
-  ],
-  worker: [
-    { name: "task_report", description: "Report what you found or did. Call it once when you stop; put a question for the user in it when you need their decision.", parameters: object({
-      summary: string("The result, with the sources you used."),
-      question: string("A question for the user, if you need their decision to continue."),
-      options: ids("Up to five answers the user can pick."),
-    }, ["summary"]) },
-    { name: "task_return", description: "Hand back events that do not belong to this task.", parameters: object({
-      event_ids: ids("The events to hand back."),
-    }, ["event_ids"]) },
-    { name: "task_wait", description: "Come back to this task at a time, for example to check whether a reply arrived.", parameters: object({
-      note: string("What to check then."), due_at: string("When, in ISO 8601, within 30 days."),
-    }, ["note", "due_at"]) },
+    { name: "task_finish", description: "End a task when nothing more is needed: done, or dismissed when it was not worth doing. A thread that stopped is not a finished task. Sending to its thread again opens it again.", parameters: object({
+      thread_id: string("The task's thread."), status: { type: "string", enum: ["done", "dismissed"] },
+    }, ["thread_id", "status"]) },
+    { name: "soul_write", description: "Replace SOUL.md, the user's standing guidance, when the user asks you to change it. Dahlia shows them the new text to approve.", parameters: object({
+      text: string("The whole new SOUL.md."),
+    }, ["text"]) },
   ],
 };
 
