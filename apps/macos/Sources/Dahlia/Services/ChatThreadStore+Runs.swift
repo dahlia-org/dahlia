@@ -48,7 +48,8 @@ extension ChatThreadStore {
             }
             try run.insert(db)
             try updating(db)
-            return run
+            guard let saved = try ChatRunRecord.fetchOne(db, key: run.id) else { throw PiRuntimeError.invalidProtocolResponse }
+            return saved
         }
     }
 
@@ -63,7 +64,7 @@ extension ChatThreadStore {
 
     private func transitionQueuedRun(_ expected: ChatRunRecord, status: String, input: String? = nil) throws -> ChatRunRecord? {
         try dbQueue.write { db in
-            try ChatRunRecord.fetchOne(db, sql: """
+            let transitioned = try ChatRunRecord.fetchOne(db, sql: """
             UPDATE chat_runs SET status=?, input=?,
                 startedAt=CASE WHEN ?='running' THEN COALESCE(startedAt, ?) ELSE startedAt END,
                 completedAt=CASE WHEN ?='failed' THEN COALESCE(completedAt, ?) ELSE completedAt END
@@ -80,6 +81,8 @@ extension ChatThreadStore {
                 expected.threadID,
                 expected.requestedByThreadID,
             ])
+            // RETURNING precedes AFTER triggers; publish their saved start order too.
+            return try transitioned.flatMap { try ChatRunRecord.fetchOne(db, key: $0.id) }
         }
     }
 
@@ -168,10 +171,10 @@ extension ChatThreadStore {
         }
     }
 
-    /// Dispatch, results and latest-turn reads share the original turn's order, then its attempt order.
+    /// Started turns keep execution order; untouched work follows in acceptance order, then attempts.
     static func runOrderSQL(descending: Bool = false) -> String {
         let direction = descending ? "DESC" : "ASC"
-        return "logicalSequence \(direction), rowid \(direction)"
+        return "(executionSequence IS NULL) \(direction), executionSequence \(direction), logicalSequence \(direction), rowid \(direction)"
     }
 
     func queuedRuns(accountID: String) throws -> [ChatRunRecord] {

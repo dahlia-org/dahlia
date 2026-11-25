@@ -194,8 +194,9 @@
             let target = thread()
             try store.createThread(target)
             let queued = try store.enqueueRun(run(target: target.id))
-            #expect(queued.startedAt == nil)
-            #expect(try store.claimQueuedRun(queued) != nil)
+            #expect(queued.startedAt == nil && queued.executionSequence == nil)
+            let claimed = try #require(try store.claimQueuedRun(queued))
+            let executionSequence = try #require(claimed.executionSequence)
             let startedAt = try #require(try store.run(id: queued.id)?.startedAt)
             #expect(try store.claimQueuedRun(queued) == nil)
             try store.setRunStatus(queued.id, status: "running")
@@ -206,6 +207,7 @@
             #expect(completedAt >= startedAt)
             try store.setRunStatus(queued.id, status: "completed")
             #expect(try store.run(id: queued.id)?.completedAt == completedAt)
+            #expect(try store.run(id: queued.id)?.executionSequence == executionSequence)
         }
 
         @Test(arguments: ["thread", "requester", "nilRequester"], [false, true])
@@ -226,9 +228,10 @@
             #expect(try store.claimQueuedRun(queued) == nil)
             #expect(try store.failQueuedRun(queued) == nil)
             let current = try #require(try store.run(id: queued.id))
-            #expect(current.status == "queued" && current.startedAt == nil && current.completedAt == nil)
+            #expect(current.status == "queued" && current.startedAt == nil && current.completedAt == nil && current.executionSequence == nil)
             let transitioned = try #require(try failing ? store.failQueuedRun(current) : store.claimQueuedRun(current))
             #expect(transitioned.status == (failing ? "failed" : "running"))
+            #expect((transitioned.executionSequence == nil) == failing)
             #expect(transitioned.threadID == current.threadID && transitioned.requestedByThreadID == current.requestedByThreadID)
             #expect(try store.claimQueuedRun(current) == nil)
             #expect(try store.failQueuedRun(current) == nil)
@@ -474,7 +477,8 @@
             #expect(try store.run(id: second.id)?.input.isEmpty == true)
         }
 
-        @Test func repeatedRecoveryPreservesQueueAndResultBatchOrder() throws {
+        @Test(arguments: [false, true])
+        func repeatedRecoveryPreservesQueueAndResultBatchOrder(queuedBeforeManual: Bool) throws {
             let store = ChatThreadStore(dbQueue: try AppDatabaseManager(path: ":memory:").dbQueue)
             let parent = thread(), target = thread()
             try store.createThread(parent)
@@ -484,10 +488,12 @@
             original.createdAt = now.addingTimeInterval(-2)
             original.status = "running"
             original.input = try ChatHistoryCodec.encodeInputs([.text("Research")])
-            _ = try store.enqueueRun(original)
+            if !queuedBeforeManual { _ = try store.enqueueRun(original) }
             var followUp = run(target: target.id, requester: parent.id)
             followUp.createdAt = now.addingTimeInterval(-1)
             _ = try store.enqueueRun(followUp)
+            if queuedBeforeManual { _ = try store.enqueueRun(original) }
+            let tail = try store.enqueueRun(run(target: target.id, requester: parent.id))
             try store.recoverInterruptedThreads(continuing: true, now: now)
             let first = try #require(try store.queuedRuns(accountID: "local").first)
             #expect(first.origin == "restart")
@@ -495,9 +501,11 @@
             try store.recoverInterruptedThreads(continuing: true, now: now.addingTimeInterval(1))
             let second = try #require(try store.queuedRuns(accountID: "local").first)
             #expect(second.id != first.id && second.logicalSequence == first.logicalSequence)
+            #expect(second.executionSequence != nil && second.executionSequence == first.executionSequence)
+            #expect(second.executionSequence == (try store.run(id: original.id)?.executionSequence))
             #expect(second.createdAt == now.addingTimeInterval(1))
-            #expect(try store.queuedRuns(accountID: "local").map(\.id) == [second.id, followUp.id])
-            #expect(try store.latestRun(threadID: target.id)?.id == followUp.id)
+            #expect(try store.queuedRuns(accountID: "local").map(\.id) == [second.id, followUp.id, tail.id])
+            #expect(try store.latestRun(threadID: target.id)?.id == tail.id)
             try store.setRunStatus(second.id, status: "completed")
             try store.setRunStatus(followUp.id, status: "completed")
             #expect(try store.undeliveredRuns(requesterID: parent.id).map(\.id) == [second.id, followUp.id])

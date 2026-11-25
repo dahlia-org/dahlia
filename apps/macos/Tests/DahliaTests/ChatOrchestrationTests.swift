@@ -36,8 +36,8 @@
             return Fixture(runtime: runtime, service: service, store: store, transports: transports)
         }
 
-        @Test(.timeLimit(.minutes(1)), arguments: [false, true])
-        func recoveryStartsBeforeItsAlreadyQueuedFollowUp(sameTimestamp: Bool) async throws {
+        @Test(.timeLimit(.minutes(1)), arguments: [false, true], [false, true])
+        func recoveryStartsBeforeItsAlreadyQueuedFollowUp(sameTimestamp: Bool, queuedBeforeManual: Bool) async throws {
             let fixture = try fixture()
             defer { try? FileManager.default.removeItem(at: fixture.runtime.rootURL) }
             let parent = try await fixture.service.startThread(model: nil, effort: "medium")
@@ -51,13 +51,14 @@
                 input: try ChatHistoryCodec.encodeInputs([.text("Research the original topic")]),
                 effort: "medium", approvalMethod: "ask", createdAt: now.addingTimeInterval(-2)
             )
-            _ = try fixture.store.enqueueRun(interrupted)
+            if !queuedBeforeManual { _ = try fixture.store.enqueueRun(interrupted) }
             let nextID = UUID.v7()
             let followUp = ChatRunRecord(
                 id: nextID, threadID: target.id, requestedByThreadID: parent.id, rootRunID: nextID, status: "queued", input: "Summarize what you found",
                 effort: "medium", approvalMethod: "ask", createdAt: now.addingTimeInterval(sameTimestamp ? -2 : -1)
             )
             _ = try fixture.store.enqueueRun(followUp)
+            if queuedBeforeManual { _ = try fixture.store.enqueueRun(interrupted) }
             try fixture.store.recoverInterruptedThreads(continuing: true, now: now)
             let continuation = try #require(try fixture.store.queuedRuns(accountID: "local").first { $0.origin == "restart" })
             #expect(continuation.createdAt == now)
@@ -811,15 +812,16 @@
             let statuses = try ids.compactMap { try fixture.store.latestRun(threadID: $0)?.status }
             #expect(statuses.filter { $0 == "running" }.count == 3)
             #expect(statuses.filter { $0 == "queued" }.count == 2)
-            let manual = try await fixture.service.startThread(model: nil, effort: "medium")
-            _ = try await fixture.service.beginTurn(
-                threadID: manual.id,
+            // Manual work can start in a thread whose older delegated work is still waiting for a slot.
+            let manualID = ids[3]
+            let manualHandle = try await fixture.service.beginTurn(
+                threadID: manualID,
                 inputs: [.text("Manual")],
                 model: nil,
                 effort: "medium",
                 approvalMethod: .ask
             )
-            #expect(try fixture.store.latestRun(threadID: manual.id)?.status == "running")
+            #expect(try fixture.store.run(id: manualHandle.id)?.status == "running")
             let childID = ids[0]
             let childSession = try #require(await fixture.service.sessions[childID])
             await #expect(throws: (any Error).self) {
@@ -837,6 +839,11 @@
             #expect(childLaunch.arguments[toolIndex + 1].contains("thread_read"))
             await fixture.service.interruptActiveTurn(threadID: childID, turnID: nil)
             #expect(try fixture.store.latestRun(threadID: parent.id)?.status == "running")
+            try fixture.store.recoverInterruptedThreads(continuing: true)
+            let manualQueue = try fixture.store.queuedRuns(accountID: "local").filter { $0.threadID == manualID }
+            #expect(manualQueue.count == 2)
+            #expect(manualQueue.first?.origin == "restart")
+            #expect(manualQueue.last?.origin == "thread")
             await fixture.service.stopAccountRuns(except: "other")
             #expect(try fixture.store.queuedRuns(accountID: "local").isEmpty)
         }

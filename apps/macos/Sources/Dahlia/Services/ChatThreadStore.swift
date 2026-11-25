@@ -240,6 +240,7 @@ struct ChatThreadStore: ChatItemStore, Sendable {
                     next.startedAt = nil
                     next.completedAt = nil
                     next.logicalSequence = run.logicalSequence
+                    next.executionSequence = run.executionSequence
                     next.createdAt = now
                     try next.insert(db)
                     continued.append(run.id)
