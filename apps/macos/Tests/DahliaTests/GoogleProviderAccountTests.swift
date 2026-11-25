@@ -25,7 +25,9 @@
             try await worker.save(first)
             let model = GoogleProviderAccountsModel(worker: worker)
             await model.activate()
-            #expect(Dictionary(uniqueKeysWithValues: model.accounts.map { ($0.id, $0) }) == [first.id: first, second.id: second])
+            #expect(await pollUntil {
+                Dictionary(uniqueKeysWithValues: model.accounts.map { ($0.id, $0) }) == [first.id: first, second.id: second]
+            })
             #expect(await pollUntil { model.controllers.map(\.displayName).sorted() == ["Personal", "Google (second@example.com)"].sorted() })
             try await worker.remove(first.id)
             await model.activate()

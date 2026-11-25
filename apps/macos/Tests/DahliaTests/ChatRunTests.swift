@@ -468,8 +468,39 @@
             try store.recoverInterruptedThreads(continuing: true)
             let second = try #require(try store.queuedRuns(accountID: "local").first)
             #expect(second.input == first.input)
+            #expect(try first.logicalSequence == store.run(id: interrupted.id)?.logicalSequence)
+            #expect(second.logicalSequence == first.logicalSequence)
             try store.setRunStatus(second.id, status: "completed")
             #expect(try store.run(id: second.id)?.input.isEmpty == true)
+        }
+
+        @Test func repeatedRecoveryPreservesQueueAndResultBatchOrder() throws {
+            let store = ChatThreadStore(dbQueue: try AppDatabaseManager(path: ":memory:").dbQueue)
+            let parent = thread(), target = thread()
+            try store.createThread(parent)
+            try store.createThread(target)
+            let now = Date(timeIntervalSince1970: 1_700_000_000)
+            var original = run(target: target.id, requester: parent.id)
+            original.createdAt = now.addingTimeInterval(-2)
+            original.status = "running"
+            original.input = try ChatHistoryCodec.encodeInputs([.text("Research")])
+            _ = try store.enqueueRun(original)
+            var followUp = run(target: target.id, requester: parent.id)
+            followUp.createdAt = now.addingTimeInterval(-1)
+            _ = try store.enqueueRun(followUp)
+            try store.recoverInterruptedThreads(continuing: true, now: now)
+            let first = try #require(try store.queuedRuns(accountID: "local").first)
+            #expect(first.origin == "restart")
+            _ = try #require(try store.claimQueuedRun(first))
+            try store.recoverInterruptedThreads(continuing: true, now: now.addingTimeInterval(1))
+            let second = try #require(try store.queuedRuns(accountID: "local").first)
+            #expect(second.id != first.id && second.logicalSequence == first.logicalSequence)
+            #expect(second.createdAt == now.addingTimeInterval(1))
+            #expect(try store.queuedRuns(accountID: "local").map(\.id) == [second.id, followUp.id])
+            #expect(try store.latestRun(threadID: target.id)?.id == followUp.id)
+            try store.setRunStatus(second.id, status: "completed")
+            try store.setRunStatus(followUp.id, status: "completed")
+            #expect(try store.undeliveredRuns(requesterID: parent.id).map(\.id) == [second.id, followUp.id])
         }
 
         @Test func aStoppedRootAlsoPreventsItsRunningDescendantsFromResuming() throws {

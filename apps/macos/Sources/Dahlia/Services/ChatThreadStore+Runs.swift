@@ -168,12 +168,17 @@ extension ChatThreadStore {
         }
     }
 
+    /// Dispatch, results and latest-turn reads share the original turn's order, then its attempt order.
+    static func runOrderSQL(descending: Bool = false) -> String {
+        let direction = descending ? "DESC" : "ASC"
+        return "logicalSequence \(direction), rowid \(direction)"
+    }
+
     func queuedRuns(accountID: String) throws -> [ChatRunRecord] {
         try dbQueue.read { db in
             try ChatRunRecord.fetchAll(db, sql: """
-            SELECT r.* FROM chat_runs r JOIN chat_threads t ON t.id = r.threadID
-            WHERE t.accountID = ? AND r.status = 'queued'
-            ORDER BY CASE r.origin WHEN 'restart' THEN 0 ELSE 1 END, r.createdAt, r.id LIMIT 100
+            SELECT * FROM chat_runs WHERE threadID IN (SELECT id FROM chat_threads WHERE accountID=?) AND status='queued'
+            ORDER BY \(Self.runOrderSQL()) LIMIT 100
             """, arguments: [accountID])
         }
     }
@@ -183,7 +188,7 @@ extension ChatThreadStore {
             try ChatRunRecord.fetchAll(db, sql: """
             SELECT * FROM chat_runs WHERE requestedByThreadID = ? AND resultDeliveredAt IS NULL
                 AND status IN ('completed', 'interrupted', 'failed', 'waitingForUser')
-            ORDER BY createdAt, id LIMIT 100
+            ORDER BY \(Self.runOrderSQL()) LIMIT 100
             """, arguments: [requesterID])
         }
     }

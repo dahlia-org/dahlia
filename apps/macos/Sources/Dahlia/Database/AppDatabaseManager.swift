@@ -288,6 +288,17 @@ final class AppDatabaseManager: Sendable {
 
         migrator.registerMigration("v68_alwaysOnAgent") { db in
             try AlwaysOnAgentMigration.migrate(in: db)
+            try addColumnIfNeeded(in: db, table: "chat_runs", column: "logicalSequence", type: .integer)
+            try db.execute(sql: """
+            UPDATE chat_runs SET logicalSequence=rowid WHERE logicalSequence IS NULL;
+            CREATE INDEX IF NOT EXISTS chat_runs_logical_sequence ON chat_runs(logicalSequence);
+            CREATE INDEX IF NOT EXISTS chat_runs_logical_thread ON chat_runs(threadID, logicalSequence);
+            CREATE INDEX IF NOT EXISTS chat_runs_logical_queue ON chat_runs(status, logicalSequence);
+            CREATE TRIGGER IF NOT EXISTS chat_runs_assign_logical_sequence AFTER INSERT ON chat_runs
+            WHEN NEW.logicalSequence IS NULL BEGIN
+                UPDATE chat_runs SET logicalSequence=(SELECT COALESCE(MAX(logicalSequence), 0)+1 FROM chat_runs) WHERE id=NEW.id;
+            END;
+            """)
         }
         return migrator
     }()

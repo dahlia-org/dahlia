@@ -38,13 +38,13 @@ extension ChatThreadStore {
     }
 
     func latestRun(threadID: String) throws -> ChatRunRecord? {
-        try dbQueue.read { db in
-            try ChatRunRecord.fetchOne(
-                db,
-                sql: "SELECT * FROM chat_runs WHERE threadID = ? ORDER BY createdAt DESC, id DESC LIMIT 1",
-                arguments: [threadID]
-            )
-        }
+        try dbQueue.read { try Self.latestRun(threadID: threadID, in: $0) }
+    }
+
+    static func latestRun(threadID: String, in db: Database) throws -> ChatRunRecord? {
+        try ChatRunRecord.fetchOne(
+            db, sql: "SELECT * FROM chat_runs WHERE threadID = ? ORDER BY \(runOrderSQL(descending: true)) LIMIT 1", arguments: [threadID]
+        )
     }
 
     func setParent(_ threadID: String, parentID: String, accountID: String) throws {

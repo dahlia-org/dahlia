@@ -719,7 +719,7 @@
                 )
                 notice.origin = "thread"
                 notice.profile = "bot"
-                if phase != "taskPreparation" { try await db.write { [notice] in try notice.insert($0) } }
+                if phase == "noticePreparation" { try await db.write { [notice] in try notice.insert($0) } }
                 var work = ChatRunRecord(
                     id: .v7(),
                     threadID: worker,
@@ -741,6 +741,10 @@
                         eventIDs: [],
                         account: AppAccount.key
                     )
+                }
+                if phase == "earlierCandidate" {
+                    try await db.write { [notice] in try notice.insert($0) }
+                    #expect(try store.queuedRuns(accountID: AppAccount.key).map(\.id) == [work.id, notice.id])
                 }
                 let delayed = TestPiTransport(delaysStartup: true)
                 let normal = TestPiTransport()

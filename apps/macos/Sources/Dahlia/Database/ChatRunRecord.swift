@@ -24,4 +24,6 @@ struct ChatRunRecord: Codable, FetchableRecord, PersistableRecord, Sendable {
     var startedAt: Date?
     var completedAt: Date?
     var requestedByRunID: UUID?
+    /// A continuation keeps its original turn's position; createdAt remains this attempt's timestamp.
+    var logicalSequence: Int64?
 }

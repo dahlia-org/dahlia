@@ -36,31 +36,39 @@
             return Fixture(runtime: runtime, service: service, store: store, transports: transports)
         }
 
-        @Test(.timeLimit(.minutes(1)))
-        func recoveryStartsBeforeItsAlreadyQueuedFollowUp() async throws {
+        @Test(.timeLimit(.minutes(1)), arguments: [false, true])
+        func recoveryStartsBeforeItsAlreadyQueuedFollowUp(sameTimestamp: Bool) async throws {
             let fixture = try fixture()
             defer { try? FileManager.default.removeItem(at: fixture.runtime.rootURL) }
+            let parent = try await fixture.service.startThread(model: nil, effort: "medium")
             let target = try await fixture.service.startThread(model: nil, effort: "medium")
+            try fixture.store.setParent(target.id, parentID: parent.id, accountID: "local")
             let lease = await fixture.service.acquireThreadLease(threadID: target.id)
             let now = Date(timeIntervalSince1970: 1_700_000_000)
             let root = UUID.v7()
             let interrupted = ChatRunRecord(
-                id: root, threadID: target.id, rootRunID: root, status: "running",
+                id: root, threadID: target.id, requestedByThreadID: parent.id, rootRunID: root, status: "running",
                 input: try ChatHistoryCodec.encodeInputs([.text("Research the original topic")]),
                 effort: "medium", approvalMethod: "ask", createdAt: now.addingTimeInterval(-2)
             )
             _ = try fixture.store.enqueueRun(interrupted)
             let nextID = UUID.v7()
             let followUp = ChatRunRecord(
-                id: nextID, threadID: target.id, rootRunID: nextID, status: "queued", input: "Summarize what you found",
-                effort: "medium", approvalMethod: "ask", createdAt: now.addingTimeInterval(-1)
+                id: nextID, threadID: target.id, requestedByThreadID: parent.id, rootRunID: nextID, status: "queued", input: "Summarize what you found",
+                effort: "medium", approvalMethod: "ask", createdAt: now.addingTimeInterval(sameTimestamp ? -2 : -1)
             )
             _ = try fixture.store.enqueueRun(followUp)
             try fixture.store.recoverInterruptedThreads(continuing: true, now: now)
             let continuation = try #require(try fixture.store.queuedRuns(accountID: "local").first { $0.origin == "restart" })
             #expect(continuation.createdAt == now)
+            #expect(await fixture.service.runtimeStates().first { $0.threadID == target.id }?.turnID == continuation.id)
+            #expect(try fixture.store.latestRun(threadID: target.id)?.id == followUp.id)
+            _ = try await fixture.service.beginTurn(
+                threadID: parent.id, inputs: [.text("Coordinate")], model: nil, effort: "medium", approvalMethod: .ask
+            )
+            let parentSession = try #require(await fixture.service.sessions[parent.id])
             await fixture.service.scheduleRuns(accountID: "local")
-            let transport = await fixture.transports.transport(at: 0)
+            let transport = await fixture.transports.transport(at: 1)
             let first = await transport.command("prompt")
             #expect(first["message"]?.stringValue?.contains("Research the original topic") == true)
             #expect(try fixture.store.run(id: continuation.id)?.status == "running")
@@ -69,6 +77,28 @@
             let second = await transport.command { $0["type"] == .string("prompt") && $0["message"] == .string("Summarize what you found") }
             #expect(second["message"] == .string("Summarize what you found"))
             #expect(try fixture.store.run(id: followUp.id)?.status == "running")
+            #expect(try fixture.store.latestRun(threadID: target.id)?.id == followUp.id)
+            let status = try await fixture.service.threadTool(
+                "task_status", payload: .object(["task_id": .string(target.id)]), threadID: parent.id, processID: parentSession.processID
+            )
+            #expect(status.objectValue?["run_id"] == .string(followUp.id.uuidString))
+            #expect(status.objectValue?["status"] == .string("running"))
+            #expect(try await fixture.service.relatedThreads(parentThreadID: parent.id).first?.status == "running")
+            // The caller already received the earlier result; the wait must now track the follow-up.
+            try fixture.store.markRunsDelivered([continuation])
+            let wait = Task {
+                try await fixture.service.threadTool(
+                    "thread_wait", payload: .object(["thread_id": .string(target.id), "timeout_ms": .number(1000)]),
+                    threadID: parent.id, processID: parentSession.processID
+                )
+            }
+            #expect(await pollUntil { await fixture.service.waitingParents.contains(parent.id) })
+            await transport.emit(TestPiTransport.assistantEnd("Follow-up result"))
+            await transport.emit(TestPiTransport.settled())
+            let waited = try await wait.value
+            #expect(waited.objectValue?["run"]?.objectValue?["run_id"] == .string(followUp.id.uuidString))
+            #expect(waited.objectValue?["run"]?.objectValue?["status"] == .string("completed"))
+            #expect(try fixture.store.latestRun(threadID: target.id)?.id == followUp.id)
             await fixture.service.stopAccountRuns(except: "other")
             await fixture.service.releaseThreadLease(threadID: target.id, leaseID: lease)
         }

@@ -30,9 +30,7 @@ extension PiChatService {
                 SELECT id FROM chat_items WHERE threadID = ? AND runID = ?
                 AND \(ChatItemRecord.messagePredicate()) ORDER BY seq LIMIT 1
                 """, arguments: [parentThreadID, sourceRunID]) ?? source?["id"]
-                let latestRun = try ChatRunRecord.fetchOne(
-                    db, sql: "SELECT * FROM chat_runs WHERE threadID = ? ORDER BY createdAt DESC, id DESC LIMIT 1", arguments: [thread.id]
-                )
+                let latestRun = try ChatThreadStore.latestRun(threadID: thread.id, in: db)
                 return try CodexChatThreadSummary(
                     id: thread.id,
                     title: thread.title,
@@ -74,7 +72,7 @@ extension PiChatService {
         }
         let active = Set(states.map(\.threadID))
         let queued: [ChatRunRecord] = (try? history().dbQueue.read { db in
-            try ChatRunRecord.fetchAll(db, sql: "SELECT * FROM chat_runs WHERE status = 'queued' ORDER BY createdAt LIMIT 100")
+            try ChatRunRecord.fetchAll(db, sql: "SELECT * FROM chat_runs WHERE status = 'queued' ORDER BY \(ChatThreadStore.runOrderSQL()) LIMIT 100")
         }) ?? []
         var included = active
         for run in queued where !included.contains(run.threadID) {
