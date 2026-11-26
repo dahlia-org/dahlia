@@ -5,6 +5,12 @@ import GRDB
 struct ChatThreadStore: ChatItemStore, Sendable {
     let dbQueue: any DatabaseWriter
 
+    enum SettleError: LocalizedError, Equatable {
+        case threadBusy
+
+        var errorDescription: String? { L10n.chatCannotSettleActiveThread }
+    }
+
     func createThread(_ thread: ChatThreadRecord, items: [JSONValue] = [], initialContext: CodexChatContext? = nil) throws {
         try dbQueue.write { db in
             if let parentID = thread.parentThreadID {
@@ -100,7 +106,7 @@ struct ChatThreadStore: ChatItemStore, Sendable {
             if settled, try Bool.fetchOne(db, sql: """
             SELECT EXISTS(SELECT 1 FROM chat_runs WHERE threadID=? AND status IN ('queued', 'running', 'waitingForUser'))
             """, arguments: [threadID]) == true {
-                throw PiRuntimeError.rpcError(code: nil, message: L10n.chatCannotSettleActiveThread)
+                throw SettleError.threadBusy
             }
             try db.execute(
                 sql: settled

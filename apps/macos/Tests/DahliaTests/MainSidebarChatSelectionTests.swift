@@ -51,8 +51,24 @@
         @Test func selectionDoesNotCarryAcrossSections() {
             var selection = MainSidebarChatSelection()
             _ = selection.click("a", modifiers: .command, order: order, openID: nil)
-            _ = selection.click("x", modifiers: .command, order: ["x", "y"], openID: nil)
+            _ = selection.click("x", modifiers: .command, order: ["x", "y"], openID: nil, isSettled: true)
             #expect(selection.ids == ["x"])
+        }
+
+        @Test(arguments: [false, true])
+        func missingAnchorPreservesSelectionAndDoesNotReseedOpenThread(shift: Bool) {
+            var selection = MainSidebarChatSelection()
+            _ = selection.click("b", modifiers: .command, order: order, openID: nil)
+            _ = selection.click("c", modifiers: .command, order: order, openID: nil)
+            _ = selection.click("d", modifiers: shift ? .shift : .command, order: ["a", "b", "d"], openID: "a")
+            #expect(selection.ids == ["b", "d"])
+        }
+
+        @Test func losingEverySelectedRowKeepsExplicitSelectionMode() {
+            var selection = MainSidebarChatSelection()
+            _ = selection.click("c", modifiers: .command, order: order, openID: nil)
+            _ = selection.click("d", modifiers: .command, order: ["a", "b", "d"], openID: "a")
+            #expect(selection.ids == ["d"])
         }
     }
 #endif

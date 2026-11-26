@@ -141,17 +141,24 @@ struct MainSidebarChatSelection: Equatable {
     private(set) var ids: Set<String> = []
     private(set) var isSelecting = false
     private var anchorID: String?
+    private var sectionIsSettled: Bool?
 
     /// Returns whether the click only changed the selection, so the thread should not open.
-    mutating func click(_ id: String, modifiers: NSEvent.ModifierFlags, order: [String], openID: String?) -> Bool {
+    mutating func click(_ id: String, modifiers: NSEvent.ModifierFlags, order: [String], openID: String?, isSettled: Bool = false) -> Bool {
         let openID = openID.flatMap { order.contains($0) ? $0 : nil }
         // A selection in the other section does not carry over.
-        if let anchorID, !order.contains(anchorID) { clear() }
+        if sectionIsSettled != isSettled {
+            clear()
+            sectionIsSettled = isSettled
+        }
         ids.formIntersection(order)
+        if let anchorID, !order.contains(anchorID) {
+            self.anchorID = order.first { ids.contains($0) }
+        }
 
         if modifiers.contains(.shift) {
+            let anchor = anchorID ?? (isSelecting ? nil : openID) ?? id
             isSelecting = true
-            let anchor = anchorID ?? openID ?? id
             if let from = order.firstIndex(of: anchor), let to = order.firstIndex(of: id) {
                 ids = Set(order[min(from, to) ... max(from, to)])
             }
@@ -165,7 +172,8 @@ struct MainSidebarChatSelection: Equatable {
             anchorID = id
             return true
         }
-        clear()
+        ids = []
+        isSelecting = false
         anchorID = id
         return false
     }
@@ -179,6 +187,7 @@ struct MainSidebarChatSelection: Equatable {
         ids = []
         isSelecting = false
         anchorID = nil
+        sectionIsSettled = nil
     }
 }
 
@@ -211,7 +220,7 @@ private struct MainSidebarChatThreadRows: View {
 
     private func open(_ thread: CodexChatThreadSummary) {
         let order = threads.map(\.id)
-        if !selection.click(thread.id, modifiers: NSEvent.modifierFlags, order: order, openID: openID) {
+        if !selection.click(thread.id, modifiers: NSEvent.modifierFlags, order: order, openID: openID, isSettled: isSettled) {
             onOpenThread(thread)
         }
     }
@@ -288,11 +297,7 @@ private struct MainSidebarChatThreadRow: View {
                 .padding(.trailing, 4)
             }
         }
-        .onHover { isHovered = $0 }
-        // A row that appears or slides under a still pointer gets no hover event; settling the top row does both.
-        .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { frame in
-            isHovered = Self.pointerIsInside(frame)
-        }
+        .background { ChatRowHoverTracker(isHovered: $isHovered) }
         .contextMenu {
             if actionCount > 0 {
                 Button(settleLabel, action: onToggleSettled)
@@ -305,11 +310,5 @@ private struct MainSidebarChatThreadRow: View {
                 Button(settleLabel, action: onToggleSettled)
             }
         }
-    }
-
-    private static func pointerIsInside(_ frame: CGRect) -> Bool {
-        guard let window = NSApp.keyWindow, let contentView = window.contentView else { return false }
-        let point = contentView.convert(window.mouseLocationOutsideOfEventStream, from: nil)
-        return frame.contains(CGPoint(x: point.x, y: contentView.isFlipped ? point.y : contentView.bounds.height - point.y))
     }
 }
