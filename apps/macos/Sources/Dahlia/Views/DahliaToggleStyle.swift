@@ -24,17 +24,18 @@ private struct DahliaSwitch: View {
         let height: CGFloat = controlSize == .small || controlSize == .mini ? 16 : 22
         let inset: CGFloat = 3
         let width = height * 1.75
+        let showsHover = isEnabled && isHovered
         Button {
             isOn.toggle()
         } label: {
             Capsule()
                 .fill(isOn
-                    ? DahliaDesign.primaryButtonBackgroundColor(for: isHovered ? .hovered : .normal)
-                    : Color.primary.opacity(isHovered ? 0.24 : 0.18))
+                    ? DahliaDesign.primaryButtonBackgroundColor(for: showsHover ? .hovered : .normal)
+                    : Color.primary.opacity(showsHover ? 0.24 : 0.18))
                 .frame(width: width, height: height)
                 .overlay(alignment: .leading) {
                     Circle()
-                        .fill(DahliaDesign.primaryButtonForegroundColor)
+                        .fill(isOn ? DahliaDesign.primaryButtonForegroundColor : Color.primary)
                         .padding(inset)
                         .offset(x: isOn ? width - height : 0)
                 }
