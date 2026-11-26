@@ -5,11 +5,39 @@
 
     @MainActor
     struct AgentIdentityModelTests {
+        @Test
+        func windowOwnerReusesEachAgentsIdentityAcrossNavigation() {
+            let owner = AgentsModel()
+            let original = agent()
+            let first = owner.identity(for: original)
+            let other = owner.identity(for: agent("Other"))
+            #expect(owner.identity(for: original) === first)
+            #expect(first !== other)
+        }
+
         private func agent(_ name: String = "Original") -> AgentRecord {
             AgentRecord(
                 id: UUID.v7().uuidString, name: name, directory: "original", avatar: "mascot:E1", color: "#b3dbf4",
                 createdAt: .now, updatedAt: .now
             )
+        }
+
+        @Test
+        func refreshKeepsFailureUntilTheSavedIdentityChanges() async throws {
+            let original = agent()
+            let model = AgentIdentityModel(agent: original) { _, _, _ in (original, "Save failed") }
+            model.name = "Changed"
+            model.save()
+            try #require(await pollUntil { !model.isSaving })
+
+            model.refresh(original, editingName: false, pickingAvatar: false)
+            #expect(model.error == "Save failed")
+
+            var corrected = original
+            corrected.name = "Corrected in sidebar"
+            model.refresh(corrected, editingName: false, pickingAvatar: false)
+            #expect(model.error == nil)
+            #expect(model.name == corrected.name)
         }
 
         @Test

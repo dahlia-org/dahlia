@@ -7,21 +7,24 @@
     @MainActor
     @Suite(.serialized)
     struct AgentIdentityRowTests {
-        @Test(arguments: [false, true])
-        func leavingTheRowSavesButEscapeCancels(cancel: Bool) async throws {
+        @Test(arguments: [false, true], [false, true])
+        func leavingTheRowKeepsTheSaveResultButEscapeCancels(cancel: Bool, invalidName: Bool) async throws {
             let agent = AgentRecord(
                 id: UUID.v7().uuidString, name: "Original", directory: "original", avatar: "mascot:E1", color: "#b3dbf4",
                 createdAt: .now, updatedAt: .now
             )
             var savedNames: [String] = []
-            let host = NSHostingView(rootView: AnyView(AgentIdentityRow(agent: agent) { name, avatar, color in
+            let identity = AgentIdentityModel(agent: agent) { name, avatar, color in
                 savedNames.append(name)
                 var saved = agent
-                saved.name = name
-                saved.avatar = avatar
-                saved.color = color
-                return (saved, nil)
-            }))
+                do {
+                    saved.name = try PiChatService.agentName(name)
+                    saved.avatar = avatar
+                    saved.color = color
+                    return (saved, nil)
+                } catch { return (agent, error.localizedDescription) }
+            }
+            let host = NSHostingView(rootView: AnyView(AgentIdentityRow(agent: agent, identity: identity)))
             host.frame = CGRect(x: 0, y: 0, width: 320, height: 44)
             let window = NSWindow(contentRect: host.frame, styleMask: .titled, backing: .buffered, defer: false)
             window.isReleasedWhenClosed = false
@@ -40,8 +43,9 @@
             }
             try #require(await pollUntil { window.firstResponder is NSTextView })
             let editor = try #require(window.firstResponder as? NSTextView)
-            editor.insertText("Renamed", replacementRange: NSRange(location: 0, length: editor.string.utf16.count))
-            #expect(editor.string == "Renamed")
+            let enteredName = invalidName ? String(repeating: "x", count: 81) : "Renamed"
+            editor.insertText(enteredName, replacementRange: NSRange(location: 0, length: editor.string.utf16.count))
+            #expect(editor.string == enteredName)
 
             if cancel {
                 let escape = try #require(NSEvent.keyEvent(
@@ -59,7 +63,13 @@
             if cancel {
                 #expect(savedNames.isEmpty)
             } else {
-                #expect(await pollUntil { savedNames == ["Renamed"] })
+                try #require(await pollUntil { savedNames == [enteredName] && !identity.isSaving })
+                #expect((identity.error != nil) == invalidName)
+                // Returning to Settings uses the same retained identity, including a rejected save's feedback.
+                host.rootView = AnyView(AgentIdentityRow(agent: identity.agent, identity: identity))
+                host.layoutSubtreeIfNeeded()
+                #expect((identity.error != nil) == invalidName)
+                #expect(identity.name == (invalidName ? agent.name : enteredName))
             }
         }
 

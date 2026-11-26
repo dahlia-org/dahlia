@@ -23,11 +23,26 @@ final class AgentsModel {
     var pendingDeletion: AgentRecord?
     var error: String?
     private(set) var isBusy = false
+    @ObservationIgnored private var identityModels: [String: AgentIdentityModel] = [:]
 
     func refresh() async {
         guard let loaded = try? await PiChatService.shared.agentSummaries() else { return }
         summaries = loaded
+        let agentIDs = Set(loaded.map(\.id))
+        identityModels = identityModels.filter { agentIDs.contains($0.key) }
         hasLoaded = true
+    }
+
+    /// Identity results outlive the Settings row, including saves completed after leaving the tab.
+    func identity(for agent: AgentRecord) -> AgentIdentityModel {
+        if let model = identityModels[agent.id] { return model }
+        let model = AgentIdentityModel(agent: agent) { [weak self] name, avatar, color in
+            let result = await Self.update(agent, name: name, avatar: avatar, color: color)
+            await self?.refresh()
+            return result
+        }
+        identityModels[agent.id] = model
+        return model
     }
 
     /// The agent whose current thread this is, if any.
@@ -77,13 +92,13 @@ final class AgentsModel {
     }
 
     /// Saves a name or picture changed in place, in the agent's side panel.
-    func update(_ agent: AgentRecord, name: String, avatar: String, color: String) async -> (agent: AgentRecord, error: String?) {
+    private static func update(_ agent: AgentRecord, name: String, avatar: String, color: String) async -> (agent: AgentRecord, error: String?) {
         var updateError: String?
         do {
             try await PiChatService.shared.updateAgent(agent.id, name: name, avatar: avatar, color: color)
         } catch { updateError = error.localizedDescription }
-        await refresh()
-        return (summaries.first { $0.id == agent.id }?.agent ?? agent, updateError)
+        let persisted = try? await PiChatService.shared.agent(agent.id)
+        return (persisted ?? agent, updateError)
     }
 
     func delete(_ agent: AgentRecord) async {

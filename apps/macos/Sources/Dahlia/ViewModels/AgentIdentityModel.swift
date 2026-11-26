@@ -22,6 +22,9 @@ final class AgentIdentityModel {
     }
 
     func refresh(_ agent: AgentRecord, editingName: Bool, pickingAvatar: Bool) {
+        if agent.name != self.agent.name || agent.avatar != self.agent.avatar || agent.color != self.agent.color {
+            error = nil
+        }
         self.agent = agent
         if !editingName { name = agent.name }
         if !pickingAvatar {

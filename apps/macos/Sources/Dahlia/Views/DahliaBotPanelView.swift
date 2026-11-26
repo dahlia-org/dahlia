@@ -113,9 +113,7 @@ struct DahliaBotPanelView: View {
         // As Orca's: the agent's picture and name head its settings, changed where they are shown.
         if let agent {
             Section {
-                AgentIdentityRow(agent: agent) { name, avatar, color in
-                    await agents.update(agent, name: name, avatar: avatar, color: color)
-                }.id(agent.id)
+                AgentIdentityRow(agent: agent, identity: agents.identity(for: agent)).id(agent.id)
             }
         }
         // One group, with a row per source.
@@ -428,17 +426,12 @@ private struct DahliaBotEventRow: View {
 /// over, and each is saved when the picker closes or the name is submitted or left.
 struct AgentIdentityRow: View {
     let agent: AgentRecord
-    @State private var identity: AgentIdentityModel
+    @Bindable var identity: AgentIdentityModel
     @State private var isPickingAvatar = false
     @State private var isAvatarHovered = false
     @State private var isEditingName = false
     @State private var isNameHovered = false
     @FocusState private var isNameFocused: Bool
-
-    init(agent: AgentRecord, onSave: @escaping (String, String, String) async -> (agent: AgentRecord, error: String?)) {
-        self.agent = agent
-        _identity = State(initialValue: AgentIdentityModel(agent: agent, onSave: onSave))
-    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -502,6 +495,7 @@ struct AgentIdentityRow: View {
             if let error = identity.error { Text(error).font(.dahliaBody).foregroundStyle(.red).textSelection(.enabled) }
         }
         .font(Self.nameFont)
+        .onAppear { identity.refresh(agent, editingName: false, pickingAvatar: false) }
         .onChange(of: agent) { identity.refresh(agent, editingName: isEditingName, pickingAvatar: isPickingAvatar) }
         .onChange(of: isPickingAvatar) { if !isPickingAvatar { identity.save() } }
         .onChange(of: isNameFocused) {
