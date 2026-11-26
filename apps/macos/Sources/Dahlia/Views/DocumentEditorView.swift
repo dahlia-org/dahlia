@@ -36,7 +36,7 @@ final class DocumentEditorModel {
     var checkpoint = ""
     var receivedUpdate = ""
     var receivedVector = ""
-    /// Shown under the editor; empty while local saves succeed.
+    /// Published to the Notes viewport; empty while local saves succeed.
     var error = ""
     var legacyText = ""
     var recoveries: [DocumentRecoveryRecord] = []
@@ -354,13 +354,8 @@ struct DocumentEditorView: View {
             } else if model.error.isEmpty {
                 ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
             }
-            if !model.error.isEmpty {
-                Label(model.error, systemImage: "exclamationmark.triangle")
-                    .font(.dahliaSecondary)
-                    .foregroundStyle(.orange)
-                    .textSelection(.enabled)
-            }
         }
+        .preference(key: DocumentEditorErrorPreferenceKey.self, value: model.error)
         .task { await model.load() }
         .onDisappear { model.stop() }
     }

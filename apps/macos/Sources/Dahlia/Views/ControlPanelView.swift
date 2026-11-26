@@ -41,6 +41,7 @@ struct ControlPanelView: View {
     @Environment(\.locale) private var locale
     @ObservedObject private var appSettings = AppSettings.shared
     @AppStorage("screenshotMinimumWidth") private var screenshotMinimumWidth = ScreenshotGridSizing.defaultMinimumWidth
+    @State private var notesEditorError = ""
     @State private var isSelectingScreenshots = false
     @State private var selectedScreenshotIds: Set<UUID> = []
     @State private var isConfirmingScreenshotDeletion = false
@@ -81,6 +82,14 @@ struct ControlPanelView: View {
         }
         .frame(minWidth: MainSidebarLayout.minimumDetailWidth, minHeight: 500)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .onPreferenceChange(DocumentEditorErrorPreferenceKey.self) { notesEditorError = $0 }
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            if selectedTab == .notes, !notesEditorError.isEmpty {
+                detailErrorBanner(message: notesEditorError, tint: .orange)
+                    .textSelection(.enabled)
+                    .background(Color(nsColor: .windowBackgroundColor))
+            }
+        }
         .simultaneousGesture(
             TapGesture().onEnded {
                 dismissFocusedInputs()
