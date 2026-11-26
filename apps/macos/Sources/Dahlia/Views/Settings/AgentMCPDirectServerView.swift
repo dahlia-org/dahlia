@@ -66,7 +66,7 @@ struct AgentMCPDirectServerView: View {
                     Text(name).textSelection(.enabled)
                 }
             }
-            Picker(L10n.mcpDirectInputMode, selection: Binding(get: { isJSON }, set: switchMode)) {
+            Picker(L10n.mcpDirectInputMode, selection: Binding(get: { isJSON }, set: { switchMode($0) })) {
                 Text(L10n.mcpDirectForm).font(.dahliaBody).tag(false)
                 Text("JSON").font(.dahliaBody).tag(true)
             }
