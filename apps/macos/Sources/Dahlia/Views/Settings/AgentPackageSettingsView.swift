@@ -39,6 +39,7 @@ struct AgentPackageSettingsView: View {
                 LazyVGrid(columns: columns, alignment: .leading, spacing: 12) {
                     autoReviewCard
                     webAccessCard
+                    mcpElicitationCard
                     ForEach(otherPackages, id: \.self) { source in
                         AgentMCPServiceCard(
                             name: PiPackageService.displayName(source),
@@ -67,7 +68,9 @@ struct AgentPackageSettingsView: View {
     }
 
     private var otherPackages: [String] {
-        model.packages.filter { !AgentAutoReviewSettings.isPackage($0) && !AgentWebAccessSettings.isPackage($0) }
+        model.packages.filter {
+            !AgentAutoReviewSettings.isPackage($0) && !AgentWebAccessSettings.isPackage($0)
+        }
     }
 
     private var autoReviewCard: some View {
@@ -95,6 +98,18 @@ struct AgentPackageSettingsView: View {
         ) {
             AgentWebAccessSettingsModal(onClose: navigation.dismissSettingsModal)
         }
+    }
+
+    /// Bundled with Dahlia and always loaded, so it shows switched on and cannot be turned off.
+    private var mcpElicitationCard: some View {
+        AgentMCPServiceCard(
+            name: AgentMCPElicitationSettings.packageName,
+            comment: L10n.mcpElicitationPackageDescription,
+            icon: Image(systemName: "person.badge.key"),
+            isEnabled: .constant(true),
+            isLocked: true
+        ) {}
+            .help(L10n.mcpElicitationBuiltIn)
     }
 
     /// Recommended, so it shows switched off until installed; its settings open once its files are in place.
@@ -134,7 +149,7 @@ struct AgentPackageSettingsView: View {
 }
 
 /// A plugin's settings belong to it, so its card opens them; the backdrop does what the first action cancels.
-private struct AgentPluginSettingsModal<Content: View, Actions: View>: View {
+struct AgentPluginSettingsModal<Content: View, Actions: View>: View {
     let height: CGFloat
     var isSaving = false
     let onClose: () -> Void

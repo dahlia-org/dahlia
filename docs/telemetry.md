@@ -62,7 +62,7 @@ Sentry はクラッシュスタック、Dahlia のリリース・ビルド、実
 | `failureKind` | `recordingStorage` / `recordingRecovery` / `recordingAudioPermanent` / `transcription` / `transcriptionStalled` / `transcriptionInterrupted` |
 | `errorCode` | `BatchSpeechTranscriberError` が定義する固定 diagnostic code。検索の `searchIndexing` / `screenshotAnalysis` source では `configuration` / `authentication` / `modelUnavailable` / `helperUnavailable` / `launchFailed` / `processExited` / `timedOut` / `invalidResponse` / `providerFailed` / `databaseBusy` / `databaseFailed` / `unknown` |
 | `piInstallStage` | `release` / `download` / `verification` / `extraction` / `activation` |
-| `piInstallReason` | `http` / `rateLimited` / `invalidResponse` / `invalidRelease` / `missingAsset` / `missingDigest` / `checksumMismatch` / `extractionFailed` / `executableMissing` / `networkTimeout` / `networkOffline` / `networkTLS` / `networkOther` / `fileSystem` |
+| `piInstallReason` | `http` / `rateLimited` / `invalidResponse` / `invalidRelease` / `invalidRegistry` / `packageInstallFailed` / `checksumMismatch` / `extractionFailed` / `executableMissing` / `networkTimeout` / `networkOffline` / `networkTLS` / `networkOther` / `fileSystem` |
 | `httpStatus` | `source=piInstallation` のみ、100〜599 の HTTP status code |
 | `hangSurface` | `source=mainActorHang` と SDK の app hang event のみ、`sidebar` / `screenshots` / `transcript` / `liveSubtitle` / `chat` / `other` |
 | `hangDuration` | `source=mainActorHang` のみ、`250ms` / `500ms` / `1s` / `2s` / `5sPlus` |

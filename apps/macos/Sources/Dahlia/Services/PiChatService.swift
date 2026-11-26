@@ -825,8 +825,9 @@ actor PiChatService: CodexChatServicing {
             publishStates()
         }
         do {
-            try history().updateThread(id: threadID, status: "running")
-            try history().setRunStatus(turnID, status: "running")
+            let status = sessions[threadID]?.turn?.pendingApprovals.isEmpty == false ? "waitingForUser" : "running"
+            try history().updateThread(id: threadID, status: status)
+            try history().setRunStatus(turnID, status: status)
         } catch {
             waiter.resume(returning: .cancel)
             throw error
@@ -1018,6 +1019,8 @@ actor PiChatService: CodexChatServicing {
         let webAccessURL = AgentWebAccessSettings.entryURL(agentURL: agentURL)
         let webAccess = profile == .interactive
             && FileManager.default.fileExists(atPath: webAccessURL.path) && (try? AgentWebAccessSettings.writeDefault(agentURL: agentURL)) != nil
+        // pi-mcp-elicitation always replaces Pi's MCP extension; Dahlia's extension knows MCP tools by it.
+        let mcpExtension = (try? AgentMCPElicitationSettings.entryURL().path) ?? "builtin:mcp"
         let tools = profile.fileTools + learningTools + (profile == .interactive ? ["dah_create_backup"] + threadTools : [])
             // Super Agent's delegated task is a helper: it only reads threads, like any child.
             + (profile == .bot ? (isChild ? Self.readThreadTools : PiExecutionProfile.botTools + Self.readThreadTools + Self.manageThreadTools) : [])
@@ -1028,7 +1031,7 @@ actor PiChatService: CodexChatServicing {
         // Only chat calls MCP servers; Dahlia's extension registers the sign-ins mcp.json names.
         let agentName = agent(ofThread: threadID)?.name ?? ""
         var arguments = sessionArguments + [
-            "-e", "builtin:mcp",
+            "-e", mcpExtension,
             "--tools", tools.joined(separator: ","),
             "--system-prompt", profile == .bot
                 ? (isChild ? Self.botTaskSystemPrompt(name: agentName) : Self.botSystemPrompt(name: agentName))
@@ -1064,6 +1067,7 @@ actor PiChatService: CodexChatServicing {
                     "DAHLIA_PI_MCP_SERVERS": String(decoding: JSONEncoder().encode(serverNames), as: UTF8.self),
                     // Dahlia starts this standalone MCP worker under its dedicated Seatbelt profile.
                     "DAHLIA_PI_WEB_ACCESS": webAccess ? webAccessURL.path : "",
+                    "DAHLIA_PI_MCP_EXTENSION": mcpExtension,
                     // The skill index keeps descriptions of recently used skills first; fixed for the process.
                     "PI_SKILL_INDEX_RANK": skillRank.joined(separator: ","),
                 ],
@@ -1220,6 +1224,7 @@ actor PiChatService: CodexChatServicing {
             // A steer the turn ended without delivering stays in history as the last message.
             try history().appendItems(threadID: threadID, items: turn.pendingSteers, runID: turn.id)
             try history().updateThread(id: threadID, status: status)
+            turn.pendingApprovals.values.forEach { $0.resume(returning: .cancel) }
             sessions[threadID]?.turn = nil
             newThreads[threadID] = nil
             endSettledRun(turn.id, threadID: threadID, threadStatus: status)
@@ -1376,22 +1381,32 @@ actor PiChatService: CodexChatServicing {
         let mcpServers = sessions[threadID]?.mcpServers ?? []
         guard let request = Self.approvalRequest(id: UUID.v7().uuidString, payload: payload, mcpServers: mcpServers),
               request.canApprove,
-              sessions[threadID]?.turn != nil
+              !Task.isCancelled,
+              let turn = sessions[threadID]?.turn, !turn.stopRequested
         else { return .decline }
-        do {
-            try history().updateThread(id: threadID, status: "waitingForUser")
-            if let turn = sessions[threadID]?.turn {
-                try history().setRunStatus(turn.id, status: "waitingForUser")
+        let turnID = turn.id
+        return await withTaskCancellationHandler {
+            await withCheckedContinuation { waiter in
+                guard !Task.isCancelled, sessions[threadID]?.turn?.id == turnID,
+                      sessions[threadID]?.turn?.stopRequested == false
+                else { waiter.resume(returning: .cancel)
+                    return
+                }
+                do {
+                    try history().updateThread(id: threadID, status: "waitingForUser")
+                    try history().setRunStatus(turnID, status: "waitingForUser")
+                } catch {
+                    sessions[threadID]?.turn?.broadcast.finish(throwing: error)
+                    waiter.resume(returning: .cancel)
+                    return
+                }
+                sessions[threadID]?.turn?.pendingApprovals[request.id] = waiter
+                sessions[threadID]?.turn?.broadcast.yield(.approvalRequested(request))
+                publishStates()
+                runDidSettle(threadID)
             }
-        } catch {
-            sessions[threadID]?.turn?.broadcast.finish(throwing: error)
-            return .cancel
-        }
-        return await withCheckedContinuation { waiter in
-            sessions[threadID]?.turn?.pendingApprovals[request.id] = waiter
-            sessions[threadID]?.turn?.broadcast.yield(.approvalRequested(request))
-            publishStates()
-            runDidSettle(threadID)
+        } onCancel: {
+            Task { try? await self.decideApproval(turnID: turnID, id: request.id, decision: .cancel) }
         }
     }
 
@@ -1510,6 +1525,13 @@ actor PiChatService: CodexChatServicing {
                     arguments: object["arguments"] ?? .null
                 ),
                 approvableMCPServers: mcpServers
+            )
+        case "confirmation":
+            // An extension's question (title and message) can carry a server's text; a page URL stays whole up to the bound.
+            let text = [object["title"]?.stringValue, object["message"]?.stringValue].compactMap { $0?.nilIfBlank }.joined(separator: "\n\n")
+            return CodexChatApprovalRequest(
+                id: id, kind: .confirmation, reason: String(text.prefix(4096)).nilIfBlank,
+                reviewability: text.count > 4096 ? .tooLarge : .ready
             )
         default:
             return nil

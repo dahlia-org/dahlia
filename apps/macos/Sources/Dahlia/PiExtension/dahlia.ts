@@ -75,6 +75,8 @@ function openAIFormat(payload: any) {
 const readOnlyDahliaTool = /^mcp__dahlia__(get|query|list|search)_/;
 // The MCP servers Dahlia registered for this chat (its own and the user's); any other server is blocked.
 const chatMcpServers = new Set<string>(JSON.parse(env.DAHLIA_PI_MCP_SERVERS ?? "[]"));
+// The extension that connects MCP servers: Pi's own, or pi-mcp-elicitation in its place. Pi names it as the tools' source.
+const mcpExtension = env.DAHLIA_PI_MCP_EXTENSION || "builtin:mcp";
 
 async function bridge(ctx: any, method: string, payload: unknown): Promise<any> {
   const value = await ctx.ui.input(`dahlia:${method}`, JSON.stringify(payload));
@@ -239,7 +241,7 @@ export default async function (pi: any) {
       if (decision !== "accept") return block("The user declined this tool call.");
       return;
     };
-    registerLearningTools(pi, bridge, approve);
+    registerLearningTools(pi, bridge, approve, mcpExtension);
     if (env.DAHLIA_PI_MCP_COMMAND) {
       const [command, ...args] = JSON.parse(env.DAHLIA_PI_MCP_COMMAND);
       pi.registerMcpServer("dahlia", { command, args, exposure: "direct", description: "Dahlia meetings, projects, and workspaces" });
@@ -400,7 +402,7 @@ export default async function (pi: any) {
           : undefined;
       }
 
-      const server: string | undefined = tool?.sourceInfo?.path === "builtin:mcp" ? tool.namespace?.aliases?.[0] : undefined;
+      const server: string | undefined = tool?.sourceInfo?.path === mcpExtension ? tool.namespace?.aliases?.[0] : undefined;
       // This reserved server runs under its own filesystem/credential boundary, independently of URL validation.
       if (webEnabled && server === webServer) {
         const input = event.input ?? {};

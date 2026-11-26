@@ -23,6 +23,8 @@ struct CodexChatApprovalRequest: Identifiable, Equatable, Sendable {
         case commandExecution
         case fileChange
         case mcpToolCall
+        /// A yes-or-no question from a Pi extension, such as pi-mcp-elicitation's request to open a page; `reason` holds it.
+        case confirmation
     }
 
     enum Reviewability: Equatable, Sendable {
@@ -56,6 +58,7 @@ struct CodexChatApprovalRequest: Identifiable, Equatable, Sendable {
             mcpServer?.nilIfBlank != nil
                 && mcpTool?.nilIfBlank != nil
                 && mcpArguments != nil
+        case .confirmation: reason?.nilIfBlank != nil
         }
     }
 

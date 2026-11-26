@@ -900,10 +900,11 @@ actor PiRuntimeService {
             "--no-extensions", "-e", PiBundle.resourceURL("dahlia.ts").path,
             "--no-skills", "--no-context-files", "--no-prompt-templates", "--no-themes", "--no-approve",
         ] + options.arguments
+        let command = PiBundle.processCommand(executableURL, arguments, environment: environment)
         return try CodexAppServerProcessTransport(
-            executableURL: executableURL,
-            arguments: arguments,
-            environment: environment,
+            executableURL: command.executable,
+            arguments: command.arguments,
+            environment: command.environment,
             currentDirectoryURL: options.cwd
         )
     }

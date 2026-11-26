@@ -27,8 +27,9 @@ from datetime import datetime, timedelta, timezone
 
 ROOT = Path(__file__).resolve().parents[3]
 EXTENSION = ROOT / "apps/macos/Sources/Dahlia/PiExtension/dahlia.ts"
-# dahlia.ts registers the Unity AI Gateway sign-ins in every process, so chat adds only Pi's MCP extension, as Dahlia does.
-CHAT_EXTENSIONS = ["-e", "builtin:mcp"]
+# Chat replaces Pi's MCP extension with the same host wrapper as PiChatService.
+MCP_EXTENSION = EXTENSION.with_name("dahlia-mcp.ts")
+CHAT_EXTENSIONS = ["-e", str(MCP_EXTENSION)]
 CHAT_ARGUMENTS = ["--no-session", *CHAT_EXTENSIONS, "--tools", "read,ls,write,edit,bash,mcp__dahlia__*"]
 SANDBOX = EXTENSION.with_name("pi.sb")
 # Standalone MCP fixture: verifies transport, the worker environment, and the direct URL/auth gate.
@@ -433,7 +434,7 @@ def run(pi, mode, script, arguments, environment, approval="accept", approval_mo
                    PI_TELEMETRY="0", DAHLIA_PI_MODE=mode, DAHLIA_PI_BRIDGED_PROVIDERS="databricks",
                    DAHLIA_PI_SANDBOX=json.dumps(sandbox(root)), DAHLIA_PI_SANDBOX_HIDDEN_ENV=json.dumps(["USER_SECRET"]),
                    DAHLIA_PI_SANDBOX_TMPDIR=str(root / "tmp"), TMPDIR=str(root / "pi-tmp"),
-                   USER_SECRET="ENV_SECRET_MARKER", **environment)
+                   USER_SECRET="ENV_SECRET_MARKER", DAHLIA_PI_MCP_EXTENSION=str(MCP_EXTENSION), **environment)
         if web_access:
             package = Path(web_access)
             if package.is_dir():
@@ -1089,6 +1090,14 @@ def main():
     assert authorizations and set(authorizations) == {"Bearer mcp-access-1"}, authorizations
     assert foreign and set(foreign) == {None}, foreign
     assert results == ["GATEWAY_OK"] and not any(method == "approval" for method, _ in bridge), (results, bridge)
+    # The native schedule service freezes these discovered tools into approved_read_only_tools after approval.
+    for action in ("create", "update", "resume"):
+        _, _, schedule_bridge, _ = gateway_chat(
+            {"tool": "cronjob", "args": {"action": action}},
+            arguments=["--no-session", *CHAT_EXTENSIONS, "--tools", "cronjob,mcp__gmail__*"],
+            bridge_answers={"cronjob": {}})
+        payloads = [payload for method, payload in schedule_bridge if method == "cronjob"]
+        assert len(payloads) == 1 and payloads[0]["_readOnlyTools"] == ["mcp__gmail__search_messages"], schedule_bridge
     _, results, bridge, _ = gateway_chat({"tool": "mcp__gmail__send_message"}, approval="decline")
     approvals = [payload for method, payload in bridge if method == "approval"]
     assert [(p["server"], p["tool"]) for p in approvals] == [("gmail", "send_message")], bridge

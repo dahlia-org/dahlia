@@ -355,6 +355,8 @@ enum L10n { // swiftlint:disable:this type_body_length
     static var agentPackageErrorDetails: String { String(localized: "settings.agents.packageErrorDetails", bundle: bundle) }
     static var autoReviewPackageDescription: String { String(localized: "settings.agents.autoReview.package", bundle: bundle) }
     static var webAccessPackageDescription: String { String(localized: "settings.agents.webAccess.package", bundle: bundle) }
+    static var mcpElicitationPackageDescription: String { String(localized: "settings.agents.mcpElicitation.package", bundle: bundle) }
+    static var mcpElicitationBuiltIn: String { String(localized: "settings.agents.mcpElicitation.builtIn", bundle: bundle) }
     static var webAccessSettings: String { String(localized: "settings.agents.webAccess.settings", bundle: bundle) }
     static var webAccessWebSearch: String { String(localized: "settings.agents.webAccess.webSearch", bundle: bundle) }
     static var webAccessWebSearchHelp: String { String(localized: "settings.agents.webAccess.webSearch.help", bundle: bundle) }
@@ -2626,11 +2628,12 @@ enum L10n { // swiftlint:disable:this type_body_length
     ) }
     static var piInstallInvalidResponse: String { String(localized: "The server returned an unexpected response. Try again later.", bundle: bundle) }
     static var piInstallInvalidRelease: String { String(localized: "The Pi release information is invalid. Try again later.", bundle: bundle) }
-    static var piInstallMissingAsset: String { String(
-        localized: "This Pi release has no macOS Apple Silicon download. Try again later.",
-        bundle: bundle
-    ) }
-    static var piInstallMissingDigest: String { String(localized: "This Pi release has no SHA-256 checksum. Try again later.", bundle: bundle) }
+    static var piRegistry: String { String(localized: "settings.agents.piRegistry", bundle: bundle) }
+    static var piRegistrySettings: String { String(localized: "settings.agents.piRegistry.settings", bundle: bundle) }
+    static var piRegistryDefault: String { String(localized: "settings.agents.piRegistry.default", bundle: bundle) }
+    static var piRegistryHelp: String { String(localized: "settings.agents.piRegistry.help", bundle: bundle) }
+    static var piInstallInvalidRegistry: String { String(localized: "settings.agents.piRegistry.invalid", bundle: bundle) }
+    static var piInstallPackageFailed: String { String(localized: "settings.agents.piPackageFailed", bundle: bundle) }
     static var piInstallChecksumMismatch: String { String(
         localized: "The downloaded file failed SHA-256 verification. Download it again; if this continues, check your network.",
         bundle: bundle
@@ -3201,6 +3204,11 @@ enum L10n { // swiftlint:disable:this type_body_length
         String(localized: "The assistant wants to change Dahlia data.", bundle: bundle)
     }
 
+    static var chatApprovalConfirmationTitle: String {
+        String(localized: "chat.approval.confirmation.title", bundle: bundle)
+    }
+
+    static var chatApprovalContinue: String { String(localized: "chat.approval.continue", bundle: bundle) }
     static var chatApprovalAllowOnce: String { String(localized: "Allow once", bundle: bundle) }
     static var chatApprovalAllowSameFiles: String {
         String(localized: "Allow changes to the same files in this chat", bundle: bundle)
