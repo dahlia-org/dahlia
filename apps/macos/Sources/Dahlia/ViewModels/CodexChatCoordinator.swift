@@ -356,15 +356,19 @@ final class CodexChatCoordinator {
     }
 
     func setSettled(_ threads: [CodexChatThreadSummary], _ settled: Bool) async {
+        var busyCount = 0
         do {
             for thread in threads {
                 do {
                     try await service.setThreadSettled(id: thread.id, settled: settled)
                 } catch ChatThreadStore.SettleError.threadBusy {
-                    continue
+                    busyCount += 1
                 }
             }
             await refreshHistory()
+            if busyCount > 0, busyCount == threads.count {
+                historyError = L10n.chatCannotSettleActiveThread
+            }
         } catch {
             await refreshHistory()
             historyError = error.localizedDescription

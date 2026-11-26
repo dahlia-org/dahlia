@@ -6,6 +6,20 @@ import Foundation
 
     @MainActor
     struct CodexChatCoordinatorTests {
+        @Test(arguments: [["b"], ["a", "b", "c"], []])
+        func allBusySettlesReportTheRejectionAfterRefreshing(ids: [String]) async {
+            let service = CoordinatorTestCodexChatService()
+            for id in ids { await service.rejectSettle(on: id, busy: true) }
+            let coordinator = CodexChatCoordinator(service: service, settings: AppSettings())
+
+            await coordinator.setSettled(ids.map { Self.threadSummary(id: $0) }, true)
+
+            #expect(await service.settleAttempts == ids)
+            #expect(await service.settledIDs.isEmpty)
+            #expect(await service.historyRequests == 1)
+            #expect(coordinator.historyError == (ids.isEmpty ? nil : L10n.chatCannotSettleActiveThread))
+        }
+
         @Test(arguments: [false, true])
         func bulkSettlingSkipsBusyTargetsAndRefreshesOnce(settled: Bool) async {
             let service = CoordinatorTestCodexChatService()
@@ -1049,19 +1063,19 @@ import Foundation
     }
 
     private actor CoordinatorTestCodexChatService: CodexChatServicing {
-        private var rejectedSettleID: String?
+        private var rejectedSettleIDs: Set<String> = []
         private var rejectsAsBusy = false
         private(set) var settleAttempts: [String] = []
         private(set) var settledIDs: [String] = []
 
         func rejectSettle(on id: String, busy: Bool) {
-            rejectedSettleID = id
+            rejectedSettleIDs.insert(id)
             rejectsAsBusy = busy
         }
 
         func setThreadSettled(id: String, settled: Bool) async throws {
             settleAttempts.append(id)
-            if id == rejectedSettleID {
+            if rejectedSettleIDs.contains(id) {
                 if rejectsAsBusy {
                     if settled { throw ChatThreadStore.SettleError.threadBusy }
                 } else {
