@@ -8,18 +8,6 @@ struct AgentPackageSettingsView: View {
     var body: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 12) {
-                HStack {
-                    TextField(L10n.agentPackageSource, text: $model.source, prompt: Text("npm:package / https://github.com/owner/repo"))
-                        .textFieldStyle(.roundedBorder)
-                        .disabled(model.isBusy)
-                        .onSubmit { if model.canInstall { model.install() } }
-                    Button(L10n.agentPackageInstall, action: model.install)
-                        .disabled(!model.canInstall)
-                    Link(destination: URL(string: "https://pi.dev/packages")!) {
-                        Label(L10n.agentPackageCatalog, systemImage: "arrow.up.right.square")
-                    }
-                }
-                Text(L10n.agentPackageHelp).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 if let message = model.errorMessage {
                     Label(message, systemImage: "exclamationmark.triangle.fill")
                         .foregroundStyle(.orange)
@@ -50,6 +38,7 @@ struct AgentPackageSettingsView: View {
                         }
                         .help(source)
                     }
+                    addCard
                 }
                 .disabled(model.isBusy)
                 .padding(.top, 12)
@@ -60,6 +49,23 @@ struct AgentPackageSettingsView: View {
         }
         .font(.dahliaBody)
         .task { await model.refresh() }
+    }
+
+    private var addCard: some View {
+        Button {
+            navigation.presentSettingsModal(AgentPackageInstallView(model: model, onClose: navigation.dismissSettingsModal))
+        } label: {
+            VStack(alignment: .leading, spacing: 12) {
+                Label(L10n.agentPackageAdd, systemImage: "plus").font(.dahliaHeadline)
+                Text(L10n.agentPackageAddHelp).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Spacer(minLength: 0)
+            }
+            .padding(16)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .contentShape(.rect)
+        }
+        .buttonStyle(.dahlia(cornerRadius: DahliaDesign.Card.regularCornerRadius))
     }
 
     private var columns: [GridItem] {
@@ -130,6 +136,79 @@ struct AgentPackageSettingsView: View {
                 .buttonStyle(AgentMCPIconButtonStyle())
             }
         }
+    }
+}
+
+/// Installs a plugin by its source, as the Connectors tab adds an MCP service; it closes once the install succeeds.
+private struct AgentPackageInstallView: View {
+    @Bindable var model: PiPackageSettingsModel
+    let onClose: () -> Void
+    @State private var isInstalling = false
+    @FocusState private var isFocused: Bool
+
+    var body: some View {
+        ZStack {
+            Button(action: onClose) {
+                Color.black.opacity(0.16).ignoresSafeArea()
+            }
+            .buttonStyle(.plain)
+            .focusable(false)
+            .accessibilityHidden(true)
+
+            VStack(alignment: .leading, spacing: 16) {
+                Text(L10n.agentPackageAdd)
+                    .font(.dahliaTitle2)
+                    .accessibilityAddTraits(.isHeader)
+                TextField(L10n.agentPackageSource, text: $model.source, prompt: Text("npm:package / https://github.com/owner/repo"))
+                    .textFieldStyle(.roundedBorder)
+                    .focused($isFocused)
+                    .disabled(model.isBusy)
+                    .onSubmit(install)
+                Text(L10n.agentPackageHelp).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                Link(destination: URL(string: "https://pi.dev/packages")!) {
+                    Label(L10n.agentPackageCatalog, systemImage: "arrow.up.right.square")
+                }
+                if isInstalling, let message = model.errorMessage {
+                    Label(message, systemImage: "exclamationmark.triangle.fill")
+                        .foregroundStyle(.orange)
+                        .textSelection(.enabled)
+                    if let details = model.errorDetails {
+                        DisclosureGroup(L10n.agentPackageErrorDetails) {
+                            Text(details)
+                                .font(.dahliaSecondary)
+                                .foregroundStyle(.secondary)
+                                .textSelection(.enabled)
+                        }
+                    }
+                }
+                HStack {
+                    if model.isBusy { ProgressView().controlSize(.small) }
+                    Spacer()
+                    Button(L10n.cancel, action: onClose)
+                        .buttonStyle(.dahlia())
+                        .keyboardShortcut(.cancelAction)
+                    Button(L10n.agentPackageInstall, action: install)
+                        .buttonStyle(.dahlia(.primary))
+                        .keyboardShortcut(.defaultAction)
+                        .disabled(!model.canInstall)
+                }
+            }
+            .padding(24)
+            .frame(width: 480)
+            .dahliaModalSurface()
+        }
+        .font(.dahliaBody)
+        .transition(.identity)
+        .onAppear { isFocused = true }
+        .onChange(of: model.isBusy) { _, isBusy in
+            if !isBusy, isInstalling, model.errorMessage == nil { onClose() }
+        }
+    }
+
+    private func install() {
+        guard model.canInstall else { return }
+        isInstalling = true
+        model.install()
     }
 }
 

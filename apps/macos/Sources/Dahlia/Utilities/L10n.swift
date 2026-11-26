@@ -345,6 +345,8 @@ enum L10n { // swiftlint:disable:this type_body_length
     static var agentPackages: String { String(localized: "settings.agents.packages", bundle: bundle) }
     static var agentPackageCatalog: String { String(localized: "settings.agents.packageCatalog", bundle: bundle) }
     static var agentPackageSource: String { String(localized: "settings.agents.packageSource", bundle: bundle) }
+    static var agentPackageAdd: String { String(localized: "settings.agents.packageAdd", bundle: bundle) }
+    static var agentPackageAddHelp: String { String(localized: "settings.agents.packageAddHelp", bundle: bundle) }
     static var agentPackageInstall: String { String(localized: "settings.agents.packageInstall", bundle: bundle) }
     static var agentPackageHelp: String { String(localized: "settings.agents.packageHelp", bundle: bundle) }
     static var agentPackageChanged: String { String(localized: "settings.agents.packageChanged", bundle: bundle) }

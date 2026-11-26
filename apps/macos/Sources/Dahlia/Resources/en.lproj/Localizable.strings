@@ -1548,6 +1548,8 @@
 "settings.agents.packages" = "Plugins";
 "settings.agents.packageCatalog" = "Browse Pi plugins";
 "settings.agents.packageSource" = "Plugin name or Git URL";
+"settings.agents.packageAdd" = "Add Plugin";
+"settings.agents.packageAddHelp" = "Specify an npm: package name or a Git URL.";
 "settings.agents.packageInstall" = "Install";
 "settings.agents.packageHelp" = "Install into this account’s Pi. Enter an npm: source from the catalog or a Git URL such as https://github.com/mats16/ai-desktools. Only install plugins you trust. Chat can use skills and prompts. Extension code and themes are not loaded.";
 "settings.agents.packageChanged" = "Changes apply to the next chat you start.";
