@@ -366,7 +366,7 @@ final class CodexChatCoordinator {
                 }
             }
             await refreshHistory()
-            if busyCount > 0, busyCount == threads.count {
+            if busyCount > 0, busyCount == threads.count, historyError == nil {
                 historyError = L10n.chatCannotSettleActiveThread
             }
         } catch {
