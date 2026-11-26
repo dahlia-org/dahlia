@@ -36,7 +36,7 @@ final class DocumentEditorModel {
     var checkpoint = ""
     var receivedUpdate = ""
     var receivedVector = ""
-    var status = ""
+    /// Published to the Notes viewport; empty while local saves succeed.
     var error = ""
     var legacyText = ""
     var recoveries: [DocumentRecoveryRecord] = []
@@ -148,10 +148,7 @@ final class DocumentEditorModel {
         guard isVisible(generation) else { return }
         receivedUpdate = received.update
         receivedVector = received.vector
-        if !pending, failedUpdates.isEmpty {
-            status = L10n.documentSavedLocally
-        }
-        if error != L10n.documentPrivateRecoverySaved { error = "" }
+        if !pending, failedUpdates.isEmpty { error = "" }
     }
 
     private func isVisible(_ generation: Int) -> Bool {
@@ -191,11 +188,9 @@ final class DocumentEditorModel {
 
     private func enqueueSave() {
         let previous = saveTask
-        status = L10n.documentSaving
         saveTask = Task {
             await previous?.value
             do {
-                var savedPrivately = false
                 while let next = failedUpdates.first {
                     do {
                         try await persistence.append(
@@ -203,12 +198,14 @@ final class DocumentEditorModel {
                             privateOnly: next.meetingID == nil, restoreDraft: next.restoreDraft, recovery: next.recovery
                         )
                     } catch DocumentCoreError.editPreservedPrivately {
-                        savedPrivately = true
+                        // Saved in the local archive of a meeting deleted or moved while its notes were open.
+                    } catch DocumentCoreError.unavailable {
+                        // Its meeting and Workspace are gone; the user's deletion already removed these notes. Retrying
+                        // could never succeed and would block quitting.
                     }
                     failedUpdates.removeFirst()
                 }
-                status = L10n.documentSavedLocally
-                error = savedPrivately ? L10n.documentPrivateRecoverySaved : ""
+                error = ""
             } catch { self.error = L10n.documentSaveFailed }
         }
     }
@@ -319,19 +316,16 @@ struct DocumentEditorView: View {
     @State private var contentHeight: CGFloat = 280
     @State private var model: DocumentEditorModel
     let editable: Bool
-    let onModelChange: (DocumentEditorModel, Bool) -> Void
 
     init(
         dbQueue: any DatabaseWriter,
         meetingID: UUID?,
         orphan: DocumentPersistence.OrphanContext?,
         editable: Bool,
-        onModelChange: @escaping (DocumentEditorModel, Bool) -> Void = { _, _ in },
         resolveMeeting: @escaping @MainActor () -> UUID?
     ) {
         _model = State(initialValue: DocumentEditorModel(dbQueue: dbQueue, meetingID: meetingID, orphan: orphan, resolveMeeting: resolveMeeting))
         self.editable = editable
-        self.onModelChange = onModelChange
     }
 
     var body: some View {
@@ -357,16 +351,13 @@ struct DocumentEditorView: View {
                 .frame(height: contentHeight)
                 // The page draws its own side insets so the block handle fits in the gutter.
                 .padding(.horizontal, -DahliaDesign.tabContentInset)
-            } else {
+            } else if model.error.isEmpty {
                 ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
-        .onAppear { onModelChange(model, true) }
+        .preference(key: DocumentEditorErrorPreferenceKey.self, value: model.error)
         .task { await model.load() }
-        .onDisappear {
-            model.stop()
-            onModelChange(model, false)
-        }
+        .onDisappear { model.stop() }
     }
 }
 

@@ -1310,8 +1310,6 @@ enum L10n { // swiftlint:disable:this type_body_length
     static var summaryResponseModel: String { String(localized: "Response model", bundle: bundle) }
     static var summary: String { String(localized: "Summary", bundle: bundle) }
     static var notes: String { String(localized: "Notes", bundle: bundle) }
-    static var documentSavedLocally: String { String(localized: "documentSavedLocally", bundle: bundle) }
-    static var documentPrivateRecoverySaved: String { String(localized: "document.privateRecoverySaved", bundle: bundle) }
     static var documentKeepLocal: String { String(localized: "document.keepLocal", bundle: bundle) }
     static var documentRecoveryTitle: String { String(localized: "document.recovery.title", bundle: bundle) }
     static var documentRecoveryEmpty: String { String(localized: "document.recovery.empty", bundle: bundle) }
@@ -1319,7 +1317,6 @@ enum L10n { // swiftlint:disable:this type_body_length
     static var documentHistoryNext: String { String(localized: "documentHistoryNext", bundle: bundle) }
     static var documentHistoryFullText: String { String(localized: "documentHistoryFullText", bundle: bundle) }
     static var documentRestore: String { String(localized: "document.restore", bundle: bundle) }
-    static var documentSaving: String { String(localized: "documentSaving", bundle: bundle) }
     static var documentSaveFailed: String { String(localized: "documentSaveFailed", bundle: bundle) }
     static var documentUnsupportedSchema: String { String(localized: "documentUnsupportedSchema", bundle: bundle) }
     static var documentTooLarge: String { String(localized: "documentTooLarge", bundle: bundle) }
@@ -3126,7 +3123,6 @@ enum L10n { // swiftlint:disable:this type_body_length
     static var loadMore: String { String(localized: "Load more", bundle: bundle) }
     static var chatEarlierMessages: String { String(localized: "Earlier messages", bundle: bundle) }
     static var chatLaterMessages: String { String(localized: "Later messages", bundle: bundle) }
-    static var popOutChat: String { String(localized: "Open chat in a new window", bundle: bundle) }
     static var showChatFullScreen: String { String(localized: "Show chat full screen", bundle: bundle) }
     static var hideChat: String { String(localized: "Hide chat", bundle: bundle) }
     static var showChat: String { String(localized: "Show chat", bundle: bundle) }

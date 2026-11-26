@@ -507,7 +507,6 @@
             try await model.finishLocalSaves()
             let text = try await DocumentPersistence(dbQueue: queue).materialize(meetingID: draftID).projection.text
             #expect(text == "Before resolution\nAfter resolution\nContinued")
-            #expect(model.status == L10n.documentSavedLocally)
             #expect(model.error.isEmpty)
             #expect(try await queue.read { try DocumentLocalArchiveRecord.fetchCount($0) } == 1)
             model.stop()
@@ -548,6 +547,25 @@
             #expect(try await DocumentPersistence(dbQueue: queue).archives(workspaceID: workspace.id).first?.2
                 .contains("unmaterialized draft input") == true)
             #expect(try await DocumentPersistence(dbQueue: queue).archives(workspaceID: workspace.id).first?.2.contains("日確定本語") == true)
+        }
+
+        @Test func editAfterItsMeetingAndWorkspaceAreDeletedIsDroppedWithoutBlockingDrain() async throws {
+            let queue = try AppDatabaseManager(path: ":memory:").dbQueue
+            let workspace = WorkspaceRecord(id: .v7(), name: "Deleted", createdAt: .now, lastOpenedAt: .now)
+            let meetingID = UUID.v7()
+            try await queue.write { db in
+                try workspace.insertIntoLegacySchema(db)
+                try MeetingRecord(id: meetingID, workspaceId: workspace.id, name: "Deleted", createdAt: .now, updatedAt: .now).insert(db)
+            }
+            let model = DocumentEditorModel(dbQueue: queue, meetingID: meetingID, resolveMeeting: { nil })
+            await model.load()
+            #expect(model.ready)
+            _ = try await queue.write { try WorkspaceRecord.deleteOne($0, key: workspace.id) }
+            try await model.accept(DocumentPersistence(dbQueue: queue).legacyImport(text: "late edit"))
+            try await model.finishLocalSaves()
+            #expect(model.error.isEmpty)
+            model.stop()
+            try await DocumentEditorModel.finishLocalSaves(dbQueue: queue)
         }
 
         @Test func failedEditorDrainRetriesAfterStorageRecoveryAndFencesParentRemoval() async throws {

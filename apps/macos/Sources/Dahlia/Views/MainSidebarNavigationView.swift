@@ -13,9 +13,16 @@ struct MainSidebarNavigationView: View {
 
     var body: some View {
         VStack(spacing: 2) {
-            MainSidebarTabBar(selection: selectedTab, onSelect: onSelectTab)
-                .padding(.horizontal, -6) // Line the button highlights up with the row highlights below.
-                .padding(.bottom, 6)
+            IconTabBar(
+                tabs: MainSidebarTab.allCases,
+                selection: selectedTab,
+                title: \.title,
+                systemImage: \.systemImage,
+                shortcutKey: \.shortcutKey,
+                onSelect: onSelectTab
+            )
+            .padding(.horizontal, -6) // Line the button highlights up with the row highlights below.
+            .padding(.bottom, 6)
 
             switch selectedTab {
             case .meetings:

@@ -17,7 +17,7 @@
                 meetingCatalogWorkspaceID: nil,
                 isMeetingCatalogLoaded: true,
                 showsHistory: .constant(false),
-                onNewChat: {}, onOpenHistory: { _ in }, onShowFullScreen: nil, onPopOut: nil,
+                onNewChat: {}, onOpenHistory: { _ in }, onShowFullScreen: nil,
                 reservesSidebarToggle: false, reservesWindowControls: false, headerLeadingInset: 0,
                 contentMaxWidth: nil,
                 isSidePanel: isSidePanel
@@ -54,7 +54,7 @@
                 meetingCatalogWorkspaceID: nil,
                 isMeetingCatalogLoaded: true,
                 showsHistory: .constant(false),
-                onNewChat: {}, onOpenHistory: { _ in }, onShowFullScreen: nil, onPopOut: nil,
+                onNewChat: {}, onOpenHistory: { _ in }, onShowFullScreen: nil,
                 reservesSidebarToggle: false, reservesWindowControls: false, headerLeadingInset: 0,
                 contentMaxWidth: 1000
             )
