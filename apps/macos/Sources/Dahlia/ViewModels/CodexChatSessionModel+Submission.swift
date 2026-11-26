@@ -35,6 +35,10 @@ extension CodexChatSessionModel {
               !isGenerating,
               !isTurnCleanupPending,
               text.nilIfBlank != nil || !images.isEmpty else { return }
+        if let message = compactImageValidationMessage(text: text, hasImages: !images.isEmpty) {
+            noticeMessage = message
+            return
+        }
         guard images.isEmpty || models.isEmpty || selectedModelSupportsImages else {
             noticeMessage = L10n.chatModelDoesNotSupportImages
             return
@@ -176,6 +180,11 @@ extension CodexChatSessionModel {
         if backendThreadID == nil, hasSelectedProject { return try selectedScopeContext() }
         guard let workspaceID = contextWorkspaceID else { return nil }
         return try await contextProvider.currentContext(workspaceID: workspaceID)
+    }
+
+    func compactImageValidationMessage(text: String, hasImages: Bool) -> String? {
+        guard hasImages, PiChatService.compactInstructions([.text(text)]) != nil else { return nil }
+        return L10n.chatCompactDoesNotSupportImages
     }
 
     static let maximumAttachedImages = CodexChatImageAttachment.maximumAttachmentCount

@@ -79,6 +79,14 @@ enum ChatHistoryCodec {
                 }
             case "thread_notification":
                 flush()
+                if let compaction = data["compaction"]?.objectValue {
+                    guard let before = compaction["tokensBefore"]?.intValue, let after = compaction["tokensAfter"]?.intValue else { continue }
+                    messages.append(CodexChatMessage(
+                        id: item.id, role: .compaction(CodexChatCompaction(tokensBefore: before, tokensAfter: after)), text: "",
+                        runID: item.runID, timestamp: item.createdAt
+                    ))
+                    continue
+                }
                 let content = data["content"]?.stringValue ?? ""
                 let notification = notification(content, notifiedAt: item.createdAt)
                 messages.append(CodexChatMessage(

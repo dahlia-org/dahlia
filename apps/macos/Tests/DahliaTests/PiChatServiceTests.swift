@@ -351,6 +351,46 @@ import Synchronization
             #expect(try fixture.store.messagePage(threadID: thread.id).messages.last?.text == "Saved answer")
         }
 
+        @Test(arguments: [false, true])
+        func attachmentReplaysCompactionOnlyWhileItIsActive(alreadyCompacted: Bool) async throws {
+            let fixture = try Self.fixture { transport in
+                await transport.emit(.object(["type": .string("compaction_start"), "reason": .string("threshold")]))
+            }
+            defer { try? FileManager.default.removeItem(at: fixture.pi.rootURL) }
+            let thread = try await fixture.chat.startThread(model: nil, effort: "medium")
+            let handle = try await fixture.chat.beginTurn(
+                threadID: thread.id, inputs: [.text("Question")], model: nil, effort: "medium", approvalMethod: .ask
+            )
+            var first = handle.events.makeAsyncIterator()
+            while let event = try await first.next() {
+                if event == .compactionStarted { break }
+            }
+            let result = CodexChatCompaction(tokensBefore: 900, tokensAfter: 300)
+            let end: JSONValue = .object([
+                "type": .string("compaction_end"), "reason": .string("threshold"),
+                "result": .object(["tokensBefore": .number(900), "estimatedTokensAfter": .number(300)]),
+            ])
+            if alreadyCompacted {
+                await fixture.chatTransport.emit(end)
+                while let event = try await first.next() {
+                    if event == .compactionEnded(result) { break }
+                }
+            }
+            let attached = try #require(await fixture.chat.attach(threadID: thread.id))
+            if alreadyCompacted {
+                #expect(attached.snapshot?.messages.map(\.role) == [.user, .compaction(result)])
+            } else {
+                await fixture.chatTransport.emit(end)
+            }
+            await fixture.chatTransport.emit(TestPiTransport.assistantEnd("Done"))
+            await fixture.chatTransport.emit(TestPiTransport.settled())
+            var replay: [CodexChatTurnEvent] = []
+            for try await event in attached.events { replay.append(event) }
+            #expect(replay.contains(.compactionStarted) == !alreadyCompacted)
+            #expect(replay.contains(.compactionEnded(result)) == !alreadyCompacted)
+            #expect(replay.last?.terminalCompletion == true)
+        }
+
         @Test
         func serviceRetainsApprovalForLaterAttachmentAndResolvesItOnce() async throws {
             let fixture = try Self.fixture { _ in }
@@ -928,7 +968,7 @@ import Synchronization
                 .object(["name": .string("mcp"), "source": .string("extension")]),
             ])) { _ in }
             let commands = try await fixture.chat.commands(threadID: nil)
-            #expect(commands.map(\.name) == ["mcp", "skill:summary"])
+            #expect(commands.map(\.name) == ["compact", "mcp", "skill:summary"])
             let launch = try #require(fixture.pi.launches.all.first { $0.mode == .chat })
             #expect(launch.arguments.contains("--no-session"))
             #expect(launch.arguments.contains("--skill"))
@@ -1018,7 +1058,7 @@ import Synchronization
                 approvalMethod: .ask
             )
             for try await _ in turn.events {}
-            #expect(try await fixture.chat.commands(threadID: thread.id).isEmpty)
+            #expect(try await fixture.chat.commands(threadID: thread.id).map(\.name) == ["compact"])
             #expect(fixture.pi.launches.all.filter { $0.mode == .chat }.count == 1)
             #expect(await !fixture.chatTransport.isClosed)
             await fixture.chat.releaseThreadLease(threadID: thread.id, leaseID: lease)
@@ -1173,7 +1213,7 @@ import Synchronization
                 if index == 0 {
                     // Saving a grant does not interrupt a running turn or its command discovery.
                     permissions.withLock { $0 = readOnly }
-                    #expect(try await chat.commands(threadID: thread.id).isEmpty)
+                    #expect(try await chat.commands(threadID: thread.id).map(\.name) == ["compact"])
                     #expect(await !process.isClosed)
                 }
                 await process.emit(TestPiTransport.assistantEnd("ok"))

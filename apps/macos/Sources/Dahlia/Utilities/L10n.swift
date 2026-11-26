@@ -3135,6 +3135,16 @@ enum L10n { // swiftlint:disable:this type_body_length
     static var sendMessage: String { String(localized: "Send message", bundle: bundle) }
     static var stopGenerating: String { String(localized: "Stop generating", bundle: bundle) }
     static var chatThinking: String { String(localized: "Thinking", bundle: bundle) }
+    static var chatCompactDoesNotSupportImages: String { String(localized: "Remove attached images before compacting context", bundle: bundle) }
+    static var chatCompacting: String { String(localized: "Compacting context", bundle: bundle) }
+    static var chatCompactCommandDescription: String {
+        String(localized: "Summarize the conversation and reduce context usage", bundle: bundle)
+    }
+
+    static func chatCompacted(from before: String, to after: String) -> String {
+        String(localized: "Context compacted \(before) → \(after) tokens", bundle: bundle)
+    }
+
     static var messageDahliaAI: String { String(localized: "Message Dahlia AI", bundle: bundle) }
     static var addToChat: String { String(localized: "Add to chat", bundle: bundle) }
     static var selectModel: String { String(localized: "Select model", bundle: bundle) }

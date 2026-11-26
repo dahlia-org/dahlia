@@ -1050,6 +1050,9 @@
 "Send message" = "Send message";
 "Stop generating" = "Stop generating";
 "Thinking" = "Thinking";
+"Compacting context" = "Compacting context";
+"Summarize the conversation and reduce context usage" = "Summarize the conversation and reduce context usage";
+"Context compacted %@ → %@ tokens" = "Context compacted %@ → %@ tokens";
 "Message Dahlia AI" = "Message Dahlia AI";
 "Add to chat" = "Add to chat";
 "Select model" = "Select model";
@@ -2027,3 +2030,5 @@
 "settings.agents.calendar.invalidSchedule" = "Enable daily or before meetings. Hours before must be greater than 0 and less than 168.";
 "settings.agents.calendar.dailyNote" = "Read today's schedule with calendar_read and consider preparation and unanswered invitations.";
 "settings.agents.calendar.meetingNote" = "A meeting is approaching. Read its current details with calendar_read and decide whether preparation is needed.";
+
+"Remove attached images before compacting context" = "Remove attached images before compacting context";

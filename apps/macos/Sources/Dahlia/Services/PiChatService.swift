@@ -251,6 +251,9 @@ actor PiChatService: CodexChatServicing {
         var pendingSteers: [JSONValue] = []
         /// Pi reports the turn's own prompt first; it is already stored when the turn begins.
         var sawPrompt = false
+        /// A `/compact` turn, which ends with Pi's manual compaction instead of an agent run.
+        var compacts = false
+        var isCommand = false
     }
 
     let runtime: PiRuntimeService
@@ -340,7 +343,9 @@ actor PiChatService: CodexChatServicing {
             guard let commands = response.objectValue?["commands"] else {
                 throw PiRuntimeError.invalidProtocolResponse
             }
-            let decoded = try JSONDecoder().decode([CodexChatSlashCommand].self, from: JSONEncoder().encode(commands))
+            // Pi runs `/compact` only through its own RPC command, so `get_commands` does not list it.
+            let decoded = try (JSONDecoder().decode([CodexChatSlashCommand].self, from: JSONEncoder().encode(commands))
+                + [CodexChatSlashCommand(name: "compact", description: L10n.chatCompactCommandDescription, source: "builtin")])
                 .sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
             if ownsConnection { await closeSession(temporaryID) }
             return decoded
@@ -615,6 +620,10 @@ actor PiChatService: CodexChatServicing {
         let (inputs, notice) = preparedRun.origin == "restart"
             ? (inputs, .object(["type": .string("thread_notification"), "content": .string(L10n.chatContinuedAfterRestart)]))
             : try botTurnInputs(preparedRun, inputs)
+        let compactInstructions = Self.compactInstructions(inputs)
+        guard compactInstructions == nil || !inputs.contains(where: \.isImageRelated) else {
+            throw HermesLearning.failure(L10n.chatCompactDoesNotSupportImages)
+        }
         userRun.input = try ChatHistoryCodec.encodeInputs(inputs)
         let run: ChatRunRecord
         let queued = scheduledRuns[threadID]
@@ -627,6 +636,8 @@ actor PiChatService: CodexChatServicing {
         }
         sessions[threadID]?.approvalMethod = approvalMethod
         var turn = Turn(id: run.id, wireID: UUID.v7().uuidString, run: run)
+        turn.compacts = compactInstructions != nil
+        turn.isCommand = Self.textJoined(inputs).first?.textValue?.hasPrefix("/") == true
         let readerID = UUID.v7()
         turn.broadcast.readers[readerID] = continuation
         continuation.onTermination = { [weak self] _ in Task { await self?.detachReader(threadID: threadID, runID: run.id, readerID: readerID) } }
@@ -647,6 +658,20 @@ actor PiChatService: CodexChatServicing {
         if let servers = sessions[threadID]?.mcpServersNeedingSignIn, !servers.isEmpty {
             sessions[threadID]?.turn?.broadcast.yield(.mcpSignInRequired(servers: servers))
         }
+        if let compactInstructions {
+            let fields: [String: JSONValue] = compactInstructions.isEmpty ? [:] : ["customInstructions": .string(compactInstructions)]
+            // Pi emits `compaction_end` before it answers, and that event settles the turn. The marker after the answer
+            // settles it instead when Pi answered without one, such as a Pi that does not have the command.
+            Task {
+                do {
+                    _ = try await connection.request("compact", fields)
+                } catch {
+                    await self.setCompactionError(error.localizedDescription, threadID: threadID, runID: turn.id)
+                }
+                await connection.finishHandledPrompt(turnID: turn.wireID)
+            }
+            return CodexChatTurnHandle(id: turn.id, events: events, approvalMethod: approvalMethod, isCommand: turn.isCommand)
+        }
         do {
             // A changed SOUL.md reaches Super Agent first, in Pi only; the history keeps the user's words.
             let preface: [CodexAppServerInput] = (run.origin == "restart" ? [.text(ChatThreadStore.continuePrompt)] : [])
@@ -655,7 +680,7 @@ actor PiChatService: CodexChatServicing {
             // Pi handled the text itself (for example a `/skill:` expansion error) and starts no run.
             if accepted.objectValue?["disposition"]?.stringValue == "handled", sessions[threadID]?.turn?.id == turn.id {
                 await connection.finishHandledPrompt(turnID: turn.wireID)
-                return CodexChatTurnHandle(id: turn.id, events: events, approvalMethod: approvalMethod)
+                return CodexChatTurnHandle(id: turn.id, events: events, approvalMethod: approvalMethod, isCommand: turn.isCommand)
             }
         } catch {
             // Readers that attached while the prompt was pending live only in the stored turn.
@@ -671,7 +696,7 @@ actor PiChatService: CodexChatServicing {
             if error is CancellationError { await runtime.close(connection) }
             throw error
         }
-        return CodexChatTurnHandle(id: turn.id, events: events, approvalMethod: approvalMethod)
+        return CodexChatTurnHandle(id: turn.id, events: events, approvalMethod: approvalMethod, isCommand: turn.isCommand)
     }
 
     /// A direct manual turn already committed its opening and choices with the run; queued starts append here.
@@ -1114,7 +1139,10 @@ actor PiChatService: CodexChatServicing {
             turn.broadcast.yield(.notice(message: message, level: level))
             return
         }
-        if object["type"]?.stringValue == "dahlia_prompt_handled", object["turnID"]?.stringValue != turn.wireID { return }
+        if try !continuesHandling(object, turn: &turn, threadID: threadID) {
+            sessions[threadID]?.turn = turn
+            return
+        }
         let itemID = "\(turn.wireID)-\(turn.messageIndex)"
         switch object["type"]?.stringValue {
         case "message_update":
@@ -1145,7 +1173,7 @@ actor PiChatService: CodexChatServicing {
             turn.lastError = message["stopReason"]?.stringValue == "error"
                 ? message["errorMessage"]?.stringValue ?? "" : nil
             turn.messageIndex += 1
-        case "agent_settled", "dahlia_prompt_handled":
+        case "agent_settled", "dahlia_prompt_handled", "compaction_end":
             let status = object["aborted"]?.boolValue == true ? "interrupted" : turn.lastError != nil || bridgeError != nil ? "failed" : "idle"
             // A steer the turn ended without delivering stays in history as the last message.
             try history().appendItems(threadID: threadID, items: turn.pendingSteers, runID: turn.id)
@@ -1175,6 +1203,54 @@ actor PiChatService: CodexChatServicing {
             return
         }
         sessions[threadID]?.turn = turn
+    }
+
+    /// Records compactions. False when the event leaves the turn as it is: a compaction Pi started on its own when the
+    /// context filled, which the turn continues after, or the handled-prompt marker of an earlier turn.
+    private func continuesHandling(_ object: [String: JSONValue], turn: inout Turn, threadID: String) throws -> Bool {
+        switch object["type"]?.stringValue {
+        case "compaction_start":
+            turn.broadcast.yield(.compactionStarted)
+            return false
+        case "compaction_end":
+            let result = object["result"]?.objectValue
+            let compaction = result.flatMap { result in
+                result["tokensBefore"]?.intValue.map {
+                    CodexChatCompaction(tokensBefore: $0, tokensAfter: result["estimatedTokensAfter"]?.intValue ?? $0)
+                }
+            }
+            if let compaction {
+                // A notification row, so history pages and their partial index already include it without a migration.
+                try history().appendItems(threadID: threadID, items: [.object([
+                    "type": .string("thread_notification"), "content": .string(""),
+                    "compaction": .object([
+                        "tokensBefore": .number(Double(compaction.tokensBefore)),
+                        "tokensAfter": .number(Double(compaction.tokensAfter)),
+                    ]),
+                ])], runID: turn.id)
+            }
+            turn.broadcast.yield(.compactionEnded(compaction))
+            guard turn.compacts, object["reason"]?.stringValue == "manual" else { return false }
+            turn.lastError = object["errorMessage"]?.stringValue
+            return true
+        case "dahlia_prompt_handled":
+            return object["turnID"]?.stringValue == turn.wireID
+        default:
+            return true
+        }
+    }
+
+    /// A later `compaction_end` replaces it with Pi's own message.
+    private func setCompactionError(_ message: String, threadID: String, runID: UUID) {
+        guard sessions[threadID]?.turn?.id == runID else { return }
+        sessions[threadID]?.turn?.lastError = message
+    }
+
+    /// The instructions of a `/compact` message, empty when it has none; nil for any other message.
+    nonisolated static func compactInstructions(_ inputs: [CodexAppServerInput]) -> String? {
+        guard case let .text(text)? = textJoined(inputs).first,
+              let match = text.wholeMatch(of: /\/compact(?:\s+([\s\S]*))?/) else { return nil }
+        return match.1.map { String($0).trimmingCharacters(in: .whitespacesAndNewlines) } ?? ""
     }
 
     private func countLearningIteration(_ run: ChatRunRecord, blocks: [[String: JSONValue]]) throws {

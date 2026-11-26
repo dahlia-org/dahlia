@@ -34,6 +34,26 @@ import Foundation
             #expect(session.messages.filter { $0.role == .notice(.warning) }.map(\.text) == ["glean: needs sign-in"])
         }
 
+        @Test(arguments: [true, false])
+        func compactionShowsProgressThenItsResultOrNothing(succeeds: Bool) async {
+            let service = TestCodexChatService(mode: .blockBeforeOutput)
+            let settings = AppSettings()
+            settings.currentWorkspace = Self.testWorkspace()
+            let session = CodexChatSessionModel(service: service, settings: settings)
+            session.draft = "/compact"
+            session.sendDraft()
+            await waitUntil { session.activeTurnID != nil }
+            await service.yieldBlockedEvent(.compactionStarted)
+            await waitUntil { session.isCompacting }
+            #expect(session.messages.map(\.role) == [.user, .compaction(nil), .assistant])
+            // The progress row replaces the thinking indicator.
+            #expect(!session.showsStandaloneThinking)
+            let compaction = CodexChatCompaction(tokensBefore: 43700, tokensAfter: 17200)
+            await service.yieldBlockedEvent(.compactionEnded(succeeds ? compaction : nil))
+            await waitUntil { !session.isCompacting }
+            #expect(session.messages.map(\.role) == [.user] + (succeeds ? [.compaction(compaction)] : []) + [.assistant])
+        }
+
         @Test
         func slashCommandsReachPiBeforeAutomaticContextAndExplicitMeetingReferences() async {
             let service = TestCodexChatService(mode: .complete)

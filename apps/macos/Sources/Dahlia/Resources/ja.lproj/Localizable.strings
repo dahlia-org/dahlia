@@ -1050,6 +1050,9 @@
 "Send message" = "メッセージを送信";
 "Stop generating" = "生成を停止";
 "Thinking" = "考えています";
+"Compacting context" = "コンテキストを圧縮しています";
+"Summarize the conversation and reduce context usage" = "会話を要約してコンテキストの使用量を減らします";
+"Context compacted %@ → %@ tokens" = "コンテキストを圧縮しました %@ → %@ トークン";
 "Message Dahlia AI" = "Dahlia AI にメッセージ";
 "Add to chat" = "チャットに追加";
 "Select model" = "モデルを選択";
@@ -2027,3 +2030,5 @@
 "settings.agents.calendar.invalidSchedule" = "毎日の時刻か会議の前を選び、会議の前は0より大きく168時間未満で指定してください。";
 "settings.agents.calendar.dailyNote" = "今日の予定を calendar_read で確認し、必要な準備や未回答の招待を判断してください。";
 "settings.agents.calendar.meetingNote" = "会議が近づいています。参照先の最新の予定を calendar_read で読み、準備が必要か判断してください。";
+
+"Remove attached images before compacting context" = "コンテキストを圧縮する前に添付画像を削除してください";
