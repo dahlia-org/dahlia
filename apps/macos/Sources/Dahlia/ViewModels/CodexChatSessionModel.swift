@@ -49,7 +49,13 @@ final class CodexChatSessionModel: Identifiable {
     @ObservationIgnored private var lostRunEvents = false
     private(set) var needsRestore: Bool
     var isGenerating = false
-    var errorMessage: String?
+    private var operationErrorMessage: String?
+
+    var errorMessage: String? {
+        get { operationErrorMessage ?? failedSubmission?.message }
+        set { operationErrorMessage = newValue }
+    }
+
     var noticeMessage: String?
     /// MCP servers the open chat process cannot use until the user signs in; reported again at each turn.
     var mcpServersNeedingSignIn: [String] = []
@@ -126,7 +132,12 @@ final class CodexChatSessionModel: Identifiable {
     @ObservationIgnored var turnOutputGeneration: UInt = 0
     @ObservationIgnored var turnTask: Task<Void, Never>?
     @ObservationIgnored private var steerTask: Task<Void, Never>?
-    @ObservationIgnored private var failedSubmission: CodexChatManualSubmission?
+    private struct SubmissionFailure {
+        let input: CodexChatManualSubmission
+        let message: String?
+    }
+
+    private var failedSubmission: SubmissionFailure?
     @ObservationIgnored private var threadDidStartHandler: (@MainActor () -> Void)?
     @ObservationIgnored private var generationCompletionHandler: (@MainActor () -> Void)?
     @ObservationIgnored private var syncedApprovalMethod: CodexChatApprovalMethod?
@@ -375,7 +386,7 @@ final class CodexChatSessionModel: Identifiable {
         reportsUsage: Bool = true
     ) {
         let shouldEnqueue = isGenerating || isTurnCleanupPending
-            || failedSubmission?.startsFreshSession == true
+            || failedSubmission?.input.startsFreshSession == true
             || pendingManualInputs.contains(where: \.startsFreshSession)
             || (errorMessage == nil && !pendingManualInputs.isEmpty)
         if shouldEnqueue, let composerSnapshot = submission.composerSnapshot {
@@ -398,6 +409,10 @@ final class CodexChatSessionModel: Identifiable {
         submitManualSubmission(submission)
     }
 
+    var canDispatchPendingInputs: Bool {
+        errorMessage == nil && failedSubmission?.input.startsFreshSession != true
+    }
+
     var canSkipFailedSubmission: Bool {
         isBoundToCurrentAccount && !isReleased && !isRestoring && !needsRestore && !isGenerating && !isTurnCleanupPending
             && failedSubmission != nil && !pendingManualInputs.isEmpty && errorMessage != nil
@@ -406,7 +421,7 @@ final class CodexChatSessionModel: Identifiable {
 
     func skipFailedSubmissionAndResumeQueue() {
         guard canSkipFailedSubmission else { return }
-        if failedSubmission?.startsFreshSession == true {
+        if failedSubmission?.input.startsFreshSession == true {
             pendingManualInputs[0].startsFreshSession = true
         }
         failedSubmission = nil
@@ -421,7 +436,7 @@ final class CodexChatSessionModel: Identifiable {
             synchronizeApprovalMethodIfNeeded()
             return
         }
-        guard let submission = failedSubmission ?? lastManualSubmission else { return }
+        guard let submission = failedSubmission?.input ?? lastManualSubmission else { return }
         retryManualSubmission(submission)
     }
 
@@ -1353,7 +1368,9 @@ extension CodexChatSessionModel {
     func recordFailedManualSubmission(_ submission: CodexChatManualSubmission) {
         lastSubmittedText = submission.text
         lastManualSubmission = submission
-        failedSubmission = submission
+        let message = errorMessage ?? (submission.startsFreshSession ? noticeMessage : nil)
+        failedSubmission = SubmissionFailure(input: submission, message: message)
+        operationErrorMessage = nil
     }
 
     private func unsubscribeIfPossible() {
@@ -1430,7 +1447,7 @@ extension CodexChatSessionModel {
               isBoundToCurrentAccount,
               !isTurnCleanupPending,
               steerTask == nil,
-              errorMessage == nil else { return }
+              canDispatchPendingInputs else { return }
         if isGenerating {
             startSteeringPendingInputIfPossible()
         } else if !isQueuePaused, !pendingManualInputs.isEmpty {
@@ -1465,7 +1482,7 @@ extension CodexChatSessionModel {
 
     func nextPendingSteerInput() -> CodexChatManualSubmission? {
         // A steer would reach the session `/clear` is about to leave; the input waits to start the new one.
-        guard !activeTurnIsCommand, !startsFreshSession,
+        guard canDispatchPendingInputs, !activeTurnIsCommand, !startsFreshSession,
               let index = pendingManualInputs.firstIndex(where: {
                   $0.deliveryMode == .steer && !$0.startsFreshSession && canPromotePendingInput($0)
               }),

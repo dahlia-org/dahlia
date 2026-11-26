@@ -104,12 +104,12 @@ extension CodexChatSessionModel {
             return
         } catch {
             guard activeSubmissionID == submissionID else { return }
+            errorMessage = error.localizedDescription
             recordFailedSubmission(
                 text: text,
                 images: images,
                 includesCurrentContext: includesCurrentContext
             )
-            errorMessage = error.localizedDescription
             return
         }
         guard !isReleased, isBoundToCurrentAccount else { return }

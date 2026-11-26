@@ -199,6 +199,55 @@
             #expect(await service.sentTextBlocks == [["B"], ["C"], ["D"]])
         }
 
+        @Test(arguments: [false, true], [false, true])
+        func modelRefreshKeepsFailedResetBlocked(retry: Bool, queuedBeforeFailure: Bool) async throws {
+            let service = TestCodexChatService(mode: .failThenComplete, delaysFreshSessionStart: true)
+            let session = CodexChatSessionModel(
+                backendThreadID: "thread-1", messages: [CodexChatMessage(role: .assistant, text: "Earlier answer")],
+                service: service, settings: TestCodexChatFixtures.appSettings()
+            )
+            session.armFreshSession()
+            session.draft = "B"
+            session.sendDraft()
+            try #require(await pollUntil { await service.isSendWaiting })
+            if queuedBeforeFailure {
+                session.draft = "C"
+                session.sendDraft(mode: .queue)
+            }
+            await service.resumeDelayedSend()
+            try #require(await pollUntil { !session.isGenerating && session.errorMessage != nil })
+            let failureMessage = try #require(session.errorMessage)
+            await session.prepare(forceRefresh: true)
+            #expect(session.errorMessage == failureMessage)
+            // Other operations clearing their own diagnostic must not consume failed reset recovery either.
+            session.errorMessage = nil
+            #expect(session.errorMessage == failureMessage)
+            if !queuedBeforeFailure {
+                session.draft = "C"
+                session.sendDraft(mode: .queue)
+            }
+            session.draft = "D"
+            session.sendDraft(mode: .queue)
+            let next = try #require(session.pendingManualInputs.first)
+            #expect(!session.canSendPendingInput(next))
+            session.sendPendingInputNow(id: next.id)
+            session.resumeQueue()
+            session.processPendingInputIfPossible()
+            #expect(session.pendingManualInputs.map(\.text) == ["C", "D"])
+            #expect(await service.freshSessionStarts == [true])
+            #expect(session.canSkipFailedSubmission)
+            if retry {
+                session.retry()
+            } else {
+                session.skipFailedSubmissionAndResumeQueue()
+            }
+            let expectedStarts = retry ? [true, true, false, false] : [true, true, false]
+            try #require(await pollUntil { await service.freshSessionStarts.count == expectedStarts.count && !session.hasPendingGenerationWork })
+            #expect(await service.freshSessionStarts == expectedStarts)
+            #expect(await service.sentTextBlocks == (retry ? [["B"], ["B"], ["C"], ["D"]] : [["B"], ["C"], ["D"]]))
+            #expect(session.errorMessage == nil)
+        }
+
         @Test
         func skipWithoutAFailedSubmissionDoesNotClearAnUnrelatedError() async {
             let service = TestCodexChatService(mode: .complete)

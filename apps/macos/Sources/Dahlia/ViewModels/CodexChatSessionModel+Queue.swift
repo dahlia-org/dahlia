@@ -2,7 +2,7 @@ import Foundation
 
 extension CodexChatSessionModel {
     func resumeQueue() {
-        guard isBoundToCurrentAccount, !isReleased, errorMessage == nil else { return }
+        guard isBoundToCurrentAccount, !isReleased, canDispatchPendingInputs else { return }
         isQueuePaused = false
         processPendingInputIfPossible()
     }
@@ -15,7 +15,7 @@ extension CodexChatSessionModel {
 
     func canSendPendingInput(_ input: CodexChatManualSubmission) -> Bool {
         isBoundToCurrentAccount && !isReleased && !isRestoring && !needsRestore
-            && errorMessage == nil && editingPendingInputID == nil && !isTurnCleanupPending
+            && canDispatchPendingInputs && editingPendingInputID == nil && !isTurnCleanupPending
             && canPromotePendingInput(input)
             && (!isGenerating || !isPreparingTurn && !input.text.hasPrefix("/") && !startsFreshSession && !input.startsFreshSession)
             && (input.images.isEmpty || selectedModelSupportsImages)
