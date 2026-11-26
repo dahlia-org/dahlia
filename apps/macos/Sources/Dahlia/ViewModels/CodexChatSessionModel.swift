@@ -375,6 +375,7 @@ final class CodexChatSessionModel: Identifiable {
         reportsUsage: Bool = true
     ) {
         let shouldEnqueue = isGenerating || isTurnCleanupPending
+            || failedSubmission?.startsFreshSession == true
             || pendingManualInputs.contains(where: \.startsFreshSession)
             || (errorMessage == nil && !pendingManualInputs.isEmpty)
         if shouldEnqueue, let composerSnapshot = submission.composerSnapshot {
@@ -405,6 +406,9 @@ final class CodexChatSessionModel: Identifiable {
 
     func skipFailedSubmissionAndResumeQueue() {
         guard canSkipFailedSubmission else { return }
+        if failedSubmission?.startsFreshSession == true {
+            pendingManualInputs[0].startsFreshSession = true
+        }
         failedSubmission = nil
         errorMessage = nil
         resumeQueue()

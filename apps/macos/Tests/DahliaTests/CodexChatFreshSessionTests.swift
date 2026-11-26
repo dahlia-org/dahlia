@@ -144,6 +144,61 @@
             try #require(await pollUntil { !session.hasPendingGenerationWork })
         }
 
+        @Test(arguments: [false, true], [false, true])
+        func skippingFailedResetPreservesOnlyItsUncommittedBoundary(committed: Bool, editingNext: Bool) async throws {
+            let service = TestCodexChatService(
+                mode: .failThenComplete, commitsFreshSessionBeforeFailure: committed, delaysFreshSessionStart: true
+            )
+            let session = CodexChatSessionModel(
+                backendThreadID: "thread-1", messages: [CodexChatMessage(role: .assistant, text: "Earlier answer")],
+                service: service, settings: TestCodexChatFixtures.appSettings()
+            )
+            session.armFreshSession()
+            session.draft = "B"
+            session.sendDraft()
+            try #require(await pollUntil { await service.isSendWaiting })
+            session.draft = "C"
+            session.sendDraft(mode: .queue)
+            await service.resumeDelayedSend()
+            try #require(await pollUntil { !session.isGenerating && session.errorMessage != nil })
+            let next = try #require(session.pendingManualInputs.first)
+            if editingNext { session.beginEditingPendingInput(id: next.id) }
+            session.skipFailedSubmissionAndResumeQueue()
+            if editingNext {
+                #expect(!session.isGenerating)
+                #expect(session.pendingManualInputs.first?.startsFreshSession == !committed)
+                session.savePendingInput(id: next.id, draft: "C edited", images: [])
+            }
+            try #require(await pollUntil { await service.freshSessionStarts.count == 2 && !session.hasPendingGenerationWork })
+            #expect(await service.freshSessionStarts == [true, !committed])
+            #expect(await service.sentTextBlocks == [["B"], [editingNext ? "C edited" : "C"]])
+            #expect(!session.startsFreshSession)
+        }
+
+        @Test
+        func newInputsAfterFailedResetWaitForExplicitRecovery() async throws {
+            let service = TestCodexChatService(mode: .failThenComplete)
+            let session = CodexChatSessionModel(
+                backendThreadID: "thread-1", messages: [CodexChatMessage(role: .assistant, text: "Earlier answer")],
+                service: service, settings: TestCodexChatFixtures.appSettings()
+            )
+            session.armFreshSession()
+            session.draft = "B"
+            session.sendDraft()
+            try #require(await pollUntil { !session.isGenerating && session.errorMessage != nil })
+            session.draft = "C"
+            session.sendDraft(mode: .queue)
+            session.draft = "D"
+            session.sendDraft(mode: .queue)
+            #expect(session.pendingManualInputs.map(\.text) == ["C", "D"])
+            #expect(await service.freshSessionStarts == [true])
+            #expect(session.canSkipFailedSubmission)
+            session.skipFailedSubmissionAndResumeQueue()
+            try #require(await pollUntil { await service.freshSessionStarts.count == 3 && !session.hasPendingGenerationWork })
+            #expect(await service.freshSessionStarts == [true, true, false])
+            #expect(await service.sentTextBlocks == [["B"], ["C"], ["D"]])
+        }
+
         @Test
         func skipWithoutAFailedSubmissionDoesNotClearAnUnrelatedError() async {
             let service = TestCodexChatService(mode: .complete)
