@@ -1473,6 +1473,18 @@
 "settings.providers.registered" = "登録済み";
 "settings.providers.registeredSignInAgainHint" = "Databricks は登録済みです。再認証するには、初期設定の完了後に設定の「プロバイダー」で「サインインし直す」を選んでください。ここでは別のワークスペースを追加できます。";
 "settings.agents.mcpSearchPrompt" = "コネクタを検索";
+"settings.agents.mcpDirectSection" = "直接設定";
+"settings.agents.mcpDirectAddHelp" = "stdio のコマンドまたは HTTP の URL で MCP サーバーを設定します。";
+"settings.agents.mcpDirectName" = "名前（英小文字・数字・_）";
+"settings.agents.mcpDirectTransport" = "接続方式";
+"settings.agents.mcpDirectCommand" = "コマンド";
+"settings.agents.mcpDirectArguments" = "引数（1行に1つ）";
+"settings.agents.mcpDirectEnvironment" = "環境変数（1行に KEY=value）";
+"settings.agents.mcpDirectHeaders" = "ヘッダー（1行に Name: value）";
+"settings.agents.mcpDirectHelp" = "値に ${VAR} と書くと、チャットの環境変数から読み込みます。秘密の値は「環境変数」に設定して参照してください。stdio のコマンドはチャットの sandbox の外で実行されます。変更は新しいチャットから適用されます。";
+"settings.agents.mcpDirectPairsInvalid" = "環境変数とヘッダーは、1行に1つずつ名前と値を書いてください。";
+"settings.agents.mcpDirectCommandRequired" = "コマンドを入力してください。";
+"settings.agents.mcpDirectURLInvalid" = "http または https の URL を入力してください。";
 "settings.agents.mcpNoProviders" = "「モデル」の「プロバイダー」で Databricks ワークスペースを追加すると、その Unity AI Gateway の MCP をここでオンにできます。";
 "settings.agents.mcpProviderSignInRequired" = "サインインが必要です。「モデル」の「プロバイダー」でサインインし直してください。";
 "settings.agents.mcpWorkspaceIsAccount" = "このワークスペースはアカウント自身のもので、MCP にもそのまま使えます。";

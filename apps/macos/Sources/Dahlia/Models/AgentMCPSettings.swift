@@ -8,8 +8,10 @@ struct AgentMCPServer: Codable, Hashable, Identifiable, Sendable {
     var name: String
     /// The sign-in the server uses. Optional for compatibility with retired local tools.
     let providerID: String?
-    /// The fully qualified Unity AI Gateway service name.
+    /// The fully qualified Unity AI Gateway service name; a directly configured server's own name.
     let service: String
+    /// A server configured directly over stdio or HTTP, with no provider.
+    var direct: AgentMCPDirectConfiguration?
 
     /// The service's last name part as Settings shows it: `Google Calendar` for `system.ai.google_calendar`.
     static func displayName(for service: String) -> String {
@@ -64,7 +66,69 @@ struct AgentMCPProvider: Codable, Hashable, Identifiable, Sendable {
     }
 }
 
-/// The MCP servers registered for one account, kept in app defaults. Credentials are not stored here.
+/// A directly configured MCP server, as other MCP clients' `mcpServers` entries: a stdio command or a streamable HTTP URL.
+struct AgentMCPDirectConfiguration: Codable, Hashable, Sendable {
+    enum Transport: String, Codable, CaseIterable, Sendable {
+        case stdio, http
+    }
+
+    var transport: Transport = .stdio
+    var isEnabled = true
+    var command = ""
+    var args: [String] = []
+    var env: [String: String] = [:]
+    var url = ""
+    var headers: [String: String] = [:]
+
+    /// The command or URL displayed in Settings.
+    var endpoint: String {
+        transport == .stdio ? ([command] + args).joined(separator: " ") : url
+    }
+
+    /// Why Pi could not start the server, or nil.
+    var error: String? {
+        switch transport {
+        case .stdio:
+            command.trimmingCharacters(in: .whitespaces).isEmpty ? L10n.mcpDirectCommandRequired : nil
+        case .http:
+            URL(string: url).flatMap(\.scheme).map { ["http", "https"].contains($0.lowercased()) } == true ? nil : L10n.mcpDirectURLInvalid
+        }
+    }
+
+    /// The `mcp.json` entry. Pi resolves `${VAR}` in `env` and `headers` from the chat's environment.
+    var piEntry: JSONValue {
+        var entry: [String: JSONValue] = ["exposure": .string("direct")]
+        switch transport {
+        case .stdio:
+            entry["command"] = .string(command)
+            entry["args"] = .array(args.map(JSONValue.string))
+            if !env.isEmpty { entry["env"] = .object(env.mapValues(JSONValue.string)) }
+        case .http:
+            entry["url"] = .string(url)
+            if !headers.isEmpty { entry["headers"] = .object(headers.mapValues(JSONValue.string)) }
+        }
+        return .object(entry)
+    }
+
+    /// `KEY<separator>value` lines as a dictionary, or nil when a non-empty line has no key.
+    static func pairs(_ text: String, separator: Character) -> [String: String]? {
+        var pairs: [String: String] = [:]
+        for line in text.split(whereSeparator: \.isNewline) where !line.trimmingCharacters(in: .whitespaces).isEmpty {
+            guard let index = line.firstIndex(of: separator) else { return nil }
+            let key = line[..<index].trimmingCharacters(in: .whitespaces)
+            guard !key.isEmpty else { return nil }
+            pairs[key] = line[line.index(after: index)...].trimmingCharacters(in: .whitespaces)
+        }
+        return pairs
+    }
+
+    static func lines(_ pairs: [String: String], separator: String) -> String {
+        pairs.sorted { $0.key < $1.key }.map { "\($0.key)\(separator)\($0.value)" }.joined(separator: "\n")
+    }
+}
+
+/// The MCP servers registered for one account, kept in app defaults. Gateway credentials are not stored here;
+/// a directly configured server keeps its `env` and `headers` as entered (`${VAR}` keeps a secret out).
 struct AgentMCPSettings: Codable, Equatable, Sendable {
     private static let removedProvidersKey = "agentMCPs.removedProviderAccounts"
     var providers: [AgentMCPProvider] = []
@@ -83,7 +147,7 @@ struct AgentMCPSettings: Codable, Equatable, Sendable {
 
     static func load(defaults: UserDefaults = .standard) -> Self {
         var settings = defaults.data(forKey: defaultsKey()).flatMap { try? JSONDecoder().decode(Self.self, from: $0) } ?? Self()
-        settings.servers.removeAll { $0.providerID == nil && $0.service == "lightpanda" }
+        settings.servers.removeAll { $0.providerID == nil && $0.direct == nil && $0.service == "lightpanda" }
         if settings.manualServices == nil {
             let manual = (settings.listedServices ?? [:]).mapValues { $0.filter { !$0.hasPrefix("system.ai.") } }
                 .filter { !$0.value.isEmpty }
@@ -135,7 +199,9 @@ struct AgentMCPSettings: Codable, Equatable, Sendable {
 
     /// Durable grants bind the registration and endpoint, never its reusable tool-name prefix.
     func connectionID(for name: String) -> String? {
-        guard let server = servers.first(where: { $0.name == name }), let providerID = server.providerID,
+        guard let server = servers.first(where: { $0.name == name }) else { return nil }
+        if let direct = server.direct { return direct.isEnabled ? "\(server.id.uuidString)|direct" : nil }
+        guard let providerID = server.providerID,
               let provider = provider(id: providerID) else { return nil }
         return "\(server.id.uuidString)|\(providerID)|\(server.url(workspaceURL: provider.workspaceURL).absoluteString)"
     }
@@ -166,10 +232,15 @@ struct AgentMCPSettings: Codable, Equatable, Sendable {
         return name
     }
 
-    /// `mcp.json` entries keyed by server name. Gateway servers use `auth.provider`.
+    /// `mcp.json` entries keyed by server name. Gateway servers use `auth.provider`; a direct server's stdio command runs
+    /// as Pi's child, outside the chat's Seatbelt, like Dahlia MCP.
     var piServers: [String: JSONValue] {
         servers.reduce(into: [:]) { entries, server in
             guard server.name != AgentWebAccessSettings.serverName else { return }
+            if let direct = server.direct {
+                if direct.isEnabled { entries[server.name] = direct.piEntry }
+                return
+            }
             guard let providerID = server.providerID, let provider = provider(id: providerID) else { return }
             entries[server.name] = .object([
                 "url": .string(server.url(workspaceURL: provider.workspaceURL).absoluteString),

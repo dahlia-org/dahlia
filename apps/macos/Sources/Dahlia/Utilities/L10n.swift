@@ -2546,6 +2546,18 @@ enum L10n { // swiftlint:disable:this type_body_length
     static var mcpServiceSignInUnknown: String { String(localized: "settings.agents.mcpServiceSignInUnknown", bundle: bundle) }
 
     static var mcpSearchPrompt: String { String(localized: "settings.agents.mcpSearchPrompt", bundle: bundle) }
+    static var mcpDirectSection: String { String(localized: "settings.agents.mcpDirectSection", bundle: bundle) }
+    static var mcpDirectAddHelp: String { String(localized: "settings.agents.mcpDirectAddHelp", bundle: bundle) }
+    static var mcpDirectName: String { String(localized: "settings.agents.mcpDirectName", bundle: bundle) }
+    static var mcpDirectTransport: String { String(localized: "settings.agents.mcpDirectTransport", bundle: bundle) }
+    static var mcpDirectCommand: String { String(localized: "settings.agents.mcpDirectCommand", bundle: bundle) }
+    static var mcpDirectArguments: String { String(localized: "settings.agents.mcpDirectArguments", bundle: bundle) }
+    static var mcpDirectEnvironment: String { String(localized: "settings.agents.mcpDirectEnvironment", bundle: bundle) }
+    static var mcpDirectHeaders: String { String(localized: "settings.agents.mcpDirectHeaders", bundle: bundle) }
+    static var mcpDirectHelp: String { String(localized: "settings.agents.mcpDirectHelp", bundle: bundle) }
+    static var mcpDirectPairsInvalid: String { String(localized: "settings.agents.mcpDirectPairsInvalid", bundle: bundle) }
+    static var mcpDirectCommandRequired: String { String(localized: "settings.agents.mcpDirectCommandRequired", bundle: bundle) }
+    static var mcpDirectURLInvalid: String { String(localized: "settings.agents.mcpDirectURLInvalid", bundle: bundle) }
     static var mcpNoProviders: String { String(localized: "settings.agents.mcpNoProviders", bundle: bundle) }
     static var mcpProviderSignInRequired: String { String(localized: "settings.agents.mcpProviderSignInRequired", bundle: bundle) }
     static var mcpWorkspaceIsAccount: String { String(localized: "settings.agents.mcpWorkspaceIsAccount", bundle: bundle) }

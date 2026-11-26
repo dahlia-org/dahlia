@@ -87,7 +87,11 @@ private struct AgentSettingsTabs: View {
             case .schedules:
                 AgentScheduleSettingsView()
             case .mcps:
-                AgentMCPSettingsView(model: mcp, onAdd: presentMCPRegistration)
+                AgentMCPSettingsView(model: mcp, onAdd: presentMCPRegistration) { server in
+                    navigation.presentSettingsModal(
+                        AgentMCPDirectServerView(model: mcp, server: server, onClose: navigation.dismissSettingsModal)
+                    )
+                }
             case .security:
                 AgentSecuritySettingsView()
             }

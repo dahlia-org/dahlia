@@ -49,7 +49,7 @@
             try model.setService("system.ai.dbsql", enabled: true, of: provider)
             await model.refreshServices(of: provider)
             try model.addService("main.default.notion", to: provider)
-            let host = NSHostingView(rootView: AgentMCPSettingsView(model: model, onAdd: { _ in })
+            let host = NSHostingView(rootView: AgentMCPSettingsView(model: model, onAdd: { _ in }, onEditDirect: { _ in })
                 .background(Color(nsColor: .windowBackgroundColor)))
             host.frame = NSRect(x: 0, y: 0, width: width, height: 1000)
             let window = NSWindow(contentRect: host.frame, styleMask: .titled, backing: .buffered, defer: false)

@@ -1473,6 +1473,18 @@
 "settings.providers.registered" = "Registered";
 "settings.providers.registeredSignInAgainHint" = "Databricks is registered. To renew its sign-in, finish setup, then choose Sign In Again in Settings > Providers. You can add another workspace here.";
 "settings.agents.mcpSearchPrompt" = "Search connectors";
+"settings.agents.mcpDirectSection" = "Direct";
+"settings.agents.mcpDirectAddHelp" = "Set up an MCP server with a stdio command or an HTTP URL.";
+"settings.agents.mcpDirectName" = "Name (lowercase letters, digits, _)";
+"settings.agents.mcpDirectTransport" = "Transport";
+"settings.agents.mcpDirectCommand" = "Command";
+"settings.agents.mcpDirectArguments" = "Arguments (one per line)";
+"settings.agents.mcpDirectEnvironment" = "Environment (KEY=value per line)";
+"settings.agents.mcpDirectHeaders" = "Headers (Name: value per line)";
+"settings.agents.mcpDirectHelp" = "Write ${VAR} in a value to read it from the chat's environment variables. Keep secrets under Environment Variables and reference them. A stdio command runs outside the chat's sandbox. Changes apply to new chats.";
+"settings.agents.mcpDirectPairsInvalid" = "Write environment variables and headers one name and value per line.";
+"settings.agents.mcpDirectCommandRequired" = "Enter a command.";
+"settings.agents.mcpDirectURLInvalid" = "Enter an http or https URL.";
 "settings.agents.mcpNoProviders" = "Add a Databricks workspace under Providers on the Models tab to turn on its Unity AI Gateway MCPs here.";
 "settings.agents.mcpProviderSignInRequired" = "Sign-in required. Sign in again under Providers on the Models tab.";
 "settings.agents.mcpWorkspaceIsAccount" = "This is the account's own workspace. Its MCPs are already available.";

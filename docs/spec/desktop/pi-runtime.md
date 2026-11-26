@@ -324,6 +324,15 @@ Unity Gateway の MCP service は登録の操作なしで一覧からトグル�
 名の接頭辞（`mcp__<name>__`）になるので、英小文字・数字・`_` の40文字までとし、アカウントの中で重複させず、`dahlia` を使わない。既定は
 service 名の最後の部分（`system.ai.github` なら `github`）で、重複するときは番号を付ける。名前は自動で割り当て、設定からの変更は提供しない。同じアカウントで複数の workspace を登録できる。
 
+### 直接設定の MCP
+
+「コネクタ」タブの provider の見出しより上に「直接設定」の見出しを置き、stdio のコマンドまたは streamable HTTP の URL で設定した server を同じカードで並べる（2026-11-27 ユーザー依頼）。
+最後の「MCP サーバーを追加」カードはどちらの方式も共通で、アプリ内モーダルの切り替えで stdio（コマンド・1行1つの引数・`KEY=value` の環境変数）か HTTP（URL・`Name: value` のヘッダー）を入力する。
+名前は Unity Gateway の server と同じ規則・同じ名前空間で、追加時だけ入力する。カードには名前とコマンドまたは URL を表示し、鉛筆ボタンで同じモーダルを開いて設定の変更・削除を行う。接続内容を変えると既存の Source の許可は無効になり、新しい Source の作成が必要になる。
+トグルは設定を残したまま `mcp.json` への書き出しとイベントソースの許可を止める。登録は Unity Gateway の server と同じ `agentMCPs.local` に `providerID` なしで保存し、`env`・`headers` は入力どおり平文で残す。
+秘密の値は「環境変数」に置き、Pi が `${VAR}` で解決する。`mcp.json` には `command`・`args`・`env`、または `url`・`headers` と `exposure: "direct"` を書き、`auth.provider` は持たない。
+stdio の server は Dahlia MCP と同じく Pi の子として Seatbelt の外で実行される。tool の承認は他の MCP server と同じ。OAuth が必要な HTTP server のサインイン（Pi の `/mcp login`）は提供しない。
+
 sign-in は workspace ごとに1つで、その workspace の server すべてが共有する。どの server を使っても同じ refresh token が更新される。
 Databricks provider（`PiExtension/databricks-provider.ts`）が sign-in を provider として登録する。provider 自体はモデルを持たず、
 モデルは Dahlia が `models.json` に書く（Gateway の 3 つの API を持つ）。provider の ID は workspace の
@@ -354,8 +363,8 @@ control process の `/databricks-connection-login <workspace URL> <service>` が
 に付けた認可要求をブラウザで開き、workspace が接続のサインインを済ませてから返す認可コードは token に交換しない（workspace の sign-in は
 そのまま）。終わるとそのアカウントのチャットの process を閉じ、次の turn で接続し直す。MCP が返すリンクからのサインインもそのまま使える。
 
-チャットの process を起動するたびに、Dahlia は登録した server を `mcp.json`（0600）に `<workspace>/ai-gateway/mcp-services/system.ai.<name>`
-の `url`・`exposure: "direct"`・`auth: { provider: "<sign-in の provider>" }` だけで書く（登録がなければ空）。Pi は `mcp.json` を起動時に
+チャットの process を起動するたびに、Dahlia は登録した Gateway の server を `mcp.json`（0600）に `<workspace>/ai-gateway/mcp-services/system.ai.<name>`
+の `url`・`exposure: "direct"`・`auth: { provider: "<sign-in の provider>" }` だけで書き、オンの直接設定の server を[その設定](#直接設定の-mcp)で加える（登録がなければ空）。Pi は `mcp.json` を起動時に
 だけ読むので、登録の変更はその後に起動する chat process から効く。開いている thread の process は、閉じるまで前の設定のまま動く（遅れは
 ユーザーが許容。2026-11-07）。`--tools`・`DAHLIA_PI_MCP_SERVERS` は process ごとに同じ時点の設定から作るので、
 別の thread が先に書いた新しい `mcp.json` を読んでも、その process で使える MCP は起動時の設定の範囲に留まる。

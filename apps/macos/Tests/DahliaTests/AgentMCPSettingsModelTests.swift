@@ -476,6 +476,66 @@ import os
         }
 
         @Test
+        func aDirectServerIsWrittenAsItsStdioOrHTTPEntryWhileOn() throws {
+            let (model, defaults) = try Self.model(Self.runtime(commands: OSAllocatedUnfairLock(initialState: [])))
+            let script = #"eval "$(/usr/libexec/path_helper -s)"; exec dbexec repo run mcp start-single slack"#
+            let env = try #require(AgentMCPDirectConfiguration.pairs("DBEXEC_NO_CERT_REFRESH=1\n\nA = b=c", separator: "="))
+            #expect(env == ["DBEXEC_NO_CERT_REFRESH": "1", "A": "b=c"])
+            #expect(AgentMCPDirectConfiguration.pairs("no separator", separator: "=") == nil)
+
+            try model.saveDirectServer(name: "slack", .init(command: "/bin/bash", args: ["-c", script], env: env))
+            try model.saveDirectServer(name: "docs", .init(transport: .http, url: "https://example.com/mcp", headers: ["X-Key": "${KEY}"]))
+            let servers = AgentMCPSettings.load(defaults: defaults).piServers
+            #expect(servers["slack"] == .object([
+                "command": .string("/bin/bash"), "args": .array([.string("-c"), .string(script)]), "exposure": .string("direct"),
+                "env": .object(["DBEXEC_NO_CERT_REFRESH": .string("1"), "A": .string("b=c")]),
+            ]))
+            #expect(servers["docs"] == .object([
+                "url": .string("https://example.com/mcp"), "headers": .object(["X-Key": .string("${KEY}")]), "exposure": .string("direct"),
+            ]))
+            // A name is unique across gateway and direct servers, and an entry Pi cannot start is not saved.
+            #expect(throws: AgentMCPSettingsError.self) { try model.saveDirectServer(name: "slack", .init(command: "x")) }
+            #expect(throws: AgentMCPSettingsError.self) { try model.saveDirectServer(name: "other", .init(transport: .http, url: "file:///x")) }
+            #expect(throws: AgentMCPSettingsError.self) { try model.saveDirectServer(name: "other", .init()) }
+
+            // Off keeps the configuration but leaves mcp.json and grants; on brings both back.
+            let slack = try #require(model.directServers.first)
+            let grant = try #require(model.settings.connectionID(for: "slack"))
+            model.setDirectServer(slack, enabled: false)
+            #expect(model.settings.piServers["slack"] == nil && model.settings.connectionID(for: "slack") == nil)
+            model.setDirectServer(slack, enabled: true)
+            #expect(model.settings.connectionID(for: "slack") == grant)
+            model.remove(slack)
+            #expect(model.directServers.map(\.name) == ["docs"])
+        }
+
+        @Test
+        func editingADirectConnectionRetiresItsSourceGrant() throws {
+            let (model, defaults) = try Self.model(Self.runtime(commands: OSAllocatedUnfairLock(initialState: [])))
+            let configurations: [AgentMCPDirectConfiguration] = [
+                .init(command: "mcp", args: ["a b"], env: ["DATABASE_URL": "first"]),
+                .init(command: "mcp", args: ["a b"], env: ["DATABASE_URL": "second"]),
+                .init(command: "mcp", args: ["a", "b"], env: ["DATABASE_URL": "second"]),
+                .init(transport: .http, url: "https://example.com/mcp", headers: ["X-Tenant": "first"]),
+                .init(transport: .http, url: "https://example.com/mcp", headers: ["X-Tenant": "second"]),
+            ]
+            try model.saveDirectServer(name: "direct", configurations[0])
+            for configuration in configurations.dropFirst() {
+                let previous = try #require(model.directServers.first)
+                let grant = try #require(model.settings.connectionID(for: previous.name))
+                try model.saveDirectServer(name: previous.name, configuration, replacing: previous)
+                let saved = AgentMCPSettings.load(defaults: defaults)
+                #expect(saved.connectionID(for: previous.name) != grant)
+                #expect(saved.serverName(for: grant) == nil)
+
+                let current = try #require(model.directServers.first)
+                let currentGrant = saved.connectionID(for: current.name)
+                try model.saveDirectServer(name: current.name, configuration, replacing: current)
+                #expect(model.settings.connectionID(for: current.name) == currentGrant)
+            }
+        }
+
+        @Test
         func aWorkspaceIsRemovedEvenWhenPiCannotSignOut() async throws {
             let pi = Self.runtime(logoutSucceeds: false, commands: OSAllocatedUnfairLock(initialState: []))
             var saved = AgentMCPSettings()

@@ -22,7 +22,7 @@ struct CodexChatMCPServersView: View {
             } else {
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 0) {
-                        ForEach(settings.servers) { server in
+                        ForEach(settings.servers.filter { $0.direct?.isEnabled != false }) { server in
                             HStack(spacing: 8) {
                                 AgentMCPServiceLogo.image(for: server.service)
                                     .resizable()
