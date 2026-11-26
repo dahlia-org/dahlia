@@ -36,6 +36,22 @@
             return Fixture(runtime: runtime, service: service, store: store, transports: transports)
         }
 
+        @Test(.timeLimit(.minutes(1)))
+        func manualAcceptanceSavesOneOpeningAndItsChosenPreferences() async throws {
+            let fixture = try fixture()
+            defer { try? FileManager.default.removeItem(at: fixture.runtime.rootURL) }
+            let target = try await fixture.service.startThread(model: "old-model", effort: "low")
+            _ = try await fixture.service.beginTurn(
+                threadID: target.id, inputs: [.text("Work")], model: "openai/gpt-test", effort: "high", approvalMethod: .ask
+            )
+            let saved = try fixture.store.thread(id: target.id, accountID: AppAccount.key)
+            #expect(saved.model == "openai/gpt-test" && saved.reasoningEffort == "high")
+            let items = try fixture.store.listItems(threadID: target.id)
+            #expect(items.count == 1)
+            #expect(try items.first?.runID == fixture.store.latestRun(threadID: target.id)?.id)
+            await fixture.service.stopAccountRuns(except: "other")
+        }
+
         @Test(.timeLimit(.minutes(1)), arguments: [false, true], [false, true])
         func recoveryStartsBeforeItsAlreadyQueuedFollowUp(sameTimestamp: Bool, queuedBeforeManual: Bool) async throws {
             let fixture = try fixture()

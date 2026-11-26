@@ -617,12 +617,13 @@ actor PiChatService: CodexChatServicing {
             : try botTurnInputs(preparedRun, inputs)
         userRun.input = try ChatHistoryCodec.encodeInputs(inputs)
         let run: ChatRunRecord
-        if let queued = scheduledRuns[threadID] {
+        let queued = scheduledRuns[threadID]
+        if let queued {
             guard let claimed = try history().claimQueuedRun(queued, input: userRun.input) else { throw CancellationError() }
             run = claimed
             scheduledRuns[threadID] = nil
         } else {
-            run = try history().enqueueRun(userRun)
+            run = try history().beginUserRun(userRun, message: ChatHistoryCodec.user(inputs))
         }
         sessions[threadID]?.approvalMethod = approvalMethod
         var turn = Turn(id: run.id, wireID: UUID.v7().uuidString, run: run)
@@ -630,24 +631,7 @@ actor PiChatService: CodexChatServicing {
         turn.broadcast.readers[readerID] = continuation
         continuation.onTermination = { [weak self] _ in Task { await self?.detachReader(threadID: threadID, runID: run.id, readerID: readerID) } }
         do {
-            if let notice {
-                // Notifications, including crash continuations, use the run's choices without changing conversation defaults.
-                try history().beginTurn(threadID: threadID, message: notice, model: nil, effort: nil, runID: run.id)
-            } else if run.requestedByThreadID == nil, run.rootRunID != run.id {
-                // A result notification may run on Super Agent's unattended model and effort; the thread keeps the user's.
-                try history().updateThread(id: threadID, status: "running")
-            } else {
-                try history().beginTurn(
-                    threadID: threadID,
-                    message: ChatHistoryCodec.user(inputs),
-                    model: requestedModel,
-                    effort: effort,
-                    runID: run.id
-                )
-                if run.origin == "user" {
-                    try learningCount(thread: threadID, column: "memoryTurns")
-                }
-            }
+            try saveTurnOpening(run, inputs: inputs, notice: notice, model: requestedModel, alreadySaved: queued == nil)
             if run.origin == "schedule" {
                 try scheduleService().started(run)
             }
@@ -688,6 +672,25 @@ actor PiChatService: CodexChatServicing {
             throw error
         }
         return CodexChatTurnHandle(id: turn.id, events: events, approvalMethod: approvalMethod)
+    }
+
+    /// A direct manual turn already committed its opening and choices with the run; queued starts append here.
+    private func saveTurnOpening(_ run: ChatRunRecord, inputs: [CodexAppServerInput], notice: JSONValue?, model: String?, alreadySaved: Bool) throws {
+        if let notice {
+            // Notifications, including crash continuations, never change conversation defaults.
+            try history().beginTurn(threadID: run.threadID, message: notice, model: nil, effort: nil, runID: run.id)
+        } else if run.requestedByThreadID == nil, run.rootRunID != run.id {
+            try history().updateThread(id: run.threadID, status: "running")
+        } else {
+            if !alreadySaved {
+                try history().beginTurn(
+                    threadID: run.threadID, message: ChatHistoryCodec.user(inputs), model: model, effort: run.effort, runID: run.id
+                )
+            }
+            if run.origin == "user" {
+                try learningCount(thread: run.threadID, column: "memoryTurns")
+            }
+        }
     }
 
     /// Servers Pi reports as needing sign-in: its notice once servers connect, or a tool call that failed on it.

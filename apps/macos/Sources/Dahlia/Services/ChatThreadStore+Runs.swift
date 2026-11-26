@@ -53,6 +53,13 @@ extension ChatThreadStore {
         }
     }
 
+    /// Manual acceptance commits the run, opening, and conversation choices together before Pi can receive input.
+    func beginUserRun(_ run: ChatRunRecord, message: JSONValue) throws -> ChatRunRecord {
+        try enqueueRun(run) { db in
+            try Self.beginTurn(threadID: run.threadID, message: message, model: run.model, effort: run.effort, runID: run.id, in: db)
+        }
+    }
+
     /// Preparation belongs to one saved route. Reset may move its thread or requester while Pi starts.
     func claimQueuedRun(_ expected: ChatRunRecord, input: String? = nil) throws -> ChatRunRecord? {
         try transitionQueuedRun(expected, status: "running", input: input)

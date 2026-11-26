@@ -139,7 +139,7 @@ extension PiChatService {
             }
             await closeBotRuns(account: account, stop: stop)
             guard !stop else { return }
-            if sources.contains(where: { $0.enabled && $0.kind == "calendar" }) {
+            if sources.contains(where: { $0.kind == "calendar" }) {
                 let snapshot = await calendarSnapshot()
                 try validateBotActivity()
                 try inbox.reconcileCalendar(snapshot, now: now)

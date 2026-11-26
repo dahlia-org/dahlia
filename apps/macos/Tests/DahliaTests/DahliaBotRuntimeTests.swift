@@ -56,7 +56,8 @@
                 ending: [JSONValue] = settled,
                 replies: CommandLog? = nil,
                 // Launched threads keep working, so their results do not start more notices while a test looks at one.
-                holdsLaunched: Bool = true
+                holdsLaunched: Bool = true,
+                calendarSnapshot: @escaping @Sendable () async -> AgentCalendarSnapshot = { .init() }
             ) -> Fixture {
                 let pi = TestPiRuntime { options in
                     let script = calls[options.profile] ?? []
@@ -92,7 +93,7 @@
                     runtime: pi.service, historyStore: ChatThreadStore(dbQueue: db),
                     workingDirectory: PiWorkingDirectory(override: pi.rootURL.appending(path: "work")),
                     agentLocator: PiAgentDirectoryLocator(applicationSupportURL: pi.rootURL), mcpExecutableURL: URL(filePath: "/usr/bin/true"),
-                    mcpSettings: { settings }, fileAccessSettings: { .init() }
+                    mcpSettings: { settings }, calendarSnapshot: calendarSnapshot, fileAccessSettings: { .init() }
                 )
                 return Fixture(pi: pi, service: service, db: db, provider: provider, settings: settings)
             }
@@ -393,6 +394,35 @@
                 let choice = try #require(AgentBotSettings.choice(model: "model", effort: "effort", defaults: defaults))
                 #expect(PiChatService.intakeModelArguments(choice) == ["--model", "openai/gpt-test", "--thinking", "high"])
                 #expect(PiChatService.intakeModelArguments(nil).isEmpty)
+            }
+
+            @Test(arguments: [false, true])
+            func pausedCalendarSourcesStillReconcileProviderSelection(disabled: Bool) async throws {
+                let db = try AppDatabaseManager(path: ":memory:").dbQueue
+                let fixture = fixture(db: db, provider: AppAccount.key, calls: [:], calendarSnapshot: {
+                    .init(selectedProviders: disabled ? [] : ["provider-a"])
+                })
+                defer { cleanUp(fixture) }
+                let now = Date.now
+                var source = AgentSourceRecord(
+                    id: UUID.v7().uuidString, name: "Calendar", server: "calendar", instructions: "",
+                    intervalMinutes: 5, allowedSenders: "[]", cursor: nil, enabled: true,
+                    lastIntakeAt: nil, createdAt: now, updatedAt: now
+                )
+                source.kind = "calendar"
+                source.leadHours = 24
+                try fixture.inbox.saveSource(source, now: now)
+                let event = AgentEventRecord(
+                    id: UUID.v7().uuidString, sourceID: source.id, key: "meeting:due", topic: nil, note: "Meeting",
+                    ref: "{\"provider\":\"provider-a\"}", occurredAt: now.addingTimeInterval(-60),
+                    taskID: nil, handledAt: nil, createdAt: now
+                )
+                try await db.write { try event.insert($0) }
+                source.enabled = false
+                try fixture.inbox.saveSource(source, now: now)
+                await fixture.service.drainAlwaysOn(now: now)
+                #expect(try fixture.inbox.hasUndecidedEvents(now: now) == !disabled)
+                #expect(try await botRuns(fixture).isEmpty == disabled)
             }
 
             /// A notice runs on the model chosen for unattended runs; the conversation keeps the model the user chose.

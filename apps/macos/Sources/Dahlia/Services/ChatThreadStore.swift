@@ -139,12 +139,16 @@ struct ChatThreadStore: ChatItemStore, Sendable {
     /// A nil model or effort keeps the thread's, as a turn the user did not start does.
     func beginTurn(threadID: String, message: JSONValue, model: String?, effort: String?, runID: UUID? = nil) throws {
         try dbQueue.write { db in
-            try Self.append([message], threadID: threadID, runID: runID, in: db)
-            try db.execute(sql: """
-            UPDATE chat_threads SET status = 'running', model = COALESCE(?, model), reasoningEffort = COALESCE(?, reasoningEffort),
-                updatedAt = ? WHERE id = ?
-            """, arguments: [model, effort, Date(), threadID])
+            try Self.beginTurn(threadID: threadID, message: message, model: model, effort: effort, runID: runID, in: db)
         }
+    }
+
+    static func beginTurn(threadID: String, message: JSONValue, model: String?, effort: String?, runID: UUID?, in db: Database) throws {
+        try append([message], threadID: threadID, runID: runID, in: db)
+        try db.execute(sql: """
+        UPDATE chat_threads SET status = 'running', model = COALESCE(?, model), reasoningEffort = COALESCE(?, reasoningEffort),
+            updatedAt = ? WHERE id = ?
+        """, arguments: [model, effort, Date(), threadID])
     }
 
     func appendItems(threadID: String, items: [JSONValue]) throws {

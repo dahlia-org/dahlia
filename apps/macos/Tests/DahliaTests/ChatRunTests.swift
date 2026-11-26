@@ -416,6 +416,37 @@
             }
         }
 
+        @Test(arguments: ["chat_items", "chat_threads"])
+        func manualRunOpeningAndChoicesCommitAtomically(failingTable: String) throws {
+            let store = try ChatThreadStore(dbQueue: AppDatabaseManager(path: ":memory:").dbQueue)
+            let record = thread()
+            try store.createThread(record)
+            try store.updateThread(id: record.id, model: "old-model", effort: "low")
+            var manual = run(target: record.id)
+            manual.status = "running"
+            manual.model = "chosen-model"
+            manual.effort = "high"
+            manual.input = try ChatHistoryCodec.encodeInputs([.text("Work")])
+            try store.dbQueue.write { db in
+                let operation = failingTable == "chat_items" ? "INSERT" : "UPDATE"
+                try db.execute(sql: "CREATE TRIGGER fail_opening BEFORE \(operation) ON \(failingTable) BEGIN SELECT RAISE(ABORT, 'opening failed'); END")
+            }
+            #expect(throws: (any Error).self) { try store.beginUserRun(manual, message: ChatHistoryCodec.user([.text("Work")])) }
+            #expect(try store.run(id: manual.id) == nil)
+            #expect(try store.listItems(threadID: record.id).isEmpty)
+            #expect(try store.thread(id: record.id, accountID: record.accountID).model == "old-model")
+            #expect(try store.thread(id: record.id, accountID: record.accountID).reasoningEffort == "low")
+            try store.dbQueue.write { try $0.execute(sql: "DROP TRIGGER fail_opening") }
+            _ = try store.beginUserRun(manual, message: ChatHistoryCodec.user([.text("Work")]))
+            #expect(try store.thread(id: record.id, accountID: record.accountID).model == "chosen-model")
+            #expect(try store.thread(id: record.id, accountID: record.accountID).reasoningEffort == "high")
+            // Crash immediately after acceptance, before Pi or the turn broadcaster can start.
+            try store.recoverInterruptedThreads(continuing: true)
+            let continuation = try #require(try store.queuedRuns(accountID: record.accountID).first)
+            #expect(continuation.model == "chosen-model" && continuation.effort == "high")
+            #expect(try store.listItems(threadID: record.id).count == 1)
+        }
+
         @Test func restartInterruptsQueuedRunningAndApprovalWaitingRunsWithoutReplayingThem() throws {
             let store = try ChatThreadStore(dbQueue: AppDatabaseManager(path: ":memory:").dbQueue)
             let record = thread()

@@ -7,6 +7,24 @@ extension AgentInboxService {
     func reconcileCalendar(_ snapshot: AgentCalendarSnapshot, now: Date = .now, calendar: Calendar = .current) throws {
         let successful = snapshot.successfulProviders.intersection(snapshot.selectedProviders ?? snapshot.successfulProviders)
         try dbQueue.write { db in
+            // Selection invalidation applies to retained signals even while their source is paused.
+            if let selected = snapshot.selectedProviders {
+                let pending = try AgentEventRecord.fetchAll(db, sql: """
+                SELECT e.* FROM agent_event_inbox e JOIN agent_event_sources s ON s.id=e.sourceID
+                WHERE s.kind='calendar' AND e.handledAt IS NULL AND (e.key LIKE 'meeting:%' OR e.key LIKE 'daily:%')
+                """)
+                for event in pending {
+                    if event.key?.hasPrefix("daily:") == true {
+                        if selected.isEmpty { try event.delete(db) }
+                    } else {
+                        let ref = event.ref.flatMap { try? JSONDecoder().decode(JSONValue.self, from: Data($0.utf8)) }
+                        if let provider = ref?.objectValue?["provider"]?.stringValue, !selected.contains(provider) {
+                            try event.delete(db)
+                        }
+                    }
+                }
+            }
+            // Only enabled sources generate or refresh signals from fetched events.
             let sources = try AgentSourceRecord.fetchAll(db, sql: "SELECT * FROM agent_event_sources WHERE enabled=1 AND kind='calendar'")
             for var source in sources {
                 var desired: [AgentEventRecord] = []
@@ -39,19 +57,13 @@ extension AgentInboxService {
                     ))
                 }
                 let pending = try AgentEventRecord.fetchAll(db, sql: """
-                SELECT * FROM agent_event_inbox WHERE sourceID=? AND handledAt IS NULL AND (key LIKE 'meeting:%' OR key LIKE 'daily:%')
+                SELECT * FROM agent_event_inbox WHERE sourceID=? AND handledAt IS NULL AND key LIKE 'meeting:%'
                 """, arguments: [source.id])
                 for event in pending {
-                    if event.key?.hasPrefix("daily:") == true {
-                        if snapshot.selectedProviders?.isEmpty == true { try event.delete(db) }
-                        continue
-                    }
                     let ref = event.ref.flatMap { try? JSONDecoder().decode(JSONValue.self, from: Data($0.utf8)) }
-                    if let provider = ref?.objectValue?["provider"]?.stringValue {
-                        let deselected = snapshot.selectedProviders.map { !$0.contains(provider) } ?? false
-                        if deselected || (successful.contains(provider) && !meetingKeys.contains(event.key ?? "")) {
-                            try event.delete(db)
-                        }
+                    if let provider = ref?.objectValue?["provider"]?.stringValue,
+                       successful.contains(provider), !meetingKeys.contains(event.key ?? "") {
+                        try event.delete(db)
                     }
                 }
                 var recorded = 0

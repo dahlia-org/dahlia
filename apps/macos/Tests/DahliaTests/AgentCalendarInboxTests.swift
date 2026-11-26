@@ -93,14 +93,44 @@
             #expect(try service.inbox(now: now.addingTimeInterval(3 * 3600)).events.count == (disabled ? 0 : 1))
         }
 
-        @Test func noSelectedCalendarCancelsThePendingDailySignal() throws {
+        @Test(arguments: [false, true], [false, true])
+        func pausedSourcesRetainSelectedSignalsButHonorDeselection(disabled: Bool, anotherSourceEnabled: Bool) throws {
+            let (service, _) = try service()
+            let snapshot = AgentCalendarSnapshot(events: [event()], successfulProviders: ["provider-a"], selectedProviders: ["provider-a"])
+            try service.reconcileCalendar(snapshot, now: now)
+            let arrived = try #require(try service.inbox(now: now).events.first)
+            var source = try #require(try service.sources().first)
+            source.enabled = false
+            try service.saveSource(source, now: now)
+            if anotherSourceEnabled {
+                var other = source
+                other.id = UUID.v7().uuidString
+                other.enabled = true
+                try service.saveSource(other, now: now)
+            }
+            let paused = try #require(try service.sources().first { $0.id == source.id })
+            try service.reconcileCalendar(.init(
+                events: [event(), event("new")], successfulProviders: ["provider-a"],
+                selectedProviders: disabled ? [] : ["provider-a"]
+            ), now: now)
+            let retained = try service.recentEvents().filter { $0.sourceID == source.id }
+            #expect(retained.map(\.id) == (disabled ? [] : [arrived.id]))
+            #expect(try service.sources().first { $0.id == source.id }?.lastIntakeAt == paused.lastIntakeAt)
+        }
+
+        @Test(arguments: [false, true])
+        func noSelectedCalendarCancelsThePendingDailySignal(paused: Bool) throws {
             let (service, _) = try service()
             var source = try #require(try service.sources().first)
             source.dailyAt = "08:00"
             try service.saveSource(source)
             try service.reconcileCalendar(.init(successfulProviders: ["provider-a"]), now: now)
             #expect(try service.recentEvents().contains { $0.key?.hasPrefix("daily:") == true })
-            try service.reconcileCalendar(.init(selectedProviders: []), now: now)
+            if paused {
+                source.enabled = false
+                try service.saveSource(source, now: now.addingTimeInterval(86400))
+            }
+            try service.reconcileCalendar(.init(selectedProviders: []), now: paused ? now.addingTimeInterval(86400) : now)
             #expect(try service.recentEvents().isEmpty)
         }
 
