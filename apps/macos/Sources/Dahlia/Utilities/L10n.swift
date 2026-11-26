@@ -3078,6 +3078,17 @@ enum L10n { // swiftlint:disable:this type_body_length
     static var chatSteer: String { String(localized: "Steer", bundle: bundle) }
     static var chatQueue: String { String(localized: "Queue", bundle: bundle) }
     static var chatSendNow: String { String(localized: "Send now", bundle: bundle) }
+    static var chatClearCommandDescription: String {
+        String(localized: "Start a fresh session; earlier messages stay visible", bundle: bundle)
+    }
+
+    static var chatFreshSessionArmed: String { String(localized: "Your next message starts a fresh session", bundle: bundle) }
+    static var chatFreshSessionArmedDetail: String {
+        String(localized: "The agent won't see earlier messages in this thread.", bundle: bundle)
+    }
+
+    static var chatKeepCurrentSession: String { String(localized: "Keep the current session", bundle: bundle) }
+    static var chatNewSession: String { String(localized: "New session", bundle: bundle) }
     static var chatFollowUpBehavior: String { String(localized: "Follow-up behavior", bundle: bundle) }
     static var chatSettledSection: String { String(localized: "chat.settledSection", bundle: bundle) }
 

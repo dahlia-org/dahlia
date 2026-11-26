@@ -10,7 +10,7 @@ extension CodexChatSessionModel {
     func canSendPendingInput(_ input: CodexChatManualSubmission) -> Bool {
         isBoundToCurrentAccount && !isReleased && !isRestoring && !needsRestore
             && errorMessage == nil && editingPendingInputID == nil && !isTurnCleanupPending
-            && (!isGenerating || !isPreparingTurn && !input.text.hasPrefix("/"))
+            && (!isGenerating || !isPreparingTurn && !input.text.hasPrefix("/") && !startsFreshSession)
             && (input.images.isEmpty || selectedModelSupportsImages)
     }
 

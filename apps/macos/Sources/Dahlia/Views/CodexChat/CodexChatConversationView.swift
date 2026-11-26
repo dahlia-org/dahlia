@@ -182,6 +182,9 @@ struct CodexChatConversationView: View {
                     case let .contextDivider(_, context):
                         CodexChatContextDivider(context: context)
                     case let .message(message):
+                        if message.startsFreshSession {
+                            CodexChatTimelineDivider(title: L10n.chatNewSession, systemImage: "eraser")
+                        }
                         if message.threadResults.isEmpty {
                             CodexChatMessageRow(
                                 message: message,

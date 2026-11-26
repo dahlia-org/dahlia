@@ -46,6 +46,8 @@ extension CodexChatSessionModel {
         isAwaitingTurnOutput = false
         preparingManualComposerSnapshot = composerSnapshot
         preparingUserMessage = CodexChatMessage(role: .user, text: text, images: images, timestamp: .now)
+        preparingUserMessage?.startsFreshSession = startsFreshSession
+        startsFreshSession = false
         clearComposer(ifMatching: composerSnapshot)
         errorMessage = nil
         let submissionID = UUID.v7()

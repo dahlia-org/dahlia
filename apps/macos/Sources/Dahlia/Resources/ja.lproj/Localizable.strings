@@ -1894,6 +1894,11 @@
 "Steer" = "Steer";
 "Queue" = "Queue";
 "Send now" = "今すぐ送信";
+"Start a fresh session; earlier messages stay visible" = "新しいセッションを開始（以前のメッセージは表示されたまま）";
+"Your next message starts a fresh session" = "次のメッセージから新しいセッションを開始します";
+"The agent won't see earlier messages in this thread." = "エージェントはこのスレッドの以前のメッセージを参照しません。";
+"Keep the current session" = "現在のセッションを続ける";
+"New session" = "新しいセッション";
 "Continue chats after a crash" = "クラッシュのあとにチャットを続ける";
 "chat.continueAfterRestart.help" = "Dahlia が予期せず終了したとき、実行中だったチャットを次の起動で続きから再開します。承認を待っていたチャットと、自分で止めたチャットは再開しません。";
 "chat.continuedAfterRestart" = "Dahlia が予期せず終了したため、続きから再開しました";

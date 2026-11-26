@@ -25,11 +25,15 @@ enum ChatHistoryCodec {
         return .object(record)
     }
 
-    static func user(_ inputs: [CodexAppServerInput], isSteer: Bool = false) -> JSONValue {
+    /// `startsFreshSession` marks the message `/clear` sent; Pi's session holds nothing before it.
+    static func user(_ inputs: [CodexAppServerInput], isSteer: Bool = false, startsFreshSession: Bool = false) -> JSONValue {
         let prompt = PiRuntimeService.prompt(PiChatService.textJoined(inputs))
         var blocks: [JSONValue] = [.object(["type": .string("text"), "text": prompt["message"] ?? .string("")])]
         blocks += prompt["images"]?.arrayValue ?? []
-        return message(["role": .string("user"), "content": .array(blocks)], isSteer: isSteer)
+        let item = message(["role": .string("user"), "content": .array(blocks)], isSteer: isSteer)
+        guard startsFreshSession, var record = item.objectValue else { return item }
+        record["freshSession"] = .bool(true)
+        return .object(record)
     }
 
     static func messages(_ items: [ChatItemRecord]) throws -> [CodexChatMessage] {
@@ -40,6 +44,7 @@ enum ChatHistoryCodec {
         var messages: [CodexChatMessage] = []
         var records: [[String: JSONValue]] = []
         var steeredIDs: Set<String> = []
+        var freshSessionIDs: Set<String> = []
         var runIDs: [String: UUID] = [:]
         let timestamps = Dictionary(uniqueKeysWithValues: items.map { ($0.id, $0.createdAt) })
         /// A notification starts a run without a user message, so it also ends the reply before it.
@@ -47,6 +52,7 @@ enum ChatHistoryCodec {
             messages += PiChatSessionFiles.messages(records).map { message in
                 var restored = message
                 restored.isSteer = message.role == .user && steeredIDs.contains(message.id)
+                restored.startsFreshSession = message.role == .user && freshSessionIDs.contains(message.id)
                 restored.runID = runIDs[message.id]
                 restored.timestamp = timestamps[message.id]
                 return restored
@@ -89,6 +95,7 @@ enum ChatHistoryCodec {
                 flush()
                 runIDs[item.id] = item.runID
                 if data["deliveryMode"]?.stringValue == "steer" { steeredIDs.insert(item.id) }
+                if data["freshSession"]?.boolValue == true { freshSessionIDs.insert(item.id) }
                 var blocks: [JSONValue] = [.object(["type": .string("text"), "text": data["content"] ?? .string("")])]
                 blocks.append(.object(["type": .string("thinking"), "thinking": data["reasoning"] ?? .string("")]))
                 blocks += data["images"]?.arrayValue ?? []

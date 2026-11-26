@@ -1358,6 +1358,7 @@ import Foundation
         private(set) var approvalMethodUpdates: [CodexChatApprovalMethod] = []
         private(set) var completedApprovalMethodUpdates: [CodexChatApprovalMethod] = []
         private(set) var turnApprovalMethods: [CodexChatApprovalMethod] = []
+        private(set) var freshSessionStarts: [Bool] = []
         private(set) var returnedSendCount = 0
         private var turnErrors: [PiRuntimeError] = []
         private var blockedContinuation: AsyncThrowingStream<CodexChatTurnEvent, any Error>.Continuation?
@@ -1601,8 +1602,10 @@ import Foundation
             model: String?,
             effort: String,
             approvalMethod: CodexChatApprovalMethod,
+            startsFreshSession: Bool
         ) async throws -> CodexChatTurnHandle {
             turnApprovalMethods.append(approvalMethod)
+            freshSessionStarts.append(startsFreshSession)
             let stream = try await send(
                 threadID: threadID,
                 inputs: inputs,

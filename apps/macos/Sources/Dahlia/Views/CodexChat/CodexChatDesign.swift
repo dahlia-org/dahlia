@@ -28,9 +28,6 @@ enum CodexChatDesign {
     static let reasoningEfforts = ["none", "minimal", "low", CodexReasoningEffortOption.defaultValue, "high", "xhigh", "max"]
     static let modelPanelWidth: CGFloat = 216
     static let contextDividerSpacing: CGFloat = 8
-    static let contextLabelHorizontalPadding: CGFloat = 8
-    static let contextLabelVerticalPadding: CGFloat = 4
-    static let contextLabelCornerRadius: CGFloat = 5
 
     static func configurationPanelHeight(effortCount: Int) -> CGFloat {
         configurationPanelBaseHeight + CGFloat(effortCount) * (configurationRowHeight + configurationRowSpacing)

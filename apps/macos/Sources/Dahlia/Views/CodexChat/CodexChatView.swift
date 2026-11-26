@@ -187,6 +187,27 @@ struct CodexChatView: View {
             }
         }
 
+        if session.startsFreshSession {
+            HStack(alignment: .firstTextBaseline) {
+                Label {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(L10n.chatFreshSessionArmed).foregroundStyle(.primary)
+                        Text(L10n.chatFreshSessionArmedDetail).font(.dahliaSecondary)
+                    }
+                } icon: {
+                    Image(systemName: "eraser")
+                }
+                Spacer()
+                CodexChatIconButton(label: L10n.chatKeepCurrentSession, systemImage: "xmark") {
+                    session.startsFreshSession = false
+                }
+            }
+            .font(.dahliaBody)
+            .foregroundStyle(DahliaDesign.secondaryTextColor)
+            .padding(.horizontal, CodexChatDesign.contentHorizontalPadding)
+            .padding(.vertical, 6)
+        }
+
         if !session.mcpServersNeedingSignIn.isEmpty {
             Label(L10n.chatMCPSignInRequired(session.mcpServersNeedingSignIn.formatted(.list(type: .and))), systemImage: "key.fill")
                 .font(.dahliaBody)

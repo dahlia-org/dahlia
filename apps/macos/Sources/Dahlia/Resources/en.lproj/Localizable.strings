@@ -1894,6 +1894,11 @@
 "Steer" = "Steer";
 "Queue" = "Queue";
 "Send now" = "Send now";
+"Start a fresh session; earlier messages stay visible" = "Start a fresh session; earlier messages stay visible";
+"Your next message starts a fresh session" = "Your next message starts a fresh session";
+"The agent won't see earlier messages in this thread." = "The agent won't see earlier messages in this thread.";
+"Keep the current session" = "Keep the current session";
+"New session" = "New session";
 "Continue chats after a crash" = "Continue chats after a crash";
 "chat.continueAfterRestart.help" = "When Dahlia quits unexpectedly, chats that were running continue from where they left off the next time it opens. Chats that were waiting for your approval, and chats you stopped, do not continue.";
 "chat.continuedAfterRestart" = "Dahlia quit unexpectedly, so this chat continued from where it left off";

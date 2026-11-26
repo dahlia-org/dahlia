@@ -25,6 +25,8 @@ final class CodexChatSessionModel: Identifiable {
     private(set) var isLoadingEarlierMessages = false
     private(set) var earlierMessagesError: String?
     var draft = ""
+    /// Armed by `/clear`: the next turn starts a new Pi session while this thread and its history stay.
+    var startsFreshSession = false
     var scopeSnapshot: CodexChatScopeSnapshot?
     private(set) var hasSelectedProject = false
     private(set) var selectedScopeProjectID: UUID?
@@ -192,7 +194,25 @@ final class CodexChatSessionModel: Identifiable {
         let commands = try await service.commands(threadID: backendThreadID)
         try Task.checkCancellation()
         guard !isReleased else { throw CancellationError() }
-        return commands
+        // Dahlia's `/clear` replaces any Pi command of that name, which would act on a session the thread still treats as live.
+        guard canStartFreshSession else { return commands }
+        return [Self.clearCommand] + commands.filter { $0.name != Self.clearCommand.name }
+    }
+
+    static var clearCommand: CodexChatSlashCommand {
+        CodexChatSlashCommand(name: "clear", description: L10n.chatClearCommandDescription, source: "dahlia")
+    }
+
+    /// Arms `/clear` and removes the command from the draft; references and images stay for the next message.
+    func armFreshSession() {
+        guard canStartFreshSession else { return }
+        startsFreshSession = true
+        draft = ""
+    }
+
+    /// A conversation with nothing earlier has no context to clear.
+    var canStartFreshSession: Bool {
+        backendThreadID != nil && !isReadOnly && (!messages.isEmpty || earlierMessagesCursor != nil)
     }
 
     func prepare(forceRefresh: Bool = false) async {
@@ -322,6 +342,10 @@ final class CodexChatSessionModel: Identifiable {
 
     func sendDraft(mode: CodexChatDeliveryMode) {
         guard canSend else { return }
+        if canStartFreshSession, draft.trimmingCharacters(in: .whitespacesAndNewlines) == "/" + Self.clearCommand.name {
+            armFreshSession()
+            return
+        }
         let draftSnapshot = draft
         let referenceIDsSnapshot = selectedMeetingReferenceIDs
         let imagesSnapshot = attachedImages
@@ -665,13 +689,16 @@ extension CodexChatSessionModel {
                 context: context,
                 images: images
             )
+            let startsFreshSession = preparingUserMessage?.startsFreshSession == true
             let turn = try await requestTurnHandle(
                 threadID: backendThreadID,
                 inputs: inputs,
                 model: selectedModelID.nilIfBlank,
                 effort: selectedEffort,
-                approvalMethod: approvalMethod
+                approvalMethod: approvalMethod,
+                startsFreshSession: startsFreshSession
             )
+            preparingUserMessage?.startsFreshSession = false
             preparingQueuedManualSubmission = nil
             applyEffectiveApprovalMethod(turn.approvalMethod ?? approvalMethod, requested: approvalMethod)
             do {
@@ -691,7 +718,7 @@ extension CodexChatSessionModel {
             )
             lastSubmittedText = submission.text
             lastManualSubmission = submission
-            messages.append(CodexChatMessage(
+            var userMessage = CodexChatMessage(
                 id: preparingUserMessage?.id ?? UUID.v7().uuidString,
                 role: .user,
                 text: submission.text,
@@ -699,7 +726,9 @@ extension CodexChatSessionModel {
                 images: images,
                 runID: turn.id,
                 timestamp: preparingUserMessage?.timestamp ?? .now
-            ))
+            )
+            userMessage.startsFreshSession = startsFreshSession
+            messages.append(userMessage)
             preparingUserMessage = nil
 
             messages.append(CodexChatMessage(
@@ -993,6 +1022,8 @@ extension CodexChatSessionModel {
             selectedThreadReferences = snapshot.threadReferences
             attachedImages = snapshot.images
         }
+        // Preparation failed or was cancelled before this message was accepted by the service.
+        if preparingUserMessage?.startsFreshSession == true { startsFreshSession = true }
         preparingUserMessage = nil
         historySynchronizationGeneration += 1
         // What this view showed to the end needs no reload; it also holds what history does not, such as command notices.
@@ -1128,7 +1159,8 @@ extension CodexChatSessionModel {
         inputs: [CodexAppServerInput],
         model: String?,
         effort: String,
-        approvalMethod: CodexChatApprovalMethod
+        approvalMethod: CodexChatApprovalMethod,
+        startsFreshSession: Bool = false
     ) async throws -> CodexChatTurnHandle {
         isRequestingTurnHandle = true
         defer { isRequestingTurnHandle = false }
@@ -1137,7 +1169,8 @@ extension CodexChatSessionModel {
             inputs: inputs,
             model: model,
             effort: effort,
-            approvalMethod: approvalMethod
+            approvalMethod: approvalMethod,
+            startsFreshSession: startsFreshSession
         )
     }
 
@@ -1369,7 +1402,8 @@ extension CodexChatSessionModel {
     }
 
     func nextPendingSteerInput() -> CodexChatManualSubmission? {
-        guard !activeTurnIsCommand,
+        // A steer would reach the session `/clear` is about to leave; the input waits to start the new one.
+        guard !activeTurnIsCommand, !startsFreshSession,
               let index = pendingManualInputs.firstIndex(where: { $0.deliveryMode == .steer }),
               pendingManualInputs[index].id != editingPendingInputID,
               !isQueuePaused else { return nil }
