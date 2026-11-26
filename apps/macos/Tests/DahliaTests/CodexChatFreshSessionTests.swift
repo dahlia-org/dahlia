@@ -248,6 +248,31 @@
             #expect(session.errorMessage == nil)
         }
 
+        @Test(arguments: ["/mcp", "Queued question"])
+        func modelRefreshRestoresOrdinaryQueueOrdering(queuedText: String) async throws {
+            let service = TestCodexChatService(mode: .blockBeforeOutput)
+            let session = CodexChatSessionModel(service: service, settings: TestCodexChatFixtures.appSettings())
+            session.draft = "A"
+            session.sendDraft()
+            try #require(await pollUntil { session.activeTurnID != nil })
+            session.draft = queuedText
+            session.sendDraft(mode: .queue)
+            await service.completeBlockedTurn(with: .failed(message: "Test failure"))
+            try #require(await pollUntil { !session.isGenerating && session.errorMessage != nil })
+            await session.prepare(forceRefresh: true)
+            #expect(session.errorMessage == nil)
+            session.draft = "C"
+            session.sendDraft(mode: .queue)
+            try #require(await pollUntil { await service.sentTextBlocks.count == 2 && session.activeTurnID != nil })
+            #expect(await service.sentTextBlocks == [["A"], [queuedText]])
+            await service.completeBlockedTurn()
+            try #require(await pollUntil { await service.sentTextBlocks.count == 3 && session.activeTurnID != nil })
+            #expect(await service.sentTextBlocks == [["A"], [queuedText], ["C"]])
+            #expect(await service.freshSessionStarts == [false, false, false])
+            session.stop()
+            try #require(await pollUntil { !session.hasPendingGenerationWork })
+        }
+
         @Test
         func skipWithoutAFailedSubmissionDoesNotClearAnUnrelatedError() async {
             let service = TestCodexChatService(mode: .complete)

@@ -1368,9 +1368,9 @@ extension CodexChatSessionModel {
     func recordFailedManualSubmission(_ submission: CodexChatManualSubmission) {
         lastSubmittedText = submission.text
         lastManualSubmission = submission
-        let message = errorMessage ?? (submission.startsFreshSession ? noticeMessage : nil)
+        let message = submission.startsFreshSession ? errorMessage ?? noticeMessage : nil
         failedSubmission = SubmissionFailure(input: submission, message: message)
-        operationErrorMessage = nil
+        if submission.startsFreshSession { operationErrorMessage = nil }
     }
 
     private func unsubscribeIfPossible() {
