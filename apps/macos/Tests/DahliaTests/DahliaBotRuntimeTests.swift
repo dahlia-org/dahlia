@@ -969,6 +969,79 @@
                 #expect(AgentHome.soulFile(agentsURL.appending(path: made.directory)) == "Guidance")
             }
 
+            @Test func aCandidateCreatedAfterInventoryIsPreservedOnFailure() async throws {
+                let db = try AppDatabaseManager(path: ":memory:").dbQueue
+                let fixture = try fixture(db: db, provider: AppAccount.key, calls: [:])
+                defer { cleanUp(fixture) }
+                let locator = PiAgentDirectoryLocator(applicationSupportURL: fixture.pi.rootURL)
+                let service = PiChatService(
+                    runtime: fixture.pi.service, historyStore: ChatThreadStore(dbQueue: db), agentLocator: locator,
+                    initializeAgentHome: { home, agent, soul in
+                        // The inventory missed this entry, as with a concurrent creator.
+                        try "FOREIGN".write(to: home, atomically: true, encoding: .utf8)
+                        try AgentHome.create(home, agent: agent, instructions: "rules", soul: soul)
+                    }
+                )
+                await #expect(throws: POSIXError.self) {
+                    _ = try await service.createAgent(name: "Race", avatar: "mascot:E1", color: "#b3dbf4", soul: "Guidance")
+                }
+                #expect(try String(contentsOf: locator.agentHomeURL("race"), encoding: .utf8) == "FOREIGN")
+                #expect(try await db.read { try AgentRecord.fetchCount($0) } == 1)
+            }
+
+            @Test func preparingAnAgentHomeDoesNotHoldTheSharedDatabaseWriter() async throws {
+                let db = try AppDatabaseManager(path: ":memory:").dbQueue
+                let fixture = try fixture(db: db, provider: AppAccount.key, calls: [:])
+                defer { cleanUp(fixture) }
+                let gate = HomePreparationGate()
+                let locator = PiAgentDirectoryLocator(applicationSupportURL: fixture.pi.rootURL)
+                let service = PiChatService(
+                    runtime: fixture.pi.service, historyStore: ChatThreadStore(dbQueue: db), agentLocator: locator,
+                    initializeAgentHome: { home, agent, soul in
+                        await gate.wait()
+                        try AgentHome.create(home, agent: agent, instructions: "rules", soul: soul)
+                    }
+                )
+                let creating = Task { try await service.createAgent(name: "Prepared", avatar: "mascot:E1", color: "#b3dbf4", soul: "Guidance") }
+                #expect(await pollUntil { await gate.isPending })
+                let writing = Task {
+                    let count = try await db.write { db in
+                        try ChatThreadRecord(
+                            id: UUID.v7().uuidString, accountID: AppAccount.key, title: "Durable write", createdAt: .now, updatedAt: .now
+                        ).insert(db)
+                        return try AgentRecord.fetchCount(db)
+                    }
+                    await gate.didWrite()
+                    return count
+                }
+                let writerWasFree = await pollUntil { await gate.writeCompleted }
+                await gate.release()
+                _ = try await creating.value
+                let countBeforePublication = try await writing.value
+                #expect(writerWasFree)
+                #expect(countBeforePublication == 1)
+                #expect(AgentHome.soulFile(locator.agentHomeURL("prepared")) == "Guidance")
+            }
+
+            private actor HomePreparationGate {
+                private var continuation: CheckedContinuation<Void, Never>?
+                private var released = false
+                var isPending: Bool { continuation != nil }
+                private(set) var writeCompleted = false
+                func wait() async {
+                    guard !released else { return }
+                    await withCheckedContinuation { continuation = $0 }
+                }
+
+                func release() {
+                    released = true
+                    continuation?.resume()
+                    continuation = nil
+                }
+
+                func didWrite() { writeCompleted = true }
+            }
+
             @Test func changingOneAgentModelPreservesTheOtherChoice() async throws {
                 let db = try AppDatabaseManager(path: ":memory:").dbQueue
                 let fixture = try fixture(db: db, provider: AppAccount.key, calls: [:])

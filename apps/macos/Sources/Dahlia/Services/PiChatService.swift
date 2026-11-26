@@ -259,6 +259,7 @@ actor PiChatService: CodexChatServicing {
     let runtime: PiRuntimeService
     private let workingDirectory: PiWorkingDirectory
     let agentLocator: PiAgentDirectoryLocator
+    let initializeAgentHome: @Sendable (URL, AgentRecord, String) async throws -> Void
     let mcpExecutableURL: URL?
     private let reviewModel: @Sendable () -> String
     private let reviewTriageEnabled: @Sendable () -> Bool
@@ -306,13 +307,17 @@ actor PiChatService: CodexChatServicing {
         mcpSettings: @escaping @Sendable () -> AgentMCPSettings = { AgentMCPSettings.load() },
         calendarSnapshot: @escaping @Sendable () async -> AgentCalendarSnapshot = { await AgentCalendarSnapshot.current() },
         fileAccessSettings: @escaping @Sendable () -> PiFileAccessSettings = { PiFileAccessSettings.load() },
-        omnigentConnection: @escaping @Sendable () -> UUID? = { OmnigentService.connectionID() }
+        omnigentConnection: @escaping @Sendable () -> UUID? = { OmnigentService.connectionID() },
+        initializeAgentHome: @escaping @Sendable (URL, AgentRecord, String) async throws -> Void = { home, agent, soul in
+            try AgentHome.create(home, agent: agent, instructions: PiChatService.botSystemPrompt(name: agent.name), soul: soul)
+        }
     ) {
         self.runtime = runtime
         self.historyStore = historyStore
         self.learningSkills = historyStore.map { AgentSkillService(dbQueue: $0.dbQueue) }
         self.workingDirectory = workingDirectory
         self.agentLocator = agentLocator
+        self.initializeAgentHome = initializeAgentHome
         self.mcpExecutableURL = mcpExecutableURL
         self.mcpSettings = mcpSettings
         self.calendarSnapshot = calendarSnapshot

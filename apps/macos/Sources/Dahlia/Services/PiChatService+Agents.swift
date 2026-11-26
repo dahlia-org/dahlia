@@ -14,30 +14,27 @@ extension PiChatService {
     }
 
     /// `soul` becomes the agent's first `SOUL.md`.
-    func createAgent(name: String, avatar: String, color: String, soul: String, now: Date = .now) throws -> AgentRecord {
+    func createAgent(name: String, avatar: String, color: String, soul: String, now: Date = .now) async throws -> AgentRecord {
         let name = try Self.agentName(name)
         guard AgentAvatar.isValid(avatar: avatar, color: color) else { throw PiRuntimeError.invalidProtocolResponse }
-        // A folder no row names (left by a database this Mac no longer has) is never adopted as a new agent's home.
-        let folders = (try? FileManager.default.contentsOfDirectory(atPath: agentLocator.agentsURL.path)) ?? []
+        let store = try history()
         let agentsURL = agentLocator.agentsURL
-        let instructions = Self.botSystemPrompt(name: name)
-        var createdHome: URL?
+        try PiAgentDirectoryLocator.createPrivateDirectory(agentsURL)
+        // Inventory never substitutes for an exclusive claim, and a failed listing is not an empty directory.
+        let folders = try FileManager.default.contentsOfDirectory(atPath: agentsURL.path)
+        let taken = try await store.dbQueue.read { try Set(String.fetchAll($0, sql: "SELECT directory FROM agents")).union(folders) }
+        let agent = AgentRecord(
+            id: UUID.v7().uuidString, name: name, directory: AgentHome.directoryName(for: name, taken: taken),
+            avatar: avatar, color: color, createdAt: now, updatedAt: now
+        )
+        let home = agentsURL.appending(path: agent.directory, directoryHint: .isDirectory)
+        // Preparation owns its failure cleanup. No SQLite writer is held during filesystem work.
+        try await initializeAgentHome(home, agent, soul)
         do {
-            return try history().dbQueue.write { db in
-                let taken = try Set(String.fetchAll(db, sql: "SELECT directory FROM agents")).union(folders)
-                let agent = AgentRecord(
-                    id: UUID.v7().uuidString, name: name, directory: AgentHome.directoryName(for: name, taken: taken),
-                    avatar: avatar, color: color, createdAt: now, updatedAt: now
-                )
-                let home = agentsURL.appending(path: agent.directory, directoryHint: .isDirectory)
-                createdHome = home
-                try AgentHome.ensure(home, agent: agent, instructions: instructions)
-                try AgentHome.saveSoul(soul, home: home)
-                try agent.insert(db)
-                return agent
-            }
+            try await store.dbQueue.write { try agent.insert($0) }
+            return agent
         } catch {
-            if let createdHome { try? FileManager.default.removeItem(at: createdHome) }
+            try? FileManager.default.removeItem(at: home)
             throw error
         }
     }

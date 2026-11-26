@@ -35,6 +35,18 @@ enum AgentHome {
         return (2...).lazy.map { "\(base)-\($0)" }.first { !used.contains($0) }!
     }
 
+    /// A creation attempt owns this leaf only after mkdir succeeds; an existing file, directory, or symlink is never adopted.
+    nonisolated static func create(_ home: URL, agent: AgentRecord, instructions: String, soul: String) throws {
+        guard mkdir(home.path, 0o700) == 0 else { throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
+        do {
+            try ensure(home, agent: agent, instructions: instructions)
+            try saveSoul(soul, home: home)
+        } catch {
+            try? FileManager.default.removeItem(at: home)
+            throw error
+        }
+    }
+
     /// Makes the home what Dahlia expects, so a file changed or removed outside Dahlia is put back.
     nonisolated static func ensure(_ home: URL, agent: AgentRecord, instructions: String) throws {
         try PiAgentDirectoryLocator.createPrivateDirectory(home)

@@ -40,6 +40,36 @@
             #expect(try String(contentsOf: home.appending(path: "AGENTS.md"), encoding: .utf8).hasPrefix("# Secretary"))
         }
 
+        @Test(arguments: ["file", "directory", "symlink"])
+        func creationNeverAdoptsOrDeletesAnExistingCandidate(kind: String) throws {
+            let root = FileManager.default.temporaryDirectory.appending(path: "AgentHome-\(UUID())")
+            defer { try? FileManager.default.removeItem(at: root) }
+            try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+            let home = root.appending(path: "candidate")
+            let preserved: URL
+            switch kind {
+            case "directory":
+                try FileManager.default.createDirectory(at: home, withIntermediateDirectories: false)
+                preserved = home.appending(path: "foreign.txt")
+            case "symlink":
+                preserved = root.appending(path: "foreign.txt")
+                try FileManager.default.createSymbolicLink(at: home, withDestinationURL: preserved)
+            default:
+                preserved = home
+            }
+            try "FOREIGN".write(to: preserved, atomically: true, encoding: .utf8)
+
+            #expect(throws: POSIXError.self) {
+                try AgentHome.create(home, agent: agent(), instructions: "rules", soul: "new guidance")
+            }
+
+            #expect(try String(contentsOf: preserved, encoding: .utf8) == "FOREIGN")
+            #expect(FileManager.default.fileExists(atPath: home.path))
+            if kind == "symlink" {
+                #expect(try FileManager.default.destinationOfSymbolicLink(atPath: home.path) == preserved.path)
+            }
+        }
+
         @Test func directoryNamesComeFromTheNameAndNeverCollide() {
             #expect(AgentHome.directoryName(for: "Replies you owe", taken: []) == "replies-you-owe")
             #expect(AgentHome.directoryName(for: "秘書 / 営業:A", taken: []) == "秘書--営業a")
