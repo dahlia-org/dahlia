@@ -107,6 +107,7 @@ private struct AgentSettingsTabs: View {
 /// Each account chooses PATH discovery or the Pi installation shared by all accounts on this Mac.
 private struct AgentRuntimeSection: View {
     let launch: PiLaunchSettingsModel
+    @Environment(MainWindowNavigation.self) private var navigation
     @AppStorage private var useManagedPi: Bool
     @State private var resolvedCommand: Result<String, PiRuntimeError>?
     /// The version of the Pi that Dahlia installed.
@@ -148,7 +149,10 @@ private struct AgentRuntimeSection: View {
                         if isInstalling {
                             ProgressView().controlSize(.small)
                         } else {
-                            Button(L10n.updatePi) { startInstall() }
+                            HStack {
+                                registryButton
+                                Button(L10n.updatePi) { startInstall() }
+                            }
                         }
                     }
                 } else {
@@ -156,7 +160,10 @@ private struct AgentRuntimeSection: View {
                         if isInstalling {
                             ProgressView().controlSize(.small)
                         } else {
-                            Button(L10n.installPi) { startInstall() }
+                            HStack {
+                                registryButton
+                                Button(L10n.installPi) { startInstall() }
+                            }
                         }
                     }
                 }
@@ -176,6 +183,13 @@ private struct AgentRuntimeSection: View {
         }
         .task(id: [String(useManagedPi), String(launch.commandDiscoveryRevision)]) {
             await resolveCommand()
+        }
+    }
+
+    /// An advanced setting: Pi installs and updates from Dahlia's default registry unless the account names another.
+    private var registryButton: some View {
+        Button(L10n.piRegistrySettings) {
+            navigation.presentSettingsModal(PiRegistryModal(onClose: navigation.dismissSettingsModal))
         }
     }
 
@@ -205,10 +219,11 @@ private struct AgentRuntimeSection: View {
     private func installLatestPi() async {
         installResult = nil
         do {
-            let release = try await PiInstaller.release()
-            if release.version == installedVersion {
-                installResult = .success(L10n.piUpToDate(release.version))
+            if let installedVersion {
+                let version = try await PiInstaller.update()
+                installResult = .success(version == installedVersion ? L10n.piUpToDate(version) : L10n.piInstalled(version))
             } else {
+                let release = try await PiInstaller.release()
                 try await PiInstaller.install(release)
                 installResult = .success(L10n.piInstalled(release.version))
             }

@@ -34,6 +34,7 @@ struct CodexChatApprovalView: View {
         case .commandExecution: L10n.chatApprovalCommandTitle
         case .fileChange: L10n.chatApprovalFileChangeTitle
         case .mcpToolCall: L10n.chatApprovalMCPToolTitle
+        case .confirmation: L10n.chatApprovalConfirmationTitle
         }
     }
 }

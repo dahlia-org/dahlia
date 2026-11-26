@@ -106,117 +106,127 @@ import Foundation
         }
 
         @Test
-        func installerReplacesPiOnlyWithAVerifiedArchive() async throws {
-            // tar and file work runs off the main actor, which every @MainActor suite shares.
+        func managedPiRunsOnItsOwnBun() {
+            // `bin/pi` links to a `#!/usr/bin/env node` script, and macOS has no Node.
+            let managed = PiInstaller.executableURL
+            let command = PiBundle.processCommand(managed, ["--version"], environment: ["PATH": "/usr/bin"])
+            #expect(command.executable == PiInstaller.bunURL)
+            #expect(command.arguments == [managed.path, "--version"])
+            #expect(command.environment == ["PATH": "/usr/bin", "BUN_INSTALL": PiInstaller.directoryURL.path])
+            let other = URL(fileURLWithPath: "/opt/homebrew/bin/pi")
+            let plain = PiBundle.processCommand(other, ["--version"], environment: [:])
+            #expect(plain.executable == other && plain.arguments == ["--version"] && plain.environment.isEmpty)
+        }
+
+        @Test
+        func installerReplacesPiOnlyWithAPackageThatRuns() async throws {
+            // Process and file work runs off the main actor, which every @MainActor suite shares.
             try await Task.detached { try Self.checkInstaller() }.value
+        }
+
+        /// A stand-in for Bun: `install` writes Pi's package and its `bin` entry point, whose content is the version, and
+        /// running it prints that.
+        nonisolated static func fakeBun(in root: URL) throws -> URL {
+            try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+            let url = root.appending(path: "fake-bun")
+            try Data(#"""
+            #!/bin/sh
+            if [ "$1" = install ]; then
+              [ -n "$FAIL_INSTALL" ] && exit 1
+              version=$(sed -nE 's/.*"@earendil-works\/pi-coding-agent": "([^"]+)".*/\1/p' package.json)
+              dir=node_modules/@earendil-works/pi-coding-agent
+              mkdir -p "$dir/dist/bundle" && echo "$version" > "$dir/dist/bundle/cli.js" && chmod +x "$dir/dist/bundle/cli.js"
+              echo "{\"version\":\"$version\",\"bin\":{\"pi\":\"dist/bundle/cli.js\"}}" > "$dir/package.json"
+              exit 0
+            fi
+            cat "$1"
+            """#.utf8).write(to: url)
+            try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: url.path)
+            return url
         }
 
         private nonisolated static func checkInstaller() throws {
             let root = FileManager.default.temporaryDirectory.appending(path: "PiInstallerTests-\(UUID())")
             defer { try? FileManager.default.removeItem(at: root) }
-            func archive(version: String) throws -> (URL, String) {
-                let source = root.appending(path: "source-\(version)/pi")
-                try FileManager.default.createDirectory(at: source, withIntermediateDirectories: true)
-                // The version in the content keeps archives distinct; tar's whole-second mtimes alone may not.
-                try Data("#!/bin/sh\n# \(version)\n".utf8).write(to: source.appending(path: "pi"))
-                try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: source.appending(path: "pi").path)
-                let url = root.appending(path: "pi-\(version).tar.gz")
-                let tar = Process()
-                tar.executableURL = URL(fileURLWithPath: "/usr/bin/tar")
-                tar.arguments = ["-czf", url.path, "-C", source.deletingLastPathComponent().path, "pi"]
-                try tar.run()
-                tar.waitUntilExit()
-                let digest = try SHA256.hash(data: Data(contentsOf: url)).map { String(format: "%02x", $0) }.joined()
-                return (url, digest)
-            }
-            let directory = root.appending(path: "Pi")
-            let entrypoint = root.appending(path: "bin/pi")
-            func releases() throws -> Set<String> {
-                try Set(FileManager.default.contentsOfDirectory(atPath: directory.appending(path: "releases").path))
+            let bun = try fakeBun(in: root)
+            let environment = ProcessInfo.processInfo.environment
+            let directory = root.appending(path: "bun")
+            let lock = Data(
+                #"{"lockfileVersion":3,"packages":{"":{"version":"0"},"node_modules/a":{"version":"1.0.0","resolved":"https://registry.npmjs.org/a/-/a-1.0.0.tgz","integrity":"sha512-x"}}}"#
+                    .utf8
+            )
+            func install(_ version: String, environment: [String: String] = environment, npmrc: Data = Data("registry=x\n".utf8)) throws {
+                let package = Data(#"{"dependencies":{"@earendil-works/pi-coding-agent": "\#(version)"},"overrides":{"b":"2.0.0"}}"#.utf8)
+                try PiInstaller.install(
+                    version: version, packageJSON: package, packageLock: lock, npmrc: npmrc, bun: bun, environment: environment, into: directory
+                )
             }
 
-            let (first, firstDigest) = try archive(version: "1.0.0")
-            try PiInstaller.install(archive: first, sha256: firstDigest, version: "1.0.0", into: directory)
+            try install("1.0.0")
             #expect(PiInstaller.installedVersion(in: directory) == "1.0.0")
-            #expect(try FileManager.default.destinationOfSymbolicLink(atPath: entrypoint.path) == "../Pi/releases/1.0.0/pi")
-            #expect(CommandLineToolLocator.isExecutableFile(atPath: entrypoint.path))
+            // `bin/pi` links to the package's `bin` entry point, as `bun install -g` links it.
+            #expect(try FileManager.default.destinationOfSymbolicLink(atPath: directory.appending(path: "bin/pi").path)
+                == "../install/global/node_modules/@earendil-works/pi-coding-agent/dist/bundle/cli.js")
+            // pi.dev's package.json is installed as published; the lockfile loses only its tarball URLs.
+            let global = directory.appending(path: "install/global")
+            #expect(try String(contentsOf: global.appending(path: "package.json"), encoding: .utf8).contains(#""overrides":{"b":"2.0.0"}"#))
+            let installedLock = try JSONSerialization
+                .jsonObject(with: Data(contentsOf: global.appending(path: "package-lock.json"))) as? [String: Any]
+            let entry = (installedLock?["packages"] as? [String: [String: String]])?["node_modules/a"]
+            #expect(entry == ["version": "1.0.0", "integrity": "sha512-x"])
 
-            // A checksum mismatch or a version that is not a folder name keeps the installed Pi.
-            let (second, secondDigest) = try archive(version: "1.1.0")
-            #expect(throws: PiInstallError.self) {
-                try PiInstaller.install(archive: second, sha256: firstDigest, version: "1.1.0", into: directory)
+            // A failed package install or a version that is not a folder name keeps the installed Pi.
+            #expect(throws: PiInstallError(stage: .download, reason: .packageInstallFailed)) {
+                try install("1.1.0", environment: environment.merging(["FAIL_INSTALL": "1"]) { $1 })
             }
-            #expect(throws: PiInstallError.self) {
-                try PiInstaller.install(archive: second, sha256: secondDigest, version: "../1.1.0", into: directory)
-            }
+            #expect(throws: PiInstallError.self) { try install("../1.1.0") }
             #expect(PiInstaller.installedVersion(in: directory) == "1.0.0")
 
-            // The previous release stays for processes still running it; older ones are removed.
-            try PiInstaller.install(archive: second, sha256: secondDigest.uppercased(), version: "1.1.0", into: directory)
+            // Installing again replaces Bun's global folder and leaves nothing else behind; the registry setting becomes its
+            // `.npmrc`, which `pi update` reads too.
+            try install("1.1.0", npmrc: PiInstaller.npmrc(registry: " https://registry.example/ "))
             #expect(PiInstaller.installedVersion(in: directory) == "1.1.0")
-            #expect(try releases() == ["1.0.0", "1.1.0"])
-            let (third, thirdDigest) = try archive(version: "1.2.0")
-            try PiInstaller.install(archive: third, sha256: thirdDigest, version: "1.2.0", into: directory)
-            #expect(try releases() == ["1.1.0", "1.2.0"])
+            #expect(try String(contentsOf: global.appending(path: ".npmrc"), encoding: .utf8) == "registry=https://registry.example/\n")
+            #expect(try FileManager.default.contentsOfDirectory(atPath: directory.appending(path: "install").path) == ["global"])
 
-            // Reinstalling the current release keeps the previous one, and a release folder another install already
-            // moved in stays in place.
-            let marker = directory.appending(path: "releases/1.2.0/marker")
-            try Data().write(to: marker)
-            try PiInstaller.install(archive: third, sha256: thirdDigest, version: "1.2.0", into: directory)
+            // Force the final rename to fail after moving the new global folder in; the old package is restored.
+            let link = directory.appending(path: "bin/pi")
+            let target = try FileManager.default.destinationOfSymbolicLink(atPath: link.path)
+            try FileManager.default.removeItem(at: link)
+            try FileManager.default.createDirectory(at: link, withIntermediateDirectories: false)
+            #expect(throws: PiInstallError(stage: .activation, reason: .fileSystem)) { try install("1.2.0") }
+            let restored = try JSONSerialization
+                .jsonObject(with: Data(contentsOf: global.appending(path: "node_modules/\(PiInstaller.packageName)/package.json"))) as? [String: Any]
+            #expect(restored?["version"] as? String == "1.1.0")
+            try FileManager.default.removeItem(at: link)
+            try FileManager.default.createSymbolicLink(atPath: link.path, withDestinationPath: target)
+            #expect(PiInstaller.installedVersion(in: directory) == "1.1.0")
+            try install("1.2.0")
             #expect(PiInstaller.installedVersion(in: directory) == "1.2.0")
-            #expect(try releases() == ["1.1.0", "1.2.0"])
-            #expect(FileManager.default.fileExists(atPath: marker.path))
 
             // An install holds the folder's lock against every other open of it, in this process and others, so installs
-            // of different versions at once (Settings and `pi update`) cannot remove the release another just activated.
+            // at once (Settings and `--install-pi`) replace the folder one at a time.
             try PiInstaller.withInstallLock(in: directory) {
                 let other = open(directory.appending(path: ".lock").path, O_RDWR)
                 defer { close(other) }
                 #expect(flock(other, LOCK_EX | LOCK_NB) == -1 && errno == EWOULDBLOCK)
             }
-            let archives = try ["2.0.0", "2.1.0", "2.2.0"].map { version in try (version, archive(version: version)) }
-            for _ in 0 ..< 10 {
-                DispatchQueue.concurrentPerform(iterations: archives.count) { index in
-                    let (version, (url, digest)) = archives[index]
-                    try? PiInstaller.install(archive: url, sha256: digest, version: version, into: directory)
-                }
-                #expect(CommandLineToolLocator.isExecutableFile(atPath: entrypoint.path))
+            let versions = ["2.0.0", "2.1.0", "2.2.0"]
+            DispatchQueue.concurrentPerform(iterations: versions.count) { index in
+                try? install(versions[index])
             }
-            #expect(try FileManager.default.contentsOfDirectory(atPath: directory.path).sorted() == [".lock", "releases"])
-            #expect(try FileManager.default.contentsOfDirectory(atPath: root.appending(path: "bin").path).sorted() == ["pi", "pi-update"])
-            let update = root.appending(path: "bin/pi-update")
-            #expect(CommandLineToolLocator.isExecutableFile(atPath: update.path))
-            #expect(try String(contentsOf: update, encoding: .utf8).hasSuffix(" --install-pi \"$@\"\n"))
+            #expect(versions.contains(PiInstaller.installedVersion(in: directory) ?? ""))
+            #expect(try FileManager.default.contentsOfDirectory(atPath: directory.path).sorted() == [".lock", "bin", "install"])
         }
 
         @Test
-        func releasesRunByAProcessAreFoundFromTheProcessTable() throws {
-            let releases = FileManager.default.temporaryDirectory.appending(path: "PiReleases-\(UUID())")
-            try FileManager.default.createDirectory(at: releases.appending(path: "1.0.0"), withIntermediateDirectories: true)
-            defer { try? FileManager.default.removeItem(at: releases) }
-            let real = try #require(realpath(releases.path, nil))
-            defer { free(real) }
-            let root = String(cString: real)
-            // Paths come from the process table as real paths; another folder's executable is not a release.
-            #expect(PiInstaller.releasesInUse(in: releases, executablePaths: [
-                "\(root)/1.0.0/pi", "\(root)/1.1.0/pi", "\(root)-other/2.0.0/pi", "/usr/bin/true",
-            ]) == ["1.0.0", "1.1.0"])
-            // The table includes this test process.
-            let own = try #require(realpath(CommandLine.arguments[0], nil))
-            defer { free(own) }
-            #expect(PiInstaller.runningExecutablePaths().contains(String(cString: own)))
-        }
-
-        @Test
-        func piReleaseDecodesGitHubFields() throws {
-            let json = #"{"tag_name":"v1.5.0","assets":[{"name":"pi-darwin-arm64.tar.gz","url":"https://api.github.com/a/1","#
-                + #""browser_download_url":"https://github.com/a/b","digest":"sha256:ab"}]}"#
-            let release = try JSONDecoder().decode(PiInstaller.Release.self, from: Data(json.utf8))
-            #expect(release.version == "1.5.0")
-            #expect(release.assets.first?.digest == "sha256:ab")
-            // The installer downloads from the API's asset URL; github.com's download URL has answered HTTP 504.
-            #expect(release.assets.first?.url == URL(string: "https://api.github.com/a/1"))
+        func registrySettingWritesOnlyAWebURL() throws {
+            // Without a setting, Pi installs and updates through the default proxy.
+            #expect(try PiInstaller.npmrc(registry: "  ") == Data("registry=https://npm-proxy.cloud.databricks.com/\n".utf8))
+            #expect(try PiInstaller.npmrc(registry: "https://registry.npmjs.org") == Data("registry=https://registry.npmjs.org\n".utf8))
+            for invalid in ["npm-proxy.cloud.databricks.com", "file:///etc/npmrc", "https://a.example\n//a.example/:_authToken=x", "https://"] {
+                #expect(throws: PiInstallError(stage: .download, reason: .invalidRegistry)) { try PiInstaller.npmrc(registry: invalid) }
+            }
         }
 
         @Test

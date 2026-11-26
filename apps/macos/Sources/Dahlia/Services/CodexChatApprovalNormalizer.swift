@@ -43,6 +43,8 @@ enum CodexChatApprovalNormalizer {
             !fileChanges.isEmpty
         case .mcpToolCall:
             hasExactMCPToolCallPayload(mcpToolCall)
+        case .confirmation:
+            reason != nil
         }
         let reviewability: CodexChatApprovalRequest.Reviewability = if unsupportedScope || !hasExactPayload {
             .unsupported
