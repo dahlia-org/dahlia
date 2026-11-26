@@ -442,8 +442,8 @@
                 let db = try AppDatabaseManager(path: ":memory:").dbQueue
                 let fixture = try fixture(db: db, provider: provider, calls: [:])
                 defer { cleanUp(fixture) }
-                try await fixture.service.setAgentModels(
-                    fixture.agentID, intakeModel: "", intakeEffort: "", unattendedModel: "openai/gpt-notice", unattendedEffort: "xhigh"
+                try await fixture.service.setAgentModel(
+                    fixture.agentID, use: .unattended, model: "openai/gpt-notice", effort: "xhigh"
                 )
                 _ = try recordMail(fixture, excerpt: "Hello")
                 let botThread = try await fixture.service.botThread(fixture.agentID)
@@ -618,7 +618,8 @@
                             && $0.cwd.standardizedFileURL == fixture.home.standardizedFileURL
                     }
                 })
-                let helper = try #require(fixture.pi.launches.all.first { $0.arguments.contains(PiChatService.botTaskSystemPrompt(name: "Super Agent")) })
+                let helper = try #require(fixture.pi.launches.all
+                    .first { $0.arguments.contains(PiChatService.botTaskSystemPrompt(name: "Super Agent")) })
                 let tools = try #require(helper.arguments.firstIndex(of: "--tools").map { helper.arguments[$0 + 1] }).split(separator: ",")
                 #expect(Set(tools.map(String.init)) == Set(PiChatService.readThreadTools + ["read", "ls", "write", "edit", "mcp__dahlia__*"]))
                 #expect(try await !fixture.service.loadThread(id: delegated.id).isReadOnly)
@@ -648,8 +649,8 @@
                 await fixture.service.deliverResults(accountID: provider)
                 #expect(try store.undeliveredRuns(requesterID: threadID).map(\.id) == [run.id])
 
-                try await fixture.service.setAgentModels(
-                    fixture.agentID, intakeModel: "", intakeEffort: "", unattendedModel: "openai/gpt-unattended", unattendedEffort: ""
+                try await fixture.service.setAgentModel(
+                    fixture.agentID, use: .unattended, model: "openai/gpt-unattended", effort: ""
                 )
                 try store.setRunStatus(run.id, status: "completed")
                 await fixture.service.deliverResults(accountID: provider)
@@ -935,6 +936,54 @@
                 #expect(try store.thread(id: child.id, accountID: AppAccount.key).agentID == two.id)
             }
 
+            @Test(arguments: ["directory", "database"])
+            func failedAgentCreationLeavesNoRowOrPartialHome(failure: String) async throws {
+                let db = try AppDatabaseManager(path: ":memory:").dbQueue
+                let fixture = try fixture(db: db, provider: AppAccount.key, calls: [:])
+                defer { cleanUp(fixture) }
+                let agentsURL = PiAgentDirectoryLocator(applicationSupportURL: fixture.pi.rootURL).agentsURL
+                if failure == "directory" {
+                    try FileManager.default.createDirectory(at: agentsURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+                    try "BLOCKED".write(to: agentsURL, atomically: true, encoding: .utf8)
+                } else {
+                    try await db
+                        .write {
+                            try $0
+                                .execute(sql: "CREATE TRIGGER fail_new_agent BEFORE INSERT ON agents BEGIN SELECT RAISE(ABORT, 'test failure'); END")
+                        }
+                }
+                await #expect(throws: (any Error).self) {
+                    _ = try await fixture.service.createAgent(name: "Retry", avatar: "mascot:E1", color: "#b3dbf4", soul: "Guidance")
+                }
+                #expect(try await db.read { try AgentRecord.fetchCount($0) } == 1)
+                #expect(!FileManager.default.fileExists(atPath: agentsURL.appending(path: "retry").path))
+                if failure == "directory" {
+                    #expect(try String(contentsOf: agentsURL, encoding: .utf8) == "BLOCKED")
+                    try FileManager.default.removeItem(at: agentsURL)
+                } else {
+                    try await db.write { try $0.execute(sql: "DROP TRIGGER fail_new_agent") }
+                }
+                let made = try await fixture.service.createAgent(name: "Retry", avatar: "mascot:E1", color: "#b3dbf4", soul: "Guidance")
+                #expect(made.directory == "retry")
+                #expect(try await db.read { try AgentRecord.fetchCount($0) } == 2)
+                #expect(AgentHome.soulFile(agentsURL.appending(path: made.directory)) == "Guidance")
+            }
+
+            @Test func changingOneAgentModelPreservesTheOtherChoice() async throws {
+                let db = try AppDatabaseManager(path: ":memory:").dbQueue
+                let fixture = try fixture(db: db, provider: AppAccount.key, calls: [:])
+                defer { cleanUp(fixture) }
+                try await fixture.service.setAgentModel(fixture.agentID, use: .unattended, model: "notice", effort: "high")
+                try await fixture.service.setAgentModel(fixture.agentID, use: .intake, model: "intake", effort: "low")
+                var agent = try await fixture.service.agent(fixture.agentID)
+                #expect(agent.intakeModel == "intake" && agent.intakeEffort == "low")
+                #expect(agent.unattendedModel == "notice" && agent.unattendedEffort == "high")
+                try await fixture.service.setAgentModel(fixture.agentID, use: .unattended, model: "", effort: "")
+                agent = try await fixture.service.agent(fixture.agentID)
+                #expect(agent.unattendedModel == nil && agent.unattendedEffort == nil)
+                #expect(agent.intakeModel == "intake" && agent.intakeEffort == "low")
+            }
+
             /// Deleting an agent removes its inbox and home; its conversation stays read-only, takes no new run, and the
             /// thread it launched keeps working as an ordinary chat.
             @Test func deletingAnAgentRetiresItsThreadAndKeepsItsLaunchedWork() async throws {
@@ -944,7 +993,10 @@
                         "title": .string("Work"), "message": .string("Do it"), "client_request_id": .string("d1"),
                     ]),
                 ]])
-                defer { cleanUp(fixture) }
+                defer {
+                    AgentBackgroundActivity.setRecording(false)
+                    cleanUp(fixture)
+                }
                 _ = try recordMail(fixture, excerpt: "Hello")
                 try await notify(fixture)
                 let botThread = try #require(try fixture.currentThread())
@@ -952,6 +1004,22 @@
                 _ = try await fixture.service.botHome(fixture.agent)
                 #expect(FileManager.default.fileExists(atPath: fixture.home.path))
 
+                let store = ChatThreadStore(dbQueue: db)
+                let original = try await firstRun(fixture, thread: launched)
+                _ = try await fixture.service.updateApprovalMethod(threadID: launched, approvalMethod: .fullAccess)
+                _ = try await fixture.service.updateApprovalMethod(threadID: botThread, approvalMethod: .ask)
+                #expect(await fixture.service.effectiveApprovalMethod(launched) == .ask)
+                let queuedThread = UUID.v7().uuidString
+                try store.createThread(ChatThreadRecord(
+                    id: queuedThread, accountID: AppAccount.key, title: "Queued", createdAt: .now, updatedAt: .now
+                ))
+                let queued = try store.enqueueRun(ChatRunRecord(
+                    id: .v7(), threadID: queuedThread, requestedByThreadID: botThread, rootRunID: original.rootRunID,
+                    status: "queued", input: "Work", effort: "medium", approvalMethod: "fullAccess", createdAt: .now
+                ))
+                // A previous result receipt must not let a later terminal status notify the retired agent.
+                try store.markRunsDelivered([original])
+                AgentBackgroundActivity.setRecording(true)
                 try await fixture.service.deleteAgent(fixture.agentID)
 
                 let counts = try await db.read { db in
@@ -965,7 +1033,16 @@
                 #expect(try await fixture.service.listThreads(cursor: nil).threads.map(\.id).contains(botThread))
                 // Its launched work no longer reports to the retired thread, and keeps its run.
                 let work = try await firstRun(fixture, thread: launched)
-                #expect(work.requestedByThreadID == nil && ["queued", "running"].contains(work.status))
+                #expect(work.requestedByThreadID == botThread && ["queued", "running"].contains(work.status))
+                #expect(work.suppressAutomaticNotification)
+                #expect(await fixture.service.effectiveApprovalMethod(launched) == .ask)
+                let savedQueued = try #require(try store.run(id: queued.id))
+                #expect(savedQueued.requestedByThreadID == botThread && savedQueued.suppressAutomaticNotification)
+                #expect(await !fixture.service.unattendedRunEligible(savedQueued, account: AppAccount.key))
+                try store.setRunStatus(work.id, status: "completed")
+                await fixture.service.deliverResults(accountID: AppAccount.key)
+                #expect(try store.undeliveredRuns(requesterID: botThread).isEmpty)
+                AgentBackgroundActivity.setRecording(false)
                 await fixture.service.drainAlwaysOn()
                 #expect(try await botRuns(fixture).count == 1)
             }

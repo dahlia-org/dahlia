@@ -363,6 +363,45 @@
             ).threads.map(\.id) == [other.id])
         }
 
+        @Test func agentSearchScopesMatchesBeforePagination() async throws {
+            let database = try AppDatabaseManager(path: ":memory:")
+            let store = ChatThreadStore(dbQueue: database.dbQueue)
+            var ordinary = thread()
+            ordinary.title = "scopedneedle"
+            var own = thread()
+            own.title = ordinary.title
+            own.agentID = "own"
+            var hidden = thread()
+            hidden.title = ordinary.title
+            hidden.agentID = "other"
+            var child = thread()
+            child.title = ordinary.title
+            child.parentThreadID = own.id
+            for (index, var record) in [ordinary, own, hidden, child].enumerated() {
+                record.updatedAt = Date(timeIntervalSince1970: Double(index))
+                try store.createThread(record)
+            }
+            await database.searchIndexer.drain()
+            for query in ["", "scopedneedle"] {
+                let first = try await MeetingRepository.searchChatPage(
+                    accountID: "local", criteria: .init(text: query), limit: 1,
+                    callerAgentID: "own", topLevelOnly: true, dbQueue: database.dbQueue
+                )
+                #expect(first.threads.map(\.id) == [own.id])
+                #expect(first.hasMore)
+                let last = try await MeetingRepository.searchChatPage(
+                    accountID: "local", criteria: .init(text: query), offset: 1, limit: 1,
+                    callerAgentID: "own", topLevelOnly: true, dbQueue: database.dbQueue
+                )
+                #expect(last.threads.map(\.id) == [ordinary.id])
+                #expect(!last.hasMore)
+                let unscoped = try await MeetingRepository.searchChatPage(
+                    accountID: "local", criteria: .init(text: query), dbQueue: database.dbQueue
+                )
+                #expect(Set(unscoped.threads.map(\.id)) == [ordinary.id, own.id, hidden.id, child.id])
+            }
+        }
+
         @Test
         func searchRespectsProjectDescendantsDatesAndTags() async throws {
             let database = try AppDatabaseManager(path: ":memory:")

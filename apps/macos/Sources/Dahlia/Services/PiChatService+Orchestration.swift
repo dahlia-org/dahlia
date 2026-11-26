@@ -311,14 +311,12 @@ extension PiChatService {
             criteria: .init(text: String(query.prefix(1024))),
             offset: 0,
             limit: min(max(args["limit"]?.intValue ?? 50, 1), 50),
+            callerAgentID: caller.agentID,
+            topLevelOnly: true,
             dbQueue: store.dbQueue
         )
-        let topLevel = try page.threads.filter {
-            let thread = try store.thread(id: $0.id, accountID: account)
-            return thread.parentThreadID == nil && Self.isVisible(thread, to: caller)
-        }
         return .object([
-            "threads": .array(topLevel.map { .object(["id": .string($0.id), "title": .string($0.title)]) }),
+            "threads": .array(page.threads.map { .object(["id": .string($0.id), "title": .string($0.title)]) }),
             "has_more": .bool(page.hasMore),
         ])
     }

@@ -4,6 +4,8 @@ import GRDB
 /// One of the user's agents: who it is, where its home is, and its current thread. `agent.json` in its home is a copy
 /// Dahlia writes from this row.
 struct AgentRecord: Codable, FetchableRecord, PersistableRecord, Identifiable, Sendable, Equatable {
+    enum ModelUse: Sendable { case intake, unattended }
+
     static let databaseTableName = "agents"
     var id: String
     var name: String

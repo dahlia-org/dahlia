@@ -15,6 +15,79 @@
             return model
         }
 
+        @Test func switchingAgentsWaitsForSavedModelChoicesAndSavesOnlyTheEditedPair() async throws {
+            let choices = ModelChoiceFixture()
+            let model = DahliaBotPanelModel(
+                loadAgent: { try await choices.load($0) },
+                saveAgentModel: { try await choices.save($0, use: $1, model: $2, effort: $3) }
+            )
+            model.agentID = "A"
+            try await model.refreshModelSettings()
+            #expect(model.areModelSettingsLoaded)
+            model.agentID = "B"
+            await choices.holdNextLoad()
+            let loading = Task { try await model.refreshModelSettings() }
+            try #require(await pollUntil { await choices.isPending })
+            model.setIntakeModel("too early")
+            model.setUnattendedModel("too early")
+            model.setIntakeEffort("high")
+            model.setUnattendedEffort("high")
+            #expect(!model.areModelSettingsLoaded && model.intakeModel.isEmpty && model.unattendedModel.isEmpty)
+            #expect(await choices.writeCount == 0)
+            await choices.release()
+            try await loading.value
+            #expect(model.areModelSettingsLoaded)
+            #expect(model.intakeModel == "intake-B" && model.unattendedModel == "notice-B")
+            model.setIntakeModel("edited")
+            model.setUnattendedEffort("xhigh")
+            try #require(await pollUntil { await choices.writeCount == 2 })
+            let saved = try await choices.record("B")
+            #expect(saved.intakeModel == "edited" && saved.intakeEffort == "low")
+            #expect(saved.unattendedModel == "notice-B" && saved.unattendedEffort == "xhigh")
+            #expect(try await choices.record("A").intakeModel == "intake-A")
+
+            await choices.holdNextLoad()
+            let refreshing = Task { try await model.refreshModelSettings() }
+            try #require(await pollUntil { await choices.isPending })
+            model.setIntakeEffort("high")
+            try #require(await pollUntil { await choices.writeCount == 3 })
+            await choices.release()
+            try await refreshing.value
+            #expect(model.intakeEffort == "high")
+        }
+
+        @Test func modelRefreshCannotRevertAChoiceWhoseSaveIsPending() async throws {
+            let choices = ModelChoiceFixture()
+            let model = DahliaBotPanelModel(
+                loadAgent: { try await choices.load($0) },
+                saveAgentModel: { try await choices.save($0, use: $1, model: $2, effort: $3) }
+            )
+            model.agentID = "A"
+            try await model.refreshModelSettings()
+            await choices.holdNextSave()
+            model.setIntakeModel("edited")
+            try #require(await pollUntil { await choices.isSavePending })
+            try await model.refreshModelSettings()
+            #expect(model.intakeModel == "edited")
+            await choices.releaseSave()
+            try #require(await pollUntil { await choices.writeCount == 1 })
+            #expect(try await choices.record("A").intakeModel == "edited")
+        }
+
+        @Test func failedModelSettingsLoadStaysDisabledAndCanRetry() async throws {
+            let choices = ModelChoiceFixture()
+            let model = DahliaBotPanelModel(loadAgent: { try await choices.load($0) })
+            model.agentID = "B"
+            await choices.holdNextLoad()
+            let loading = Task { try await model.refreshModelSettings() }
+            try #require(await pollUntil { await choices.isPending })
+            await choices.release(fails: true)
+            await #expect(throws: CancellationError.self) { try await loading.value }
+            #expect(!model.areModelSettingsLoaded)
+            try await model.refreshModelSettings()
+            #expect(model.areModelSettingsLoaded && model.unattendedEffort == "medium")
+        }
+
         @Test func overlappingMoreRequestsExpandTheRangeOnce() async throws {
             let first = task("first"), next = task("next")
             let loader = TaskPageLoader(following: [first, next])
@@ -144,6 +217,59 @@
             #expect(await loader.limits == [60, 60, 60])
             #expect(model.error == nil)
             #expect(model.finishedTasks.map(\.id) == [first.id, next.id])
+        }
+    }
+
+    private actor ModelChoiceFixture {
+        private var records: [String: AgentRecord] = Dictionary(uniqueKeysWithValues: ["A", "B"].map {
+            ($0, AgentRecord(
+                id: $0, name: $0, directory: $0, avatar: "mascot:E1", color: "#b3dbf4",
+                intakeModel: "intake-" + $0, intakeEffort: "low", unattendedModel: "notice-" + $0,
+                unattendedEffort: "medium", createdAt: .now, updatedAt: .now
+            ))
+        })
+        private var holdSave = false
+        private var pendingSave: CheckedContinuation<Void, Never>?
+        var isSavePending: Bool { pendingSave != nil }
+        func holdNextSave() { holdSave = true }
+        func releaseSave() { pendingSave?.resume()
+            pendingSave = nil
+        }
+
+        private var shouldHold = false
+        private var pending: CheckedContinuation<AgentRecord, any Error>?
+        private var snapshot: AgentRecord?
+        private(set) var writeCount = 0
+        var isPending: Bool { pending != nil }
+
+        func record(_ id: String) throws -> AgentRecord { try #require(records[id]) }
+        func holdNextLoad() { shouldHold = true }
+        func load(_ id: String) async throws -> AgentRecord {
+            let result = try record(id)
+            guard shouldHold else { return result }
+            shouldHold = false
+            snapshot = result
+            return try await withCheckedThrowingContinuation { pending = $0 }
+        }
+
+        func release(fails: Bool = false) {
+            if fails { pending?.resume(throwing: CancellationError()) } else if let snapshot { pending?.resume(returning: snapshot) }
+            pending = nil
+            snapshot = nil
+        }
+
+        func save(_ id: String, use: AgentRecord.ModelUse, model: String, effort: String) async throws {
+            if holdSave {
+                holdSave = false
+                await withCheckedContinuation { pendingSave = $0 }
+            }
+            var agent = try record(id)
+            switch use {
+            case .intake: (agent.intakeModel, agent.intakeEffort) = (model, effort)
+            case .unattended: (agent.unattendedModel, agent.unattendedEffort) = (model, effort)
+            }
+            records[id] = agent
+            writeCount += 1
         }
     }
 

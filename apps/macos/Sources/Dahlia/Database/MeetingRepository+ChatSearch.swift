@@ -9,6 +9,8 @@ extension MeetingRepository {
         criteria: MeetingSearchCriteria,
         offset: Int = 0,
         limit: Int = 25,
+        callerAgentID: String? = nil,
+        topLevelOnly: Bool = false,
         dbQueue: any DatabaseWriter
     ) async throws -> (threads: [CodexChatThreadSummary], hasMore: Bool) {
         try await withSearchDeadline {
@@ -16,6 +18,11 @@ extension MeetingRepository {
                 guard criteria.tagIDs.isEmpty else { return ([], false) }
                 var conditions = ["t.accountID = ?"]
                 var arguments: StatementArguments = [accountID]
+                if let callerAgentID {
+                    conditions.append("(t.agentID IS NULL OR t.agentID = ?)")
+                    arguments += [callerAgentID]
+                }
+                if topLevelOnly { conditions.append("t.parentThreadID IS NULL") }
                 var source = "chat_threads t"
                 var prefix = ""
                 var prefixArguments = StatementArguments()

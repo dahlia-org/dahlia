@@ -136,6 +136,7 @@ struct DahliaBotPanelView: View {
         } header: {
             AgentSectionHeader(title: L10n.agentBotModels) { EmptyView() }
         }
+        .disabled(!model.areModelSettingsLoaded)
         soulSection
         if let agent = agents.summaries.first(where: { $0.id == model.agentID })?.agent {
             Section {

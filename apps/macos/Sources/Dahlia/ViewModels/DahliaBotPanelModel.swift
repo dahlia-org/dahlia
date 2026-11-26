@@ -45,6 +45,7 @@ final class DahliaBotPanelModel {
     private(set) var isLoadingFinishedTasks = false
     var soul = ""
     var models: [CodexModel] = []
+    private(set) var areModelSettingsLoaded = false
     /// Empty follows the default: Pi's model for intake, the conversation's for notices. Saved on the agent.
     private(set) var intakeModel = ""
     private(set) var unattendedModel = ""
@@ -65,6 +66,10 @@ final class DahliaBotPanelModel {
     }
 
     init(
+        loadAgent: @escaping @Sendable (String) async throws -> AgentRecord = { try await PiChatService.shared.agent($0) },
+        saveAgentModel: @escaping @Sendable (String, AgentRecord.ModelUse, String, String) async throws -> Void = {
+            try await PiChatService.shared.setAgentModel($0, use: $1, model: $2, effort: $3)
+        },
         saveSoulFile: @escaping @Sendable (String, String) async throws -> Void = {
             try await PiChatService.shared.saveBotSoul($0, $1)
         },
@@ -72,10 +77,16 @@ final class DahliaBotPanelModel {
             try await PiChatService.shared.loadBotTasks($0, limit: $1)
         }
     ) {
+        self.loadAgent = loadAgent
+        self.saveAgentModel = saveAgentModel
         self.saveSoulFile = saveSoulFile
         self.loadTasks = loadTasks
     }
 
+    private let loadAgent: @Sendable (String) async throws -> AgentRecord
+    private let saveAgentModel: @Sendable (String, AgentRecord.ModelUse, String, String) async throws -> Void
+    private var modelSettingsRevision = 0
+    private var pendingModelSaves = 0
     private var taskGeneration = 0
     /// Distinguishes selection lifetimes, including leaving an agent and returning before work completes.
     private var agentGeneration = 0
@@ -85,6 +96,9 @@ final class DahliaBotPanelModel {
 
     private func reset(for _: String?) {
         agentGeneration += 1
+        areModelSettingsLoaded = false
+        pendingModelSaves = 0
+        modelSettingsRevision += 1
         taskGeneration += 1
         isBusy = false
         isLoadingFinishedTasks = false
@@ -98,42 +112,61 @@ final class DahliaBotPanelModel {
     /// A model and its effort are one choice: following the default clears the effort, and a model takes its own default
     /// effort when the saved one is not among its levels.
     func setIntakeModel(_ selected: String) {
+        guard areModelSettingsLoaded else { return }
         intakeModel = selected
         intakeEffort = effort(intakeEffort, for: selected)
-        saveModels()
+        saveModel(.intake)
     }
 
     func setUnattendedModel(_ selected: String) {
+        guard areModelSettingsLoaded else { return }
         unattendedModel = selected
         unattendedEffort = effort(unattendedEffort, for: selected)
-        saveModels()
+        saveModel(.unattended)
     }
 
     func setIntakeEffort(_ effort: String) {
+        guard areModelSettingsLoaded else { return }
         intakeEffort = effort
-        saveModels()
+        saveModel(.intake)
     }
 
     func setUnattendedEffort(_ effort: String) {
+        guard areModelSettingsLoaded else { return }
         unattendedEffort = effort
-        saveModels()
+        saveModel(.unattended)
     }
 
-    private func saveModels() {
+    private func saveModel(_ use: AgentRecord.ModelUse) {
         guard let agentID else { return }
+        modelSettingsRevision += 1
+        pendingModelSaves += 1
         let generation = agentGeneration
-        let (intake, intakeEffort, unattended, unattendedEffort) = (intakeModel, self.intakeEffort, unattendedModel, self.unattendedEffort)
+        let (model, effort) = switch use {
+        case .intake: (intakeModel, intakeEffort)
+        case .unattended: (unattendedModel, unattendedEffort)
+        }
         Task {
+            defer { if generation == agentGeneration { pendingModelSaves -= 1 } }
             do {
-                try await PiChatService.shared.setAgentModels(
-                    agentID, intakeModel: intake, intakeEffort: intakeEffort, unattendedModel: unattended,
-                    unattendedEffort: unattendedEffort
-                )
+                try await saveAgentModel(agentID, use, model, effort)
             } catch {
                 guard generation == agentGeneration else { return }
                 self.error = error.localizedDescription
             }
         }
+    }
+
+    /// A periodic read must not replace a choice edited while it was awaiting the database.
+    func refreshModelSettings() async throws {
+        guard let agentID, pendingModelSaves == 0 else { return }
+        let generation = agentGeneration
+        let revision = modelSettingsRevision
+        let agent = try await loadAgent(agentID)
+        guard generation == agentGeneration, revision == modelSettingsRevision else { return }
+        (intakeModel, intakeEffort) = (agent.intakeModel ?? "", agent.intakeEffort ?? "")
+        (unattendedModel, unattendedEffort) = (agent.unattendedModel ?? "", agent.unattendedEffort ?? "")
+        areModelSettingsLoaded = true
     }
 
     private func effort(_ current: String, for selected: String) -> String {
@@ -220,15 +253,14 @@ final class DahliaBotPanelModel {
         guard let agentID else { return }
         let generation = agentGeneration
         do {
+            try await refreshModelSettings()
+            guard generation == agentGeneration else { return }
             let loaded = try await PiChatService.shared.loadAlwaysOnSettings(agentID)
             let inbox = try await PiChatService.shared.loadBotInbox(agentID)
-            let agent = try await PiChatService.shared.agent(agentID)
             // The window may have moved to another agent while this one loaded.
             guard generation == agentGeneration else { return }
             (sources, events, paused) = loaded
             (items, taskThreads) = inbox
-            (intakeModel, intakeEffort) = (agent.intakeModel ?? "", agent.intakeEffort ?? "")
-            (unattendedModel, unattendedEffort) = (agent.unattendedModel ?? "", agent.unattendedEffort ?? "")
             try await refreshTasks()
             guard generation == agentGeneration else { return }
             if soulDraft == nil {

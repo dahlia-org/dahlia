@@ -19,18 +19,27 @@ extension PiChatService {
         guard AgentAvatar.isValid(avatar: avatar, color: color) else { throw PiRuntimeError.invalidProtocolResponse }
         // A folder no row names (left by a database this Mac no longer has) is never adopted as a new agent's home.
         let folders = (try? FileManager.default.contentsOfDirectory(atPath: agentLocator.agentsURL.path)) ?? []
-        let agent = try history().dbQueue.write { db in
-            let taken = try Set(String.fetchAll(db, sql: "SELECT directory FROM agents")).union(folders)
-            let agent = AgentRecord(
-                id: UUID.v7().uuidString, name: name, directory: AgentHome.directoryName(for: name, taken: taken),
-                avatar: avatar, color: color, createdAt: now, updatedAt: now
-            )
-            try agent.insert(db)
-            return agent
+        let agentsURL = agentLocator.agentsURL
+        let instructions = Self.botSystemPrompt(name: name)
+        var createdHome: URL?
+        do {
+            return try history().dbQueue.write { db in
+                let taken = try Set(String.fetchAll(db, sql: "SELECT directory FROM agents")).union(folders)
+                let agent = AgentRecord(
+                    id: UUID.v7().uuidString, name: name, directory: AgentHome.directoryName(for: name, taken: taken),
+                    avatar: avatar, color: color, createdAt: now, updatedAt: now
+                )
+                let home = agentsURL.appending(path: agent.directory, directoryHint: .isDirectory)
+                createdHome = home
+                try AgentHome.ensure(home, agent: agent, instructions: instructions)
+                try AgentHome.saveSoul(soul, home: home)
+                try agent.insert(db)
+                return agent
+            }
+        } catch {
+            if let createdHome { try? FileManager.default.removeItem(at: createdHome) }
+            throw error
         }
-        let home = try botHome(agent)
-        if !soul.isEmpty { try AgentHome.saveSoul(soul, home: home) }
-        return agent
     }
 
     /// A Pi process already running keeps the name it started with; the next one gets the new name.
@@ -54,13 +63,16 @@ extension PiChatService {
     }
 
     /// Empty follows the default: Pi's model for intake, the conversation's for unattended turns.
-    func setAgentModels(
-        _ id: String, intakeModel: String, intakeEffort: String, unattendedModel: String, unattendedEffort: String
-    ) throws {
+    func setAgentModel(_ id: String, use: AgentRecord.ModelUse, model: String, effort: String) throws {
+        let (modelColumn, effortColumn) = switch use {
+        case .intake: ("intakeModel", "intakeEffort")
+        case .unattended: ("unattendedModel", "unattendedEffort")
+        }
         try history().dbQueue.write { db in
-            try db.execute(sql: """
-            UPDATE agents SET intakeModel=?, intakeEffort=?, unattendedModel=?, unattendedEffort=? WHERE id=?
-            """, arguments: [intakeModel.nilIfBlank, intakeEffort.nilIfBlank, unattendedModel.nilIfBlank, unattendedEffort.nilIfBlank, id])
+            try db.execute(
+                sql: "UPDATE agents SET \(modelColumn)=?, \(effortColumn)=? WHERE id=?",
+                arguments: [model.nilIfBlank, effort.nilIfBlank, id]
+            )
         }
     }
 
@@ -70,9 +82,9 @@ extension PiChatService {
         let agent = try agent(id)
         try await history().dbQueue.write { db in
             if let threadID = agent.threadID {
-                // The results of work it requested have nowhere to go; a result turn would be queued in a retired thread.
+                // Keep requester ancestry for recording and approval rules; only result delivery stops.
                 try db.execute(
-                    sql: "UPDATE chat_runs SET requestedByThreadID=NULL WHERE requestedByThreadID=? AND resultDeliveredAt IS NULL",
+                    sql: "UPDATE chat_runs SET suppressAutomaticNotification=1 WHERE requestedByThreadID=?",
                     arguments: [threadID]
                 )
             }
