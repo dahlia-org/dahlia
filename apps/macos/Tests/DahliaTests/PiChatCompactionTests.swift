@@ -57,6 +57,31 @@ import Foundation
             return (pi, store, chat)
         }
 
+        @Test(arguments: ["new", "empty", "reply", "pagedReply"])
+        func compactSuggestionUsesCompleteReplyHistory(state: String) async throws {
+            let transport = TestPiTransport { command in
+                guard command["type"] == .string("get_commands"), let id = command["id"] else {
+                    return TestPiTransport.acknowledge(command)
+                }
+                return [TestPiTransport.response(id: id, data: .object(["commands": .array([])]))]
+            }
+            let (pi, store, chat) = try Self.fixture(transport: transport)
+            defer { try? FileManager.default.removeItem(at: pi.rootURL) }
+            let threadID = try await state == "new" ? nil : chat.startThread(model: nil, effort: "medium").id
+            if let threadID, state == "reply" || state == "pagedReply" {
+                try store.appendItems(threadID: threadID, items: [
+                    ChatHistoryCodec.message(["role": .string("assistant"), "content": .string("Answer")]),
+                ])
+                if state == "pagedReply" {
+                    try store.appendItems(threadID: threadID, items: (0 ..< 40).map { _ in ChatHistoryCodec.user([.text("/mcp")]) })
+                    #expect(try await chat.loadThread(id: threadID).messages.allSatisfy { $0.role != .assistant })
+                }
+            }
+            let commands = try await chat.commands(threadID: threadID)
+            #expect(commands.contains { $0.name == "compact" } == (state == "reply" || state == "pagedReply"))
+            await pi.service.shutdown()
+        }
+
         @Test(arguments: [CodexAppServerInput.imageMetadata("Screenshot"), .imageDataURI("data:image/png;base64,AQ==")])
         func compactRejectsImageInputsBeforeCommitting(attachment: CodexAppServerInput) async throws {
             let transport = TestPiTransport()
@@ -93,28 +118,31 @@ import Foundation
             await pi.service.shutdown()
         }
 
-        @Test(arguments: ["succeeded", "failed", "stopped"])
+        @Test(arguments: ["succeeded", "failed", "nothing", "already", "stopped"])
         func compactCommandRunsPiCompactionAndSavesItsResult(outcome: String) async throws {
             let compaction = outcome == "succeeded" ? CodexChatCompaction(tokensBefore: 43700, tokensAfter: 17200) : nil
             let extra: [String: JSONValue] = switch outcome {
             case "succeeded": ["result": .object(["tokensBefore": .number(43700), "estimatedTokensAfter": .number(17200)])]
-            case "failed": ["errorMessage": .string("Compaction failed: Nothing to compact")]
+            case "failed": ["errorMessage": .string("Compaction failed: Request timed out")]
+            case "nothing": ["errorMessage": .string("Compaction failed: Nothing to compact (session too small)")]
+            case "already": ["errorMessage": .string("Compaction failed: Already compacted")]
             default: [:]
             }
             let result = try await Self.run(
                 "/compact  Keep the decisions\n",
                 events: [Self.compactionStart, Self.compactionEnd(aborted: outcome == "stopped", extra: extra)]
             )
-            let last: CodexChatTurnEvent = switch outcome {
-            case "succeeded": .completed(itemID: nil, text: nil)
-            case "failed": .failed(message: "Compaction failed: Nothing to compact")
-            default: .interrupted
+            let last: [CodexChatTurnEvent] = switch outcome {
+            case "succeeded": [.completed(itemID: nil, text: nil)]
+            case "failed": [.failed(message: "Compaction failed: Request timed out")]
+            case "nothing", "already": [.notice(message: L10n.chatNothingToCompact, level: .info), .completed(itemID: nil, text: nil)]
+            default: [.interrupted]
             }
-            #expect(Array(result.events.dropFirst()) == [.compactionStarted, .compactionEnded(compaction), last])
+            #expect(Array(result.events.dropFirst()) == [.compactionStarted, .compactionEnded(compaction)] + last)
             #expect(await result.transport.command("compact")["customInstructions"] == .string("Keep the decisions"))
             #expect(await result.transport.commands.allSatisfy { $0["type"] != .string("prompt") })
             #expect(result.saved.map(\.role) == [.user] + (compaction.map { [.compaction($0)] } ?? []))
-            #expect(result.run?.status == ["succeeded": "completed", "failed": "failed"][outcome] ?? "interrupted")
+            #expect(result.run?.status == ["succeeded": "completed", "nothing": "completed", "already": "completed", "failed": "failed"][outcome] ?? "interrupted")
         }
 
         private static func rejection(id: JSONValue) -> JSONValue {

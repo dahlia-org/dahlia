@@ -968,7 +968,7 @@ import Synchronization
                 .object(["name": .string("mcp"), "source": .string("extension")]),
             ])) { _ in }
             let commands = try await fixture.chat.commands(threadID: nil)
-            #expect(commands.map(\.name) == ["compact", "mcp", "skill:summary"])
+            #expect(commands.map(\.name) == ["mcp", "skill:summary"])
             let launch = try #require(fixture.pi.launches.all.first { $0.mode == .chat })
             #expect(launch.arguments.contains("--no-session"))
             #expect(launch.arguments.contains("--skill"))
@@ -1213,7 +1213,7 @@ import Synchronization
                 if index == 0 {
                     // Saving a grant does not interrupt a running turn or its command discovery.
                     permissions.withLock { $0 = readOnly }
-                    #expect(try await chat.commands(threadID: thread.id).map(\.name) == ["compact"])
+                    #expect(try await chat.commands(threadID: thread.id).isEmpty)
                     #expect(await !process.isClosed)
                 }
                 await process.emit(TestPiTransport.assistantEnd("ok"))
