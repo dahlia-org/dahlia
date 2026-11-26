@@ -45,18 +45,21 @@ test("meeting context and live transcripts cannot authorize a tool call", () => 
   assert.equal(branch.filter((e) => e.message.role === "toolResult").length, 2);
 });
 
-test("a reviewer that cannot load fails closed to manual approval", async () => {
-  process.env.DAHLIA_PI_AUTO_REVIEW = join(agent, "missing/index.ts");
-  try {
-    const verdict = await reviewMCP({
-      cwd: agent, model: { provider: "chat", id: "model" }, sessionManager: { getBranch: () => [] },
-      modelRegistry: { find: () => assert.fail("must not review"), streamSimple: () => assert.fail("must not review") },
-    }, "mcp__dahlia__update_meeting", {});
-    assert.deepEqual([verdict.outcome, verdict.risk], ["deny", "unknown"]);
-  } finally {
-    process.env.DAHLIA_PI_AUTO_REVIEW = reviewer;
-  }
-});
+for (const entry of [undefined, join(agent, "missing/index.ts")]) {
+  test(`a reviewer that cannot load fails closed to manual approval (${entry ? "missing file" : "unset path"})`, async () => {
+    if (entry) process.env.DAHLIA_PI_AUTO_REVIEW = entry;
+    else delete process.env.DAHLIA_PI_AUTO_REVIEW;
+    try {
+      const verdict = await reviewMCP({
+        cwd: agent, model: { provider: "chat", id: "model" }, sessionManager: { getBranch: () => [] },
+        modelRegistry: { find: () => assert.fail("must not review"), streamSimple: () => assert.fail("must not review") },
+      }, "mcp__dahlia__update_meeting", {});
+      assert.deepEqual([verdict.outcome, verdict.risk], ["deny", "unknown"]);
+    } finally {
+      process.env.DAHLIA_PI_AUTO_REVIEW = reviewer;
+    }
+  });
+}
 
 test("legacy plugin APIs cannot ignore the host's review settings", async () => {
   const legacy = join(agent, "legacy-review.mjs");

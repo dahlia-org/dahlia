@@ -57,6 +57,7 @@ actor PiPackageService {
     func change(_ input: String, installing: Bool) async throws {
         let source = try installing ? Self.source(input) : input
         guard !source.isEmpty, !source.hasPrefix("-") else { throw PackageError.invalidSource }
+        if installing, AgentAutoReviewSettings.isPackage(source) { throw PackageError.builtInPackage }
         guard !isBusy else { throw PackageError.busy }
         isBusy = true
         defer { isBusy = false }
@@ -127,12 +128,14 @@ actor PiPackageService {
 
     enum PackageError: LocalizedError {
         case invalidSource
+        case builtInPackage
         case busy
         case commandFailed(String)
 
         var errorDescription: String? {
             switch self {
             case .invalidSource: L10n.agentPackageInvalidSource
+            case .builtInPackage: L10n.agentPackageBuiltIn
             case .busy: L10n.agentPackageBusy
             case let .commandFailed(detail):
                 detail.contains("code ENOVERSIONS") ? L10n.agentPackageNoVersions : L10n.agentPackageFailed

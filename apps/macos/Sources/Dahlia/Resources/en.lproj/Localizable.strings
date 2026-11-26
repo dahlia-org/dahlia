@@ -1555,6 +1555,7 @@
 "settings.agents.packageFailed" = "Could not change the plugin.";
 "settings.agents.packageNoVersions" = "The configured npm registry has no available versions of this plugin. Check the package name, publication status, and registry restrictions.";
 "settings.agents.packageErrorDetails" = "Error details";
+"settings.agents.packageBuiltIn" = "pi-auto-review is built into Dahlia and does not need to be installed.";
 "settings.agents.autoReview.package" = "AI reviews MCP actions that change data and asks only about potentially unsafe ones. Built into Dahlia and used by Ask with AI in chat.";
 "settings.agents.webAccess.package" = "Lets chat read web pages, PDFs, and GitHub. Turn on web search in its settings.";
 "settings.agents.webAccess.settings" = "Web access";

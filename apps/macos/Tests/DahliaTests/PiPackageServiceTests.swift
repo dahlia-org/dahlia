@@ -10,6 +10,30 @@ import Foundation
             #expect(FileManager.default.fileExists(atPath: try AgentAutoReviewSettings.entryURL().path))
         }
 
+        @Test(arguments: [
+            "https://github.com/mats16/pi-auto-review",
+            "https://github.com/mats16/pi-auto-review@3a12a7d",
+            "git:github.com/mats16/pi-auto-review@main",
+            "git@github.com:mats16/pi-auto-review.git",
+        ])
+        func rejectsHiddenReviewerInstallsAndPreservesExistingDeclarations(_ source: String) async throws {
+            let root = FileManager.default.temporaryDirectory.appending(path: "PiBuiltInPackage-\(UUID())")
+            defer { try? FileManager.default.removeItem(at: root) }
+            let locator = PiAgentDirectoryLocator(applicationSupportURL: root)
+            let service = PiPackageService(locator: locator)
+            let settings = try locator.agentURL().appending(path: "settings.json")
+            let original = try JSONSerialization.data(withJSONObject: ["packages": [source, "npm:tools"]])
+            try original.write(to: settings)
+            do {
+                try await service.change(" \(source)\n", installing: true)
+                Issue.record("Installing the built-in reviewer must be rejected")
+            } catch PiPackageService.PackageError.builtInPackage {
+                #expect(PiPackageService.PackageError.builtInPackage.errorDescription == L10n.agentPackageBuiltIn)
+            }
+            #expect(try Data(contentsOf: settings) == original)
+            #expect(try await service.packages().contains(source))
+        }
+
         @Test
         func webAccessSettingsDefaultWebSearchOffAndKeepOtherSettings() throws {
             let agent = FileManager.default.temporaryDirectory.appending(path: "PiWebAccess-\(UUID())")
