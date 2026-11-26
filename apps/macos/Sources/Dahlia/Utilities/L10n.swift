@@ -3133,6 +3133,7 @@ enum L10n { // swiftlint:disable:this type_body_length
     static var chatThinking: String { String(localized: "Thinking", bundle: bundle) }
     static var chatCompactDoesNotSupportImages: String { String(localized: "Remove attached images before compacting context", bundle: bundle) }
     static var chatCompacting: String { String(localized: "Compacting context", bundle: bundle) }
+    static var chatNothingToCompact: String { String(localized: "There is no new conversation to compact", bundle: bundle) }
     static var chatCompactCommandDescription: String {
         String(localized: "Summarize the conversation and reduce context usage", bundle: bundle)
     }

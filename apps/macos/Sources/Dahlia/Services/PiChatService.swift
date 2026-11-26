@@ -344,9 +344,11 @@ actor PiChatService: CodexChatServicing {
                 throw PiRuntimeError.invalidProtocolResponse
             }
             // Pi runs `/compact` only through its own RPC command, so `get_commands` does not list it.
-            let decoded = try (JSONDecoder().decode([CodexChatSlashCommand].self, from: JSONEncoder().encode(commands))
-                + [CodexChatSlashCommand(name: "compact", description: L10n.chatCompactCommandDescription, source: "builtin")])
-                .sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+            var decoded = try JSONDecoder().decode([CodexChatSlashCommand].self, from: JSONEncoder().encode(commands))
+            if let threadID, try history().hasAssistantReply(threadID: threadID) {
+                decoded.append(CodexChatSlashCommand(name: "compact", description: L10n.chatCompactCommandDescription, source: "builtin"))
+            }
+            decoded.sort { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
             if ownsConnection { await closeSession(temporaryID) }
             return decoded
         } catch {
@@ -1231,7 +1233,14 @@ actor PiChatService: CodexChatServicing {
             }
             turn.broadcast.yield(.compactionEnded(compaction))
             guard turn.compacts, object["reason"]?.stringValue == "manual" else { return false }
-            turn.lastError = object["errorMessage"]?.stringValue
+            let error = object["errorMessage"]?.stringValue
+            // Pi has nothing new to summarize; the request succeeded without a compaction, so it is not a failure.
+            if let error, error.hasSuffix("Nothing to compact (session too small)") || error.hasSuffix("Already compacted") {
+                turn.lastError = nil
+                turn.broadcast.yield(.notice(message: L10n.chatNothingToCompact, level: .info))
+            } else {
+                turn.lastError = error
+            }
             return true
         case "dahlia_prompt_handled":
             return object["turnID"]?.stringValue == turn.wireID
@@ -1241,7 +1250,7 @@ actor PiChatService: CodexChatServicing {
     }
 
     /// A later `compaction_end` replaces it with Pi's own message.
-    private func setCompactionError(_ message: String, threadID: String, runID: UUID) {
+    func setCompactionError(_ message: String, threadID: String, runID: UUID) {
         guard sessions[threadID]?.turn?.id == runID else { return }
         sessions[threadID]?.turn?.lastError = message
     }
