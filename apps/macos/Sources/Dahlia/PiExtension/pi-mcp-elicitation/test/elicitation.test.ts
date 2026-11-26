@@ -32,13 +32,13 @@ function setup(answers: { open: boolean; finished?: boolean }) {
     open: async (_server: string, url: URL) => { asked.push(`open ${url.href}`); return answers.open; },
     finished: async () => { asked.push("finished"); return answers.finished ?? false; },
   };
-  const transport = withElicitation(inner, "gateway", prompt, (url) => opened.push(url));
+  const transport = withElicitation(inner, "gateway", prompt, (url) => { opened.push(url); });
   const received: any[] = [];
   transport.onMessage((message: any) => received.push(message));
   return { inner, transport, opened, asked, received };
 }
 
-const urlError = (id: number, url = "https://example.com/approve?x=1") => ({
+const urlError = (id: string | number, url = "https://example.com/approve?x=1") => ({
   jsonrpc: "2.0", id,
   error: { code: URL_ELICITATION_REQUIRED, message: "approval required", data: { elicitations: [{ mode: "url", elicitationId: "e1", url, message: "Approve" }] } },
 });
@@ -84,10 +84,135 @@ test("sends a request again after the user finished on the page", async () => {
   await settle();
   assert.deepEqual(opened, ["https://example.com/approve?x=1"]);
   assert.deepEqual(asked, ["open https://example.com/approve?x=1", "finished"]);
-  assert.deepEqual(inner.sent, [call, call]);
+  assert.equal(inner.sent.length, 2);
+  const retry = inner.sent[1];
+  assert.notEqual(retry.id, call.id);
+  assert.deepEqual({ ...retry, id: call.id }, call);
   assert.deepEqual(received, []);
-  inner.receive({ jsonrpc: "2.0", id: 3, result: { content: [] } });
+  inner.receive({ jsonrpc: "2.0", id: retry.id, result: { content: [] } });
   assert.deepEqual(received, [{ jsonrpc: "2.0", id: 3, result: { content: [] } }]);
+});
+
+test("repeated retries correlate responses, concurrent calls, and cancellation", async () => {
+  const { inner, transport, received } = setup({ open: true, finished: true });
+  await transport.send({ jsonrpc: "2.0", id: 3, method: "tools/call", params: { name: "first" } });
+  await transport.send({ jsonrpc: "2.0", id: 4, method: "tools/call", params: { name: "other" } });
+  inner.receive(urlError(3));
+  await settle();
+  const firstRetry = inner.sent[2].id;
+  inner.receive(urlError(firstRetry));
+  await settle();
+  const secondRetry = inner.sent[3].id;
+  assert.equal(new Set([3, firstRetry, secondRetry]).size, 3);
+  inner.receive({ jsonrpc: "2.0", id: 3, result: { stale: true } });
+  assert.deepEqual(received, []);
+  inner.receive({ jsonrpc: "2.0", id: 4, result: { other: true } });
+  assert.deepEqual(received, [{ jsonrpc: "2.0", id: 4, result: { other: true } }]);
+  await transport.send({ jsonrpc: "2.0", method: "notifications/cancelled", params: { requestId: 3, reason: "stopped" } });
+  assert.deepEqual(inner.sent[4].params, { requestId: secondRetry, reason: "stopped" });
+  await transport.close();
+});
+
+test("a failed retry delivers its error to the original caller", async () => {
+  const { inner, transport, received } = setup({ open: true, finished: true });
+  await transport.send({ jsonrpc: "2.0", id: "original", method: "tools/call" });
+  inner.receive(urlError("original"));
+  await settle();
+  const error = { code: -32603, message: "failed after authorization" };
+  inner.receive({ jsonrpc: "2.0", id: inner.sent[1].id, error });
+  assert.deepEqual(received, [{ jsonrpc: "2.0", id: "original", error }]);
+});
+
+test("send-signal abort before the client's cancellation notification cancels the current wire ID once", async () => {
+  const { inner, transport, received } = setup({ open: true, finished: true });
+  const controller = new AbortController();
+  await transport.send({ jsonrpc: "2.0", id: 3, method: "tools/call" }, { signal: controller.signal });
+  inner.receive(urlError(3));
+  await settle();
+  const wireID = inner.sent[1].id;
+  controller.abort();
+  await transport.send({ jsonrpc: "2.0", method: "notifications/cancelled", params: { requestId: 3 } });
+  assert.deepEqual(inner.sent.slice(2), [{ jsonrpc: "2.0", method: "notifications/cancelled", params: { requestId: wireID } }]);
+  assert.deepEqual(received, []);
+  await transport.close();
+});
+
+test("retry send failure preserves the original error only for a live caller", async () => {
+  for (const cancelled of [false, true]) {
+    const inner = fakeTransport();
+    const received: any[] = [];
+    let failSend: (error: Error) => void = () => {};
+    const send = inner.send;
+    inner.send = (message) => {
+      if (message.method === "tools/call" && message.id !== 3) {
+        return new Promise<void>((_resolve, reject) => { failSend = reject; });
+      }
+      return send(message);
+    };
+    const transport = withElicitation(inner, "gateway", { open: async () => true, finished: async () => true }, () => {});
+    transport.onMessage((message) => received.push(message));
+    await transport.send({ jsonrpc: "2.0", id: 3, method: "tools/call" });
+    const error = urlError(3);
+    inner.receive(error);
+    await settle();
+    if (cancelled) await transport.send({ jsonrpc: "2.0", method: "notifications/cancelled", params: { requestId: 3 } });
+    failSend(new Error("transport failed"));
+    await settle();
+    assert.deepEqual(received, cancelled ? [] : [error]);
+    await transport.close();
+  }
+});
+
+test("cancelling during browser launch prevents accept and retry follow-up", async () => {
+  for (const direct of [true, false]) {
+    const inner = fakeTransport();
+    const received: any[] = [];
+    let finishLaunch: () => void = () => {};
+    let finished = false;
+    const transport = withElicitation(inner, "gateway", {
+      open: async () => true,
+      finished: async () => { finished = true; return true; },
+    }, () => new Promise<void>((resolve) => { finishLaunch = resolve; }));
+    transport.onMessage((message) => received.push(message));
+    if (direct) inner.receive({ jsonrpc: "2.0", id: 7, method: "elicitation/create", params: { mode: "url", url: "https://example.com" } });
+    else {
+      await transport.send({ jsonrpc: "2.0", id: 7, method: "tools/call" });
+      inner.receive(urlError(7));
+    }
+    await settle();
+    if (direct) inner.receive({ jsonrpc: "2.0", method: "notifications/cancelled", params: { requestId: 7 } });
+    else await transport.send({ jsonrpc: "2.0", method: "notifications/cancelled", params: { requestId: 7 } });
+    finishLaunch();
+    await settle();
+    assert.equal(finished, false);
+    assert.deepEqual(received, []);
+    assert.equal(inner.sent.filter((message) => message.result || message.method === "tools/call").length, direct ? 0 : 1);
+    await transport.close();
+  }
+});
+
+test("launcher failure cancels direct elicitation and preserves the URL-required error", async () => {
+  for (const launch of [() => { throw new Error("missing opener"); }, async () => { throw new Error("opener failed"); }]) {
+    const inner = fakeTransport();
+    const received: any[] = [];
+    let finished = false;
+    const transport = withElicitation(inner, "gateway", {
+      open: async () => true,
+      finished: async () => { finished = true; return true; },
+    }, launch);
+    transport.onMessage((message) => received.push(message));
+    inner.receive({ jsonrpc: "2.0", id: 7, method: "elicitation/create", params: { mode: "url", url: "https://example.com" } });
+    await settle();
+    assert.deepEqual(inner.sent[0].result, { action: "cancel" });
+    await transport.send({ jsonrpc: "2.0", id: 3, method: "tools/call" });
+    const error = urlError(3);
+    inner.receive(error);
+    await settle();
+    assert.deepEqual(received, [error]);
+    assert.equal(finished, false);
+    assert.equal(inner.sent.length, 2);
+    await transport.close();
+  }
 });
 
 test("passes the error on when the user does not continue", async () => {
@@ -119,7 +244,7 @@ test("close and disconnect stop progress and invalidate old consent", async (con
     const transport = withElicitation(inner, "gateway", {
       open: () => new Promise((resolve) => { answer = resolve; }),
       finished: async () => true,
-    }, (url) => opened.push(url));
+    }, (url) => { opened.push(url); });
     const received: any[] = [];
     transport.onMessage((message) => received.push(message));
     await transport.send({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { _meta: { progressToken: 1 } } });
@@ -150,7 +275,7 @@ test("protocol cancellation and AbortSignal invalidate both retry prompts", asyn
       const transport = withElicitation(inner, "gateway", {
         open: async (_server, _url, _message, signal) => cancelAt === "open" ? pending(signal) : true,
         finished: (_server, _url, signal) => pending(signal),
-      }, (url) => opened.push(url));
+      }, (url) => { opened.push(url); });
       const controller = new AbortController();
       await transport.send({ jsonrpc: "2.0", id: 2, method: "tools/call", params: {} }, cancelWithSignal ? { signal: controller.signal } : undefined);
       inner.receive(urlError(2));
@@ -181,7 +306,7 @@ test("server cancellation invalidates its confirmation without closing the conne
       return new Promise((resolve) => { answer = resolve; });
     },
     finished: async () => true,
-  }, (url) => opened.push(url));
+  }, (url) => { opened.push(url); });
   transport.onMessage((message) => received.push(message));
   // Client and server IDs may be equal; cancelling the server's request must not cancel the client call.
   await transport.send({ jsonrpc: "2.0", id: 7, method: "tools/call", params: { _meta: { progressToken: 7 } } });
@@ -216,7 +341,7 @@ test("cancellation queued between consent resolution and browser opening wins", 
       return true;
     },
     finished: async () => true,
-  }, (url) => opened.push(url));
+  }, (url) => { opened.push(url); });
   inner.receive({ jsonrpc: "2.0", id: 7, method: "elicitation/create", params: { mode: "url", url: "https://example.com" } });
   await settle();
   assert.deepEqual(opened, []);

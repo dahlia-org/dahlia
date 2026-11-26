@@ -1,4 +1,6 @@
 // URL mode elicitation (MCP 2025-11-25) as a wrapper around any MCP transport. It needs nothing from Pi.
+import { randomUUID } from "node:crypto";
+
 export const URL_ELICITATION_REQUIRED = -32042;
 const KEEPALIVE_MS = 15_000;
 
@@ -29,10 +31,11 @@ export function pageURL(value: unknown): URL | undefined {
 }
 
 /** Wraps an MCP transport: declares URL mode elicitation and answers it, so Pi's MCP client never sees it. */
-export function withElicitation(inner: any, server: string, prompt: ElicitationPrompt, openURL: (url: string) => void) {
+export function withElicitation(inner: any, server: string, prompt: ElicitationPrompt, openURL: (url: string) => void | Promise<void>) {
   const listeners = new Set<(message: Message) => void>();
-  type Request = { message: Message; options?: any; controller: AbortController; signal: AbortSignal; onAbort: () => void };
+  type Request = { message: Message; wireID: string | number; options?: any; controller: AbortController; signal: AbortSignal; onAbort: () => void };
   const inFlight = new Map<string | number, Request>();
+  const wireRequests = new Map<string | number, Request>();
   // The server's request IDs are separate from the client's IDs in inFlight.
   const elicitations = new Map<string | number, AbortController>();
   const lifetime = new AbortController();
@@ -46,6 +49,7 @@ export function withElicitation(inner: any, server: string, prompt: ElicitationP
   const forget = (id: string | number) => {
     const request = inFlight.get(id);
     request?.signal.removeEventListener("abort", request.onAbort);
+    if (request) wireRequests.delete(request.wireID);
     inFlight.delete(id);
   };
   const dispose = () => {
@@ -90,13 +94,12 @@ export function withElicitation(inner: any, server: string, prompt: ElicitationP
   };
 
   const consent = async (url: URL, message: string, signal: AbortSignal) => {
-    if (!(await ask(() => prompt.open(server, url, message, signal), signal)) || signal.aborted) return false;
-    try {
-      openURL(url.href);
+    if (!(await ask(() => prompt.open(server, url, message, signal), signal)) || signal.aborted) return "decline";
+    const launched = await ask(async () => {
+      await openURL(url.href);
       return true;
-    } catch {
-      return false;
-    }
+    }, signal);
+    return launched && !signal.aborted ? "accept" : "cancel";
   };
 
   const answer = async (request: Message) => {
@@ -112,7 +115,7 @@ export function withElicitation(inner: any, server: string, prompt: ElicitationP
         ? { error: { code: -32602, message: "This client supports only URL mode elicitation." } }
         : !url
           ? { error: { code: -32602, message: "The elicitation URL must use https." } }
-          : { result: { action: (await keepAlive(() => consent(url, String(message), signal))) ? "accept" : "decline" } };
+          : { result: { action: await keepAlive(() => consent(url, String(message), signal)) } };
       if (signal.aborted) return;
       await inner.send({ jsonrpc: "2.0", id, ...reply }).catch(() => {});
     } finally {
@@ -126,17 +129,21 @@ export function withElicitation(inner: any, server: string, prompt: ElicitationP
       .filter((elicitation: any) => elicitation?.mode === "url")
       .map((elicitation: any) => [pageURL(elicitation.url), String(elicitation.message ?? "")]);
     const proceed = pages.length > 0 && pages.every(([url]) => url) && await keepAlive(async () => {
-      for (const [url, message] of pages) if (!(await consent(url!, message, request.signal))) return false;
+      for (const [url, message] of pages) if (await consent(url!, message, request.signal) !== "accept") return false;
       return ask(() => prompt.finished(server, pages[0][0]!, request.signal), request.signal);
     });
     if (request.signal.aborted || inFlight.get(response.id!) !== request) return;
     if (proceed) {
+      // Pi still awaits its original ID. Each new wire request needs its own session-unique ID.
+      request.wireID = `elicitation:${randomUUID()}`;
+      wireRequests.set(request.wireID, request);
       try {
-        return await inner.send(request.message, request.options);
+        return await inner.send({ ...request.message, id: request.wireID }, request.options);
       } catch {
         // The original error explains the failure better than the transport's.
       }
     }
+    if (request.signal.aborted || inFlight.get(response.id!) !== request) return;
     forget(response.id!);
     emit(response);
   };
@@ -155,9 +162,16 @@ export function withElicitation(inner: any, server: string, prompt: ElicitationP
     // Retries follow the user's answer, so the server's notice that a page finished is not needed.
     if (message.method === "notifications/elicitation/complete") return;
     if (message.method === undefined && message.id !== undefined) {
-      const request = inFlight.get(message.id);
-      if (request && message.error?.code === URL_ELICITATION_REQUIRED) return void retry(message, request);
-      forget(message.id);
+      const request = wireRequests.get(message.id);
+      if (request) {
+        wireRequests.delete(message.id);
+        const response = { ...message, id: request.message.id };
+        if (message.error?.code === URL_ELICITATION_REQUIRED) return void retry(response, request);
+        forget(request.message.id!);
+        return emit(response);
+      }
+      // An original ID whose error was consumed cannot complete the same logical call again.
+      if (inFlight.has(message.id)) return;
     }
     emit(message);
   });
@@ -170,16 +184,28 @@ export function withElicitation(inner: any, server: string, prompt: ElicitationP
         const capabilities = { ...message.params?.capabilities, elicitation: { url: {} } };
         message = { ...message, params: { ...message.params, capabilities } };
       } else if (message.method === "notifications/cancelled") {
-        inFlight.get(message.params?.requestId)?.controller.abort();
-        forget(message.params?.requestId);
+        const id = message.params?.requestId;
+        const request = inFlight.get(id);
+        // An aborted send signal already cancelled its wire request; ignore the client's later notification.
+        if (!request) return Promise.resolve();
+        message = { ...message, params: { ...message.params, requestId: request.wireID } };
+        request.controller.abort();
+        forget(id);
       } else if (message.method !== undefined && message.id !== undefined) {
         const controller = new AbortController();
         const signal = AbortSignal.any([lifetime.signal, controller.signal, ...(options?.signal ? [options.signal] : [])]);
+        if (signal.aborted) return Promise.reject(new Error("MCP request was cancelled."));
         const id = message.id;
-        const request = { message, options, controller, signal, onAbort: () => forget(id) };
+        const request = { message, wireID: id, options, controller, signal, onAbort: () => {
+          // Pi aborts the send signal before emitting notifications/cancelled. Cancel while the wire ID is owned here.
+          if (!lifetime.signal.aborted && !controller.signal.aborted) {
+            void inner.send({ jsonrpc: "2.0", method: "notifications/cancelled", params: { requestId: request.wireID } }).catch(() => {});
+          }
+          forget(id);
+        } };
         inFlight.set(id, request);
+        wireRequests.set(id, request);
         signal.addEventListener("abort", request.onAbort, { once: true });
-        if (signal.aborted) forget(id);
       }
       return inner.send(message, options).catch((error: Error) => {
         if (message.id !== undefined) forget(message.id);

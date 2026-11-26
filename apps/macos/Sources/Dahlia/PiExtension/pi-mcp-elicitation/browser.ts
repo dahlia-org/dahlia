@@ -9,5 +9,7 @@ export function browserCommand(url: string, platform = process.platform): [strin
 
 export function openInBrowser(url: string) {
   const [command, args] = browserCommand(url);
-  execFile(command, args, () => {});
+  return new Promise<void>((resolve, reject) => {
+    execFile(command, args, (error) => error ? reject(error) : resolve());
+  });
 }

@@ -12,6 +12,7 @@ approve a call, and Pi continues when you are done.
 - Only `https` pages, and `http` on localhost, are offered. Other URLs are refused without asking.
 - While Pi waits for you, progress notifications keep tool calls from timing out.
 - Without a UI (print mode, for example) every page is declined.
+- If the browser launcher fails, a direct elicitation is cancelled and a URL-required call keeps its original error.
 - Cancelling a request or closing its transport dismisses its prompts and prevents a late answer from opening a page or retrying the call.
 
 ## Install
@@ -31,7 +32,7 @@ warns that elicitation is off. Pi has no elicitation support of its own
 ## Use from a host
 
 `withElicitation(transport, server, prompt, openURL)` from `elicitation.ts` wraps any MCP transport and needs nothing
-from Pi; `index.ts` is the Pi extension.
+from Pi; `index.ts` is the Pi extension. `openURL` may return a promise and must throw or reject if launching fails.
 
 `createMCPElicitationExtension({ confirm })` from `index.ts` builds the extension with a host UI adapter.
 `confirm(context, title, message, signal)` returns a boolean and must dismiss its question when the signal aborts.

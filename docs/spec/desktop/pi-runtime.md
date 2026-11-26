@@ -95,7 +95,8 @@ Dahlia の extension は builtin MCP 由来のこの server の tool を通し�
 対話チャットは常に `builtin:mcp` の代わりに Dahlia の確認 adapter を渡す `dahlia-mcp.ts` を `-e` で読み込み、`DAHLIA_PI_MCP_EXTENSION` で Dahlia の extension に MCP tool の出所として伝える。独立 package の既定 UI は Pi の `confirm` とし、host は factory へ確認 UI を注入できる。
 プラグインは Pi の `createMcpExtension` に transport を包んで渡し、`initialize` で `elicitation.url` を宣言する（MCP 2025-11-25 の URL mode elicitation。form mode は宣言しない）。
 `elicitation/create` と、URLElicitationRequiredError（`-32042`）で失敗した request の両方で、ページの host と URL 全体を Pi の `confirm` で見せ、同意したときだけブラウザーで開く。
-自動では開かない。https（loopback は http も可）以外の URL は確認せずに断る。`-32042` の request は、ページを終えたかを2回目の `confirm` で確かめてから同じ request を送り直し、
+自動では開かない。ブラウザーの起動に失敗した場合は `elicitation/create` を cancel し、`-32042` は元の error を返す。
+https（loopback は http も可）以外の URL は確認せずに断る。`-32042` の request は、ページを終えたかを2回目の `confirm` で確かめてから新しい request ID で送り直し、
 利用者が続けなければ元のエラーを返す。待つあいだは progress 通知で Pi の request timeout を延ばす。UI のない process では常に断る。
 Pi の MCP runtime（npm パッケージの `dist/extensions/mcp/runtime.js`）が見つからない Pi（単体バイナリ）では、Pi の MCP をそのまま使い、elicitation が無効だと通知する。
 Dahlia の adapter は確認ごとの ID で開始と取り消しを対応付け、取り消した確認だけを承認カードから除く。承認カード（「続行」「キャンセル」）には承認方式（Auto review・フルアクセス）にかかわらず利用者が答える。予定実行・バックグラウンド処理・ターン外の確認は断る。

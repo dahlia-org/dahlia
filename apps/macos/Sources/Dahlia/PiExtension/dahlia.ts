@@ -236,7 +236,7 @@ export default async function (pi: any) {
       if (decision !== "accept") return block("The user declined this tool call.");
       return;
     };
-    registerLearningTools(pi, bridge, approve);
+    registerLearningTools(pi, bridge, approve, mcpExtension);
     if (env.DAHLIA_PI_MCP_COMMAND) {
       const [command, ...args] = JSON.parse(env.DAHLIA_PI_MCP_COMMAND);
       pi.registerMcpServer("dahlia", { command, args, exposure: "direct", description: "Dahlia meetings, projects, and workspaces" });
