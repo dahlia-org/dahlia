@@ -3104,6 +3104,7 @@ enum L10n { // swiftlint:disable:this type_body_length
         bundle: bundle
     ) }
     static var chatQueuePaused: String { String(localized: "Queue paused", bundle: bundle) }
+    static var chatSkipAndContinue: String { String(localized: "Skip and continue", bundle: bundle) }
     static var chatResumeQueue: String { String(localized: "Resume queue", bundle: bundle) }
 
     static var chatNoticeExpanded: String { String(localized: "Chat notice expanded", bundle: bundle) }

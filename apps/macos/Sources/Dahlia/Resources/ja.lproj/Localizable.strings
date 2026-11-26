@@ -2033,3 +2033,5 @@
 "settings.agents.calendar.meetingNote" = "会議が近づいています。参照先の最新の予定を calendar_read で読み、準備が必要か判断してください。";
 
 "Remove attached images before compacting context" = "コンテキストを圧縮する前に添付画像を削除してください";
+
+"Skip and continue" = "スキップして続行";

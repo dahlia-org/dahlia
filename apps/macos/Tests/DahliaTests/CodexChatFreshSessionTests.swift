@@ -110,6 +110,55 @@
         }
 
         @Test(arguments: [false, true])
+        func skippingRepeatedFailurePreservesResetAndFollowingQueue(paused: Bool) async throws {
+            let service = TestCodexChatService(mode: .blockBeforeOutput)
+            let session = CodexChatSessionModel(service: service, settings: TestCodexChatFixtures.appSettings())
+            session.draft = "A"
+            session.sendDraft()
+            try #require(await pollUntil { session.activeTurnID != nil })
+            session.armFreshSession()
+            session.draft = "B"
+            session.sendDraft(mode: .queue)
+            await service.completeBlockedTurn(with: .failed(message: "Test failure"))
+            try #require(await pollUntil { !session.isGenerating && session.errorMessage != nil })
+            session.draft = "C"
+            session.sendDraft(mode: .queue)
+            await service.failNextTurn(with: .invalidProtocolResponse)
+            session.retry()
+            try #require(await pollUntil { !session.isGenerating && session.errorMessage != nil })
+            #expect(await service.sentTextBlocks == [["A"], ["A"]])
+            #expect(session.pendingManualInputs.map(\.text) == ["B", "C"])
+            if paused { session.stop() }
+            #expect(session.canSkipFailedSubmission)
+            session.skipFailedSubmissionAndResumeQueue()
+            try #require(await pollUntil { session.activeTurnID != nil })
+            #expect(session.errorMessage == nil)
+            #expect(!session.canSkipFailedSubmission)
+            #expect(await service.freshSessionStarts == [false, false, true])
+            #expect(session.pendingManualInputs.map(\.text) == ["C"])
+            await service.completeBlockedTurn()
+            try #require(await pollUntil { await service.freshSessionStarts.count == 4 && session.activeTurnID != nil })
+            #expect(await service.freshSessionStarts == [false, false, true, false])
+            #expect(await service.sentTextBlocks == [["A"], ["A"], ["B"], ["C"]])
+            session.stop()
+            try #require(await pollUntil { !session.hasPendingGenerationWork })
+        }
+
+        @Test
+        func skipWithoutAFailedSubmissionDoesNotClearAnUnrelatedError() async {
+            let service = TestCodexChatService(mode: .complete)
+            let session = CodexChatSessionModel(service: service, settings: TestCodexChatFixtures.appSettings())
+            let input = CodexChatManualSubmission(text: "Queued", images: [])
+            session.pendingManualInputs = [input]
+            session.errorMessage = "Connection error"
+            #expect(!session.canSkipFailedSubmission)
+            session.skipFailedSubmissionAndResumeQueue()
+            #expect(session.errorMessage == "Connection error")
+            #expect(session.pendingManualInputs == [input])
+            #expect(await service.sentTextBlocks.isEmpty)
+        }
+
+        @Test(arguments: [false, true])
         func stoppingQueuedResetRetainsOnlyUncommittedIntent(committed: Bool) async throws {
             let service = TestCodexChatService(
                 mode: .blockBeforeOutput, commitsFreshSessionBeforeFailure: committed, delaysFreshSessionStart: true

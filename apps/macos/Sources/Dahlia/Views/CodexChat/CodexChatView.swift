@@ -93,7 +93,8 @@ struct CodexChatView: View {
                     if let errorMessage = session.errorMessage {
                         CodexChatErrorView(
                             message: errorMessage,
-                            onRetry: session.hasRetryableSubmission ? session.retry : retryConnection
+                            onRetry: session.hasRetryableSubmission ? session.retry : retryConnection,
+                            onSkipAndContinue: session.canSkipFailedSubmission ? { session.skipFailedSubmissionAndResumeQueue() } : nil
                         )
                         .frame(maxWidth: contentMaxWidth ?? .infinity)
                     } else if let earlierMessagesError = session.earlierMessagesError {

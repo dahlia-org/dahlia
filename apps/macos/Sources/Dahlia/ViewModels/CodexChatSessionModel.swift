@@ -397,6 +397,19 @@ final class CodexChatSessionModel: Identifiable {
         submitManualSubmission(submission)
     }
 
+    var canSkipFailedSubmission: Bool {
+        isBoundToCurrentAccount && !isReleased && !isRestoring && !needsRestore && !isGenerating && !isTurnCleanupPending
+            && failedSubmission != nil && !pendingManualInputs.isEmpty && errorMessage != nil
+            && errorMessage != approvalMethodUpdateErrorMessage
+    }
+
+    func skipFailedSubmissionAndResumeQueue() {
+        guard canSkipFailedSubmission else { return }
+        failedSubmission = nil
+        errorMessage = nil
+        resumeQueue()
+    }
+
     func retry() {
         if let approvalMethodUpdateErrorMessage,
            errorMessage == approvalMethodUpdateErrorMessage {
