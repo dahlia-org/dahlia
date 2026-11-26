@@ -11,6 +11,7 @@ struct DahliaButtonStyle: ButtonStyle {
     @State private var isHovered = false
 
     let variant: DahliaButtonVariant
+    let cornerRadius: CGFloat
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
@@ -19,13 +20,13 @@ struct DahliaButtonStyle: ButtonStyle {
             .foregroundStyle(foregroundColor)
             .background(
                 backgroundColor(isPressed: configuration.isPressed),
-                in: .rect(cornerRadius: DahliaDesign.Button.cornerRadius)
+                in: .rect(cornerRadius: cornerRadius)
             )
             .overlay {
-                RoundedRectangle(cornerRadius: DahliaDesign.Button.cornerRadius)
+                RoundedRectangle(cornerRadius: cornerRadius)
                     .strokeBorder(borderColor, lineWidth: 1)
             }
-            .contentShape(.rect(cornerRadius: DahliaDesign.Button.cornerRadius))
+            .contentShape(.rect(cornerRadius: cornerRadius))
             .opacity(isEnabled ? 1 : 0.45)
             // Set by hand, as the split views' dividers do: inside a `List` (the sidebar's), `pointerStyle` is overridden.
             .onContinuousHover { phase in
@@ -75,7 +76,10 @@ struct DahliaButtonStyle: ButtonStyle {
 }
 
 extension ButtonStyle where Self == DahliaButtonStyle {
-    static func dahlia(_ variant: DahliaButtonVariant = .secondary) -> DahliaButtonStyle {
-        DahliaButtonStyle(variant: variant)
+    static func dahlia(
+        _ variant: DahliaButtonVariant = .secondary,
+        cornerRadius: CGFloat = DahliaDesign.Button.cornerRadius
+    ) -> DahliaButtonStyle {
+        DahliaButtonStyle(variant: variant, cornerRadius: cornerRadius)
     }
 }

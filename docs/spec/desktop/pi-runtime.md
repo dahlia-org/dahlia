@@ -84,7 +84,7 @@ extension・context file・theme・project trust の自動読込を無効化し�
 
 「Dahlia AI」>「プラグイン」から npm source または Git URL を Pi の `install`・`remove` で管理し、同じアカウントの `settings.json` を一覧の正本にする。変更は次に開始するチャット process から適用する。
 パッケージ操作はアカウントの Pi 選択と環境変数を使い、`PI_CODING_AGENT_DIR` は Dahlia のアカウント directory に固定する。`~/.pi` や project の設定には追加しない。拡張コードは無効のままとし、インストール元は利用者が信頼できるものを指定する。
-プラグインは「コネクタ」と同じカードで一覧し、カードのスイッチでインストール・アンインストールする。おすすめの `pi-auto-review` は未インストールでもオフのカードとして一覧に表示し、ユーザーの操作でインストールする（2026-11-19 ユーザー承認）。インストール元は審査済みコミットに固定した Git URL（`AgentAutoReviewSettings.packageSource`）で、npm レジストリには依存しない。Pi の Git パッケージと同じく `npm` が PATH に必要。
+プラグインは「コネクタ」と同じカードで一覧し、カードのスイッチでインストール・アンインストールする。新規追加は「プラグインを追加」カードから専用のアプリ内モーダルを開き、npm source または Git URL を入力する。モーダルにはカタログへのリンクを表示し、インストール成功時に閉じる。おすすめの `pi-auto-review` は未インストールでもオフのカードとして一覧に表示し、ユーザーの操作でインストールする（2026-11-19 ユーザー承認）。インストール元は審査済みコミットに固定した Git URL（`AgentAutoReviewSettings.packageSource`）で、npm レジストリには依存しない。Pi の Git パッケージと同じく `npm` が PATH に必要。
 インストール後はそのカードの設定ボタンから、審査モデルとトリアージの設定をアプリ内モーダルで開く。
 おすすめの `pi-web-access` も同じくオフのカードとして表示する（2026-11-19 ユーザー依頼）。インストール元はバージョンを固定した npm source（`AgentWebAccessSettings.packageSource`）で、依存パッケージを npm レジストリから取得する。
 インストール済みなら、Dahlia は対話チャットにだけ upstream の standalone MCP worker（`<アカウントの pi>/npm/node_modules/pi-web-access/dist/mcp-cli.js`）を `dahlia_web_access` server として登録し、`mcp__dahlia_web_access__web_search`・`source_check`・`fetch_content`・`get_search_content` を利用可能にする。Pi 本体へプラグインの extension は読み込まず、予定実行とバックグラウンドレビューでは worker を登録しない。
