@@ -13,7 +13,7 @@ struct CodexChatConfigurationOverlay: View {
                     session: session,
                     showsModels: $showsModels
                 )
-                .codexChatDismissOnOutsideClick(perform: dismiss)
+                .dismissOnOutsideClick(perform: dismiss)
                 .padding(.trailing, 16)
                 .padding(.bottom, CodexChatDesign.controlSize + 28)
                 .onExitCommand(perform: dismiss)

@@ -4,7 +4,7 @@
     @testable import Dahlia
 
     @MainActor
-    struct CodexChatOutsideClickMonitorTests {
+    struct OutsideClickMonitorTests {
         final class FocusOnlyTextView: NSTextView {
             override func mouseDown(with _: NSEvent) {
                 // Avoid AppKit's nested event-tracking loop in the test runner.
@@ -22,7 +22,7 @@
             defer { fixture.window.close() }
             fixture.window.makeKeyAndOrderFront(nil)
             var dismissCount = 0
-            let coordinator = CodexChatOutsideClickMonitor.Coordinator {
+            let coordinator = OutsideClickMonitor.Coordinator {
                 dismissCount += 1
             }
             coordinator.startMonitoring(view: fixture.view)
@@ -38,7 +38,7 @@
         func clickInsidePanelIsForwardedWithoutDismissal() async throws {
             let fixture = try makeFixture(eventLocation: CGPoint(x: 50, y: 50))
             var dismissCount = 0
-            let coordinator = CodexChatOutsideClickMonitor.Coordinator {
+            let coordinator = OutsideClickMonitor.Coordinator {
                 dismissCount += 1
             }
 
@@ -53,7 +53,7 @@
         func clickOutsidePanelIsForwardedAndDismisses() async throws {
             let fixture = try makeFixture(eventLocation: CGPoint(x: 150, y: 150))
             var dismissCount = 0
-            let coordinator = CodexChatOutsideClickMonitor.Coordinator {
+            let coordinator = OutsideClickMonitor.Coordinator {
                 dismissCount += 1
             }
 
@@ -87,7 +87,7 @@
                 pressure: 0
             ))
             var dismissCount = 0
-            let coordinator = CodexChatOutsideClickMonitor.Coordinator {
+            let coordinator = OutsideClickMonitor.Coordinator {
                 dismissCount += 1
             }
 

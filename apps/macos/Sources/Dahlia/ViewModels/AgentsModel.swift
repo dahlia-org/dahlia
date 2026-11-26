@@ -23,11 +23,31 @@ final class AgentsModel {
     var pendingDeletion: AgentRecord?
     var error: String?
     private(set) var isBusy = false
+    @ObservationIgnored private var identityModels: [String: AgentIdentityModel] = [:]
+    private let service: PiChatService
+
+    init(service: PiChatService = .shared) {
+        self.service = service
+    }
 
     func refresh() async {
-        guard let loaded = try? await PiChatService.shared.agentSummaries() else { return }
+        guard let loaded = try? await service.agentSummaries() else { return }
         summaries = loaded
+        let agentIDs = Set(loaded.map(\.id))
+        identityModels = identityModels.filter { agentIDs.contains($0.key) }
         hasLoaded = true
+    }
+
+    /// Identity results outlive the Settings row, including saves completed after leaving the tab.
+    func identity(for agent: AgentRecord) -> AgentIdentityModel {
+        if let model = identityModels[agent.id] { return model }
+        let model = AgentIdentityModel(agent: agent) { [weak self, service] name, avatar, color in
+            let result = await Self.update(agent, service: service, name: name, avatar: avatar, color: color)
+            await self?.refresh()
+            return result
+        }
+        identityModels[agent.id] = model
+        return model
     }
 
     /// The agent whose current thread this is, if any.
@@ -60,9 +80,10 @@ final class AgentsModel {
         do {
             var created: AgentRecord?
             if let id = draft.id {
-                try await PiChatService.shared.updateAgent(id, name: draft.name, avatar: draft.avatar, color: draft.color)
+                try await service.updateAgent(id, name: draft.name, avatar: draft.avatar, color: draft.color)
+                identityModels[id]?.didSaveExternally()
             } else {
-                created = try await PiChatService.shared.createAgent(
+                created = try await service.createAgent(
                     name: draft.name, avatar: draft.avatar, color: draft.color, soul: draft.soul
                 )
             }
@@ -76,13 +97,29 @@ final class AgentsModel {
         }
     }
 
+    /// Saves a name or picture changed in place, in the agent's side panel.
+    private static func update(
+        _ agent: AgentRecord,
+        service: PiChatService,
+        name: String,
+        avatar: String,
+        color: String
+    ) async -> (agent: AgentRecord, error: String?) {
+        var updateError: String?
+        do {
+            try await service.updateAgent(agent.id, name: name, avatar: avatar, color: color)
+        } catch { updateError = error.localizedDescription }
+        let persisted = try? await service.agent(agent.id)
+        return (persisted ?? agent, updateError)
+    }
+
     func delete(_ agent: AgentRecord) async {
         guard !isBusy else { return }
         isBusy = true
         defer { isBusy = false }
         pendingDeletion = nil
         do {
-            try await PiChatService.shared.deleteAgent(agent.id)
+            try await service.deleteAgent(agent.id)
             error = nil
         } catch { self.error = error.localizedDescription }
         await refresh()

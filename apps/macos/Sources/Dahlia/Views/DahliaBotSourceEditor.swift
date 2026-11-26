@@ -105,21 +105,20 @@ struct DahliaBotSourceEditor: View {
                 }
                 HStack(spacing: 12) {
                     if !isNew {
-                        Button(L10n.delete, role: .destructive) { isConfirmingDelete = true }
-                            .buttonStyle(.bordered)
-                            .controlSize(.extraLarge)
-                            .disabled(model.isBusy)
+                        Button(role: .destructive) { isConfirmingDelete = true } label: {
+                            Text(L10n.delete).padding(.vertical, 3)
+                        }
+                        .buttonStyle(.dahlia(.destructive))
+                        .disabled(model.isBusy)
                     }
                     Spacer()
-                    Button(role: .cancel, action: cancel) { Text(L10n.cancel).frame(minWidth: 72) }
-                        .buttonStyle(.bordered)
-                        .controlSize(.extraLarge)
+                    Button(role: .cancel, action: cancel) { Text(L10n.cancel).frame(minWidth: 64).padding(.vertical, 3) }
+                        .buttonStyle(.dahlia(.secondary))
                         .keyboardShortcut(.cancelAction)
                     Button { Task { await model.saveDraft() } } label: {
-                        Text(isNew ? L10n.add : L10n.save).frame(minWidth: 72)
+                        Text(isNew ? L10n.add : L10n.save).frame(minWidth: 64).padding(.vertical, 3)
                     }
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(.extraLarge)
+                    .buttonStyle(.dahlia(.primary))
                     .keyboardShortcut(.defaultAction)
                     .disabled(model.isBusy || (draft.wrappedValue.kind == "mcp" && draft.wrappedValue.server.isEmpty))
                 }

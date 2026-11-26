@@ -34,7 +34,7 @@ struct CodexChatApprovalMethodButton: View {
                     width: panelWidth,
                     onDismiss: dismissPanel
                 )
-                .codexChatDismissOnOutsideClick(perform: dismissPanel)
+                .dismissOnOutsideClick(perform: dismissPanel)
                 .offset(
                     x: CodexChatApprovalMethodPanelLayout.horizontalOffset(
                         windowBounds: windowBounds,

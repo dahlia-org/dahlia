@@ -2029,7 +2029,6 @@
 "bots.changeAvatar" = "アイコンを変更";
 "bots.avatarPrevious" = "前のアイコン";
 "bots.avatarNext" = "次のアイコン";
-"bots.identity" = "エージェント";
 "bots.nameInvalid" = "名前は1〜80文字で入力してください。";
 
 "settings.agents.alwaysOn.counts" = "%d件読んで%d件記録";

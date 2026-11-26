@@ -27,7 +27,11 @@ struct DahliaButtonStyle: ButtonStyle {
             }
             .contentShape(.rect(cornerRadius: DahliaDesign.Button.cornerRadius))
             .opacity(isEnabled ? 1 : 0.45)
-            .onHover { isHovered = $0 }
+            // Set by hand, as the split views' dividers do: inside a `List` (the sidebar's), `pointerStyle` is overridden.
+            .onContinuousHover { phase in
+                isHovered = phase != .ended
+                (isHovered && isEnabled ? NSCursor.pointingHand : NSCursor.arrow).set()
+            }
     }
 
     private var foregroundColor: Color {
