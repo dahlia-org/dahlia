@@ -56,5 +56,42 @@ import Foundation
             #expect(await pollUntil { !model.isBusy })
             #expect(model.changeSucceeded)
         }
+
+        @Test(arguments: [true, false])
+        func standaloneRefreshReplacesEarlierErrors(commandFails: Bool) async throws {
+            let root = FileManager.default.temporaryDirectory.appending(path: "PiPackageModel-\(UUID())")
+            defer { try? FileManager.default.removeItem(at: root) }
+            let locator = PiAgentDirectoryLocator(applicationSupportURL: root)
+            let settings = try locator.agentURL().appending(path: "settings.json")
+            try Data("invalid JSON".utf8).write(to: settings)
+            let service = PiPackageService(locator: locator)
+            let model = PiPackageSettingsModel(service: service) { _, _ in
+                throw PiPackageService.PackageError.commandFailed("command output")
+            }
+            if commandFails {
+                model.source = "npm:tools"
+                model.install()
+                #expect(await pollUntil { !model.isBusy })
+                #expect(model.errorDetails == "command output")
+            } else {
+                await model.refresh()
+            }
+            let earlierMessage = try #require(model.errorMessage)
+
+            try FileManager.default.removeItem(at: settings)
+            try FileManager.default.createDirectory(at: settings, withIntermediateDirectories: false)
+            var expectedMessage: String?
+            do {
+                _ = try await service.packages()
+                Issue.record("Expected a directory in place of settings.json to fail")
+            } catch {
+                expectedMessage = error.localizedDescription
+            }
+            let newerMessage = try #require(expectedMessage)
+            #expect(newerMessage != earlierMessage)
+            await model.refresh()
+            #expect(model.errorMessage == newerMessage)
+            #expect(model.errorDetails == nil)
+        }
     }
 #endif

@@ -28,13 +28,16 @@ final class PiPackageSettingsModel {
 
     var canInstall: Bool { !isBusy && (try? PiPackageService.source(source)) != nil }
 
-    func refresh() async {
+    func refresh(preservingCommandError: Bool = false) async {
         do {
             isAutoReviewInstalled = await service.isAutoReviewInstalled()
             isWebAccessInstalled = await service.isWebAccessInstalled()
             packages = try await service.packages()
         } catch {
-            if errorMessage == nil { errorMessage = error.localizedDescription }
+            if !preservingCommandError {
+                errorMessage = error.localizedDescription
+                errorDetails = nil
+            }
         }
     }
 
@@ -79,7 +82,7 @@ final class PiPackageSettingsModel {
                     errorDetails = detail
                 }
             }
-            await refresh()
+            await refresh(preservingCommandError: !changeSucceeded)
         }
     }
 }
