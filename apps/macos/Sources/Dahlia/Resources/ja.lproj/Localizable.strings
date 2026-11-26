@@ -1547,6 +1547,8 @@
 "settings.agents.packages" = "プラグイン";
 "settings.agents.packageCatalog" = "Pi のプラグインを探す";
 "settings.agents.packageSource" = "プラグイン名または Git URL";
+"settings.agents.packageAdd" = "プラグインを追加";
+"settings.agents.packageAddHelp" = "npm: のパッケージ名、または Git URL で指定します。";
 "settings.agents.packageInstall" = "インストール";
 "settings.agents.packageHelp" = "このアカウントの Pi に追加します。カタログの npm: 名、または https://github.com/mats16/ai-desktools などの Git URL を入力してください。信頼できるプラグインだけをインストールしてください。 チャットでスキルとプロンプトを利用できます。拡張コードとテーマは読み込みません。";
 "settings.agents.packageChanged" = "変更は次に開始するチャットから適用されます。";
