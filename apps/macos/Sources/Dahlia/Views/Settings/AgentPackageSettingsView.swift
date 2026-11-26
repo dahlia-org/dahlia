@@ -79,20 +79,27 @@ struct AgentPackageSettingsView: View {
         }
     }
 
+    /// Bundled with Dahlia, so its switch stays on.
     private var autoReviewCard: some View {
-        recommendedCard(
-            name: "pi-auto-review", comment: L10n.autoReviewPackageDescription, systemImage: "checkmark.shield",
-            packageSource: AgentAutoReviewSettings.packageSource, isPackage: AgentAutoReviewSettings.isPackage,
-            isInstalled: model.isAutoReviewInstalled, install: model.installAutoReview, settingsTitle: L10n.autoReviewSettings
+        AgentMCPServiceCard(
+            name: "pi-auto-review", comment: L10n.autoReviewPackageDescription, icon: Image(systemName: "checkmark.shield"),
+            isEnabled: .constant(true), isLocked: true
         ) {
-            AgentPluginSettingsModal(height: 360, onClose: navigation.dismissSettingsModal) {
-                Form { AgentAutoReviewSettingsSection() }
-                    .formStyle(.grouped)
-            } actions: {
-                Button(L10n.close, action: navigation.dismissSettingsModal)
-                    .buttonStyle(.dahlia())
-                    .keyboardShortcut(.cancelAction)
+            Button(L10n.autoReviewSettings, systemImage: "gearshape") {
+                navigation.presentSettingsModal(
+                    AgentPluginSettingsModal(height: 360, onClose: navigation.dismissSettingsModal) {
+                        Form { AgentAutoReviewSettingsSection() }
+                            .formStyle(.grouped)
+                    } actions: {
+                        Button(L10n.close, action: navigation.dismissSettingsModal)
+                            .buttonStyle(.dahlia())
+                            .keyboardShortcut(.cancelAction)
+                    }
+                )
             }
+            .labelStyle(.iconOnly)
+            .help(L10n.autoReviewSettings)
+            .buttonStyle(AgentMCPIconButtonStyle())
         }
     }
 

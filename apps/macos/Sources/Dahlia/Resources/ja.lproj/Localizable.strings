@@ -1519,7 +1519,6 @@
 "settings.agents.mcpServiceNameInvalid" = "catalog.schema.service の3つの名前を指定してください。各名前には英数字・_・- を使えます。";
 "Always ask" = "常に確認する";
 "Ask with AI" = "AIにより確認する";
-"chat.approval.autoReview.unavailable" = "Dahlia AI 設定の「プラグイン」で、おすすめの pi-auto-review をインストールすると選べます。";
 "Skip all approvals" = "すべての承認をスキップ";
 "Confirm before making changes or sending content." = "変更やコンテンツの送信を行う前に確認する";
 "Ask only about potentially unsafe actions." = "安全でない可能性のある操作のみ確認する";
@@ -1558,7 +1557,8 @@
 "settings.agents.packageFailed" = "プラグインの変更に失敗しました。";
 "settings.agents.packageNoVersions" = "設定中の npm レジストリには、このプラグインの利用可能なバージョンがありません。npm パッケージ名、公開状況、レジストリの制限を確認してください。";
 "settings.agents.packageErrorDetails" = "エラーの詳細";
-"settings.agents.autoReview.package" = "MCP の変更操作を AI が審査し、安全でない可能性のある操作だけを確認します。チャットの「AIにより確認する」に必要です。";
+"settings.agents.packageBuiltIn" = "pi-auto-review は Dahlia に組み込まれているため、インストールは不要です。";
+"settings.agents.autoReview.package" = "MCP の変更操作を AI が審査し、安全でない可能性のある操作だけを確認します。Dahlia に組み込まれていて、チャットの「AIにより確認する」で使います。";
 "settings.agents.webAccess.package" = "チャットが Web ページや PDF、GitHub を読み込めるようにします。Web 検索は設定で有効にします。";
 "settings.agents.piRegistry" = "npm レジストリ";
 "settings.agents.piRegistry.help" = "アプリ管理下の Pi のインストールと更新（pi update）に使う npm レジストリです。社内のプロキシなどに変えるときだけ入力します。空なら既定のレジストリを使います。";

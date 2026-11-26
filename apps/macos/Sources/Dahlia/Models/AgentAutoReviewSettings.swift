@@ -3,17 +3,16 @@ import Foundation
 /// An empty selection follows the model of each chat; explicit reviewer models belong to the execution account.
 enum AgentAutoReviewSettings {
     static let triageModelID = "system.ai.openjev-qwen35-4b"
-    /// Installed from the Plugins tab. Pinned to a reviewed commit that has the per-call settings of `review()`.
-    static let packageSource = "https://github.com/mats16/pi-auto-review@3a12a7db97760e0a22ae9b4c0fa52f1497b6b046"
-
-    /// A source Pi installs at `entryURL`, whatever its ref or form.
-    static func isPackage(_ source: String) -> Bool {
-        source.contains("github.com/mats16/pi-auto-review") || source.contains("github.com:mats16/pi-auto-review")
+    /// Bundled in `PiExtension/pi-auto-review`. Dahlia imports only its `review()`; Pi loads no package extension.
+    static func entryURL() throws -> URL {
+        try PiBundle.resourceURL("pi-auto-review/index.ts")
     }
 
-    /// Where Pi clones `packageSource`, whatever its ref. Dahlia imports only its `review()`; Pi loads no package extension.
-    static func entryURL(agentURL: URL) -> URL {
-        agentURL.appending(path: "git/github.com/mats16/pi-auto-review/index.ts")
+    /// Earlier releases installed the plugin from the Plugins tab; the Plugins tab hides that leftover declaration.
+    static func isPackage(_ source: String) -> Bool {
+        let repository =
+            #/(?:git:)?(?:(?:https?|ssh|git)://(?:[^/@\s]+@)?github\.com/|git@github\.com:|github\.com/)mats16/pi-auto-review(?:\.git)?/?(?:[@#].+)?/#
+        return source.wholeMatch(of: repository.ignoresCase()) != nil
     }
 
     static func triageDefaultsKey() -> String {
