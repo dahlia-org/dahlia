@@ -17,7 +17,7 @@ struct AgentMCPServiceCard<Actions: View>: View {
                 actions.fixedSize()
                 Toggle(name, isOn: $isEnabled)
                     .labelsHidden()
-                    .toggleStyle(.switch)
+                    .toggleStyle(.dahliaSwitch)
                     .controlSize(.small)
                     .accessibilityLabel(name)
                     .fixedSize()

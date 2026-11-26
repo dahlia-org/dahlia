@@ -24,13 +24,13 @@ struct TranscriptionSettingsView: View {
         Section {
             if settings.currentWorkspace != nil {
                 Toggle(L10n.automaticRecordingProcessing, isOn: $workspaceSettings.generationSettings.automaticProcessing)
-                    .toggleStyle(.switch)
+                    .toggleStyle(.dahliaSwitch)
             }
             Toggle(isOn: $settings.exportBatchSummaryToWorkspace) {
                 Text(L10n.exportBatchSummaryToWorkspace)
                 Text(L10n.exportBatchSummaryToWorkspaceDescription)
             }
-            .toggleStyle(.switch)
+            .toggleStyle(.dahliaSwitch)
         } header: {
             Text(L10n.settingsAfterRecording)
                 .font(.dahliaSectionHeader)
@@ -41,7 +41,7 @@ struct TranscriptionSettingsView: View {
                 Text(L10n.automaticMeetingEndRecordingStop)
                 Text(L10n.automaticMeetingEndRecordingStopDescription)
             }
-            .toggleStyle(.switch)
+            .toggleStyle(.dahliaSwitch)
         } header: {
             Text(L10n.recordingStopDetection)
                 .font(.dahliaSectionHeader)

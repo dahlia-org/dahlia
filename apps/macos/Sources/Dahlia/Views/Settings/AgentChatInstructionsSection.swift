@@ -18,7 +18,7 @@ struct AgentChatInstructionsSection: View {
                 .frame(minHeight: 100)
                 .accessibilityLabel(L10n.chatCustomInstructions)
             Toggle(L10n.chatCustomInstructionsUseForSummary, isOn: $useForSummary)
-                .toggleStyle(.switch)
+                .toggleStyle(.dahliaSwitch)
         } header: {
             HStack {
                 Text(L10n.chatCustomInstructions).font(.dahliaSectionHeader)

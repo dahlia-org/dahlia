@@ -114,7 +114,7 @@ struct CalendarSettingsView: View {
             AgentProviderRow(title: title, icon: icon, uses: []) {
                 Toggle(title, isOn: isOn)
                     .labelsHidden()
-                    .toggleStyle(.switch)
+                    .toggleStyle(.dahliaSwitch)
             }
             .contentShape(.rect)
             .onTapGesture { expansion(of: id).wrappedValue.toggle() }

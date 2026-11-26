@@ -15,7 +15,7 @@ struct AgentChatSettingsSection: View {
                 Text(L10n.chatContinueAfterRestart)
                 Text(L10n.chatContinueAfterRestartHelp)
             }
-            .toggleStyle(.switch)
+            .toggleStyle(.dahliaSwitch)
         } header: {
             Text(L10n.chat).font(.dahliaSectionHeader)
         } footer: {

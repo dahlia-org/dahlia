@@ -77,7 +77,7 @@ struct BatchTranscriptionOptionsForm: View {
                             Text(L10n.generateSummaryAfterBatchTranscription)
                             Text(L10n.generateSummaryAfterBatchTranscriptionDescription)
                         }
-                        .toggleStyle(.switch)
+                        .toggleStyle(.dahliaSwitch)
                     }
 
                     SummaryGenerationOptionsControls(

@@ -56,7 +56,7 @@ struct MCPSettingsView: View {
 
             Section {
                 Toggle(L10n.mcpAllowWriteAccess, isOn: $isWriteEnabled)
-                    .toggleStyle(.switch)
+                    .toggleStyle(.dahliaSwitch)
                 Label(
                     isWriteEnabled ? L10n.mcpReadWrite : L10n.mcpReadOnly,
                     systemImage: isWriteEnabled ? "pencil" : "eye"

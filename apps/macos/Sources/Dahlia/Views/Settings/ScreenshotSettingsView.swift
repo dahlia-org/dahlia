@@ -10,7 +10,7 @@ struct ScreenshotSettingsView: View {
                 Text(L10n.adaptiveScreenshotInterval)
                 Text(L10n.adaptiveScreenshotIntervalDescription)
             }
-            .toggleStyle(.switch)
+            .toggleStyle(.dahliaSwitch)
 
             Picker(selection: $settings.automaticScreenshotIntervalSeconds) {
                 ForEach(AppSettings.automaticScreenshotIntervalOptions, id: \.self) { interval in
@@ -40,7 +40,7 @@ struct ScreenshotSettingsView: View {
                 Text(L10n.selectMeetingWindowForScreenshots)
                 Text(L10n.selectMeetingWindowForScreenshotsDescription)
             }
-            .toggleStyle(.switch)
+            .toggleStyle(.dahliaSwitch)
         } header: {
             Text(L10n.automaticScreenshots)
                 .font(.dahliaSectionHeader)
@@ -53,13 +53,13 @@ struct ScreenshotSettingsView: View {
                 Text(L10n.detectScreenshotChangesInSharedContentOnly)
                 Text(L10n.sharedContentChangeDetectionDescription)
             }
-            .toggleStyle(.switch)
+            .toggleStyle(.dahliaSwitch)
 
             Toggle(isOn: $settings.automaticScreenshotCropToSharedRegion) {
                 Text(L10n.saveSharedContentOnly)
                 Text(L10n.saveSharedContentOnlyDescription)
             }
-            .toggleStyle(.switch)
+            .toggleStyle(.dahliaSwitch)
         } header: {
             Text(L10n.sharedContent)
                 .font(.dahliaSectionHeader)

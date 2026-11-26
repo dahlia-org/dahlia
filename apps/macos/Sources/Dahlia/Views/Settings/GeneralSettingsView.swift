@@ -20,7 +20,7 @@ struct GeneralSettingsView: View {
                     Text(L10n.meetingNotifications)
                     Text(L10n.meetingNotificationsDescription)
                 }
-                .toggleStyle(.switch)
+                .toggleStyle(.dahliaSwitch)
 
                 Picker(selection: $settings.meetingNotificationPresentation) {
                     ForEach(MeetingNotificationPresentation.allCases) { presentation in
@@ -70,7 +70,7 @@ struct GeneralSettingsView: View {
                     Text(L10n.externalMicrophoneEchoCancellation)
                     Text(L10n.externalMicrophoneEchoCancellationDescription)
                 }
-                .toggleStyle(.switch)
+                .toggleStyle(.dahliaSwitch)
                 Text(L10n.builtInMicrophoneEchoCancellationDescription).foregroundStyle(.secondary)
             } header: {
                 Text(L10n.audioInput)

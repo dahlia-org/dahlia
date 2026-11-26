@@ -96,7 +96,7 @@ struct DahliaBotSourceEditor: View {
                     }
                 }
                 .formStyle(.grouped)
-                .toggleStyle(.switch)
+                .toggleStyle(.dahliaSwitch)
                 .font(.dahliaBody)
                 .disabled(model.isBusy)
 

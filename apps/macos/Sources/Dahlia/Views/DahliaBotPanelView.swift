@@ -54,7 +54,7 @@ struct DahliaBotPanelView: View {
                 case .settings: settings
                 }
             }
-            .formStyle(.grouped).toggleStyle(.switch).buttonStyle(.dahlia()).font(.dahliaBody).disabled(model.isBusy)
+            .formStyle(.grouped).toggleStyle(.dahliaSwitch).buttonStyle(.dahlia()).font(.dahliaBody).disabled(model.isBusy)
         }
         .task(id: model.agentID) {
             while !Task.isCancelled {
