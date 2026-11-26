@@ -752,18 +752,20 @@ Path(sys.argv[1]).write_text('started')
 for line in sys.stdin:
     request=json.loads(line)
     if 'id' not in request: continue
-    result={'protocolVersion':'2024-11-05','capabilities':{'tools':{}},'serverInfo':{'name':'selected','version':'1'}} if request['method']=='initialize' else {'tools':[]}
+    result={'protocolVersion':'2024-11-05','capabilities':{'tools':{}},'serverInfo':{'name':'selected','version':'1'}} if request['method']=='initialize' else {'tools':[{'name':'change','inputSchema':{'type':'object'}}]}
     print(json.dumps({'jsonrpc':'2.0','id':request['id'],'result':result}),flush=True)
 """
-        _, results, _, _ = run(pi, "chat", [{"tool": "bash", "args": {
-            "command": "test -z \"${DAHLIA_PI_MCP_CONFIG+x}\" && printf CONFIG_PROTECTED || printf CONFIG_VISIBLE"
-        }}, {"text": "done"}], ["--no-session", *CHAT_EXTENSIONS, "--tools", "bash,mcp__selected__*"],
-            {"DAHLIA_PI_MCP_SERVERS": '["selected"]'},
+        _, results, bridge, _ = run(pi, "chat", [{"tool": "bash", "args": {
+            "command": "test -z \"${DAHLIA_PI_MCP_CONFIG+x}\" && ! cat ../agent/auth.json >/dev/null 2>&1 && printf CONFIG_PROTECTED || printf CONFIG_VISIBLE"
+        }}, {"tool": "mcp__selected__change"}, {"text": "done"}], ["--no-session", *CHAT_EXTENSIONS, "--tools", "bash,mcp__selected__*"],
+            {"DAHLIA_PI_MCP_SERVERS": '["selected","broken"]'}, approval="decline",
             mcp_servers={"selected": {"command": sys.executable, "args": ["-c", script, str(marker)],
-                                      "env": {"MCP_TEST_VALUE": "LOCAL_MCP_MARKER"}, "exposure": "direct"}})
+                                      "env": {"MCP_TEST_VALUE": "LOCAL_MCP_MARKER"}, "exposure": "direct"},
+                         "broken": {"url": "https://example.com:99999/mcp", "exposure": "direct"}})
         assert marker.read_text() == "started"
-        assert len(results) == 1 and "CONFIG_PROTECTED" in results[0], results
-    print("PASS: process-scoped native MCP starts its selected stdio server and no unrelated server")
+        assert len(results) == 2 and "CONFIG_PROTECTED" in results[0] and "declined" in results[1], results
+        assert any(method == "approval" and payload["tool"] == "change" for method, payload in bridge), bridge
+    print("PASS: invalid connector does not disable native MCP, sandbox environment or approval hooks; no unrelated server starts")
 
 
 def main():

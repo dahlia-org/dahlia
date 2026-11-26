@@ -1475,10 +1475,10 @@
 "settings.agents.mcpSearchPrompt" = "Search connectors";
 "settings.agents.mcpDirectSection" = "Direct";
 "settings.agents.mcpDirectAddHelp" = "Set up an MCP server with a stdio command or an HTTP URL.";
-"settings.agents.mcpDirectName" = "Name (lowercase letters, digits, _)";
+"settings.agents.mcpDirectName" = "Server name";
 "settings.agents.mcpDirectTransport" = "Transport";
 "settings.agents.mcpDirectCommand" = "Command";
-"settings.agents.mcpDirectArguments" = "Arguments (one per line)";
+"settings.agents.mcpDirectArguments" = "Arguments";
 "settings.agents.mcpDirectEnvironment" = "Environment Variables";
 "settings.agents.mcpDirectHeaders" = "Headers";
 "settings.agents.mcpDirectHelp" = "Write ${VAR} in a value to read it from the chat's environment variables. Keep secrets under Environment Variables and reference them. A stdio command runs outside the chat's sandbox. Changes apply to new chats.";
@@ -2072,3 +2072,11 @@
 "Skip and continue" = "Skip and continue";
 
 "settings.agents.mcpDirectConnectionChanged" = "A connector changed during approval. Review the schedule again.";
+
+"settings.agents.mcpDirectInputMode" = "Input mode";
+"settings.agents.mcpDirectForm" = "Form";
+"settings.agents.mcpDirectURL" = "URL";
+"settings.agents.mcpDirectArgument" = "Argument";
+"settings.agents.mcpDirectJSONHelp" = "Enter one connection, a named server entry, or an mcpServers object containing one server. Named JSON supplies the server name.";
+"settings.agents.mcpDirectJSONInvalid" = "Enter JSON for one MCP server, up to 64 KiB. Supported fields: type, command, args, env, url, headers.";
+"settings.agents.mcpDirectJSONNameMismatch" = "An existing server cannot be renamed. Use its current name in the JSON.";

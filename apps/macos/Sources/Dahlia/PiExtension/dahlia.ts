@@ -136,9 +136,20 @@ export default async function (pi: any) {
 
   // Native MCP connects every configured server before tool hooks. Dahlia supplies this process's scope here;
   // the shared mcp.json stays empty so another chat cannot change what this process starts.
+  const failedMcpServers: string[] = [];
   for (const [name, config] of Object.entries(JSON.parse(env.DAHLIA_PI_MCP_CONFIG ?? "{}"))) {
-    if (chatMcpServers.has(name)) pi.registerMcpServer(name, config);
+    if (!chatMcpServers.has(name)) continue;
+    try {
+      pi.registerMcpServer(name, config);
+    } catch {
+      // A malformed connector must not prevent sandbox and approval hooks below from being installed.
+      // Do not expose the rejected configuration or exception: either may contain credentials.
+      failedMcpServers.push(name);
+    }
   }
+  pi.on("session_start", (_event: any, ctx: any) => {
+    for (const name of failedMcpServers) ctx.ui.notify(`Unable to register MCP server ${name}. Check its connector settings.`, "error");
+  });
 
   pi.on("before_provider_request", (event: any, ctx: any) => {
     let payload = event.payload;

@@ -2553,6 +2553,13 @@ enum L10n { // swiftlint:disable:this type_body_length
     static var mcpSearchPrompt: String { String(localized: "settings.agents.mcpSearchPrompt", bundle: bundle) }
     static var mcpDirectSection: String { String(localized: "settings.agents.mcpDirectSection", bundle: bundle) }
     static var mcpDirectAddHelp: String { String(localized: "settings.agents.mcpDirectAddHelp", bundle: bundle) }
+    static var mcpDirectInputMode: String { String(localized: "settings.agents.mcpDirectInputMode", bundle: bundle) }
+    static var mcpDirectForm: String { String(localized: "settings.agents.mcpDirectForm", bundle: bundle) }
+    static var mcpDirectURL: String { String(localized: "settings.agents.mcpDirectURL", bundle: bundle) }
+    static var mcpDirectArgument: String { String(localized: "settings.agents.mcpDirectArgument", bundle: bundle) }
+    static var mcpDirectJSONHelp: String { String(localized: "settings.agents.mcpDirectJSONHelp", bundle: bundle) }
+    static var mcpDirectJSONInvalid: String { String(localized: "settings.agents.mcpDirectJSONInvalid", bundle: bundle) }
+    static var mcpDirectJSONNameMismatch: String { String(localized: "settings.agents.mcpDirectJSONNameMismatch", bundle: bundle) }
     static var mcpDirectName: String { String(localized: "settings.agents.mcpDirectName", bundle: bundle) }
     static var mcpDirectTransport: String { String(localized: "settings.agents.mcpDirectTransport", bundle: bundle) }
     static var mcpDirectCommand: String { String(localized: "settings.agents.mcpDirectCommand", bundle: bundle) }

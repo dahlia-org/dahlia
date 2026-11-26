@@ -92,20 +92,21 @@ struct AgentMCPDirectConfiguration: Codable, Hashable, Sendable {
             return command.trimmingCharacters(in: .whitespaces).isEmpty ? L10n.mcpDirectCommandRequired : nil
         case .http:
             if let endpoint = URL(string: url), let scheme = endpoint.scheme,
-               ["http", "https"].contains(scheme.lowercased()), endpoint.host()?.isEmpty == false { return nil }
+               ["http", "https"].contains(scheme.lowercased()), endpoint.host()?.isEmpty == false,
+               endpoint.port.map({ (0 ... 65535).contains($0) }) ?? true { return nil }
             return L10n.mcpDirectURLInvalid
         }
     }
 
     static func parse(
-        transport: Transport, command: String, arguments: String, environment: [Pair], url: String, headers: [Pair]
+        transport: Transport, command: String, arguments: [String], environment: [Pair], url: String, headers: [Pair]
     ) throws -> Self {
         guard let env = transport == .stdio ? pairs(environment) : [:],
               let headers = transport == .http ? pairs(headers) : [:]
         else { throw AgentMCPSettingsError(message: L10n.mcpDirectPairsInvalid) }
         return Self(
             transport: transport, command: command.trimmingCharacters(in: .whitespaces),
-            args: arguments.split(whereSeparator: \.isNewline).map(String.init), env: env,
+            args: arguments, env: env,
             url: url.trimmingCharacters(in: .whitespaces), headers: headers
         )
     }

@@ -1475,10 +1475,10 @@
 "settings.agents.mcpSearchPrompt" = "コネクタを検索";
 "settings.agents.mcpDirectSection" = "直接設定";
 "settings.agents.mcpDirectAddHelp" = "stdio のコマンドまたは HTTP の URL で MCP サーバーを設定します。";
-"settings.agents.mcpDirectName" = "名前（英小文字・数字・_）";
+"settings.agents.mcpDirectName" = "サーバー名";
 "settings.agents.mcpDirectTransport" = "接続方式";
 "settings.agents.mcpDirectCommand" = "コマンド";
-"settings.agents.mcpDirectArguments" = "引数（1行に1つ）";
+"settings.agents.mcpDirectArguments" = "引数";
 "settings.agents.mcpDirectEnvironment" = "環境変数";
 "settings.agents.mcpDirectHeaders" = "ヘッダー";
 "settings.agents.mcpDirectHelp" = "値に ${VAR} と書くと、チャットの環境変数から読み込みます。秘密の値は「環境変数」に設定して参照してください。stdio のコマンドはチャットの sandbox の外で実行されます。変更は新しいチャットから適用されます。";
@@ -2072,3 +2072,11 @@
 "Skip and continue" = "スキップして続行";
 
 "settings.agents.mcpDirectConnectionChanged" = "承認中にコネクタが変更されました。予定をもう一度確認してください。";
+
+"settings.agents.mcpDirectInputMode" = "入力形式";
+"settings.agents.mcpDirectForm" = "フォーム";
+"settings.agents.mcpDirectURL" = "URL";
+"settings.agents.mcpDirectArgument" = "引数";
+"settings.agents.mcpDirectJSONHelp" = "接続設定、サーバー名で囲んだ設定、または mcpServers 形式の JSON を1件入力できます。名前付きの JSON では、そのサーバー名を使います。";
+"settings.agents.mcpDirectJSONInvalid" = "64 KiB 以下の MCP サーバー1件の JSON を入力してください。type、command、args、env、url、headers に対応しています。";
+"settings.agents.mcpDirectJSONNameMismatch" = "登録済みのサーバー名は変更できません。JSON のサーバー名を合わせてください。";
