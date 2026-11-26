@@ -90,10 +90,16 @@ import GRDB
             )
             await collection.activateAfterAccountMigration()
             #expect(collection.successfullyLoadedProviderIDs.isEmpty)
+            #expect(AgentCalendarSnapshot.current(enabledSources: [.google], providers: collection).selectedProviders == [provider.id])
             store.hasFetchedEvents = true
             #expect(collection.successfullyLoadedProviderIDs == [provider.id])
             store.state = .failed
             #expect(collection.successfullyLoadedProviderIDs.isEmpty)
+            let failed = AgentCalendarSnapshot.current(enabledSources: [.google], providers: collection)
+            #expect(failed.selectedProviders == [provider.id] && failed.successfulProviders.isEmpty)
+            #expect(AgentCalendarSnapshot.current(enabledSources: [], providers: collection).selectedProviders?.isEmpty == true)
+            collection.setEnabled(false, for: provider.id)
+            #expect(AgentCalendarSnapshot.current(enabledSources: [.google], providers: collection).selectedProviders?.isEmpty == true)
         }
 
         @Test

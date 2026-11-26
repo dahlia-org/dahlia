@@ -631,11 +631,8 @@ actor PiChatService: CodexChatServicing {
         continuation.onTermination = { [weak self] _ in Task { await self?.detachReader(threadID: threadID, runID: run.id, readerID: readerID) } }
         do {
             if let notice {
-                // A notice may run on the unattended model and effort; the conversation keeps what the user chose.
-                let unattended = run.origin == "bot"
-                try history().beginTurn(
-                    threadID: threadID, message: notice, model: unattended ? nil : requestedModel, effort: unattended ? nil : effort, runID: run.id
-                )
+                // Notifications, including crash continuations, use the run's choices without changing conversation defaults.
+                try history().beginTurn(threadID: threadID, message: notice, model: nil, effort: nil, runID: run.id)
             } else if run.requestedByThreadID == nil, run.rootRunID != run.id {
                 // A result notification may run on Super Agent's unattended model and effort; the thread keeps the user's.
                 try history().updateThread(id: threadID, status: "running")

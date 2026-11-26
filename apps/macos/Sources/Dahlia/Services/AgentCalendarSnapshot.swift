@@ -4,21 +4,28 @@ import Foundation
 struct AgentCalendarSnapshot: Sendable {
     var events: [CalendarEvent] = []
     var successfulProviders: Set<String> = []
+    /// Nil means selection is unknown; failed selected providers still belong to this set.
+    var selectedProviders: Set<String>?
 
     static func provider(for event: CalendarEvent) -> String { event.providerID ?? event.platform }
 
-    @MainActor static func current() -> Self {
-        let enabled = AppSettings.enabledCalendarSources(in: .standard)
-        var snapshot = Self()
-        if enabled.contains(.google) {
-            let providers = CalendarProviderCollection.shared
+    @MainActor static func current(
+        enabledSources: Set<CalendarSource> = AppSettings.enabledCalendarSources(in: .standard),
+        providers: CalendarProviderCollection = .shared
+    ) -> Self {
+        var snapshot = Self(selectedProviders: [])
+        if enabledSources.contains(.google) {
+            snapshot.selectedProviders = providers.enabledIDs
             snapshot.successfulProviders = providers.successfullyLoadedProviderIDs
             snapshot.events = providers.loadedEvents.filter { snapshot.successfulProviders.contains(provider(for: $0)) }
         }
-        if enabled.contains(.macOS), MacCalendarStore.shared.hasFetchedEvents {
+        if enabledSources.contains(.macOS) {
+            snapshot.selectedProviders?.insert(CalendarEventPlatform.macOSCalendar)
             let mac = MacCalendarStore.shared
-            snapshot.successfulProviders.insert(CalendarEventPlatform.macOSCalendar)
-            snapshot.events += mac.loadedEvents
+            if mac.hasFetchedEvents {
+                snapshot.successfulProviders.insert(CalendarEventPlatform.macOSCalendar)
+                snapshot.events += mac.loadedEvents
+            }
         }
         return snapshot
     }

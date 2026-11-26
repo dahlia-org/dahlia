@@ -194,7 +194,19 @@ struct AgentInboxService: Sendable {
         }
     }
 
-    /// Successful selection need not record every read item. At the cap the next run rereads the same range.
+    /// Pins the bootstrap range before the first read, so caps, failures, and crashes all retry the same lower bound.
+    func intakeLowerBound(sourceID: String, revision: Int, now: Date) throws -> String {
+        try dbQueue.write { db in
+            var source = try Self.currentSource(sourceID, revision: revision, in: db)
+            if let cursor = source.cursor { return cursor }
+            let lowerBound = ISO8601DateFormatter().string(from: now.addingTimeInterval(-86400))
+            source.cursor = lowerBound
+            try source.update(db)
+            return lowerBound
+        }
+    }
+
+    /// Successful selection need not record every read item. At the cap the next run rereads the pinned range.
     @discardableResult
     func commitIntake(
         sourceID: String,

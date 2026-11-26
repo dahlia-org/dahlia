@@ -396,7 +396,8 @@
             }
 
             /// A notice runs on the model chosen for unattended runs; the conversation keeps the model the user chose.
-            @Test func aNoticeRunsOnTheUnattendedModelAndTheConversationKeepsItsModel() async throws {
+            @Test(arguments: [false, true])
+            func aNoticeRunsOnTheUnattendedModelAndTheConversationKeepsItsModel(recovered: Bool) async throws {
                 let key = AgentBotSettings.unattendedModelKey(for: AppAccount.key)
                 let effortKey = AgentBotSettings.unattendedEffortKey(for: AppAccount.key)
                 UserDefaults.standard.set("openai/gpt-notice", forKey: key)
@@ -410,14 +411,34 @@
                 let fixture = fixture(db: db, provider: provider, calls: [:])
                 defer { cleanUp(fixture) }
                 _ = try recordMail(fixture, excerpt: "Hello")
+                let botThread = try await fixture.service.botThread()
+                try await db.write {
+                    try $0.execute(sql: "UPDATE chat_threads SET model='gpt-test', reasoningEffort='low' WHERE id=?", arguments: [botThread])
+                }
 
                 try await notify(fixture)
 
                 let notice = try #require(try await botRuns(fixture).last)
                 #expect(notice.model == "openai/gpt-notice" && notice.effort == "xhigh")
-                let botThread = try #require(AgentBotSettings.botThread(for: provider))
+                if recovered {
+                    let store = ChatThreadStore(dbQueue: db)
+                    var interrupted = notice
+                    for _ in 0 ..< 2 {
+                        interrupted.status = "running"
+                        interrupted.completedAt = nil
+                        interrupted.input = try ChatHistoryCodec.encodeInputs([.text(PiChatService.botNoticeInput(1))])
+                        let saved = interrupted
+                        try await db.write { try saved.update($0) }
+                        try store.recoverInterruptedThreads(continuing: true)
+                        let continuation = try #require(try store.queuedRuns(accountID: provider).first)
+                        await fixture.service.scheduleRuns(accountID: provider)
+                        #expect(await pollUntil { (try? store.run(id: continuation.id)?.status) == "completed" })
+                        interrupted = try #require(try store.run(id: continuation.id))
+                        #expect(interrupted.model == "openai/gpt-notice" && interrupted.effort == "xhigh")
+                    }
+                }
                 let thread = try await db.read { try ChatThreadRecord.fetchOne($0, key: botThread) }
-                #expect(thread?.model != "openai/gpt-notice" && thread?.reasoningEffort != "xhigh")
+                #expect(thread?.model == "gpt-test" && thread?.reasoningEffort == "low")
             }
 
             /// A notice comes from mail, so it cannot change SOUL.md, though it can hand work to threads.
@@ -1060,7 +1081,8 @@
                     runtime: pi.service, historyStore: ChatThreadStore(dbQueue: db),
                     agentLocator: PiAgentDirectoryLocator(applicationSupportURL: pi.rootURL), mcpSettings: { settings }
                 )
-                await chat.drainAlwaysOn()
+                let now = Date.now
+                await chat.drainAlwaysOn(now: now)
                 await chat.intakeTask?.value
                 #expect(await transport.isClosed)
                 #expect(await transport.commands.contains { $0["type"]?.stringValue == "prompt" } == duringTool)
@@ -1069,7 +1091,9 @@
                 let statuses = try await db.read { try String.fetchAll($0, sql: "SELECT status FROM agent_system_runs") }
                 let expectedStatus = change.hasSuffix("Configuration") ? "failed" : "interrupted"
                 #expect(statuses == [expectedStatus])
-                #expect(try inbox.sources().first?.cursor == nil)
+                let savedSource = try #require(try inbox.sources().first)
+                let lowerBound = duringTool && intake ? ISO8601DateFormatter().string(from: now.addingTimeInterval(-86400)) : nil
+                #expect(savedSource.cursor == lowerBound && savedSource.lastIntakeAt == nil)
             }
 
             @Test func handedEventsKeepTheOriginalSourceLocators() throws {

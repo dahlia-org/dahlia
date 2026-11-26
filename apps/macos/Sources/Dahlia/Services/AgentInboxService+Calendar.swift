@@ -3,13 +3,14 @@ import Foundation
 import GRDB
 
 extension AgentInboxService {
-    /// Only successful providers can replace their pending meeting signals; unavailable calendars retain theirs.
+    /// Deselected providers cancel pending signals; selected providers retain theirs across temporary fetch failures.
     func reconcileCalendar(_ snapshot: AgentCalendarSnapshot, now: Date = .now, calendar: Calendar = .current) throws {
+        let successful = snapshot.successfulProviders.intersection(snapshot.selectedProviders ?? snapshot.successfulProviders)
         try dbQueue.write { db in
             let sources = try AgentSourceRecord.fetchAll(db, sql: "SELECT * FROM agent_event_sources WHERE enabled=1 AND kind='calendar'")
             for var source in sources {
                 var desired: [AgentEventRecord] = []
-                if !snapshot.successfulProviders.isEmpty, let daily = source.dailyAt,
+                if !successful.isEmpty, let daily = source.dailyAt,
                    let components = Self.dailyComponents(daily),
                    let at = calendar.date(bySettingHour: components.hour, minute: components.minute, second: 0, of: now) {
                     let day = calendar.dateComponents([.year, .month, .day], from: now)
@@ -21,7 +22,7 @@ extension AgentInboxService {
                     ))
                 }
                 var meetingKeys: Set<String> = []
-                for event in snapshot.events where snapshot.successfulProviders.contains(AgentCalendarSnapshot.provider(for: event))
+                for event in snapshot.events where successful.contains(AgentCalendarSnapshot.provider(for: event))
                     && event.startDate > now && !event.isAllDay && !event.isDeclined {
                     let key = "meeting:\(event.displayID):\(event.startDate.ISO8601Format())"
                     meetingKeys.insert(key)
@@ -38,13 +39,19 @@ extension AgentInboxService {
                     ))
                 }
                 let pending = try AgentEventRecord.fetchAll(db, sql: """
-                SELECT * FROM agent_event_inbox WHERE sourceID=? AND handledAt IS NULL AND key LIKE 'meeting:%'
+                SELECT * FROM agent_event_inbox WHERE sourceID=? AND handledAt IS NULL AND (key LIKE 'meeting:%' OR key LIKE 'daily:%')
                 """, arguments: [source.id])
                 for event in pending {
+                    if event.key?.hasPrefix("daily:") == true {
+                        if snapshot.selectedProviders?.isEmpty == true { try event.delete(db) }
+                        continue
+                    }
                     let ref = event.ref.flatMap { try? JSONDecoder().decode(JSONValue.self, from: Data($0.utf8)) }
-                    if let provider = ref?.objectValue?["provider"]?.stringValue,
-                       snapshot.successfulProviders.contains(provider), !meetingKeys.contains(event.key ?? "") {
-                        try event.delete(db)
+                    if let provider = ref?.objectValue?["provider"]?.stringValue {
+                        let deselected = snapshot.selectedProviders.map { !$0.contains(provider) } ?? false
+                        if deselected || (successful.contains(provider) && !meetingKeys.contains(event.key ?? "")) {
+                            try event.delete(db)
+                        }
                     }
                 }
                 var recorded = 0
@@ -64,7 +71,7 @@ extension AgentInboxService {
                         recorded += 1
                     }
                 }
-                if !snapshot.successfulProviders.isEmpty {
+                if !successful.isEmpty {
                     source.lastReadCount = snapshot.events.count
                     source.lastRecordedCount = recorded
                     source.lastIntakeAt = now

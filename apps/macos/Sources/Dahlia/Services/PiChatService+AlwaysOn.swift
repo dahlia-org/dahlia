@@ -151,7 +151,7 @@ extension PiChatService {
             }
             guard let due else { return }
             intakeAttempts[due.id] = now
-            intakeTask = Task { await self.runIntake(due) }
+            intakeTask = Task { await self.runIntake(due, now: now) }
         } catch {
             // An unconfigured runtime waits until provider setup completes.
         }
@@ -162,12 +162,12 @@ extension PiChatService {
         return ["--model", choice.model] + (choice.effort.map { ["--thinking", PiRuntimeService.thinkingLevel($0)] } ?? [])
     }
 
-    private func runIntake(_ source: AgentSourceRecord) async {
+    private func runIntake(_ source: AgentSourceRecord, now: Date) async {
         defer {
             intakeTask = nil
             activeIntake = nil
         }
-        let startedAt = Date.now
+        let startedAt = now
         var run = AgentSystemRunRecord(
             id: UUID.v7().uuidString, accountID: AppAccount.key, task: "intake", status: "running",
             summary: source.name, report: "", startedAt: startedAt, finishedAt: nil
@@ -207,7 +207,7 @@ extension PiChatService {
             do {
                 // The app fixes the range; observed continuation pages must complete before it advances.
                 try validateBotActivity(source: source)
-                let since = source.cursor ?? ISO8601DateFormatter().string(from: startedAt.addingTimeInterval(-86400))
+                let since = try inboxService().intakeLowerBound(sourceID: source.id, revision: source.revision, now: startedAt)
                 let prompt = "Source: \(source.name)\nWhat to read: \(source.instructions)\nRead the items that arrived since \(since)."
                 _ = try await connection.request("prompt", PiRuntimeService.prompt([.text(prompt)]))
                 _ = try await awaitSettled(connection, label: "Intake") { self.activeIntake?.sourceID == source.id }

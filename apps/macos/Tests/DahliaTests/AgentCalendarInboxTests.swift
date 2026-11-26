@@ -81,6 +81,29 @@
             #expect(remaining.count == 1 && remaining.first?.ref?.contains("provider-b") == true)
         }
 
+        @Test(arguments: [false, true])
+        func deselectedProvidersCancelSignalsWhileFetchFailuresRetainThem(disabled: Bool) throws {
+            let (service, _) = try service()
+            let future = event(start: now.addingTimeInterval(26 * 3600))
+            try service.reconcileCalendar(.init(events: [future], successfulProviders: ["provider-a"]), now: now)
+            #expect(try service.recentEvents().count == 1)
+            // The next tick may be after the signal became due, so selection must not depend on that timing.
+            try service.reconcileCalendar(.init(selectedProviders: disabled ? [] : ["provider-a"]), now: now.addingTimeInterval(3 * 3600))
+            #expect(try service.recentEvents().count == (disabled ? 0 : 1))
+            #expect(try service.inbox(now: now.addingTimeInterval(3 * 3600)).events.count == (disabled ? 0 : 1))
+        }
+
+        @Test func noSelectedCalendarCancelsThePendingDailySignal() throws {
+            let (service, _) = try service()
+            var source = try #require(try service.sources().first)
+            source.dailyAt = "08:00"
+            try service.saveSource(source)
+            try service.reconcileCalendar(.init(successfulProviders: ["provider-a"]), now: now)
+            #expect(try service.recentEvents().contains { $0.key?.hasPrefix("daily:") == true })
+            try service.reconcileCalendar(.init(selectedProviders: []), now: now)
+            #expect(try service.recentEvents().isEmpty)
+        }
+
         @Test func dailyAgendaIsUniqueAndScheduleEditsUpdateOnlyUnhandledSignals() throws {
             let (service, _) = try service()
             var source = try #require(try service.sources().first)

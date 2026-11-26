@@ -62,6 +62,23 @@
             return (AgentInboxService(dbQueue: queue), source)
         }
 
+        @Test(arguments: [false, true])
+        func aCappedIntakeKeepsTheOriginalLowerBound(hasCursor: Bool) throws {
+            let (service, source) = try inbox()
+            if hasCursor { try service.commitIntake(sourceID: source, cursor: "saved-floor") }
+            let start = Date.now
+            let lowerBound = try service.intakeLowerBound(sourceID: source, revision: 1, now: start)
+            let expected = hasCursor ? "saved-floor" : ISO8601DateFormatter().string(from: start.addingTimeInterval(-86400))
+            #expect(lowerBound == expected)
+            #expect(try service.intakeLowerBound(sourceID: source, revision: 1, now: start.addingTimeInterval(1200)) == expected)
+            #expect(try !service.commitIntake(sourceID: source, cursor: "attempt-end", recordedCount: 20, limitReached: true))
+            #expect(try service.sources().first?.cursor == expected)
+            #expect(try !service.commitIntake(sourceID: source, cursor: "later-attempt", recordedCount: 20, limitReached: true))
+            #expect(try service.sources().first?.cursor == expected)
+            #expect(try service.commitIntake(sourceID: source, cursor: "finished-through"))
+            #expect(try service.sources().first?.cursor == "finished-through")
+        }
+
         private func item(_ id: String, topic: String = "thread-1", direct _: Bool = true) -> AgentInboxService.IntakeItem {
             .init(key: id, topic: topic, note: "Hello …", ref: .object(["messageId": .string(id)]), sender: "a@example.com")
         }
