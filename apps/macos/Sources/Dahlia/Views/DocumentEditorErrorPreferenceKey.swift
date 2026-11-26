@@ -4,6 +4,7 @@ struct DocumentEditorErrorPreferenceKey: PreferenceKey {
     static let defaultValue = ""
 
     static func reduce(value: inout String, nextValue: () -> String) {
-        value = nextValue()
+        let next = nextValue()
+        if !next.isEmpty { value = next }
     }
 }
