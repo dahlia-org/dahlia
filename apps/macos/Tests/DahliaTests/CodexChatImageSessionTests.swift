@@ -189,6 +189,66 @@ import Foundation
             #expect(inputs[2].isImage)
         }
 
+        @Test(arguments: [false, true])
+        func compactRejectsImagesWithoutClearingTheComposer(running: Bool) async throws {
+            let service = ImageChatService(supportsImages: true, sendBehavior: .block)
+            let session = makeSession(service: service)
+            await session.prepare()
+            if running {
+                session.draft = "Start"
+                session.sendDraft()
+                await waitUntil { session.activeTurnID != nil }
+            }
+            session.draft = "/compact include this picture"
+            await session.addImageData([try testPNGData()])
+            let images = session.attachedImages
+            session.sendDraft()
+            #expect(!session.canSend)
+            #expect(session.attachmentValidationMessage == L10n.chatCompactDoesNotSupportImages)
+            #expect(session.draft == "/compact include this picture")
+            #expect(session.attachedImages == images)
+            #expect(session.pendingManualInputs.isEmpty)
+            #expect(await service.sentInputs.count == (running ? 1 : 0))
+            if running {
+                await service.completeBlockedTurn()
+                await waitUntil { !session.isGenerating }
+            }
+        }
+
+        @Test
+        func queuedCompactWithImagesRemainsAvailableForEditing() async throws {
+            let service = ImageChatService(supportsImages: true)
+            let session = makeSession(service: service)
+            await session.prepare()
+            let image = CodexChatImageAttachment(data: Data([1]), mimeType: "image/png")
+            let queued = CodexChatManualSubmission(deliveryMode: .queue, text: "/compact", images: [image])
+            session.pendingManualInputs = [queued]
+            session.processPendingInputIfPossible()
+            #expect(session.pendingManualInputs == [queued])
+            #expect(!session.isGenerating)
+            #expect(session.noticeMessage == L10n.chatCompactDoesNotSupportImages)
+            #expect(await service.sentInputs.isEmpty)
+            #expect(!session.canSendPendingInput(queued))
+            session.beginEditingPendingInput(id: queued.id)
+            #expect(session.pendingInputEditImages == [image])
+            session.savePendingInput(id: queued.id, draft: "/compact", images: [])
+            await waitUntilAsync { await service.sentInputs.count == 1 }
+            await waitUntil { !session.isGenerating }
+            #expect(session.pendingManualInputs.isEmpty)
+            #expect(await service.sentInputs == [[.text("/compact")]])
+        }
+
+        @Test
+        func directCompactSubmissionRejectsImagesBeforePreparation() async {
+            let service = ImageChatService(supportsImages: true)
+            let session = makeSession(service: service)
+            let image = CodexChatImageAttachment(data: Data([1]), mimeType: "image/png")
+            session.submit("/compact", images: [image])
+            #expect(!session.isGenerating)
+            #expect(session.noticeMessage == L10n.chatCompactDoesNotSupportImages)
+            #expect(await service.sentInputs.isEmpty)
+        }
+
         @Test
         func imageLimitAndTextOnlyModelBlockSending() async throws {
             let service = ImageChatService(supportsImages: false)

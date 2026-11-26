@@ -26,12 +26,24 @@ import Foundation
                 let response = TestPiTransport.response(id: id, data: .object(["disposition": .string("started")]))
                 return command["type"]?.stringValue == "prompt" ? [response] + events : [response]
             }
+            let (pi, store, chat) = try Self.fixture(transport: transport)
+            defer { try? FileManager.default.removeItem(at: pi.rootURL) }
+            let thread = try await chat.startThread(model: nil, effort: "medium")
+            let turn = try await chat.beginTurn(threadID: thread.id, inputs: [.text(text)], model: nil, effort: "medium", approvalMethod: .ask)
+            var received: [CodexChatTurnEvent] = []
+            for try await event in turn.events {
+                received.append(event)
+            }
+            let saved = try await chat.loadThread(id: thread.id).messages
+            return try (received, saved, store.latestRun(threadID: thread.id), transport)
+        }
+
+        private static func fixture(transport: TestPiTransport) throws -> (TestPiRuntime, ChatThreadStore, PiChatService) {
             let pi = TestPiRuntime { options in
                 options.mode == .chat
                     ? transport
                     : TestPiTransport(reply: TestPiRuntime.modelsReply([TestPiTransport.model(provider: "openai", id: "gpt-test")]))
             }
-            defer { try? FileManager.default.removeItem(at: pi.rootURL) }
             let store = try ChatThreadStore(dbQueue: AppDatabaseManager(path: ":memory:").dbQueue)
             let chat = PiChatService(
                 runtime: pi.service,
@@ -42,14 +54,43 @@ import Foundation
                 mcpSettings: { AgentMCPSettings() },
                 fileAccessSettings: { PiFileAccessSettings() }
             )
+            return (pi, store, chat)
+        }
+
+        @Test(arguments: [CodexAppServerInput.imageMetadata("Screenshot"), .imageDataURI("data:image/png;base64,AQ==")])
+        func compactRejectsImageInputsBeforeCommitting(attachment: CodexAppServerInput) async throws {
+            let transport = TestPiTransport()
+            let (pi, store, chat) = try Self.fixture(transport: transport)
+            defer { try? FileManager.default.removeItem(at: pi.rootURL) }
+            let thread = try await chat.startThread(model: nil, effort: "medium")
+            do {
+                _ = try await chat.beginTurn(
+                    threadID: thread.id, inputs: [.text("/compact"), attachment], model: nil, effort: "medium", approvalMethod: .ask
+                )
+                Issue.record("An image-bearing compact request was accepted")
+            } catch {
+                #expect(error.localizedDescription == L10n.chatCompactDoesNotSupportImages)
+            }
+            #expect(try store.latestRun(threadID: thread.id) == nil)
+            #expect(try store.messagePage(threadID: thread.id).messages.isEmpty)
+            #expect(await transport.commands.allSatisfy { $0["type"] != .string("compact") && $0["type"] != .string("prompt") })
+            await pi.service.shutdown()
+        }
+
+        @Test(arguments: ["/compact", "/mcp", "Question"])
+        func attachingRestoresTheCommandDeliveryContract(text: String) async throws {
+            let transport = TestPiTransport { command in
+                command["type"] == .string("compact") ? [] : TestPiTransport.acknowledge(command)
+            }
+            let (pi, _, chat) = try Self.fixture(transport: transport)
+            defer { try? FileManager.default.removeItem(at: pi.rootURL) }
             let thread = try await chat.startThread(model: nil, effort: "medium")
             let turn = try await chat.beginTurn(threadID: thread.id, inputs: [.text(text)], model: nil, effort: "medium", approvalMethod: .ask)
-            var received: [CodexChatTurnEvent] = []
-            for try await event in turn.events {
-                received.append(event)
-            }
-            let saved = try await chat.loadThread(id: thread.id).messages
-            return try (received, saved, store.latestRun(threadID: thread.id), transport)
+            let attached = try #require(await chat.attach(threadID: thread.id))
+            #expect(turn.isCommand == text.hasPrefix("/"))
+            #expect(attached.isCommand == turn.isCommand)
+            await chat.closeSession(thread.id)
+            await pi.service.shutdown()
         }
 
         @Test(arguments: ["succeeded", "failed", "stopped"])

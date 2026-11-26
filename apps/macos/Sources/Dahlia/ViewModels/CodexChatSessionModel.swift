@@ -517,6 +517,7 @@ final class CodexChatSessionModel: Identifiable {
             let responseID = UUID.v7().uuidString
             activeSubmissionID = submissionID
             activeTurnHandleID = handle.id
+            activeTurnIsCommand = handle.isCommand
             isGenerating = true
             isAwaitingTurnOutput = true
             isStopRequested = false
@@ -1364,6 +1365,10 @@ extension CodexChatSessionModel {
             startSteeringPendingInputIfPossible()
         } else if !isQueuePaused, !pendingManualInputs.isEmpty {
             guard pendingManualInputs[0].id != editingPendingInputID else { return }
+            if let message = compactImageValidationMessage(text: pendingManualInputs[0].text, hasImages: !pendingManualInputs[0].images.isEmpty) {
+                noticeMessage = message
+                return
+            }
             guard pendingManualInputs[0].images.isEmpty || selectedModelSupportsImages else {
                 noticeMessage = L10n.chatModelDoesNotSupportImages
                 return

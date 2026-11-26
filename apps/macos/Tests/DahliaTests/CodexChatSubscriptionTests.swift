@@ -5,6 +5,37 @@
 
     @MainActor
     struct CodexChatSubscriptionTests {
+        @Test(arguments: [false, true])
+        func attachedCompactionKeepsFollowUpsDeliverable(manual: Bool) async {
+            let service = TestCodexChatService(mode: .blockBeforeOutput)
+            let (events, reader) = AsyncThrowingStream<CodexChatTurnEvent, any Error>.makeStream()
+            await service.setAttachment(CodexChatTurnHandle(id: .v7(), events: events, isCommand: manual))
+            let session = CodexChatSessionModel(
+                backendThreadID: "thread-1", approvalMethod: .autoReview, service: service, settings: TestCodexChatFixtures.appSettings()
+            )
+            await session.synchronizeThread()
+            reader.yield(.started(turnID: "compacting"))
+            reader.yield(.compactionStarted)
+            #expect(await pollUntil { session.isCompacting })
+            session.draft = "Follow-up"
+            #expect(session.canSend)
+            session.sendDraft(mode: .steer)
+            if manual {
+                #expect(session.pendingManualInputs.map(\.text) == ["Follow-up"])
+            } else {
+                #expect(await pollUntil { await service.steeredTextBlocks == [["Follow-up"]] })
+            }
+            reader.yield(.compactionEnded(nil))
+            reader.yield(.completed(itemID: nil, text: nil))
+            reader.finish()
+            if manual {
+                #expect(await pollUntil { await service.sentTextBlocks == [["Follow-up"]] })
+                #expect(await service.steeredTextBlocks.isEmpty)
+                await service.completeBlockedTurn()
+            }
+            #expect(await pollUntil { !session.hasPendingGenerationWork })
+        }
+
         @Test(arguments: ["stop", "failure", "eof"])
         func terminatingCompactionRemovesOnlyItsPendingRow(ending: String) async {
             let service = TestCodexChatService(mode: .staleRollout)

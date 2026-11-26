@@ -2030,3 +2030,5 @@
 "settings.agents.calendar.invalidSchedule" = "Enable daily or before meetings. Hours before must be greater than 0 and less than 168.";
 "settings.agents.calendar.dailyNote" = "Read today's schedule with calendar_read and consider preparation and unanswered invitations.";
 "settings.agents.calendar.meetingNote" = "A meeting is approaching. Read its current details with calendar_read and decide whether preparation is needed.";
+
+"Remove attached images before compacting context" = "Remove attached images before compacting context";

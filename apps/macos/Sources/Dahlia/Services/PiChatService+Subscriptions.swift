@@ -144,7 +144,10 @@ extension PiChatService {
         sessions[threadID]?.turn = turn
         let runID = turn.id
         reader.onTermination = { [weak self] _ in Task { await self?.detachReader(threadID: threadID, runID: runID, readerID: id) } }
-        return CodexChatTurnHandle(id: turn.id, events: stream, approvalMethod: sessions[threadID]?.approvalMethod, snapshot: snapshot)
+        return CodexChatTurnHandle(
+            id: turn.id, events: stream, approvalMethod: sessions[threadID]?.approvalMethod,
+            snapshot: snapshot, isCommand: turn.isCommand
+        )
     }
 
     func stopAccountRuns(except accountID: String) async {

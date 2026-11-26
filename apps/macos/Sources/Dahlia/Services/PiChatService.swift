@@ -253,6 +253,7 @@ actor PiChatService: CodexChatServicing {
         var sawPrompt = false
         /// A `/compact` turn, which ends with Pi's manual compaction instead of an agent run.
         var compacts = false
+        var isCommand = false
     }
 
     let runtime: PiRuntimeService
@@ -619,6 +620,10 @@ actor PiChatService: CodexChatServicing {
         let (inputs, notice) = preparedRun.origin == "restart"
             ? (inputs, .object(["type": .string("thread_notification"), "content": .string(L10n.chatContinuedAfterRestart)]))
             : try botTurnInputs(preparedRun, inputs)
+        let compactInstructions = Self.compactInstructions(inputs)
+        guard compactInstructions == nil || !inputs.contains(where: \.isImageRelated) else {
+            throw HermesLearning.failure(L10n.chatCompactDoesNotSupportImages)
+        }
         userRun.input = try ChatHistoryCodec.encodeInputs(inputs)
         let run: ChatRunRecord
         let queued = scheduledRuns[threadID]
@@ -631,8 +636,8 @@ actor PiChatService: CodexChatServicing {
         }
         sessions[threadID]?.approvalMethod = approvalMethod
         var turn = Turn(id: run.id, wireID: UUID.v7().uuidString, run: run)
-        let compactInstructions = Self.compactInstructions(inputs)
         turn.compacts = compactInstructions != nil
+        turn.isCommand = Self.textJoined(inputs).first?.textValue?.hasPrefix("/") == true
         let readerID = UUID.v7()
         turn.broadcast.readers[readerID] = continuation
         continuation.onTermination = { [weak self] _ in Task { await self?.detachReader(threadID: threadID, runID: run.id, readerID: readerID) } }
@@ -665,7 +670,7 @@ actor PiChatService: CodexChatServicing {
                 }
                 await connection.finishHandledPrompt(turnID: turn.wireID)
             }
-            return CodexChatTurnHandle(id: turn.id, events: events, approvalMethod: approvalMethod)
+            return CodexChatTurnHandle(id: turn.id, events: events, approvalMethod: approvalMethod, isCommand: turn.isCommand)
         }
         do {
             // A changed SOUL.md reaches Super Agent first, in Pi only; the history keeps the user's words.
@@ -675,7 +680,7 @@ actor PiChatService: CodexChatServicing {
             // Pi handled the text itself (for example a `/skill:` expansion error) and starts no run.
             if accepted.objectValue?["disposition"]?.stringValue == "handled", sessions[threadID]?.turn?.id == turn.id {
                 await connection.finishHandledPrompt(turnID: turn.wireID)
-                return CodexChatTurnHandle(id: turn.id, events: events, approvalMethod: approvalMethod)
+                return CodexChatTurnHandle(id: turn.id, events: events, approvalMethod: approvalMethod, isCommand: turn.isCommand)
             }
         } catch {
             // Readers that attached while the prompt was pending live only in the stored turn.
@@ -691,7 +696,7 @@ actor PiChatService: CodexChatServicing {
             if error is CancellationError { await runtime.close(connection) }
             throw error
         }
-        return CodexChatTurnHandle(id: turn.id, events: events, approvalMethod: approvalMethod)
+        return CodexChatTurnHandle(id: turn.id, events: events, approvalMethod: approvalMethod, isCommand: turn.isCommand)
     }
 
     /// A direct manual turn already committed its opening and choices with the run; queued starts append here.
