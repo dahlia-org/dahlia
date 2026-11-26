@@ -1,6 +1,7 @@
 import SwiftUI
 
-/// The app's switch, drawn like Orca's: an accent-filled track with a round knob in the color that sits on the accent.
+/// The app's switch, drawn like Orca's: an accent-filled track when on, a gray track when off, and a round knob that
+/// keeps the color that sits on the accent in both states.
 /// The native switch cannot recolor its knob, so the near-white dark-mode accent would hide a white knob.
 struct DahliaSwitchToggleStyle: ToggleStyle {
     func makeBody(configuration: Configuration) -> some View {
@@ -31,11 +32,11 @@ private struct DahliaSwitch: View {
             Capsule()
                 .fill(isOn
                     ? DahliaDesign.primaryButtonBackgroundColor(for: showsHover ? .hovered : .normal)
-                    : Color.primary.opacity(showsHover ? 0.24 : 0.18))
+                    : DahliaDesign.primaryButtonBackgroundColor(for: .normal).opacity(showsHover ? 0.66 : 0.6))
                 .frame(width: width, height: height)
                 .overlay(alignment: .leading) {
                     Circle()
-                        .fill(isOn ? DahliaDesign.primaryButtonForegroundColor : Color.primary)
+                        .fill(DahliaDesign.primaryButtonForegroundColor)
                         .padding(inset)
                         .offset(x: isOn ? width - height : 0)
                 }
