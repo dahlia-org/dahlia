@@ -363,6 +363,8 @@ control process の `/databricks-connection-login <workspace URL> <service>` が
 に付けた認可要求をブラウザで開き、workspace が接続のサインインを済ませてから返す認可コードは token に交換しない（workspace の sign-in は
 そのまま）。終わるとそのアカウントのチャットの process を閉じ、次の turn で接続し直す。MCP が返すリンクからのサインインもそのまま使える。
 
+OpenAI Responses の function tool は、`strict` の指定がない場合に `false` を明示し、MCP schema の任意引数を任意のまま渡す。明示された空文字・`null`・`false` は省略に置き換えず、承認と実行に同じ値を渡す。
+
 チャットの process を起動するたびに、Dahlia は登録した Gateway の server を `mcp.json`（0600）に `<workspace>/ai-gateway/mcp-services/system.ai.<name>`
 の `url`・`exposure: "direct"`・`auth: { provider: "<sign-in の provider>" }` だけで書き、オンの直接設定の server を[その設定](#直接設定の-mcp)で加える（登録がなければ空）。Pi は `mcp.json` を起動時に
 だけ読むので、登録の変更はその後に起動する chat process から効く。開いている thread の process は、閉じるまで前の設定のまま動く（遅れは

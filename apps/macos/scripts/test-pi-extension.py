@@ -113,7 +113,11 @@ def http_mcp(authorizations):
                 result = {"tools": [
                     {"name": "search_messages", "inputSchema": {"type": "object"}, "annotations": {"readOnlyHint": True}},
                     {"name": "send_message", "inputSchema": {"type": "object"}},
+                    {"name": "post_message", "inputSchema": {"type": "object", "required": ["message"], "properties": {
+                        "message": {"type": "string"}, "thread_ts": {"type": "string"}, "broadcast": {"type": "boolean"}, "parent": {"type": ["string", "null"]}}}},
                 ]}
+            elif method == "tools/call" and msg["params"]["name"] == "post_message":
+                result = {"content": [{"type": "text", "text": "POSTED " + json.dumps(msg["params"].get("arguments", {}), sort_keys=True)}]}
             elif method == "tools/call":
                 # Gmail lists messages as JSON text; a thread listing has no threadId and is not a list of items.
                 items = msg["params"].get("arguments", {}).get("probe_items")
@@ -1089,6 +1093,18 @@ def main():
     approvals = [payload for method, payload in bridge if method == "approval"]
     assert [(p["server"], p["tool"]) for p in approvals] == [("gmail", "send_message")], bridge
     assert "declined" in results[0], results
+    # Gateway providers must explicitly opt out of Responses' strict default so thread_ts remains optional.
+    requests, results, bridge, _ = gateway_chat({"tool": "mcp__gmail__post_message", "args": {"message": "new post"}})
+    post_tool = next(tool for tool in requests[0]["body"]["tools"] if tool.get("name") == "mcp__gmail__post_message")
+    assert post_tool["strict"] is False, post_tool
+    assert post_tool["parameters"]["required"] == ["message"], post_tool
+    assert results == ['POSTED {"message": "new post"}'], results
+    # Empty and null can mean clear/reset; preserve them, required values, and false through approval and execution.
+    call_args = {"message": "", "thread_ts": "", "broadcast": False, "parent": None}
+    _, results, bridge, _ = gateway_chat({"tool": "mcp__gmail__post_message", "args": call_args})
+    assert results == ['POSTED ' + json.dumps(call_args, sort_keys=True)], results
+    approvals = [payload for method, payload in bridge if method == "approval"]
+    assert [p["arguments"] for p in approvals] == [call_args], approvals
     # A server Dahlia did not register stays blocked even if its tools get past --tools.
     _, results, bridge, _ = gateway_chat({"tool": "mcp__foreign__search_messages"}, approval_mode="fullAccess",
                                          arguments=["--no-session", *CHAT_EXTENSIONS, "--tools", "read,mcp__gmail__*,mcp__foreign__*"])

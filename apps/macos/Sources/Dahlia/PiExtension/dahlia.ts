@@ -133,9 +133,14 @@ export default async function (pi: any) {
   registerDatabricksProviders(pi, bridgedProviders);
 
   pi.on("before_provider_request", (event: any, ctx: any) => {
+    let payload = event.payload;
+    // Responses can make optional arguments required when Gateway providers omit strict.
+    if (ctx.model?.api === "openai-responses" && payload.tools) {
+      payload = { ...payload, tools: payload.tools.map((tool: any) =>
+        tool.type === "function" && tool.strict === undefined ? { ...tool, strict: false } : tool) };
+    }
     const enforce = strictSchemaPayload[ctx.model?.api];
-    if (!outputSchema || env.PI_OUTPUT_STRICT_SCHEMA !== "1" || !enforce) return;
-    return enforce(event.payload);
+    return outputSchema && env.PI_OUTPUT_STRICT_SCHEMA === "1" && enforce ? enforce(payload) : payload;
   });
 
   if (mode === "chat" || mode === "skills") {
