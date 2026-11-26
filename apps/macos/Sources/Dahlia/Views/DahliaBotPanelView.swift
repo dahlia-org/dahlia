@@ -114,9 +114,8 @@ struct DahliaBotPanelView: View {
         if let agent {
             Section {
                 AgentIdentityRow(agent: agent) { name, avatar, color in
-                    Task { await agents.update(agent, name: name, avatar: avatar, color: color) }
+                    await agents.update(agent, name: name, avatar: avatar, color: color)
                 }.id(agent.id)
-                if let error = agents.error, agents.draft == nil { Text(error).foregroundStyle(.red).textSelection(.enabled) }
             }
         }
         // One group, with a row per source.
@@ -429,80 +428,85 @@ private struct DahliaBotEventRow: View {
 /// over, and each is saved when the picker closes or the name is submitted or left.
 struct AgentIdentityRow: View {
     let agent: AgentRecord
-    let onSave: (String, String, String) -> Void
-    @State private var name = ""
-    @State private var avatar = ""
-    @State private var color = ""
+    @State private var identity: AgentIdentityModel
     @State private var isPickingAvatar = false
     @State private var isAvatarHovered = false
     @State private var isEditingName = false
     @State private var isNameHovered = false
     @FocusState private var isNameFocused: Bool
 
+    init(agent: AgentRecord, onSave: @escaping (String, String, String) async -> (agent: AgentRecord, error: String?)) {
+        self.agent = agent
+        _identity = State(initialValue: AgentIdentityModel(agent: agent, onSave: onSave))
+    }
+
     var body: some View {
-        HStack(spacing: 12) {
-            Button { isPickingAvatar = true } label: {
-                AgentAvatarView(avatar: avatar, color: color, size: Self.avatarSize)
-                    .overlay {
-                        if isAvatarHovered || isPickingAvatar {
-                            RoundedRectangle(cornerRadius: AgentAvatarView.cornerRadius(Self.avatarSize), style: .continuous)
-                                .fill(.black.opacity(0.35))
-                            Image(systemName: "pencil").dahliaFixedSymbol().foregroundStyle(.white)
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 12) {
+                Button { isPickingAvatar = true } label: {
+                    AgentAvatarView(avatar: identity.avatar, color: identity.color, size: Self.avatarSize)
+                        .overlay {
+                            if isAvatarHovered || isPickingAvatar {
+                                RoundedRectangle(cornerRadius: AgentAvatarView.cornerRadius(Self.avatarSize), style: .continuous)
+                                    .fill(.black.opacity(0.35))
+                                Image(systemName: "pencil").dahliaFixedSymbol().foregroundStyle(.white)
+                            }
                         }
-                    }
-                    .contentShape(.rect)
-            }
-            .buttonStyle(.plain)
-            .onHover { isAvatarHovered = $0 }
-            .pointerStyle(.link)
-            .help(L10n.agentChangeAvatar)
-            .accessibilityLabel(L10n.agentChangeAvatar)
-            .popover(isPresented: $isPickingAvatar, arrowEdge: .bottom) {
-                AgentAvatarPicker(avatar: $avatar, color: $color)
-            }
-            // The name reads as text, with a pencil on hover; clicking it opens a bordered field, as Orca's.
-            if isEditingName {
-                TextField(L10n.agentName, text: $name, prompt: Text(L10n.agentName))
-                    .labelsHidden()
-                    .textFieldStyle(.roundedBorder)
-                    .focused($isNameFocused)
-                    .onAppear { isNameFocused = true }
-                    .onSubmit { isNameFocused = false }
-                    // A click anywhere else saves and closes it too; clicking empty space would not take the focus.
-                    .dismissOnOutsideClick { isNameFocused = false }
-                    .onExitCommand {
-                        name = agent.name
-                        isNameFocused = false
-                    }
-                    .onDisappear {
-                        // Switching tabs can remove the field before its focus change is delivered.
-                        if isEditingName { save() }
-                    }
-            } else {
-                Button { isEditingName = true } label: {
-                    HStack(spacing: 6) {
-                        Text(name).lineLimit(1)
-                        Image(systemName: "pencil")
-                            .dahliaFixedSymbol()
-                            .foregroundStyle(.secondary)
-                            .opacity(isNameHovered ? 1 : 0)
-                        Spacer(minLength: 0)
-                    }
-                    .contentShape(.rect)
+                        .contentShape(.rect)
                 }
                 .buttonStyle(.plain)
-                .onHover { isNameHovered = $0 }
+                .onHover { isAvatarHovered = $0 }
                 .pointerStyle(.link)
-                .help(L10n.agentName)
+                .help(L10n.agentChangeAvatar)
+                .accessibilityLabel(L10n.agentChangeAvatar)
+                .popover(isPresented: $isPickingAvatar, arrowEdge: .bottom) {
+                    AgentAvatarPicker(avatar: $identity.avatar, color: $identity.color)
+                }
+                // The name reads as text, with a pencil on hover; clicking it opens a bordered field, as Orca's.
+                if isEditingName {
+                    TextField(L10n.agentName, text: $identity.name, prompt: Text(L10n.agentName))
+                        .labelsHidden()
+                        .textFieldStyle(.roundedBorder)
+                        .focused($isNameFocused)
+                        .onAppear { isNameFocused = true }
+                        .onSubmit { isNameFocused = false }
+                        // A click anywhere else saves and closes it too; clicking empty space would not take the focus.
+                        .dismissOnOutsideClick { isNameFocused = false }
+                        .onExitCommand {
+                            identity.name = identity.agent.name
+                            isNameFocused = false
+                        }
+                        .onDisappear {
+                            // Switching tabs can remove the field before its focus change is delivered.
+                            if isEditingName { identity.save() }
+                        }
+                } else {
+                    Button { isEditingName = true } label: {
+                        HStack(spacing: 6) {
+                            Text(identity.name).lineLimit(1)
+                            Image(systemName: "pencil")
+                                .dahliaFixedSymbol()
+                                .foregroundStyle(.secondary)
+                                .opacity(isNameHovered ? 1 : 0)
+                            Spacer(minLength: 0)
+                        }
+                        .contentShape(.rect)
+                    }
+                    .buttonStyle(.plain)
+                    .onHover { isNameHovered = $0 }
+                    .pointerStyle(.link)
+                    .help(L10n.agentName)
+                }
             }
+            .disabled(identity.isSaving)
+            if let error = identity.error { Text(error).font(.dahliaBody).foregroundStyle(.red).textSelection(.enabled) }
         }
         .font(Self.nameFont)
-        .onAppear(perform: load)
-        .onChange(of: agent) { load() }
-        .onChange(of: isPickingAvatar) { if !isPickingAvatar { save() } }
+        .onChange(of: agent) { identity.refresh(agent, editingName: isEditingName, pickingAvatar: isPickingAvatar) }
+        .onChange(of: isPickingAvatar) { if !isPickingAvatar { identity.save() } }
         .onChange(of: isNameFocused) {
             guard !isNameFocused else { return }
-            save()
+            identity.save()
             isEditingName = false
         }
     }
@@ -511,22 +515,6 @@ struct AgentIdentityRow: View {
     /// The base size plus 2 pt, as Orca's.
     private static var nameFont: Font { .system(size: DahliaTypography.size(offset: 2), weight: .semibold) }
 
-    private func load() {
-        if !isEditingName { name = agent.name }
-        if !isPickingAvatar { avatar = agent.avatar
-            color = agent.color
-        }
-    }
-
-    private func save() {
-        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        // A blank name is not saved; the field goes back to the saved one.
-        guard !trimmed.isEmpty else { name = agent.name
-            return
-        }
-        guard trimmed != agent.name || avatar != agent.avatar || color != agent.color else { return }
-        onSave(trimmed, avatar, color)
-    }
 }
 
 /// Deleting the agent, as Orca's: red text with no fill, tinted red while the pointer is over it.
