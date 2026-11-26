@@ -273,7 +273,7 @@ actor PiChatService: CodexChatServicing {
     /// New threads have no session file until their first turn; Pi creates it then.
     private var newThreads: [String: (directory: URL, model: String)] = [:]
     /// Threads whose `/clear` turn is starting: they have replies but no session file until the new session's first reply.
-    private var clearingThreads: Set<String> = []
+    private var clearingThreads: [String: Int64] = [:]
     /// Names set before the thread's process runs, applied when it opens.
     private var pendingNames: [String: String] = [:]
     var stateReaders: [UUID: AsyncStream<[CodexChatRuntimeState]>.Continuation] = [:]
@@ -508,28 +508,32 @@ actor PiChatService: CodexChatServicing {
         startingTurns[threadID] = 1
         let wasSuperAgent = isSuperAgentThread(threadID)
         curatorActivityGeneration.withLock { $0 += 1 }
-        var retiredSession: (file: URL, retired: URL)?
         do {
-            if startsFreshSession { retiredSession = try await retireSessionFile(threadID: threadID) }
+            if startsFreshSession { try await retireSessionFile(threadID: threadID) }
             let handle = try await startTurn(
                 threadID: threadID, inputs: inputs, model: model, effort: effort,
                 approvalMethod: approvalMethod, wasSuperAgent: wasSuperAgent, startsFreshSession: startsFreshSession
             )
-            clearingThreads.remove(threadID)
+            if startsFreshSession { try? recoverSessionReset(threadID: threadID) }
+            clearingThreads[threadID] = nil
             finishStartingTurn(threadID)
             await closeIfUnused(threadID)
             return handle
         } catch {
-            clearingThreads.remove(threadID)
-            finishStartingTurn(threadID)
-            // Without its saved `/clear` message the thread still owns replies the moved file holds, so put the file back.
-            if startsFreshSession, (try? history().hasAssistantReply(threadID: threadID)) != false {
+            var failure = error
+            // Only an attempt that passed the active-turn guard owns reset cleanup.
+            if let previousSequence = clearingThreads[threadID] {
                 await closeSession(threadID)
-                if let retiredSession { try? FileManager.default.moveItem(at: retiredSession.retired, to: retiredSession.file) }
+                do { try recoverSessionReset(threadID: threadID) } catch { failure = error }
+                if let sequence = try? history().freshSessionSequence(threadID: threadID), sequence > previousSequence {
+                    failure = CodexChatFreshSessionCommittedError(underlyingError: failure)
+                }
             }
+            clearingThreads[threadID] = nil
+            finishStartingTurn(threadID)
             // A process opened for a turn that never started must not outlive it.
             await closeIfUnused(threadID)
-            throw error
+            throw failure
         }
     }
 
@@ -550,14 +554,15 @@ actor PiChatService: CodexChatServicing {
 
     /// Moves the thread's session file out of Pi's and Dahlia's lookup (both read only `.jsonl`), so the next process
     /// starts a new session under the same ID, as a new thread's first turn does. The file is kept, as every Pi file is.
-    private func retireSessionFile(threadID: String) async throws -> (file: URL, retired: URL)? {
+    private func retireSessionFile(threadID: String) async throws {
         guard sessions[threadID]?.turn == nil else { throw PiRuntimeError.rpcError(code: nil, message: "turn already active") }
+        let previousSequence = try history().freshSessionSequence(threadID: threadID)
+        clearingThreads[threadID] = previousSequence
         await closeSession(threadID)
-        clearingThreads.insert(threadID)
-        guard let file = try? await sessionFile(id: threadID) else { return nil }
-        let retired = file.appendingPathExtension("cleared")
+        try recoverSessionReset(threadID: threadID)
+        guard let file = try? await sessionFile(id: threadID) else { return }
+        let retired = file.appendingPathExtension("clearing.\(previousSequence)")
         try FileManager.default.moveItem(at: file, to: retired)
-        return (file, retired)
     }
 
     private func finishStartingTurn(_ threadID: String) {
@@ -893,7 +898,7 @@ actor PiChatService: CodexChatServicing {
         }
         let existingFile = try? await sessionFile(id: threadID)
         if existingFile == nil {
-            guard try clearingThreads.contains(threadID) || !history().hasAssistantReply(threadID: threadID) else {
+            guard try clearingThreads[threadID] != nil || !history().hasAssistantReply(threadID: threadID) else {
                 throw PiRuntimeError.rpcError(code: nil, message: L10n.chatResumeStateMissing)
             }
             newThreads[threadID] = try (agentLocator.sessionsURL(), record.model ?? "")
@@ -1317,10 +1322,19 @@ actor PiChatService: CodexChatServicing {
         let root = try agentLocator.agentURL().appending(path: "sessions")
         // Keep reopening files written by releases that used one subdirectory per Workspace.
         let directories = (try? FileManager.default.contentsOfDirectory(at: root, includingPropertiesForKeys: nil)) ?? []
+        if clearingThreads[id] == nil { try recoverSessionReset(threadID: id, directories: directories) }
         for directory in directories {
             if let url = PiChatSessionFiles.file(id: id, in: directory) { return url }
         }
         throw PiRuntimeError.rpcError(code: nil, message: "thread not found")
+    }
+
+    private func recoverSessionReset(threadID: String, directories: [URL]? = nil) throws {
+        let root = try agentLocator.agentURL().appending(path: "sessions")
+        let directories = try directories ?? FileManager.default.contentsOfDirectory(at: root, includingPropertiesForKeys: nil)
+        try PiChatSessionFiles.recoverReset(
+            id: threadID, in: directories, committedSequence: history().freshSessionSequence(threadID: threadID)
+        )
     }
 
     // MARK: Mapping

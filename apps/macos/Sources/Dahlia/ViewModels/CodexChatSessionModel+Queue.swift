@@ -10,7 +10,8 @@ extension CodexChatSessionModel {
     func canSendPendingInput(_ input: CodexChatManualSubmission) -> Bool {
         isBoundToCurrentAccount && !isReleased && !isRestoring && !needsRestore
             && errorMessage == nil && editingPendingInputID == nil && !isTurnCleanupPending
-            && (!isGenerating || !isPreparingTurn && !input.text.hasPrefix("/") && !startsFreshSession)
+            && (!isGenerating || !isPreparingTurn && !input.text.hasPrefix("/") && !startsFreshSession
+                && !input.startsFreshSession && !pendingManualInputs.prefix(while: { $0.id != input.id }).contains(where: \.startsFreshSession))
             && (input.images.isEmpty || selectedModelSupportsImages)
     }
 
@@ -67,6 +68,7 @@ extension CodexChatSessionModel {
         pendingManualInputs[index] = CodexChatManualSubmission(
             id: id,
             deliveryMode: previous.deliveryMode,
+            startsFreshSession: previous.startsFreshSession,
             text: serialized,
             images: images,
             composerSnapshot: snapshot,

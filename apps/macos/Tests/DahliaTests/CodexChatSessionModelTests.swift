@@ -1317,6 +1317,7 @@ import Foundation
         }
 
         let mode: Mode
+        private let commitsFreshSessionBeforeFailure: Bool
         private let availableCommands: [CodexChatSlashCommand]
         private let delaysLoad: Bool
         private let earlierPages: [String: CodexChatMessagePage]
@@ -1386,6 +1387,7 @@ import Foundation
 
         init(
             mode: Mode,
+            commitsFreshSessionBeforeFailure: Bool = false,
             commands: [CodexChatSlashCommand] = [],
             steerErrors: [PiRuntimeError] = [],
             delaysLoad: Bool = false,
@@ -1398,6 +1400,7 @@ import Foundation
             delaysEarlierMessages: Bool = false
         ) {
             self.mode = mode
+            self.commitsFreshSessionBeforeFailure = commitsFreshSessionBeforeFailure
             self.availableCommands = commands
             self.steerErrors = steerErrors
             self.delaysLoad = delaysLoad
@@ -1606,12 +1609,20 @@ import Foundation
         ) async throws -> CodexChatTurnHandle {
             turnApprovalMethods.append(approvalMethod)
             freshSessionStarts.append(startsFreshSession)
-            let stream = try await send(
-                threadID: threadID,
-                inputs: inputs,
-                model: model,
-                effort: effort
-            )
+            let stream: AsyncThrowingStream<CodexChatTurnEvent, any Error>
+            do {
+                stream = try await send(
+                    threadID: threadID,
+                    inputs: inputs,
+                    model: model,
+                    effort: effort
+                )
+            } catch {
+                if startsFreshSession, commitsFreshSessionBeforeFailure {
+                    throw CodexChatFreshSessionCommittedError(underlyingError: error)
+                }
+                throw error
+            }
             let id = UUID.v7()
             activeLocalTurnID = id
             if mode == .delayTurnHandleIgnoringCancellation, returnedSendCount == 1 {

@@ -27,6 +27,7 @@ extension CodexChatSessionModel {
         images: [CodexChatImageAttachment] = [],
         composerSnapshot: CodexChatComposerSnapshot? = nil,
         includesCurrentContext: Bool = true,
+        startsFreshSession freshSession: Bool? = nil,
         queuedSubmission: CodexChatManualSubmission? = nil
     ) {
         guard isBoundToCurrentAccount,
@@ -46,8 +47,8 @@ extension CodexChatSessionModel {
         isAwaitingTurnOutput = false
         preparingManualComposerSnapshot = composerSnapshot
         preparingUserMessage = CodexChatMessage(role: .user, text: text, images: images, timestamp: .now)
-        preparingUserMessage?.startsFreshSession = startsFreshSession
-        startsFreshSession = false
+        preparingUserMessage?.startsFreshSession = freshSession ?? startsFreshSession
+        if freshSession == nil { startsFreshSession = false }
         clearComposer(ifMatching: composerSnapshot)
         errorMessage = nil
         let submissionID = UUID.v7()
@@ -71,6 +72,7 @@ extension CodexChatSessionModel {
             images: submission.images,
             composerSnapshot: submission.clearsComposerOnDelivery ? submission.composerSnapshot : nil,
             includesCurrentContext: submission.includesCurrentContext,
+            startsFreshSession: submission.startsFreshSession,
             queuedSubmission: fromQueue ? submission : nil
         )
 
@@ -121,7 +123,7 @@ extension CodexChatSessionModel {
         lastSubmittedText = submission.text
         lastManualSubmission = submission
         var queued = submission
-        if submission.deliveryMode == .queue || submission.text.hasPrefix("/") {
+        if submission.deliveryMode == .queue || submission.text.hasPrefix("/") || submission.startsFreshSession {
             clearComposer(ifMatching: submission.composerSnapshot)
             queued.clearsComposerOnDelivery = false
         }
@@ -166,6 +168,7 @@ extension CodexChatSessionModel {
             nil
         }
         submitManualSubmission(CodexChatManualSubmission(
+            startsFreshSession: submission.startsFreshSession,
             text: submission.text,
             images: submission.images,
             composerSnapshot: composerSnapshot,

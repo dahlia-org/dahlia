@@ -13,6 +13,7 @@ struct CodexChatManualSubmission: Identifiable, Equatable, Sendable {
     let id: UUID
     var clearsComposerOnDelivery = true
     var deliveryMode: CodexChatDeliveryMode
+    var startsFreshSession: Bool
     let text: String
     let images: [CodexChatImageAttachment]
     let composerSnapshot: CodexChatComposerSnapshot?
@@ -21,6 +22,7 @@ struct CodexChatManualSubmission: Identifiable, Equatable, Sendable {
     init(
         id: UUID = .v7(),
         deliveryMode: CodexChatDeliveryMode = .steer,
+        startsFreshSession: Bool = false,
         text: String,
         images: [CodexChatImageAttachment],
         composerSnapshot: CodexChatComposerSnapshot? = nil,
@@ -28,6 +30,7 @@ struct CodexChatManualSubmission: Identifiable, Equatable, Sendable {
     ) {
         self.id = id
         self.deliveryMode = deliveryMode
+        self.startsFreshSession = startsFreshSession
         self.text = text
         self.images = images
         self.composerSnapshot = composerSnapshot

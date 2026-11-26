@@ -381,6 +381,9 @@ final class CodexChatSessionModel: Identifiable {
         if reportsUsage {
             usageTelemetryReporter(.aiChatPromptSubmitted)
         }
+        var submission = submission
+        submission.startsFreshSession = startsFreshSession
+        startsFreshSession = false
         isQueuePaused = false
         if shouldEnqueue {
             enqueueManualInput(submission)
@@ -690,14 +693,20 @@ extension CodexChatSessionModel {
                 images: images
             )
             let startsFreshSession = preparingUserMessage?.startsFreshSession == true
-            let turn = try await requestTurnHandle(
-                threadID: backendThreadID,
-                inputs: inputs,
-                model: selectedModelID.nilIfBlank,
-                effort: selectedEffort,
-                approvalMethod: approvalMethod,
-                startsFreshSession: startsFreshSession
-            )
+            let turn: CodexChatTurnHandle
+            do {
+                turn = try await requestTurnHandle(
+                    threadID: backendThreadID,
+                    inputs: inputs,
+                    model: selectedModelID.nilIfBlank,
+                    effort: selectedEffort,
+                    approvalMethod: approvalMethod,
+                    startsFreshSession: startsFreshSession
+                )
+            } catch let error as CodexChatFreshSessionCommittedError {
+                preparingUserMessage?.startsFreshSession = false
+                throw error.underlyingError
+            }
             preparingUserMessage?.startsFreshSession = false
             preparingQueuedManualSubmission = nil
             applyEffectiveApprovalMethod(turn.approvalMethod ?? approvalMethod, requested: approvalMethod)
@@ -1011,6 +1020,7 @@ extension CodexChatSessionModel {
         submissionID: UUID?
     ) {
         guard activeSubmissionID == submissionID else { return }
+        let restoresQueuedInput = isStopRequested && preparingQueuedManualSubmission != nil
         if isStopRequested, let preparingQueuedManualSubmission {
             requeue(preparingQueuedManualSubmission)
         }
@@ -1022,8 +1032,8 @@ extension CodexChatSessionModel {
             selectedThreadReferences = snapshot.threadReferences
             attachedImages = snapshot.images
         }
-        // Preparation failed or was cancelled before this message was accepted by the service.
-        if preparingUserMessage?.startsFreshSession == true { startsFreshSession = true }
+        // A cancelled direct submission returns to the composer; failed and queued inputs retain their own intent.
+        if isStopRequested, !restoresQueuedInput, preparingUserMessage?.startsFreshSession == true { startsFreshSession = true }
         preparingUserMessage = nil
         historySynchronizationGeneration += 1
         // What this view showed to the end needs no reload; it also holds what history does not, such as command notices.
@@ -1288,7 +1298,10 @@ extension CodexChatSessionModel {
 
     func recordFailedSubmission(text: String?, images: [CodexChatImageAttachment] = [], includesCurrentContext: Bool = true) {
         if text?.nilIfBlank != nil || !images.isEmpty {
-            recordFailedManualSubmission(CodexChatManualSubmission(text: text ?? "", images: images, includesCurrentContext: includesCurrentContext))
+            recordFailedManualSubmission(CodexChatManualSubmission(
+                startsFreshSession: preparingUserMessage?.startsFreshSession == true,
+                text: text ?? "", images: images, includesCurrentContext: includesCurrentContext
+            ))
         }
     }
 
@@ -1404,7 +1417,7 @@ extension CodexChatSessionModel {
     func nextPendingSteerInput() -> CodexChatManualSubmission? {
         // A steer would reach the session `/clear` is about to leave; the input waits to start the new one.
         guard !activeTurnIsCommand, !startsFreshSession,
-              let index = pendingManualInputs.firstIndex(where: { $0.deliveryMode == .steer }),
+              let index = pendingManualInputs.prefix(while: { !$0.startsFreshSession }).firstIndex(where: { $0.deliveryMode == .steer }),
               pendingManualInputs[index].id != editingPendingInputID,
               !isQueuePaused else { return nil }
         let submission = pendingManualInputs[index]

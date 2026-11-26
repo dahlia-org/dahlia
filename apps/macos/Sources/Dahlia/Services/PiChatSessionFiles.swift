@@ -8,6 +8,26 @@ enum PiChatSessionFiles {
         return files.first { $0.lastPathComponent.hasSuffix("_\(id).jsonl") }
     }
 
+    /// A pending filename records the previous durable reset sequence, so a crash needs no in-memory rollback state.
+    static func recoverReset(id: String, in directories: [URL], committedSequence: Int64) throws {
+        let folders = try directories.filter { try $0.resourceValues(forKeys: [.isDirectoryKey]).isDirectory == true }
+        let files = try folders.flatMap { try FileManager.default.contentsOfDirectory(at: $0, includingPropertiesForKeys: nil) }
+        let pendingPrefix = "_\(id).jsonl.clearing."
+        for pending in files where pending.lastPathComponent.contains(pendingPrefix) {
+            guard let previousSequence = Int64(pending.pathExtension) else { continue }
+            let original = pending.deletingPathExtension().deletingPathExtension()
+            if committedSequence > previousSequence {
+                try FileManager.default.moveItem(at: pending, to: original.appendingPathExtension("\(previousSequence).cleared"))
+            } else {
+                // Pi may have created a provisional file during startup. Keep it out of resume lookup too.
+                for file in files where file.lastPathComponent.hasSuffix("_\(id).jsonl") {
+                    try FileManager.default.moveItem(at: file, to: file.appendingPathExtension("cleared-\(UUID.v7().uuidString)"))
+                }
+                try FileManager.default.moveItem(at: pending, to: original)
+            }
+        }
+    }
+
     /// Rewrites the header's `cwd`, the folder Pi runs the session in, when it names another folder.
     static func setWorkingDirectory(_ directory: URL, in url: URL) throws {
         let data = try Data(contentsOf: url)

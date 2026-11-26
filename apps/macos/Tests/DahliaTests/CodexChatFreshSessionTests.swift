@@ -6,8 +6,86 @@
 
     @MainActor
     struct CodexChatFreshSessionTests {
+        @Test(arguments: [false, true])
+        func queuedResetStaysWithItsSubmissionThroughEditingAndRemoval(removeReset: Bool) async throws {
+            let service = TestCodexChatService(mode: .blockBeforeOutput)
+            let session = CodexChatSessionModel(service: service, settings: TestCodexChatFixtures.appSettings())
+            session.draft = "Root"
+            session.sendDraft()
+            try #require(await pollUntil { session.activeTurnID != nil })
+            session.draft = "A"
+            session.sendDraft(mode: .queue)
+            session.armFreshSession()
+            session.draft = "B"
+            session.sendDraft(mode: .steer)
+            session.draft = "C"
+            session.sendDraft(mode: .steer)
+            #expect(session.pendingManualInputs.map(\.startsFreshSession) == [false, true, false])
+            let reset = try #require(session.pendingManualInputs.first { $0.startsFreshSession })
+            #expect(!session.canSendPendingInput(reset))
+            #expect(await service.steeredTextBlocks.isEmpty)
+            session.beginEditingPendingInput(id: reset.id)
+            session.savePendingInput(id: reset.id, draft: "B edited", images: [])
+            #expect(session.pendingManualInputs.first { $0.id == reset.id }?.startsFreshSession == true)
+            if removeReset {
+                session.removePendingInput(id: reset.id)
+                try #require(await pollUntil { await service.steeredTextBlocks.count == 1 })
+                #expect(!session.pendingManualInputs.contains { $0.startsFreshSession })
+            } else {
+                await service.completeBlockedTurn()
+                try #require(await pollUntil { await service.freshSessionStarts.count == 2 && session.activeTurnID != nil })
+                #expect(await service.freshSessionStarts == [false, false])
+                await service.completeBlockedTurn()
+                try #require(await pollUntil { await service.freshSessionStarts.count == 3 && session.activeTurnID != nil })
+                #expect(await service.freshSessionStarts == [false, false, true])
+                try #require(await pollUntil { await service.steeredTextBlocks.count == 1 })
+            }
+            session.stop()
+            try #require(await pollUntil { !session.hasPendingGenerationWork })
+        }
+
+        @Test
+        func committedResetFailureRetriesWithoutAnotherReset() async throws {
+            let service = TestCodexChatService(mode: .failThenComplete, commitsFreshSessionBeforeFailure: true)
+            let session = CodexChatSessionModel(
+                backendThreadID: "thread-1", messages: [CodexChatMessage(role: .assistant, text: "Earlier answer")],
+                service: service, settings: TestCodexChatFixtures.appSettings()
+            )
+            session.armFreshSession()
+            session.draft = "Fresh question"
+            session.sendDraft()
+            try #require(await pollUntil { !session.hasPendingGenerationWork })
+            #expect(session.errorMessage != nil)
+            #expect(!session.startsFreshSession)
+            #expect(session.lastManualSubmission?.startsFreshSession == false)
+            session.retry()
+            try #require(await pollUntil { !session.hasPendingGenerationWork })
+            #expect(await service.freshSessionStarts == [true, false])
+        }
+
+        @Test
+        func retryOfAnEarlierSubmissionDoesNotConsumeLaterArming() async throws {
+            let service = TestCodexChatService(mode: .failThenComplete)
+            let session = CodexChatSessionModel(
+                backendThreadID: "thread-1", messages: [CodexChatMessage(role: .assistant, text: "Earlier answer")],
+                service: service, settings: TestCodexChatFixtures.appSettings()
+            )
+            session.draft = "A"
+            session.sendDraft()
+            try #require(await pollUntil { !session.hasPendingGenerationWork })
+            session.armFreshSession()
+            session.retry()
+            try #require(await pollUntil { !session.hasPendingGenerationWork })
+            #expect(await service.freshSessionStarts == [false, false])
+            #expect(session.startsFreshSession)
+            session.draft = "B"
+            session.sendDraft()
+            try #require(await pollUntil { !session.hasPendingGenerationWork })
+            #expect(await service.freshSessionStarts == [false, false, true])
+        }
+
         @Test(arguments: ["image", "meeting", "thread"])
-        func typedClearPreservesAttachmentsForTheNextMessage(attachment: String) async throws {
+        func typedClearPreservesAttachmentsForTheNextMessage(attachment: String) async {
             let service = ImageChatService(supportsImages: true)
             let session = CodexChatSessionModel(
                 backendThreadID: "thread-1", messages: [CodexChatMessage(role: .assistant, text: "Earlier answer")],
@@ -87,7 +165,8 @@
             }
             contextProvider.resume()
             try #require(await pollUntil { !session.hasPendingGenerationWork })
-            #expect(session.startsFreshSession)
+            #expect(session.startsFreshSession == cancel)
+            if !cancel { #expect(session.lastManualSubmission?.startsFreshSession == true) }
             #expect(await service.freshSessionStarts.isEmpty)
 
             contextProvider.error = nil
@@ -204,6 +283,16 @@
             let threadID: String
             let sessions: URL
 
+            func reopenedChat() -> PiChatService {
+                PiChatService(
+                    runtime: pi.service, historyStore: store,
+                    workingDirectory: PiWorkingDirectory(override: pi.rootURL.appending(path: "work")),
+                    agentLocator: PiAgentDirectoryLocator(applicationSupportURL: pi.rootURL),
+                    mcpExecutableURL: URL(filePath: "/usr/bin/true"),
+                    mcpSettings: { AgentMCPSettings() }, fileAccessSettings: { PiFileAccessSettings() }
+                )
+            }
+
             func turn(_ text: String, fresh: Bool = false) async throws {
                 let handle = try await chat.beginTurn(
                     threadID: threadID, inputs: [.text(text)], model: nil, effort: "medium",
@@ -213,13 +302,22 @@
             }
         }
 
-        private static func fixture() async throws -> Fixture {
+        private static func fixture(rejectSecondProcess: Bool = false) async throws -> Fixture {
             let log = TestPiTransportLog()
             let pi = TestPiRuntime { options in
+                let processIndex = log.all.count
                 let transport = options.mode == .chat
                     ? TestPiTransport { command in
                         guard let id = command["id"] else { return [] }
                         let started = TestPiTransport.response(id: id, data: .object(["disposition": .string("started")]))
+                        if command["type"]?.stringValue == "prompt" {
+                            if rejectSecondProcess, processIndex == 1 {
+                                return [.object([
+                                    "type": .string("response"), "id": id, "success": .bool(false), "error": .string("Rejected"),
+                                ])]
+                            }
+                            if command["message"]?.stringValue == "active" { return [started] }
+                        }
                         return command["type"]?.stringValue == "prompt"
                             ? [started, TestPiTransport.assistantEnd("answer"), TestPiTransport.settled()] : [started]
                     }
@@ -244,13 +342,73 @@
         }
 
         @Test(.providerAccounts([.init(id: UUID(), workspaceURL: URL(string: "https://own.cloud.databricks.com")!)]))
+        func rejectedResetNeverInterruptsAnotherActiveRun() async throws {
+            let fixture = try await Self.fixture()
+            try await fixture.turn("before")
+            let handle = try await fixture.chat.beginTurn(
+                threadID: fixture.threadID, inputs: [.text("active")], model: nil, effort: "medium", approvalMethod: .autoReview
+            )
+            let transport = try #require(fixture.log.all.last)
+            await #expect(throws: (any Error).self) { try await fixture.turn("reset", fresh: true) }
+            #expect(await !transport.isClosed)
+            #expect(try fixture.store.run(id: handle.id)?.status == "running")
+            await transport.emit(TestPiTransport.assistantEnd("still running"))
+            await transport.emit(TestPiTransport.settled())
+            for try await _ in handle.events {}
+            #expect(try fixture.store.run(id: handle.id)?.status == "completed")
+        }
+
+        @Test(.providerAccounts([.init(id: UUID(), workspaceURL: URL(string: "https://own.cloud.databricks.com")!)]))
+        func committedPromptRejectionReportsResetAcceptanceAndRetryKeepsOneBoundary() async throws {
+            let fixture = try await Self.fixture(rejectSecondProcess: true)
+            try await fixture.turn("before")
+            await #expect(throws: CodexChatFreshSessionCommittedError.self) { try await fixture.turn("reset", fresh: true) }
+            let sequence = try fixture.store.freshSessionSequence(threadID: fixture.threadID)
+            #expect(sequence >= 0)
+            try await fixture.turn("retry")
+            #expect(try fixture.store.freshSessionSequence(threadID: fixture.threadID) == sequence)
+        }
+
+        @Test(
+            .providerAccounts([.init(id: UUID(), workspaceURL: URL(string: "https://own.cloud.databricks.com")!)]),
+            arguments: [false, true],
+            [false, true]
+        )
+        func reopenRecoversPendingFileAccordingToTheDurableResetBoundary(committed: Bool, hasProvisionalFile: Bool) async throws {
+            let fixture = try await Self.fixture()
+            try await fixture.turn("before")
+            await fixture.chat.unsubscribe(threadID: fixture.threadID)
+            let file = try #require(PiChatSessionFiles.file(id: fixture.threadID, in: fixture.sessions))
+            let original = try Data(contentsOf: file)
+            let previous = try fixture.store.freshSessionSequence(threadID: fixture.threadID)
+            let pending = file.appendingPathExtension("clearing.\(previous)")
+            try FileManager.default.moveItem(at: file, to: pending)
+            // Startup may already have created a provisional session under the same thread ID.
+            let provisional = fixture.sessions.appendingPathComponent("provisional_\(fixture.threadID).jsonl")
+            if hasProvisionalFile { try Data("provisional".utf8).write(to: provisional) }
+            if committed {
+                try fixture.store.appendItems(threadID: fixture.threadID, items: [ChatHistoryCodec.user([.text("reset")], startsFreshSession: true)])
+            }
+            let reopened = fixture.reopenedChat()
+            if committed, !hasProvisionalFile {
+                await #expect(throws: (any Error).self) { try await reopened.sessionFile(id: fixture.threadID) }
+            } else {
+                let resumedFile = try await reopened.sessionFile(id: fixture.threadID)
+                #expect(resumedFile.resolvingSymlinksInPath() == (committed ? provisional : file).resolvingSymlinksInPath())
+            }
+            #expect(!FileManager.default.fileExists(atPath: pending.path))
+            let saved = committed ? file.appendingPathExtension("\(previous).cleared") : file
+            #expect(try Data(contentsOf: saved) == original)
+        }
+
+        @Test(.providerAccounts([.init(id: UUID(), workspaceURL: URL(string: "https://own.cloud.databricks.com")!)]))
         func freshTurnMovesTheSessionFileAsideAndStartsPiUnderTheSameThread() async throws {
             let fixture = try await Self.fixture()
             try await fixture.turn("before")
             let file = try #require(PiChatSessionFiles.file(id: fixture.threadID, in: fixture.sessions))
 
             try await fixture.turn("after", fresh: true)
-            #expect(FileManager.default.fileExists(atPath: file.appendingPathExtension("cleared").path))
+            #expect(FileManager.default.fileExists(atPath: file.appendingPathExtension("-1.cleared").path))
             #expect(fixture.log.all.count == 2)
             let reopened = try #require(fixture.pi.launches.all.last { $0.mode == .chat })
             #expect(reopened.arguments.contains("--session-id") && !reopened.arguments.contains("--session"))
@@ -259,6 +417,9 @@
 
             try await fixture.turn("again")
             #expect(fixture.log.all.count == 2)
+            try await fixture.turn("another reset", fresh: true)
+            #expect(fixture.log.all.count == 3)
+            #expect(try fixture.store.messagePage(threadID: fixture.threadID).messages.filter(\.startsFreshSession).count == 2)
         }
 
         @Test(.providerAccounts([.init(id: UUID(), workspaceURL: URL(string: "https://own.cloud.databricks.com")!)]))
@@ -272,7 +433,7 @@
             }
             await #expect(throws: (any Error).self) { try await fixture.turn("after", fresh: true) }
             #expect(PiChatSessionFiles.file(id: fixture.threadID, in: fixture.sessions) == file)
-            #expect(!FileManager.default.fileExists(atPath: file.appendingPathExtension("cleared").path))
+            #expect(!FileManager.default.fileExists(atPath: file.appendingPathExtension("-1.cleared").path))
             #expect(try fixture.store.hasAssistantReply(threadID: fixture.threadID))
         }
     }

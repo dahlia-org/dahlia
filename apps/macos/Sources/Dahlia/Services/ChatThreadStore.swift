@@ -208,6 +208,14 @@ struct ChatThreadStore: ChatItemStore, Sendable {
         }
     }
 
+    func freshSessionSequence(threadID: String) throws -> Int64 {
+        try dbQueue.read { db in
+            try Int64.fetchOne(db, sql: """
+            SELECT MAX(seq) FROM chat_items WHERE threadID = ? AND json_extract(data, '$.freshSession') = 1
+            """, arguments: [threadID]) ?? -1
+        }
+    }
+
     static func firstMessagePreview(threadID: String, in db: Database) throws -> String? {
         guard let content = try String.fetchOne(db, sql: """
         SELECT COALESCE(
