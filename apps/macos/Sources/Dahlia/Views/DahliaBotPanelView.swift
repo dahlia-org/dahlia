@@ -39,6 +39,7 @@ struct DahliaBotPanelView: View {
                     systemImage: \.systemImage,
                     onSelect: { tab = $0 }
                 )
+                .mainSidebarHelpOverlay(isVisible: true)
                 Color.clear
                     .frame(width: DahliaDesign.windowHeaderControlSize, height: DahliaDesign.windowHeaderControlSize)
                     .accessibilityHidden(true)
