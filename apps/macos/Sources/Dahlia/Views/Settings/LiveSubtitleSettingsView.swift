@@ -13,7 +13,7 @@ struct LiveSubtitleSettingsView: View {
         if settings.currentWorkspace != nil {
             Section {
                 Toggle(L10n.liveTranscriptDraft, isOn: $workspaceSettings.generationSettings.liveTranscriptDraft)
-                    .toggleStyle(.switch)
+                    .toggleStyle(.dahliaSwitch)
             } header: {
                 Text(L10n.liveTranscriptDraftSectionTitle)
                     .font(.dahliaSectionHeader)
@@ -25,7 +25,7 @@ struct LiveSubtitleSettingsView: View {
                 Text(L10n.liveSubtitles)
                 Text(L10n.liveSubtitleOverlayToggleDescription)
             }
-            .toggleStyle(.switch)
+            .toggleStyle(.dahliaSwitch)
 
             LiveTranscriptionLanguagePicker(supportedLocales: supportedLocales)
                 .disabled(isLoadingLocales)
@@ -34,7 +34,7 @@ struct LiveSubtitleSettingsView: View {
                 Text(L10n.includeMicrophone)
                 Text(L10n.liveSubtitleMicrophoneDescription)
             }
-            .toggleStyle(.switch)
+            .toggleStyle(.dahliaSwitch)
 
             Picker(selection: $settings.liveSubtitleOverlaySegmentCount) {
                 ForEach(1 ..< 6, id: \.self) { count in
@@ -57,7 +57,7 @@ struct LiveSubtitleSettingsView: View {
                 Text(L10n.liveSubtitleTranslation)
                 Text(L10n.liveSubtitleTranslationDescription)
             }
-            .toggleStyle(.switch)
+            .toggleStyle(.dahliaSwitch)
 
             DahliaMenuPicker(
                 title: L10n.translationTargetLanguage,

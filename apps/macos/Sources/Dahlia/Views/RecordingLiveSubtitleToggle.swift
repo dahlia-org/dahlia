@@ -57,7 +57,7 @@ struct RecordingLiveSubtitleToggle: View {
 
             Toggle(L10n.liveSubtitles, isOn: $isEnabled)
                 .labelsHidden()
-                .toggleStyle(.switch)
+                .toggleStyle(.dahliaSwitch)
                 .controlSize(.small)
                 .accessibilityLabel(L10n.liveSubtitles)
                 .accessibilityValue(isEnabled ? L10n.liveSubtitlesOnStatus : L10n.liveSubtitlesOffStatus)

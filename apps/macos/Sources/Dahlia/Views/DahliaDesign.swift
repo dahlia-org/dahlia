@@ -46,7 +46,7 @@ enum DahliaDesign {
     static let sidebarHighlightColor = Color.primary.opacity(0.10)
     static let contentHighlightColor = Color.primary.opacity(0.05)
     static let chipHoverColor = Color.primary.opacity(0.10)
-    /// The app's accent: the fill of primary buttons and the text on it. Orca's monochrome for now (near black in light
+    /// The app's accent: the fill of primary buttons and switches, and the text on primary buttons. Orca's monochrome for now (near black in light
     /// mode, near white in dark); a choice of accent replaces these two values.
     enum Accent {
         static let fill = NSColor(name: nil) { appearance in

@@ -419,8 +419,7 @@ private struct CalendarScheduleEventRow: View {
                         Image(systemName: "timer")
                             .dahliaFixedSymbol()
                     }
-                    .toggleStyle(.switch)
-                    .controlSize(.small)
+                    .toggleStyle(.dahliaSwitch)
                     .padding(.horizontal, 8)
                     .padding(.vertical, 3)
                     .background(Color.primary.opacity(0.06), in: Capsule())

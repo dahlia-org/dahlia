@@ -42,7 +42,7 @@ struct AgentScheduleSettingsView: View {
             }
             if let error = model.error { Text(error).foregroundStyle(.red).textSelection(.enabled) }
         }
-        .formStyle(.grouped).toggleStyle(.switch).font(.dahliaBody).disabled(model.isBusy)
+        .formStyle(.grouped).toggleStyle(.dahliaSwitch).font(.dahliaBody).disabled(model.isBusy)
         .task {
             while !Task.isCancelled {
                 await model.refresh()

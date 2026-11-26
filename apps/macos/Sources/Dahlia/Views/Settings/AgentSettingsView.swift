@@ -122,7 +122,7 @@ private struct AgentRuntimeSection: View {
     var body: some View {
         Section {
             Toggle(L10n.useManagedPi, isOn: $useManagedPi)
-                .toggleStyle(.switch)
+                .toggleStyle(.dahliaSwitch)
             LabeledContent(L10n.piCommandInUse) {
                 if useManagedPi {
                     Text(PiInstaller.executableURL.path).textSelection(.enabled)
@@ -586,7 +586,7 @@ private struct AgentModelSettingsView: View {
                 AgentModelSettings.setModel(model.model, on: isOn)
                 Task { await service.subscriptionModelChoicesDidChange() }
             })
-            .toggleStyle(.switch)
+            .toggleStyle(.dahliaSwitch)
             .foregroundStyle(AgentModelSettings.isSubscriptionModelOn(model.model, choices: choices) ? .primary : .secondary)
         }
     }
@@ -617,7 +617,7 @@ private struct AgentModelSettingsView: View {
             LabeledContent {
                 Toggle(model.name, isOn: on(model, of: provider))
                     .labelsHidden()
-                    .toggleStyle(.switch)
+                    .toggleStyle(.dahliaSwitch)
                     // A chat needs a model, so a Databricks account keeps one on in its own gateway:
                     // its other models come from workspaces that can be removed.
                     .disabled(isOn && provider.isAccount && onCount(provider.id) == 1)
@@ -744,7 +744,7 @@ private struct AgentOmnigentSection: View {
     var body: some View {
         Section {
             Toggle(L10n.omnigentEnabled, isOn: $isEnabled)
-                .toggleStyle(.switch)
+                .toggleStyle(.dahliaSwitch)
         } header: {
             Text(L10n.omnigent).font(.dahliaSectionHeader)
         } footer: {

@@ -32,6 +32,6 @@ struct AccountProcessingSettingsView: View {
                 ContentUnavailableView(L10n.noWorkspaceSelected, systemImage: "person.crop.circle")
             }
         }
-        .toggleStyle(.switch)
+        .toggleStyle(.dahliaSwitch)
     }
 }

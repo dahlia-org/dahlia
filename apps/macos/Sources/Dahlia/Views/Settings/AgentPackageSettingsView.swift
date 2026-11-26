@@ -184,7 +184,7 @@ private struct AgentWebAccessSettingsModal: View {
                             isOn: Binding { configuration?.webSearchEnabled ?? false } set: { configuration?.webSearchEnabled = $0 }
                         )
                         .labelsHidden()
-                        .toggleStyle(.switch)
+                        .toggleStyle(.dahliaSwitch)
                     } label: {
                         HStack {
                             Text(L10n.webAccessWebSearch)
