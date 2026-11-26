@@ -30,22 +30,18 @@ struct DahliaBotPanelView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            // Like the chat's own header: the shown view's name, and icon buttons that switch it.
+            // Tabs like the left sidebar's, leading; the window's side panel toggle sits over the trailing end.
             DahliaWindowHeader(allowsWindowDragging: false, backgroundColor: .clear) {
-                Text(tab.title)
-                    .font(.dahliaBody)
-                    .foregroundStyle(DahliaDesign.primaryTextColor)
-                    .padding(.leading, 8)
-                Spacer(minLength: 8)
-                ForEach(Tab.allCases, id: \.self) { option in
-                    DahliaWindowHeaderIconButton(label: option.title, systemImage: option.systemImage) { tab = option }
-                        .foregroundStyle(option == tab ? Color.accentColor : DahliaDesign.secondaryTextColor)
-                        .background(
-                            option == tab ? DahliaDesign.contentHighlightColor : .clear,
-                            in: .rect(cornerRadius: DahliaDesign.Highlight.regularCornerRadius)
-                        )
-                        .accessibilityAddTraits(option == tab ? .isSelected : [])
-                }
+                IconTabBar(
+                    tabs: Tab.allCases,
+                    selection: tab,
+                    title: \.title,
+                    systemImage: \.systemImage,
+                    onSelect: { tab = $0 }
+                )
+                Color.clear
+                    .frame(width: DahliaDesign.windowHeaderControlSize, height: DahliaDesign.windowHeaderControlSize)
+                    .accessibilityHidden(true)
             }
             // The header reaches into the title bar, where the Form's background would otherwise cover it, as in the chat.
             .zIndex(1)

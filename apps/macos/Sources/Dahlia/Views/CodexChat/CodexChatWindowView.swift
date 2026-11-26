@@ -31,7 +31,6 @@ struct CodexChatWindowView: View {
                     onNewChat: startNewChat,
                     onOpenHistory: openHistory,
                     onShowFullScreen: nil,
-                    onPopOut: nil,
                     reservesSidebarToggle: false,
                     reservesWindowControls: true,
                     headerLeadingInset: 0,

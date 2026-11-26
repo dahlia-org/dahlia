@@ -12,7 +12,6 @@ struct CodexChatView: View {
     let onNewChat: () -> Void
     let onOpenHistory: (CodexChatThreadSummary) -> Void
     let onShowFullScreen: (() -> Void)?
-    let onPopOut: (() -> Void)?
     let reservesSidebarToggle: Bool
     let reservesWindowControls: Bool
     let headerLeadingInset: CGFloat
@@ -20,7 +19,6 @@ struct CodexChatView: View {
     /// The side panel leaves out the title and keeps a new chat's composer at the bottom, as in a conversation. Elsewhere a
     /// new chat centers its composer under a welcome.
     var isSidePanel = false
-    var panelToggle: CodexChatPanelToggle?
 
     @Environment(MainWindowNavigation.self) private var navigation
     @State private var dismissedIntegrationsSessionID: CodexChatSessionID?
@@ -32,10 +30,8 @@ struct CodexChatView: View {
                 showsHistory: showsHistory,
                 hasConversation: !session.messages.isEmpty,
                 onBack: hideHistory,
-                onShowHistory: showHistory,
                 onNewChat: startNewChat,
                 onShowFullScreen: onShowFullScreen,
-                onPopOut: onPopOut,
                 reservesSidebarToggle: reservesSidebarToggle,
                 reservesWindowControls: reservesWindowControls,
                 leadingInset: headerLeadingInset,
@@ -43,8 +39,7 @@ struct CodexChatView: View {
                 parentTitle: session.parentThread.map {
                     CodexChatMeetingReference.displayText(for: $0.title.nilIfBlank ?? L10n.newChat, namesByID: session.meetingNamesByID)
                 },
-                onOpenParent: session.parentThread.map { parent in { openHistoryThread(parent) } },
-                panelToggle: panelToggle
+                onOpenParent: session.parentThread.map { parent in { openHistoryThread(parent) } }
             )
             .zIndex(1)
 

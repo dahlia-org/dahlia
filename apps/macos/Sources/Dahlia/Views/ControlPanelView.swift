@@ -33,7 +33,6 @@ struct ControlPanelView: View {
     var sidebarViewModel: SidebarViewModel
     let recordingCoordinator: RecordingCoordinator
     let onPresentSummaryGeneration: () -> Void
-    @Binding var notesEditorModel: DocumentEditorModel?
     @Binding var selectedTab: DetailTab
     @Binding var expandedScreenshot: ExpandedScreenshotPresentation?
 
@@ -272,13 +271,6 @@ struct ControlPanelView: View {
                         }
                     },
                     editable: sidebarViewModel.canEditCurrentWorkspace,
-                    onModelChange: { model, visible in
-                        if visible {
-                            notesEditorModel = model
-                        } else if notesEditorModel === model {
-                            notesEditorModel = nil
-                        }
-                    },
                     resolveMeeting: {
                         guard viewModel.currentMeetingId == documentID || viewModel.draftMeeting?.id == documentID else { return nil }
                         return viewModel.materializeDraftMeeting()

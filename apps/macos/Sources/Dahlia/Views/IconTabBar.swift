@@ -1,14 +1,24 @@
 import SwiftUI
 
-/// Notion-style sidebar menu: icon-only buttons, with the label shown only on the selected one.
-struct MainSidebarTabBar: View {
-    let selection: MainSidebarTab
-    let onSelect: (MainSidebarTab) -> Void
+/// Notion-style tab bar: icon-only buttons, with the label shown only on the selected one.
+struct IconTabBar<Tab: Hashable>: View {
+    let tabs: [Tab]
+    let selection: Tab
+    let title: (Tab) -> String
+    let systemImage: (Tab) -> String
+    /// A ⌃ shortcut per tab; nil leaves the tab without one.
+    var shortcutKey: (Tab) -> Character? = { _ in nil }
+    let onSelect: (Tab) -> Void
 
     var body: some View {
         HStack(spacing: 4) {
-            ForEach(MainSidebarTab.allCases, id: \.self) { tab in
-                MainSidebarTabButton(tab: tab, isSelected: tab == selection) { onSelect(tab) }
+            ForEach(tabs, id: \.self) { tab in
+                IconTabButton(
+                    title: title(tab),
+                    systemImage: systemImage(tab),
+                    shortcutKey: shortcutKey(tab),
+                    isSelected: tab == selection
+                ) { onSelect(tab) }
             }
             Spacer(minLength: 0)
         }
@@ -16,8 +26,10 @@ struct MainSidebarTabBar: View {
     }
 }
 
-private struct MainSidebarTabButton: View {
-    let tab: MainSidebarTab
+private struct IconTabButton: View {
+    let title: String
+    let systemImage: String
+    let shortcutKey: Character?
     let isSelected: Bool
     let action: () -> Void
 
@@ -30,10 +42,10 @@ private struct MainSidebarTabButton: View {
     var body: some View {
         Button(action: action) {
             HStack(spacing: 6) {
-                Image(systemName: tab.systemImage)
+                Image(systemName: systemImage)
                     .dahliaFixedSymbol()
                 if isSelected {
-                    Text(tab.title)
+                    Text(title)
                         .lineLimit(1)
                 }
             }
@@ -50,7 +62,7 @@ private struct MainSidebarTabButton: View {
             .contentShape(.rect)
         }
         .buttonStyle(.plain)
-        .keyboardShortcut(KeyEquivalent(tab.shortcutKey), modifiers: .control)
+        .keyboardShortcut(shortcutKey.map { KeyboardShortcut(KeyEquivalent($0), modifiers: .control) })
         .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { buttonFrame = $0 }
         .onHover { isHovering in
             isHovered = isHovering
@@ -58,8 +70,8 @@ private struct MainSidebarTabButton: View {
                 // Below, because above would cover the window header's controls.
                 helpController.hoverBegan(
                     for: helpID,
-                    label: tab.title,
-                    shortcut: "⌃\(tab.shortcutKey)",
+                    label: title,
+                    shortcut: shortcutKey.map { "⌃\($0)" },
                     buttonFrame: buttonFrame,
                     placesBelow: true
                 )
@@ -68,7 +80,7 @@ private struct MainSidebarTabButton: View {
             }
         }
         .onDisappear { helpController.hoverEnded(for: helpID) }
-        .accessibilityLabel(tab.title)
+        .accessibilityLabel(title)
         .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 }

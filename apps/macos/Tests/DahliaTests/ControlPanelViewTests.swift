@@ -33,11 +33,10 @@
             ).environment(navigation).environment(CodexChatCoordinator(service: TestCodexChatService(mode: .complete))))
             hostingView.frame = NSRect(x: 0, y: 0, width: 900, height: 700)
             hostingView.layoutSubtreeIfNeeded()
-            #expect(await pollUntil { state.detailAppearanceCount == 1 && state.notesEditorModel != nil })
-            let firstEditor = try #require(state.notesEditorModel)
+            #expect(await pollUntil { state.detailAppearanceCount == 1 })
 
             state.showsControlPanel = false
-            #expect(await pollUntil { state.didShowLoadingPlaceholder && state.notesEditorModel == nil })
+            #expect(await pollUntil { state.didShowLoadingPlaceholder })
 
             viewModel.clearCurrentMeeting()
             viewModel.beginDraftMeeting(
@@ -46,8 +45,7 @@
             )
             state.showsControlPanel = true
 
-            #expect(await pollUntil { state.detailAppearanceCount == 2 && state.notesEditorModel != nil })
-            #expect(state.notesEditorModel !== firstEditor)
+            #expect(await pollUntil { state.detailAppearanceCount == 2 })
             #expect(state.selectedTab == .notes)
         }
     }
@@ -55,7 +53,6 @@
     @MainActor
     @Observable
     private final class ControlPanelViewFixtureState {
-        var notesEditorModel: DocumentEditorModel?
         var selectedTab: DetailTab = .notes
         var expandedScreenshot: ExpandedScreenshotPresentation?
         var showsControlPanel = true
@@ -76,7 +73,6 @@
                     sidebarViewModel: sidebarViewModel,
                     recordingCoordinator: recordingCoordinator,
                     onPresentSummaryGeneration: {},
-                    notesEditorModel: $state.notesEditorModel,
                     selectedTab: $state.selectedTab,
                     expandedScreenshot: $state.expandedScreenshot
                 )

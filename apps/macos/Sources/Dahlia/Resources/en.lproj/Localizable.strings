@@ -1044,7 +1044,6 @@
 "Load more" = "Load more";
 "Earlier messages" = "Earlier messages";
 "Later messages" = "Later messages";
-"Open chat in a new window" = "Open chat in a new window";
 "Show chat full screen" = "Show chat full screen";
 "Hide chat" = "Hide chat";
 "Send message" = "Send message";
@@ -1398,8 +1397,6 @@
 "recovery.recordings" = "Recovered Recordings";
 "recovery.recording" = "Recovered Recording";
 
-"documentSavedLocally" = "Saved on this Mac";
-"documentSaving" = "Saving…";
 "documentSaveFailed" = "Could not save. Keep this view open and copy your edits.";
 "documentPrivateLegacy" = "Legacy Notes on this Mac (not shared)";
 
@@ -1407,7 +1404,6 @@
 "document.recovery.empty" = "There are no deleted paragraphs to restore.";
 "document.restore" = "Insert as new paragraphs";
 "document.keepLocal" = "Unsynced edits or private notes remain. Move this workspace to the Local Account to keep them.";
-"document.privateRecoverySaved" = "Your input was saved in a recovery copy on this Mac, available in Workspace settings.";
 
 
 "Use the Server version. Local data missing from the Server is kept in the backup and is not uploaded. Private Notes stay on this Mac." = "Use the Server version. Local data missing from the Server is kept in the backup and is not uploaded. Private Notes stay on this Mac.";
