@@ -6,7 +6,6 @@ import GRDB
 struct AgentItemRecord: Codable, FetchableRecord, PersistableRecord, Identifiable, Sendable {
     static let databaseTableName = "agent_user_inbox"
     var id: String
-    var accountID: String
     var kind: String
     var status: String
     var taskID: String?

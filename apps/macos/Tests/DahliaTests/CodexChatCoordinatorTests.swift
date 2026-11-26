@@ -757,6 +757,39 @@ import Foundation
         }
 
         @Test
+        func olderRefreshCannotEraseNewerSettledHistory() async {
+            let service = DelayedHistoryCodexChatService()
+            let coordinator = CodexChatCoordinator(service: service, settings: AppSettings())
+            let older = Task { await coordinator.refreshHistory() }
+            await waitUntil { await service.hasBlockedRequest }
+            await coordinator.refreshHistory()
+            #expect(coordinator.settledHistory.map(\.id) == ["settled-history"])
+            #expect(coordinator.settledCursor == "more-settled")
+
+            await service.releaseBlockedRequest()
+            await older.value
+            #expect(coordinator.settledHistory.map(\.id) == ["settled-history"])
+            #expect(coordinator.settledCursor == "more-settled")
+            #expect(coordinator.settledCount == 26)
+        }
+
+        @Test
+        func settledPaginationDoesNotOverlap() async {
+            let service = DelayedHistoryCodexChatService(blocksFirstHistory: false)
+            let coordinator = CodexChatCoordinator(service: service, settings: AppSettings())
+            await coordinator.refreshHistory()
+            await service.blockNextSettledRead()
+            let first = Task { await coordinator.loadMoreSettled() }
+            await waitUntil { await service.hasBlockedSettledRequest }
+            await coordinator.loadMoreSettled()
+            #expect(await service.settledRequests == 2)
+            await service.releaseSettledRead()
+            await first.value
+            #expect(coordinator.settledCursor == nil)
+            #expect(!coordinator.isLoadingSettled)
+        }
+
+        @Test
         func refreshingHistoryRetriesFailedRequest() async {
             let service = CoordinatorTestCodexChatService(failFirstHistoryRequest: true)
             let settings = AppSettings()
@@ -902,6 +935,18 @@ import Foundation
         private var blockedContinuation: CheckedContinuation<CodexChatThreadPage, Never>?
         private var didBlock = false
 
+        private var blocksSettledRead = false
+        private var settledContinuation: CheckedContinuation<CodexChatThreadPage, Never>?
+        private(set) var settledRequests = 0
+
+        init(blocksFirstHistory: Bool = true) { didBlock = !blocksFirstHistory }
+        var hasBlockedSettledRequest: Bool { settledContinuation != nil }
+        func blockNextSettledRead() { blocksSettledRead = true }
+        func releaseSettledRead() {
+            settledContinuation?.resume(returning: CodexChatThreadPage(threads: [], nextCursor: nil))
+            settledContinuation = nil
+        }
+
         var hasBlockedRequest: Bool { blockedContinuation != nil }
 
         func models(forceRefresh _: Bool) async throws -> [CodexModel] { [] }
@@ -915,6 +960,20 @@ import Foundation
             }
             return Self.page()
         }
+
+        func listSettledThreads(cursor _: String?) async throws -> CodexChatThreadPage {
+            settledRequests += 1
+            if blocksSettledRead {
+                blocksSettledRead = false
+                return await withCheckedContinuation { settledContinuation = $0 }
+            }
+            return CodexChatThreadPage(
+                threads: [.init(id: "settled-history", title: "Settled", updatedAt: .now, settledAt: .now)],
+                nextCursor: "more-settled"
+            )
+        }
+
+        func threadCounts() async throws -> (active: Int, settled: Int) { (1, 26) }
 
         func releaseBlockedRequest() {
             blockedContinuation?.resume(returning: CodexChatThreadPage(

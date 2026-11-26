@@ -18,4 +18,6 @@ struct ChatThreadRecord: Codable, FetchableRecord, PersistableRecord, Sendable {
     var skillIterations = 0
     var lastSeenSeq: Int64 = -1
     var scheduleID: String?
+    /// When the user settled it: done for now, kept out of the active list until a run starts in it again.
+    var settledAt: Date?
 }

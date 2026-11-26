@@ -24,8 +24,6 @@ actor PiChatService: CodexChatServicing {
     var activeIntake: ActiveIntake?
     /// When each Source was last tried, so a failing one waits its interval instead of retrying every minute.
     var intakeAttempts: [String: Date] = [:]
-    /// Consecutive runs of each Source whose listed items were not all recorded; see `runIntake`.
-    var intakeMismatches: [String: Int] = [:]
     /// Super Agent is one thread; see `PiChatService+DahliaBot`. A failed or incomplete notice waits before it is told again.
     var botRetryAt: Date?
     /// The `SOUL.md` text each Super Agent process last received.
@@ -262,6 +260,7 @@ actor PiChatService: CodexChatServicing {
     private let reviewModel: @Sendable () -> String
     private let reviewTriageEnabled: @Sendable () -> Bool
     private let customInstructions: @Sendable () -> String
+    let calendarSnapshot: @Sendable () async -> AgentCalendarSnapshot
     let mcpSettings: @Sendable () -> AgentMCPSettings
     /// The Databricks workspace whose Omnigent chat may call, or nil while the account has it off.
     let omnigentConnection: @Sendable () -> UUID?
@@ -300,6 +299,7 @@ actor PiChatService: CodexChatServicing {
         reviewTriageEnabled: @escaping @Sendable () -> Bool = { AgentAutoReviewSettings.triageEnabled() },
         customInstructions: @escaping @Sendable () -> String = { AgentChatInstructions.load() },
         mcpSettings: @escaping @Sendable () -> AgentMCPSettings = { AgentMCPSettings.load() },
+        calendarSnapshot: @escaping @Sendable () async -> AgentCalendarSnapshot = { await AgentCalendarSnapshot.current() },
         fileAccessSettings: @escaping @Sendable () -> PiFileAccessSettings = { PiFileAccessSettings.load() },
         omnigentConnection: @escaping @Sendable () -> UUID? = { OmnigentService.connectionID() }
     ) {
@@ -310,6 +310,7 @@ actor PiChatService: CodexChatServicing {
         self.agentLocator = agentLocator
         self.mcpExecutableURL = mcpExecutableURL
         self.mcpSettings = mcpSettings
+        self.calendarSnapshot = calendarSnapshot
         self.fileAccessSettings = fileAccessSettings
         self.reviewModel = reviewModel
         self.reviewTriageEnabled = reviewTriageEnabled
@@ -353,6 +354,23 @@ actor PiChatService: CodexChatServicing {
         try await runtime.requireConfigured()
         // Dahlia Bot's thread opens from the Bots section.
         return try history().listThreads(accountID: AppAccount.key, cursor: cursor, hiding: AgentBotSettings.botThread(for: AppAccount.key))
+    }
+
+    func listSettledThreads(cursor: String?) async throws -> CodexChatThreadPage {
+        try await runtime.requireConfigured()
+        return try history().listThreads(
+            accountID: AppAccount.key, cursor: cursor, hiding: AgentBotSettings.botThread(for: AppAccount.key), settled: true
+        )
+    }
+
+    func threadCounts() async throws -> (active: Int, settled: Int) {
+        try await runtime.requireConfigured()
+        return try history().threadCounts(accountID: AppAccount.key, hiding: AgentBotSettings.botThread(for: AppAccount.key))
+    }
+
+    func setThreadSettled(id: String, settled: Bool) async throws {
+        try await runtime.requireConfigured()
+        try history().setSettled(settled, threadID: id, accountID: AppAccount.key)
     }
 
     func markThreadSeen(id: String, through seq: Int64) async throws {
@@ -613,9 +631,14 @@ actor PiChatService: CodexChatServicing {
         continuation.onTermination = { [weak self] _ in Task { await self?.detachReader(threadID: threadID, runID: run.id, readerID: readerID) } }
         do {
             if let notice {
-                try history().beginTurn(threadID: threadID, message: notice, model: requestedModel, effort: effort, runID: run.id)
+                // A notice may run on the unattended model and effort; the conversation keeps what the user chose.
+                let unattended = run.origin == "bot"
+                try history().beginTurn(
+                    threadID: threadID, message: notice, model: unattended ? nil : requestedModel, effort: unattended ? nil : effort, runID: run.id
+                )
             } else if run.requestedByThreadID == nil, run.rootRunID != run.id {
-                try history().updateThread(id: threadID, status: "running", model: requestedModel, effort: effort)
+                // A result notification may run on Super Agent's unattended model and effort; the thread keeps the user's.
+                try history().updateThread(id: threadID, status: "running")
             } else {
                 try history().beginTurn(
                     threadID: threadID,
@@ -867,7 +890,7 @@ actor PiChatService: CodexChatServicing {
     /// the thread it came from (a child's parent, a Task's bot), or else on the one a new chat would get; Pi has no default
     /// model of its own unless the user set one.
     private func startingModel(for record: ChatThreadRecord) async -> String {
-        let isTask = (try? inboxService().task(threadID: record.id, account: record.accountID)) != nil
+        let isTask = (try? inboxService().task(threadID: record.id)) != nil
         if let origin = record.parentThreadID ?? (isTask ? AgentBotSettings.botThread(for: record.accountID) : nil),
            let model = try? history().thread(id: origin, accountID: record.accountID).model?.nilIfBlank {
             return model

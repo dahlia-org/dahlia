@@ -1897,6 +1897,11 @@
 "Continue chats after a crash" = "クラッシュのあとにチャットを続ける";
 "chat.continueAfterRestart.help" = "Dahlia が予期せず終了したとき、実行中だったチャットを次の起動で続きから再開します。承認を待っていたチャットと、自分で止めたチャットは再開しません。";
 "chat.continuedAfterRestart" = "Dahlia が予期せず終了したため、続きから再開しました";
+"chat.showMore" = "さらに %d 件表示";
+"chat.settledSection" = "対応済み";
+"chat.settleThread" = "スレッドを対応済みにする";
+"chat.cannotSettleActiveThread" = "実行中・待機中のスレッドは対応済みにできません。";
+"chat.unsettleThread" = "スレッドの対応済みを解除";
 "Follow-up behavior" = "実行中の追加送信";
 "While responding, send using the default behavior. Hold Command or press Command-Return to use the other action." = "応答中は既定の方式で送信します。Command キーを押しながらクリックするか、⌘Return でもう一方の方式を使います。";
 "Queue paused" = "キューは一時停止中";
@@ -1927,7 +1932,7 @@
 "Authorize Calendar and Drive" = "カレンダーと Drive の利用を許可";
 "settings.agents.alwaysOn.help" = "アプリが開いている間、オンのイベントソースを読み、新しいイベントを Super Agent に知らせます。録音中は読みません。返信などの外部への書き込みは、通常のチャットと同じ承認設定に従います。";
 "settings.agents.alwaysOn.sources" = "イベントソース";
-"settings.agents.alwaysOn.noServers" = "設定の「Dahlia AI」の「コネクタ」で MCP サーバーを登録すると、イベントソースを追加できます。";
+"settings.agents.alwaysOn.noServers" = "メールや Slack を追加するには、設定の「Dahlia AI」の「コネクタ」で MCP サーバーを登録してください。カレンダーはアプリのカレンダー設定を使います。";
 "settings.agents.alwaysOn.editSource" = "イベントソースを編集";
 "settings.agents.alwaysOn.addSource" = "イベントソースを追加";
 "settings.agents.alwaysOn.chooseSource" = "どこから読みますか";
@@ -1965,17 +1970,24 @@
 "settings.agents.alwaysOn.botKindQuestion" = "質問";
 "settings.agents.alwaysOn.botKindReport" = "報告";
 "settings.agents.alwaysOn.botKindSuggestion" = "提案";
-"settings.agents.alwaysOn.botKindApproval" = "承認待ち";
 "settings.agents.alwaysOn.botRecommended" = "おすすめ";
 "settings.agents.alwaysOn.botAnswer" = "回答";
+"settings.agents.alwaysOn.botAnswerPlaceholder" = "ほかの回答を入力";
 "settings.agents.alwaysOn.botAnswerSend" = "回答する";
 "settings.agents.alwaysOn.botDismiss" = "却下";
 "settings.agents.alwaysOn.botAccept" = "お願いする";
 "settings.agents.alwaysOn.botAccepted" = "お願いします";
 "settings.agents.alwaysOn.botSeen" = "確認した";
 "settings.agents.alwaysOn.botGuidancePlaceholder" = "例: 優先する相手、口調、やらないこと、通知してよい時間帯";
-"settings.agents.alwaysOn.botWork" = "タスク";
-"settings.agents.alwaysOn.botWorkHelp" = "Super Agent が起動したタスクのスレッドは、通常のチャットと同じく、コネクタの MCP サーバー、Dahlia の会議記録、作業フォルダ、コマンドを使えます。外部への書き込みは、通常のチャットと同じ承認を通ります。";
+"settings.agents.alwaysOn.botModels" = "モデル";
+"settings.agents.alwaysOn.botEffort" = "推論の強さ";
+"settings.agents.alwaysOn.botIntakeModel" = "取り込み";
+"settings.agents.alwaysOn.botIntakeModelHelp" = "イベントソースを読んで、イベントを記録するときに使うモデルです。";
+"settings.agents.alwaysOn.botUnattendedModel" = "自動で動くとき";
+"settings.agents.alwaysOn.botUnattendedModelHelp" = "イベントの通知やタスクの結果を受け取ったときなど、Super Agent がユーザーの入力なしで動くときのモデルです。会話でのモデルは変わりません。";
+"settings.agents.alwaysOn.botModelDefault" = "既定のモデル";
+"settings.agents.alwaysOn.botModelConversation" = "会話と同じ";
+"settings.agents.alwaysOn.botSoul" = "人格";
 "settings.agents.alwaysOn.openTask" = "タスクを開く";
 
 "bots.section" = "Agents";
@@ -2003,3 +2015,15 @@
 "bots.resume" = "再開する";
 "bots.inboxTab" = "受信箱";
 "bots.finishTask" = "完了にする";
+
+"settings.agents.alwaysOn.counts" = "%d件読んで%d件記録";
+
+"settings.agents.calendar.source" = "カレンダー";
+"settings.agents.calendar.daily" = "毎日の予定を知らせる";
+"settings.agents.calendar.dailyTime" = "知らせる時刻";
+"settings.agents.calendar.beforeMeeting" = "会議の前に知らせる";
+"settings.agents.calendar.leadHours" = "何時間前に知らせるか";
+"settings.agents.calendar.scheduleHelp" = "アプリで有効なカレンダーを使います。会議の前は168時間未満で指定してください。";
+"settings.agents.calendar.invalidSchedule" = "毎日の時刻か会議の前を選び、会議の前は0より大きく168時間未満で指定してください。";
+"settings.agents.calendar.dailyNote" = "今日の予定を calendar_read で確認し、必要な準備や未回答の招待を判断してください。";
+"settings.agents.calendar.meetingNote" = "会議が近づいています。参照先の最新の予定を calendar_read で読み、準備が必要か判断してください。";

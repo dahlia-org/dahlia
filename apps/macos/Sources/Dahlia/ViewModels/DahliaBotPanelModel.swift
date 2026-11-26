@@ -8,14 +8,19 @@ import Observation
 @MainActor
 @Observable
 final class DahliaBotPanelModel {
+    typealias TaskPage = (active: [AgentTaskRecord], finished: [AgentTaskRecord])
     struct Draft: Equatable {
         var id: String?
         var name = ""
         var server = ""
         var instructions = ""
         var intervalMinutes = 15
-        var sieve = "explicit"
         var allowedSenders = ""
+        var dailyEnabled = true
+        var dailyTime = Calendar.current.date(bySettingHour: 8, minute: 0, second: 0, of: .now) ?? .now
+        var leadEnabled = true
+        var leadHours = 24.0
+        var kind = "mcp"
     }
 
     static let intervals = [5, 15, 30, 60]
@@ -37,17 +42,66 @@ final class DahliaBotPanelModel {
     var activeTasks: [AgentTaskRecord] = []
     var finishedTasks: [AgentTaskRecord] = []
     var hasMoreFinishedTasks = false
+    private(set) var isLoadingFinishedTasks = false
     var soul = ""
+    var models: [CodexModel] = []
+    /// Empty follows the default: Pi's model for intake, the conversation's for notices.
+    var intakeModel: String {
+        didSet { defaults.set(intakeModel, forKey: AgentBotSettings.intakeModelKey(for: AppAccount.key)) }
+    }
+
+    var unattendedModel: String {
+        didSet { defaults.set(unattendedModel, forKey: AgentBotSettings.unattendedModelKey(for: AppAccount.key)) }
+    }
+
+    var intakeEffort: String {
+        didSet { defaults.set(intakeEffort, forKey: AgentBotSettings.intakeEffortKey(for: AppAccount.key)) }
+    }
+
+    var unattendedEffort: String {
+        didSet { defaults.set(unattendedEffort, forKey: AgentBotSettings.unattendedEffortKey(for: AppAccount.key)) }
+    }
+
     /// The text being edited, while the user edits `SOUL.md`.
     var soulDraft: String?
     var error: String?
     var isBusy = false
 
-    init(defaults: UserDefaults = .standard) {
+    init(
+        defaults: UserDefaults = .standard,
+        loadTasks: @escaping @Sendable (Int) async throws -> TaskPage = {
+            try await PiChatService.shared.loadBotTasks(limit: $0)
+        }
+    ) {
         self.defaults = defaults
+        self.loadTasks = loadTasks
+        intakeModel = AgentBotSettings.model(AgentBotSettings.intakeModelKey(for: AppAccount.key), defaults: defaults) ?? ""
+        unattendedModel = AgentBotSettings.model(AgentBotSettings.unattendedModelKey(for: AppAccount.key), defaults: defaults) ?? ""
+        intakeEffort = AgentBotSettings.model(AgentBotSettings.intakeEffortKey(for: AppAccount.key), defaults: defaults) ?? ""
+        unattendedEffort = AgentBotSettings.model(AgentBotSettings.unattendedEffortKey(for: AppAccount.key), defaults: defaults) ?? ""
     }
 
+    private var taskGeneration = 0
+    private var finishedTaskLimit = taskPage
+    private let loadTasks: @Sendable (Int) async throws -> TaskPage
     private let defaults: UserDefaults
+
+    /// A model and its effort are one choice: following the default clears the effort, and a model takes its own default
+    /// effort when the saved one is not among its levels.
+    func setIntakeModel(_ selected: String) {
+        intakeModel = selected
+        intakeEffort = effort(intakeEffort, for: selected)
+    }
+
+    func setUnattendedModel(_ selected: String) {
+        unattendedModel = selected
+        unattendedEffort = effort(unattendedEffort, for: selected)
+    }
+
+    private func effort(_ current: String, for selected: String) -> String {
+        guard let chosen = models.first(where: { $0.model == selected }) else { return selected.isEmpty ? "" : current }
+        return chosen.supportedReasoningEfforts.contains { $0.reasoningEffort == current } ? current : chosen.defaultReasoningEffort
+    }
 
     func editSoul() {
         soulDraft = soul
@@ -81,42 +135,60 @@ final class DahliaBotPanelModel {
     }
 
     func loadMoreFinishedTasks() async {
-        guard let last = finishedTasks.last else { return }
+        guard !isLoadingFinishedTasks, !finishedTasks.isEmpty else { return }
+        isLoadingFinishedTasks = true
+        defer { isLoadingFinishedTasks = false }
+        let previousLimit = finishedTaskLimit
+        finishedTaskLimit = max(finishedTaskLimit, finishedTasks.count) + Self.taskPage
         do {
-            let page = try await PiChatService.shared.loadBotTasks(finishedBefore: last.updatedAt, limit: Self.taskPage)
-            finishedTasks += page.finished
-            hasMoreFinishedTasks = page.finished.count == Self.taskPage
-        } catch { self.error = error.localizedDescription }
+            try await refreshTasks()
+        } catch {
+            finishedTaskLimit = previousLimit
+            self.error = error.localizedDescription
+        }
+    }
+
+    /// Every request reads the entire visible range, so newer refreshes preserve pending pagination and saved changes.
+    func refreshTasks() async throws {
+        taskGeneration += 1
+        let generation = taskGeneration
+        let limit = max(finishedTaskLimit, finishedTasks.count)
+        let tasks: TaskPage
+        do {
+            tasks = try await loadTasks(limit)
+        } catch {
+            guard generation == taskGeneration else { return }
+            throw error
+        }
+        guard generation == taskGeneration else { return }
+        activeTasks = tasks.active
+        finishedTasks = tasks.finished
+        hasMoreFinishedTasks = tasks.finished.count == limit
     }
 
     /// Answers the revision on screen; when the Item changed meanwhile, nothing is applied and the list reloads.
     func answer(_ item: AgentItemRecord, with text: String) async {
-        await perform { inbox, key in _ = try inbox.answer(itemID: item.id, revision: item.revision, answer: text, account: key) }
+        await perform { inbox in _ = try inbox.answer(itemID: item.id, revision: item.revision, answer: text) }
         answers[item.id] = nil
     }
 
     /// The user ends a Task; its thread stays as it is.
     func finish(_ task: AgentTaskRecord) async {
-        guard let thread = task.threadID else { return }
-        await perform { inbox, key in try inbox.finishTask(threadID: thread, status: "done", account: key) }
+        await perform { inbox in try inbox.finishTask(taskID: task.id, status: "done") }
     }
 
     func dismiss(_ item: AgentItemRecord) async {
-        await perform { inbox, key in _ = try inbox.dismiss(itemID: item.id, revision: item.revision, account: key) }
+        await perform { inbox in _ = try inbox.dismiss(itemID: item.id, revision: item.revision) }
     }
 
     func refresh() async {
         do {
-            let loaded = try await PiChatService.shared.loadAlwaysOnSettings(account: AppAccount.key)
+            let loaded = try await PiChatService.shared.loadAlwaysOnSettings()
             (sources, events, paused) = loaded
-            (items, taskThreads) = try await PiChatService.shared.loadBotInbox(account: AppAccount.key)
-            // A refresh keeps the finished Tasks the user paged through.
-            let limit = max(Self.taskPage, finishedTasks.count)
-            let tasks = try await PiChatService.shared.loadBotTasks(finishedBefore: nil, limit: limit)
-            activeTasks = tasks.active
-            finishedTasks = tasks.finished
-            hasMoreFinishedTasks = tasks.finished.count == limit
+            (items, taskThreads) = try await PiChatService.shared.loadBotInbox()
+            try await refreshTasks()
             if soulDraft == nil { soul = try await PiChatService.shared.loadBotSoul() }
+            models = await (try? PiRuntimeService.shared.models(forceRefresh: false))?.filter { !$0.hidden } ?? []
             // Only servers with a sign-in reach mcp.json, so only they can be read.
             let settings = AgentMCPSettings.load()
             servers = Self.sourceServers(in: settings)
@@ -132,31 +204,48 @@ final class DahliaBotPanelModel {
     }
 
     func setEnabled(_ enabled: Bool) async {
-        await perform { inbox, key in try inbox.setPaused(!enabled, account: key) }
+        await perform { inbox in try inbox.setPaused(!enabled) }
     }
 
     func edit(_ source: AgentSourceRecord?) {
         error = nil
         guard let source else {
             draft = Draft()
-            if let first = servers.first { choose(server: first) }
+            if let first = servers.first { choose(server: first) } else { chooseCalendar() }
             return
         }
         let senders = (try? JSONDecoder().decode([String].self, from: Data(source.allowedSenders.utf8))) ?? []
-        draft = Draft(
+        var edited = Draft(
             id: source.id, name: source.name, server: source.server, instructions: source.instructions,
-            intervalMinutes: source.intervalMinutes, sieve: source.sieve, allowedSenders: senders.joined(separator: ", ")
+            intervalMinutes: source.intervalMinutes, allowedSenders: senders.joined(separator: ", "), kind: source.kind
         )
+        edited.dailyEnabled = source.dailyAt != nil
+        edited.leadEnabled = source.leadHours != nil
+        edited.leadHours = source.leadHours ?? 24
+        if let at = source.dailyAt, let components = AgentInboxService.dailyComponents(at) {
+            edited.dailyTime = Calendar.current.date(bySettingHour: components.hour, minute: components.minute, second: 0, of: .now) ?? .now
+        }
+        draft = edited
     }
 
     /// A new source's server; the name and what to read follow it until the user changes them.
     func choose(server: String) {
         guard var changed = draft, changed.id == nil else { return }
-        if changed.name.isEmpty || changed.name == displayName(changed.server) { changed.name = displayName(server) }
+        let previousName = changed.kind == "calendar" ? L10n.agentCalendarSource : displayName(changed.server)
+        if changed.name.isEmpty || changed.name == previousName { changed.name = displayName(server) }
         if changed.instructions.isEmpty || changed.instructions == Self.suggestedInstructions(for: changed.server) {
             changed.instructions = Self.suggestedInstructions(for: server)
         }
         changed.server = server
+        changed.kind = "mcp"
+        draft = changed
+    }
+
+    func chooseCalendar() {
+        guard var changed = draft, changed.id == nil else { return }
+        if changed.name.isEmpty || changed.name == displayName(changed.server) { changed.name = L10n.agentCalendarSource }
+        changed.kind = "calendar"
+        changed.server = ""
         draft = changed
     }
 
@@ -174,30 +263,40 @@ final class DahliaBotPanelModel {
 
     func saveDraft() async {
         guard let draft else { return }
-        let name = draft.name.trimmingCharacters(in: .whitespacesAndNewlines).nilIfBlank ?? displayName(draft.server)
+        let isCalendar = draft.kind == "calendar"
+        let name = draft.name.trimmingCharacters(in: .whitespacesAndNewlines).nilIfBlank
+            ?? (isCalendar ? L10n.agentCalendarSource : displayName(draft.server))
         let instructions = draft.instructions.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !name.isEmpty, !draft.server.isEmpty, !instructions.isEmpty else {
+        guard !name.isEmpty, isCalendar || (!draft.server.isEmpty && !instructions.isEmpty) else {
             error = L10n.agentAlwaysOnRequired
             return
         }
         let senders = draft.allowedSenders.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
         let existing = sources.first { $0.id == draft.id }
         let now = Date.now
-        guard let connectionID = existing?.connectionID ?? connections[draft.server] else {
+        guard let connectionID = isCalendar ? "" : existing?.connectionID ?? connections[draft.server] else {
             error = L10n.agentAlwaysOnRequired
             return
         }
         var source = AgentSourceRecord(
-            id: existing?.id ?? UUID.v7().uuidString, accountID: AppAccount.key, name: name, server: draft.server,
-            instructions: instructions, intervalMinutes: draft.intervalMinutes, sieve: draft.sieve,
-            allowedSenders: String(decoding: (try? JSONEncoder().encode(senders)) ?? Data("[]".utf8), as: UTF8.self),
+            id: existing?.id ?? UUID.v7().uuidString, name: name, server: draft.server,
+            instructions: instructions, intervalMinutes: draft.intervalMinutes, allowedSenders: String(
+                decoding: (try? JSONEncoder().encode(senders)) ?? Data("[]".utf8),
+                as: UTF8.self
+            ),
             cursor: existing?.cursor, enabled: existing?.enabled ?? true,
-            gapDetectedAt: existing?.gapDetectedAt, lastIntakeAt: existing?.lastIntakeAt,
+            lastIntakeAt: existing?.lastIntakeAt,
             createdAt: existing?.createdAt ?? now, updatedAt: now
         )
         source.connectionID = connectionID
+        source.kind = isCalendar ? "calendar" : "mcp"
+        if isCalendar {
+            let time = Calendar.current.dateComponents([.hour, .minute], from: draft.dailyTime)
+            source.dailyAt = draft.dailyEnabled ? String(format: "%02d:%02d", time.hour ?? 8, time.minute ?? 0) : nil
+            source.leadHours = draft.leadEnabled ? draft.leadHours : nil
+        }
         let saved = source
-        await perform { inbox, _ in try inbox.saveSource(saved) }
+        await perform { inbox in try inbox.saveSource(saved) }
         if error == nil { self.draft = nil }
     }
 
@@ -206,7 +305,7 @@ final class DahliaBotPanelModel {
         changed.enabled = enabled
         changed.updatedAt = .now
         let saved = changed
-        await perform { inbox, _ in try inbox.saveSource(saved) }
+        await perform { inbox in try inbox.saveSource(saved) }
     }
 
     func setInterval(_ source: AgentSourceRecord, minutes: Int) async {
@@ -215,24 +314,20 @@ final class DahliaBotPanelModel {
         changed.intervalMinutes = minutes
         changed.updatedAt = .now
         let saved = changed
-        await perform { inbox, _ in try inbox.saveSource(saved) }
-    }
-
-    func clearGap(_ source: AgentSourceRecord) async {
-        await perform { inbox, key in try inbox.clearGap(sourceID: source.id, account: key) }
+        await perform { inbox in try inbox.saveSource(saved) }
     }
 
     func deleteDraft() async {
         guard let id = draft?.id else { return }
-        await perform { inbox, key in try inbox.deleteSource(id: id, account: key) }
+        await perform { inbox in try inbox.deleteSource(id: id) }
         if error == nil { draft = nil }
     }
 
-    private func perform(_ change: @escaping @Sendable (AgentInboxService, String) throws -> Void) async {
+    private func perform(_ change: @escaping @Sendable (AgentInboxService) throws -> Void) async {
         isBusy = true
         defer { isBusy = false }
         do {
-            try await PiChatService.shared.updateAlwaysOnSettings(account: AppAccount.key, change: change)
+            try await PiChatService.shared.updateAlwaysOnSettings(change: change)
             error = nil
         } catch { self.error = error.localizedDescription }
         await refresh()

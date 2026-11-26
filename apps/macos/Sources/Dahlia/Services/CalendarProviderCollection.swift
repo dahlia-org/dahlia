@@ -8,6 +8,7 @@ import Foundation
 protocol CalendarConnectionStore: CalendarEventSourceStore {
     var state: CalendarConnectionState { get }
     var lastErrorMessage: String? { get }
+    var hasFetchedEvents: Bool { get }
     var connectionStatePublisher: AnyPublisher<CalendarConnectionState, Never> { get }
     func setActive(_ active: Bool)
 }
@@ -137,6 +138,10 @@ final class CalendarProviderCollection: ObservableObject, CalendarEventSourceSto
     var enabledConnections: [CalendarProviderConnection] { connections.filter { enabledIDs.contains($0.id) } }
     var isLoaded: Bool { state == .loaded }
     var hasLoadedConnection: Bool { enabledIDs.contains { states[$0] == .loaded } }
+    var successfullyLoadedProviderIDs: Set<String> {
+        catalogError == nil ? Set(enabledIDs.filter { states[$0] == .loaded && stores[$0]?.hasFetchedEvents == true }) : []
+    }
+
     var loadedEvents: [CalendarEvent] {
         enabledIDs.sorted().filter { states[$0] == .loaded }.flatMap { events[$0] ?? [] }
     }

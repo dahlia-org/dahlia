@@ -315,6 +315,11 @@ final class AppDatabaseManager: Sendable {
             END;
             """)
         }
+
+        // A thread the user put away as done for now, as T3 Code's Settled shelf; a new run brings it back.
+        migrator.registerMigration("v69_chatThreadSettled") { db in
+            try addColumnIfNeeded(in: db, table: "chat_threads", column: "settledAt", type: .datetime)
+        }
         return migrator
     }()
 

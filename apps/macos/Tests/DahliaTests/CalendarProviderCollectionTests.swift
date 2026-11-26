@@ -78,6 +78,24 @@ import GRDB
             #expect(reopened.enabledIDs == collection.enabledIDs)
         }
 
+        @Test func calendarSignalsWaitForAnActualEventFetch() async {
+            let provider = connection()
+            let store = Store()
+            store.hasFetchedEvents = false
+            let collection = CalendarProviderCollection(
+                defaults: defaults(enabling: [provider]),
+                observesChanges: false,
+                loadConnections: { [provider] },
+                makeStore: { _ in store }
+            )
+            await collection.activateAfterAccountMigration()
+            #expect(collection.successfullyLoadedProviderIDs.isEmpty)
+            store.hasFetchedEvents = true
+            #expect(collection.successfullyLoadedProviderIDs == [provider.id])
+            store.state = .failed
+            #expect(collection.successfullyLoadedProviderIDs.isEmpty)
+        }
+
         @Test
         func displayMergesProviderRostersWhileLinkedMeetingsKeepOneLiveCopy() async throws {
             let catalog = [connection(), connection()]
@@ -379,6 +397,7 @@ import GRDB
         @Published var state: CalendarConnectionState
         @Published var upcomingEvents: [CalendarEvent]
         var lastErrorMessage: String? { state == .failed ? "Failed" : nil }
+        var hasFetchedEvents = true
         var active = true
         var refreshCount = 0
         let blocksRefresh: Bool

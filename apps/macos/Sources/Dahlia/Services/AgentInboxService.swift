@@ -11,16 +11,13 @@ struct AgentInboxService: Sendable {
     }
 
     struct IntakeItem: Sendable, Equatable {
-        var externalID: String
-        var topicKey: String?
-        var sender: String?
-        var subject: String?
-        var excerpt = ""
-        var url: String?
+        var key: String
+        var topic: String?
+        var note: String
         var ref: JSONValue?
         var occurredAt: Date?
-        /// Addressed to the user, or mentions them: what a source on `explicit` keeps.
-        var direct = false
+        /// Used only to enforce the source allowlist; never persisted.
+        var sender: String?
     }
 
     struct Failure: Error, LocalizedError, Equatable {
@@ -37,161 +34,186 @@ struct AgentInboxService: Sendable {
 
     // MARK: - intake
 
-    static let excerptLimit = 500
+    static let noteLimit = 500
     static let fieldLimit = 300
     static let refLimit = 4096
 
-    /// Reads the record tool's arguments. They come from the model, which read untrusted mail, so every field is
-    /// bounded and a link is kept only when it is an http(s) URL the inbox can safely open.
     static func items(from payload: JSONValue) throws -> [IntakeItem] {
-        guard let rows = payload.objectValue?["items"]?.arrayValue else { throw Failure(message: "Pass items as an array.") }
+        guard let rows = payload.objectValue?["items"]?.arrayValue, rows.count <= 100 else {
+            throw Failure(message: "Pass at most 100 items as an array.")
+        }
         return try rows.map { row in
             let fields = row.objectValue ?? [:]
             func text(_ key: String, _ limit: Int = fieldLimit) -> String? {
                 fields[key]?.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfBlank.map { String($0.prefix(limit)) }
             }
-            guard let externalID = text("external_id") else { throw Failure(message: "Every item needs its external_id.") }
+            guard let key = text("key"), let note = text("note", noteLimit) else { throw Failure(message: "Every event needs key and note.") }
             let ref = fields["ref"].flatMap { $0 == .null ? nil : $0 }
-            if let ref, try Self.text(ref).utf8.count > refLimit { throw Failure(message: "ref of \(externalID) is too large.") }
-            let link = text("url", 2048).flatMap(URL.init(string:)).flatMap { ["http", "https"].contains($0.scheme?.lowercased()) ? $0 : nil }
+            if let ref, try Self.text(ref).utf8.count > refLimit { throw Failure(message: "ref is too large.") }
             return IntakeItem(
-                externalID: externalID, topicKey: text("topic_key"), sender: text("sender"), subject: text("subject"),
-                excerpt: text("excerpt", excerptLimit) ?? "", url: link?.absoluteString, ref: ref,
-                occurredAt: text("occurred_at").flatMap { try? Date($0, strategy: .iso8601) }, direct: fields["direct"] == .bool(true)
+                key: key,
+                topic: text("topic"),
+                note: note,
+                ref: ref,
+                occurredAt: text("occurred_at").flatMap { try? Date($0, strategy: .iso8601) },
+                sender: text("sender")
             )
         }
     }
 
-    /// The user saw the notice that items may be missing.
-    func clearGap(sourceID: String, account: String) throws {
-        try dbQueue.write {
-            try $0.execute(sql: "UPDATE agent_event_sources SET gapDetectedAt=NULL WHERE id=? AND accountID=?", arguments: [sourceID, account])
-        }
-    }
-
-    /// Gmail's results carry no link; a thread opens from its ID. Only ID characters are kept, so it stays a Gmail URL.
-    static func gmailURL(threadID: String) -> String? {
-        let id = threadID.filter { $0.isASCII && ($0.isLetter || $0.isNumber) }
-        return id.isEmpty ? nil : "https://mail.google.com/mail/u/0/#all/\(id)"
-    }
-
     /// Enabled Sources whose interval has passed since they last read successfully, oldest first.
-    func dueSources(account: String, now: Date = .now) throws -> [AgentSourceRecord] {
+    func dueSources(now: Date = .now) throws -> [AgentSourceRecord] {
         try dbQueue.read { db in
             try AgentSourceRecord.fetchAll(
                 db,
-                sql: "SELECT * FROM agent_event_sources WHERE accountID=? AND enabled=1 ORDER BY COALESCE(lastIntakeAt, createdAt), id",
-                arguments: [account]
+                sql: "SELECT * FROM agent_event_sources WHERE enabled=1 AND kind='mcp' ORDER BY COALESCE(lastIntakeAt, createdAt), id"
             )
         }.filter { ($0.lastIntakeAt ?? .distantPast).addingTimeInterval(Double($0.intervalMinutes) * 60) <= now }
     }
 
-    func sources(account: String) throws -> [AgentSourceRecord] {
+    func sources() throws -> [AgentSourceRecord] {
         try dbQueue.read {
             try AgentSourceRecord.fetchAll(
                 $0,
-                sql: "SELECT * FROM agent_event_sources WHERE accountID=? ORDER BY createdAt, id",
-                arguments: [account]
+                sql: "SELECT * FROM agent_event_sources ORDER BY createdAt, id"
             )
         }
     }
 
-    func saveSource(_ source: AgentSourceRecord) throws {
-        guard ["explicit", "candidate", "ignore"].contains(source.sieve), source.intervalMinutes >= 5 else {
-            throw Failure(message: "A source reads at most every 5 minutes and keeps explicit, candidate, or no items.")
+    func saveSource(_ source: AgentSourceRecord, now: Date = .now) throws {
+        guard ["mcp", "calendar"].contains(source.kind), source.intervalMinutes >= 5 else {
+            throw Failure(message: "A source reads at most every 5 minutes.")
+        }
+        if source.kind == "calendar" {
+            guard source.dailyAt != nil || source.leadHours != nil,
+                  source.dailyAt.map({ Self.dailyComponents($0) != nil }) ?? true,
+                  source.leadHours.map({ $0.isFinite && $0 > 0 && $0 < 168 }) ?? true else {
+                throw Failure(message: L10n.agentCalendarInvalidSchedule)
+            }
         }
         try dbQueue.write { db in
             var source = source
             if let previous = try AgentSourceRecord.fetchOne(db, key: source.id) {
-                guard previous.accountID == source.accountID else { throw Failure(message: "Source belongs to another account.") }
-                guard previous.server == source.server, previous.connectionID == source.connectionID else {
+                guard previous.kind == source.kind, previous.server == source.server, previous.connectionID == source.connectionID else {
                     throw Failure(message: "Create a new Source to use another server.")
                 }
                 source.revision = previous.revision + 1
                 source.cursor = previous.cursor
                 source.lastIntakeAt = previous.lastIntakeAt
-                source.gapDetectedAt = previous.gapDetectedAt
+                source.lastReadCount = previous.lastReadCount
+                source.lastRecordedCount = previous.lastRecordedCount
                 source.createdAt = previous.createdAt
             } else {
                 source.revision = 1
             }
             try source.save(db)
+            if source.kind == "calendar" {
+                // Turning off a schedule cancels signals that have not happened yet; arrived events remain decisions.
+                if !source.enabled {
+                    try db.execute(
+                        sql: "DELETE FROM agent_event_inbox WHERE sourceID=? AND handledAt IS NULL AND occurredAt>?",
+                        arguments: [source.id, now]
+                    )
+                } else {
+                    if source.dailyAt == nil {
+                        try db.execute(
+                            sql: "DELETE FROM agent_event_inbox WHERE sourceID=? AND handledAt IS NULL AND key LIKE 'daily:%' AND occurredAt>?",
+                            arguments: [source.id, now]
+                        )
+                    }
+                    if source.leadHours == nil {
+                        try db.execute(
+                            sql: "DELETE FROM agent_event_inbox WHERE sourceID=? AND handledAt IS NULL AND key LIKE 'meeting:%' AND occurredAt>?",
+                            arguments: [source.id, now]
+                        )
+                    }
+                }
+            }
         }
     }
 
     /// Deleting a Source removes the events it recorded.
-    func deleteSource(id: String, account: String) throws {
+    func deleteSource(id: String) throws {
         try dbQueue.write {
-            try $0.execute(sql: "DELETE FROM agent_event_sources WHERE id=? AND accountID=?", arguments: [id, account])
+            try $0.execute(sql: "DELETE FROM agent_event_sources WHERE id=?", arguments: [id])
         }
     }
 
-    /// The newest recorded external events, ignored ones included, for the settings list.
-    func recentEvents(account: String, limit: Int = 50) throws -> [AgentEventRecord] {
+    /// The most recently recorded signals for the side panel.
+    func recentEvents(limit: Int = 50) throws -> [AgentEventRecord] {
         try dbQueue.read {
             try AgentEventRecord.fetchAll(
                 $0,
-                sql: "SELECT * FROM agent_event_inbox WHERE accountID=? AND kind='external' ORDER BY createdAt DESC, id DESC LIMIT ?",
-                arguments: [account, limit]
+                sql: "SELECT * FROM agent_event_inbox  ORDER BY createdAt DESC, id DESC LIMIT ?",
+                arguments: [limit]
             )
         }
     }
 
-    func isPaused(account: String) throws -> Bool {
-        try dbQueue.read { try Self.isPaused(account, in: $0) }
+    func isPaused() throws -> Bool {
+        try dbQueue.read { try Self.isPaused(in: $0) }
     }
 
-    /// Records what the intake run read. Duplicates keep their first row; the sieve marks the rest ignored or unassigned.
+    /// Records selected signals. Duplicates keep their first row; blocked senders leave no row.
     @discardableResult
-    func record(_ items: [IntakeItem], caller: Caller, account: String, now: Date = .now) throws -> [String: String] {
+    func record(_ items: [IntakeItem], caller: Caller, remaining: Int = 20, now: Date = .now) throws -> [String: String] {
         guard case let .intake(sourceID, revision) = caller else { throw Failure(message: "Only an intake run records items.") }
         return try dbQueue.write { db in
-            let source = try Self.currentSource(sourceID, revision: revision, account: account, in: db)
+            let source = try Self.currentSource(sourceID, revision: revision, in: db)
             let allowed = try Set(JSONDecoder().decode([String].self, from: Data(source.allowedSenders.utf8)).map { $0.lowercased() })
             var statuses: [String: String] = [:]
+            var inserted = 0
             for item in items {
-                let kept = source.sieve != "ignore" && (source.sieve == "candidate" || item.direct)
-                    && (allowed.isEmpty || allowed.contains(item.sender?.lowercased() ?? ""))
+                if statuses[item.key] == "recorded" { continue }
+                if try Bool.fetchOne(
+                    db,
+                    sql: "SELECT EXISTS(SELECT 1 FROM agent_event_inbox WHERE sourceID=? AND key=?)",
+                    arguments: [sourceID, item.key]
+                ) == true {
+                    statuses[item.key] = "duplicate"
+                    continue
+                }
+                guard allowed.isEmpty || allowed.contains(item.sender?.lowercased() ?? "") else {
+                    statuses[item.key] = "blocked"
+                    continue
+                }
+                guard inserted < min(20, max(0, remaining)) else {
+                    statuses[item.key] = "limit"
+                    continue
+                }
                 let event = try AgentEventRecord(
-                    id: UUID.v7().uuidString, accountID: account, kind: "external", sourceID: sourceID,
-                    externalID: item.externalID, topicKey: item.topicKey, sender: item.sender, subject: item.subject,
-                    excerpt: item.excerpt, url: item.url, ref: item.ref.map(Self.text), occurredAt: item.occurredAt,
-                    taskID: nil, payload: "{}", status: kept ? "unassigned" : "ignored", createdAt: now
+                    id: UUID.v7().uuidString, sourceID: sourceID, key: item.key, topic: item.topic,
+                    note: String(item.note.prefix(Self.noteLimit)), ref: item.ref.map(Self.text), occurredAt: min(item.occurredAt ?? now, now),
+                    taskID: nil, handledAt: nil, createdAt: now
                 )
                 try event.insert(db, onConflict: .ignore)
-                statuses[item.externalID] = db.changesCount == 1 ? event.status : "duplicate"
+                if db.changesCount == 1 { inserted += 1 }
+                statuses[item.key] = db.changesCount == 1 ? "recorded" : "duplicate"
             }
             return statuses
         }
     }
 
-    /// Moves the read position only once every item the MCP returned has a row, recorded or ignored.
-    /// Returns false, leaving the position, when an item is missing so the next run reads the range again.
-    func commitIntake(sourceID: String, revision: Int = 1, account: String, cursor: String?, seen: [String], now: Date = .now) throws -> Bool {
+    /// Successful selection need not record every read item. At the cap the next run rereads the same range.
+    @discardableResult
+    func commitIntake(
+        sourceID: String,
+        revision: Int = 1,
+        cursor: String?,
+        readCount: Int = 0,
+        recordedCount: Int = 0,
+        limitReached: Bool = false,
+        now: Date = .now
+    ) throws -> Bool {
         try dbQueue.write { db in
-            var source = try Self.currentSource(sourceID, revision: revision, account: account, in: db)
-            for externalID in Set(seen) {
-                let exists = try Bool.fetchOne(
-                    db,
-                    sql: "SELECT EXISTS(SELECT 1 FROM agent_event_inbox WHERE accountID=? AND sourceID=? AND externalID=?)",
-                    arguments: [account, sourceID, externalID]
-                ) ?? false
-                if !exists { return false }
-            }
-            source.cursor = cursor
+            var source = try Self.currentSource(sourceID, revision: revision, in: db)
+            if !limitReached { source.cursor = cursor }
+            source.lastReadCount = readCount
+            source.lastRecordedCount = recordedCount
             source.lastIntakeAt = now
             source.updatedAt = now
             try source.update(db)
-            return true
-        }
-    }
-
-    /// The history the source reads from expired or fell too far behind: the user sees that items may be missing.
-    func markGap(sourceID: String, revision: Int = 1, account: String, now: Date = .now) throws {
-        try dbQueue.write { db in
-            var source = try Self.currentSource(sourceID, revision: revision, account: account, in: db)
-            source.gapDetectedAt = now
-            try source.update(db)
+            return !limitReached
         }
     }
 
@@ -199,41 +221,54 @@ struct AgentInboxService: Sendable {
 
     /// The events nobody decided on yet, oldest first, the open Tasks, and the Items the user has not closed: what
     /// `inbox_read` shows Super Agent.
-    func inbox(account: String) throws -> (events: [AgentEventRecord], tasks: [AgentTaskRecord], items: [AgentItemRecord]) {
+    func inbox(now: Date = .now) throws -> (events: [AgentEventRecord], tasks: [AgentTaskRecord], items: [AgentItemRecord]) {
         try dbQueue.read { db in
             try (
                 AgentEventRecord.fetchAll(
-                    db, sql: "SELECT * FROM agent_event_inbox WHERE accountID=? AND status='unassigned' ORDER BY createdAt, id LIMIT 50",
-                    arguments: [account]
+                    db, sql: "SELECT * FROM agent_event_inbox WHERE handledAt IS NULL AND occurredAt<=? ORDER BY occurredAt, id LIMIT 50",
+                    arguments: [now]
                 ),
                 AgentTaskRecord.fetchAll(
-                    db, sql: "SELECT * FROM agent_tasks WHERE accountID=? AND status='active' ORDER BY updatedAt DESC LIMIT 30",
-                    arguments: [account]
+                    db, sql: "SELECT * FROM agent_tasks WHERE status='active' ORDER BY updatedAt DESC LIMIT 30"
                 ),
                 AgentItemRecord.fetchAll(
-                    db, sql: "SELECT * FROM agent_user_inbox WHERE accountID=? AND status='open' ORDER BY createdAt DESC LIMIT 30",
-                    arguments: [account]
+                    db, sql: "SELECT * FROM agent_user_inbox WHERE status='open' ORDER BY createdAt DESC LIMIT 30"
                 )
             )
         }
     }
 
-    func hasUndecidedEvents(account: String) throws -> Bool {
+    func hasUndecidedEvents(now: Date = .now) throws -> Bool {
         try dbQueue.read {
             try Bool.fetchOne(
                 $0,
-                sql: "SELECT EXISTS(SELECT 1 FROM agent_event_inbox WHERE accountID=? AND status='unassigned')",
-                arguments: [account]
+                sql: "SELECT EXISTS(SELECT 1 FROM agent_event_inbox WHERE handledAt IS NULL AND occurredAt<=?)", arguments: [now]
             )
                 ?? false
         }
     }
 
+    /// Topic matches are hints only; the bot decides whether to hand the event to that thread.
+    func relatedThreads(for events: [AgentEventRecord]) throws -> [String: [String]] {
+        try dbQueue.read { db in
+            var result: [String: [String]] = [:]
+            for event in events {
+                guard let topic = event.topic else { continue }
+                result[event.id] = try String.fetchAll(db, sql: """
+                SELECT DISTINCT t.threadID FROM agent_tasks t JOIN agent_event_inbox e ON e.taskID=t.id
+                WHERE t.status='active' AND t.threadID IS NOT NULL AND e.topic=? AND e.sourceID IS ?
+                ORDER BY t.threadID
+                """, arguments: [topic, event.sourceID])
+            }
+            return result
+        }
+    }
+
     /// Undecided events by ID, for Super Agent to hand to a thread; an ID that is not one is an error the model sees.
-    func undecidedEvents(_ ids: [String], account: String) throws -> [AgentEventRecord] {
+    func undecidedEvents(_ ids: [String]) throws -> [AgentEventRecord] {
         try dbQueue.read { db in
             try ids.map { id in
-                guard let event = try AgentEventRecord.fetchOne(db, key: id), event.accountID == account, event.status == "unassigned"
+                guard let event = try AgentEventRecord.fetchOne(db, key: id), event.handledAt == nil, event.occurredAt <= .now
                 else { throw Failure(message: "Event \(id) is not waiting for a decision.") }
                 return event
             }
@@ -242,78 +277,88 @@ struct AgentInboxService: Sendable {
 
     /// Makes a thread Super Agent launched into a Task, and marks the events it was handed as gone to it.
     @discardableResult
-    func openTask(threadID: String, title: String, instructions: String, eventIDs: [String], account: String, now: Date = .now) throws
+    func openTask(threadID: String, title: String, instructions: String, eventIDs: [String], now: Date = .now) throws
         -> AgentTaskRecord {
         try dbQueue.write {
-            try Self.openTask(threadID: threadID, title: title, instructions: instructions, eventIDs: eventIDs, account: account, now: now, in: $0)
+            try Self.openTask(threadID: threadID, title: title, instructions: instructions, eventIDs: eventIDs, now: now, in: $0)
         }
     }
 
     @discardableResult
     static func openTask(
-        threadID: String, title: String, instructions: String, eventIDs: [String], account: String, now: Date = .now, in db: Database
+        threadID: String, title: String, instructions: String, eventIDs: [String], now: Date = .now, in db: Database
     ) throws -> AgentTaskRecord {
         let task = AgentTaskRecord(
-            id: UUID.v7().uuidString, accountID: account, title: String(title.prefix(Self.titleLimit)),
+            id: UUID.v7().uuidString, title: String(title.prefix(Self.titleLimit)),
             instructions: String(instructions.prefix(Self.bodyLimit)), threadID: threadID, status: "active", createdAt: now, updatedAt: now
         )
         try task.insert(db)
-        try Self.process(eventIDs, taskID: task.id, account: account, in: db)
+        try Self.process(eventIDs, taskID: task.id, now: now, in: db)
         return task
     }
 
     /// Super Agent sent more to a Task's thread: the events go to it, and a finished Task is in progress again.
-    func continueTask(threadID: String, eventIDs: [String], account: String, now: Date = .now) throws {
-        try dbQueue.write { try Self.continueTask(threadID: threadID, eventIDs: eventIDs, account: account, now: now, in: $0) }
+    func continueTask(threadID: String, eventIDs: [String], now: Date = .now) throws {
+        try dbQueue.write { try Self.continueTask(threadID: threadID, eventIDs: eventIDs, now: now, in: $0) }
     }
 
-    static func continueTask(threadID: String, eventIDs: [String], account: String, now: Date = .now, in db: Database) throws {
-        guard let task = try AgentTaskRecord.fetchOne(db, sql: "SELECT * FROM agent_tasks WHERE threadID=? AND accountID=?", arguments: [
-            threadID, account,
-        ]) else {
-            try process(eventIDs, taskID: nil, account: account, in: db)
+    static func continueTask(threadID: String, eventIDs: [String], now: Date = .now, in db: Database) throws {
+        guard let task = try AgentTaskRecord.fetchOne(db, sql: "SELECT * FROM agent_tasks WHERE threadID=?", arguments: [threadID]) else {
+            try process(eventIDs, taskID: nil, now: now, in: db)
             return
         }
         try db.execute(sql: "UPDATE agent_tasks SET status='active', updatedAt=? WHERE id=?", arguments: [now, task.id])
-        try Self.process(eventIDs, taskID: task.id, account: account, in: db)
+        try Self.process(eventIDs, taskID: task.id, now: now, in: db)
     }
 
-    /// Ends a Task, done or dismissed. Its thread stays as it is.
-    func finishTask(threadID: String, status: String, account: String, now: Date = .now) throws {
+    /// Ends a Task without requiring its thread to still exist.
+    func finishTask(taskID: String, status: String, now: Date = .now) throws {
         guard ["done", "dismissed"].contains(status) else { throw Failure(message: "Finish a task as done or dismissed.") }
         try dbQueue.write { db in
-            try db.execute(
-                sql: "UPDATE agent_tasks SET status=?, updatedAt=? WHERE threadID=? AND accountID=?", arguments: [status, now, threadID, account]
-            )
-            guard db.changesCount > 0 else { throw Failure(message: "That thread is not a task.") }
+            try db.execute(sql: "UPDATE agent_tasks SET status=?, updatedAt=? WHERE id=?", arguments: [status, now, taskID])
+            guard db.changesCount > 0 else { throw Failure(message: "Task not found.") }
+        }
+    }
+
+    func finishTask(threadID: String, status: String, now: Date = .now) throws {
+        guard let task = try task(threadID: threadID) else { throw Failure(message: "That thread is not a task.") }
+        try finishTask(taskID: task.id, status: status, now: now)
+    }
+
+    /// Retain undecided signals, including future ones; task history outlives its handled events.
+    func cleanEvents(now: Date = .now) throws {
+        try dbQueue.write { db in
+            try db.execute(sql: "DELETE FROM agent_event_inbox WHERE handledAt<?", arguments: [now.addingTimeInterval(-30 * 86400)])
         }
     }
 
     /// Events that need nothing more: noise, or ones already handled.
-    func close(eventIDs: [String], account: String) throws {
-        try dbQueue.write { try Self.process(eventIDs, taskID: nil, account: account, in: $0) }
-    }
-
-    func task(_ id: String, account: String) throws -> AgentTaskRecord? {
-        try dbQueue.read { try AgentTaskRecord.fetchOne($0, key: id).flatMap { $0.accountID == account ? $0 : nil } }
-    }
-
-    func task(threadID: String, account: String) throws -> AgentTaskRecord? {
-        try dbQueue.read {
-            try AgentTaskRecord.fetchOne($0, sql: "SELECT * FROM agent_tasks WHERE threadID=? AND accountID=?", arguments: [threadID, account])
+    func close(eventIDs: [String]) throws {
+        try dbQueue.write { db in
+            for id in eventIDs {
+                try db.execute(sql: "UPDATE agent_event_inbox SET handledAt=?, taskID=NULL WHERE id=? AND handledAt IS NULL", arguments: [Date(), id])
+            }
         }
     }
 
-    /// The account's open Tasks, and its finished ones newest first, a page at a time.
-    func tasks(account: String, finishedBefore: Date? = nil, limit: Int = 30) throws -> (active: [AgentTaskRecord], finished: [AgentTaskRecord]) {
+    func task(_ id: String) throws -> AgentTaskRecord? {
+        try dbQueue.read { try AgentTaskRecord.fetchOne($0, key: id) }
+    }
+
+    func task(threadID: String) throws -> AgentTaskRecord? {
+        try dbQueue.read {
+            try AgentTaskRecord.fetchOne($0, sql: "SELECT * FROM agent_tasks WHERE threadID=?", arguments: [threadID])
+        }
+    }
+
+    /// The account's open Tasks and the visible range of finished Tasks, in one snapshot.
+    func tasks(limit: Int = 30) throws -> (active: [AgentTaskRecord], finished: [AgentTaskRecord]) {
         try dbQueue.read { db in
             try (
-                finishedBefore == nil ? AgentTaskRecord.fetchAll(
-                    db, sql: "SELECT * FROM agent_tasks WHERE accountID=? AND status='active' ORDER BY updatedAt DESC, id DESC", arguments: [account]
-                ) : [],
+                AgentTaskRecord.fetchAll(db, sql: "SELECT * FROM agent_tasks WHERE status='active' ORDER BY updatedAt DESC, id DESC"),
                 AgentTaskRecord.fetchAll(db, sql: """
-                SELECT * FROM agent_tasks WHERE accountID=? AND status<>'active' AND updatedAt<? ORDER BY updatedAt DESC, id DESC LIMIT ?
-                """, arguments: [account, finishedBefore ?? .distantFuture, limit])
+                SELECT * FROM agent_tasks WHERE status<>'active' ORDER BY updatedAt DESC, id DESC LIMIT ?
+                """, arguments: [limit])
             )
         }
     }
@@ -346,11 +391,10 @@ struct AgentInboxService: Sendable {
 
     // MARK: - Items
 
-    func items(account: String) throws -> [AgentItemRecord] {
+    func items() throws -> [AgentItemRecord] {
         try dbQueue.read {
             try AgentItemRecord.fetchAll(
-                $0, sql: "SELECT * FROM agent_user_inbox WHERE accountID=? AND status='open' ORDER BY createdAt DESC, id DESC",
-                arguments: [account]
+                $0, sql: "SELECT * FROM agent_user_inbox WHERE status='open' ORDER BY createdAt DESC, id DESC"
             )
         }
     }
@@ -365,7 +409,6 @@ struct AgentInboxService: Sendable {
         options: [String] = [],
         recommended: Int? = nil,
         threadID: String? = nil,
-        account: String,
         now: Date = .now
     ) throws -> AgentItemRecord {
         guard ["question", "report", "suggestion"].contains(kind) else { throw Failure(message: "Make a question, report, or suggestion.") }
@@ -378,21 +421,21 @@ struct AgentInboxService: Sendable {
             let taskID = try threadID.map { thread in
                 guard let id = try String.fetchOne(
                     db,
-                    sql: "SELECT id FROM agent_tasks WHERE threadID=? AND accountID=?",
-                    arguments: [thread, account]
+                    sql: "SELECT id FROM agent_tasks WHERE threadID=?",
+                    arguments: [thread]
                 )
                 else { throw Failure(message: "That thread is not a task.") }
                 return id
             }
             if kind == "suggestion", try Bool.fetchOne(
                 db,
-                sql: "SELECT EXISTS(SELECT 1 FROM agent_user_inbox WHERE accountID=? AND kind='suggestion' AND status='dismissed' AND title=? AND updatedAt>=?)",
-                arguments: [account, title, now.addingTimeInterval(-Self.dismissalMemory)]
+                sql: "SELECT EXISTS(SELECT 1 FROM agent_user_inbox WHERE kind='suggestion' AND status='dismissed' AND title=? AND updatedAt>=?)",
+                arguments: [title, now.addingTimeInterval(-Self.dismissalMemory)]
             ) == true {
                 throw Failure(message: "The user dismissed this suggestion recently. Do not suggest it again.")
             }
             let item = try AgentItemRecord(
-                id: UUID.v7().uuidString, accountID: account, kind: kind, status: "open", taskID: taskID,
+                id: UUID.v7().uuidString, kind: kind, status: "open", taskID: taskID,
                 title: title, body: String(body.prefix(Self.bodyLimit)), options: Self.text(.array(options.map(JSONValue.string))),
                 recommended: recommended.flatMap { options.indices.contains($0) ? $0 : nil }, answer: nil, revision: 1,
                 createdAt: now, updatedAt: now
@@ -405,19 +448,19 @@ struct AgentInboxService: Sendable {
     /// The user's answer to the revision they saw. One transaction checks it is still open and current, saves the answer,
     /// and adds the answer event for Super Agent, so it hears once; an older revision changes nothing.
     @discardableResult
-    func answer(itemID: String, revision: Int, answer: String, account: String, now: Date = .now) throws -> Bool {
-        try settle(itemID: itemID, revision: revision, answer: answer, account: account, now: now)
+    func answer(itemID: String, revision: Int, answer: String, now: Date = .now) throws -> Bool {
+        try settle(itemID: itemID, revision: revision, answer: answer, now: now)
     }
 
     /// Closes an Item without an answer. A dismissed question still tells Super Agent, so its thread does not wait for it.
     @discardableResult
-    func dismiss(itemID: String, revision: Int, account: String, now: Date = .now) throws -> Bool {
-        try settle(itemID: itemID, revision: revision, answer: nil, account: account, now: now)
+    func dismiss(itemID: String, revision: Int, now: Date = .now) throws -> Bool {
+        try settle(itemID: itemID, revision: revision, answer: nil, now: now)
     }
 
-    private func settle(itemID: String, revision: Int, answer: String?, account: String, now: Date) throws -> Bool {
+    private func settle(itemID: String, revision: Int, answer: String?, now: Date) throws -> Bool {
         try dbQueue.write { db in
-            guard var item = try AgentItemRecord.fetchOne(db, key: itemID), item.accountID == account, item.status == "open",
+            guard var item = try AgentItemRecord.fetchOne(db, key: itemID), item.status == "open",
                   item.revision == revision else { return false }
             let answer = answer?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfBlank.map { String($0.prefix(Self.bodyLimit)) }
             item.answer = answer
@@ -427,43 +470,46 @@ struct AgentInboxService: Sendable {
             guard item.kind == "question" || (item.kind == "suggestion" && answer != nil) else { return true }
             let thread = try item.taskID.flatMap { try String.fetchOne(db, sql: "SELECT threadID FROM agent_tasks WHERE id=?", arguments: [$0]) }
             let event = try AgentEventRecord(
-                id: UUID.v7().uuidString, accountID: account, kind: "answer", sourceID: nil, externalID: nil, topicKey: nil, sender: nil,
-                subject: nil, excerpt: answer ?? "", url: nil, ref: nil, occurredAt: nil, taskID: item.taskID,
-                payload: Self.text(.object([
-                    "item": .string(item.id), "title": .string(item.title), "answer": answer.map(JSONValue.string) ?? .null,
-                    "dismissed": .bool(answer == nil), "thread_id": thread.map(JSONValue.string) ?? .null,
+                id: UUID.v7().uuidString, sourceID: nil, key: nil, topic: nil,
+                note: String(("User response to \(item.title): " + (answer ?? "dismissed without answering")).prefix(Self.noteLimit)),
+                ref: Self.text(.object([
+                    "item": .string(item.id),
+                    "thread_id": thread.map(JSONValue.string) ?? .null,
+                    "answer": answer.map(JSONValue.string) ?? .null,
+                    "title": .string(item.title),
+                    "dismissed": .bool(answer == nil),
                 ])),
-                status: "unassigned", createdAt: now
+                occurredAt: now, taskID: item.taskID, handledAt: nil, createdAt: now
             )
             try event.insert(db)
             return true
         }
     }
 
-    func setPaused(_ paused: Bool, account: String) throws {
-        try dbQueue.write { try AgentAlwaysOnSettingsRecord(accountID: account, paused: paused).save($0) }
+    func setPaused(_ paused: Bool) throws {
+        try dbQueue.write { try AgentAlwaysOnSettingsRecord(paused: paused).save($0) }
     }
 
     // MARK: - helpers
 
-    private static func process(_ eventIDs: [String], taskID: String?, account: String, in db: Database) throws {
+    private static func process(_ eventIDs: [String], taskID: String?, now: Date = .now, in db: Database) throws {
         for id in eventIDs {
             try db.execute(
-                sql: "UPDATE agent_event_inbox SET status='processed', taskID=COALESCE(?, taskID) WHERE id=? AND accountID=? AND status='unassigned'",
-                arguments: [taskID, id, account]
+                sql: "UPDATE agent_event_inbox SET handledAt=?, taskID=? WHERE id=? AND handledAt IS NULL AND occurredAt<=?",
+                arguments: [now, taskID, id, now]
             )
         }
     }
 
-    private static func currentSource(_ id: String, revision: Int, account: String, in db: Database) throws -> AgentSourceRecord {
-        guard let source = try AgentSourceRecord.fetchOne(db, key: id), source.accountID == account
+    private static func currentSource(_ id: String, revision: Int, in db: Database) throws -> AgentSourceRecord {
+        guard let source = try AgentSourceRecord.fetchOne(db, key: id)
         else { throw Failure(message: "Source not found.") }
         guard source.enabled, source.revision == revision else { throw Failure(message: "Source configuration changed.") }
         return source
     }
 
-    private static func isPaused(_ account: String, in db: Database) throws -> Bool {
-        try Bool.fetchOne(db, sql: "SELECT paused FROM agent_always_on_settings WHERE accountID=?", arguments: [account]) ?? false
+    private static func isPaused(in db: Database) throws -> Bool {
+        try Bool.fetchOne(db, sql: "SELECT paused FROM agent_always_on_settings WHERE id=1") ?? false
     }
 
     /// Sorted keys keep a stored value byte-for-byte stable.

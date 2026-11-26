@@ -152,6 +152,13 @@ extension ChatThreadStore {
                 """,
                 arguments: [status, status, status, Date(), status, Date(), status, id]
             )
+            // Any run that starts in a settled thread, from the user, an agent, or a schedule, makes it active again.
+            if status == "running" {
+                try db.execute(
+                    sql: "UPDATE chat_threads SET settledAt = NULL, updatedAt = ? WHERE settledAt IS NOT NULL AND id = (SELECT threadID FROM chat_runs WHERE id = ?)",
+                    arguments: [Date(), id]
+                )
+            }
         }
     }
 

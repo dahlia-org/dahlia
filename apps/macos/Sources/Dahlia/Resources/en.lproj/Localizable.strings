@@ -1897,6 +1897,11 @@
 "Continue chats after a crash" = "Continue chats after a crash";
 "chat.continueAfterRestart.help" = "When Dahlia quits unexpectedly, chats that were running continue from where they left off the next time it opens. Chats that were waiting for your approval, and chats you stopped, do not continue.";
 "chat.continuedAfterRestart" = "Dahlia quit unexpectedly, so this chat continued from where it left off";
+"chat.showMore" = "Show %d more";
+"chat.settledSection" = "Settled";
+"chat.settleThread" = "Settle thread";
+"chat.cannotSettleActiveThread" = "Threads with running or queued work cannot be settled.";
+"chat.unsettleThread" = "Un-settle thread";
 "Follow-up behavior" = "Follow-up behavior";
 "While responding, send using the default behavior. Hold Command or press Command-Return to use the other action." = "While responding, send using the default behavior. Hold Command or press Command-Return to use the other action.";
 "Queue paused" = "Queue paused";
@@ -1927,7 +1932,7 @@
 "Authorize Calendar and Drive" = "Authorize Calendar and Drive";
 "settings.agents.alwaysOn.help" = "While the app is open, Dahlia reads the event sources that are on and tells Super Agent about new events. Nothing is read while recording. Writes to other services, such as replies, follow the same approval settings as your chats.";
 "settings.agents.alwaysOn.sources" = "Event Sources";
-"settings.agents.alwaysOn.noServers" = "Register an MCP server under Connectors in Dahlia AI settings to add an event source.";
+"settings.agents.alwaysOn.noServers" = "To add mail or Slack, register an MCP server under Connectors in Dahlia AI settings. Calendar uses the app’s calendar settings.";
 "settings.agents.alwaysOn.editSource" = "Edit Event Source";
 "settings.agents.alwaysOn.addSource" = "Add Event Source";
 "settings.agents.alwaysOn.chooseSource" = "Where to Read From";
@@ -1965,17 +1970,24 @@
 "settings.agents.alwaysOn.botKindQuestion" = "Question";
 "settings.agents.alwaysOn.botKindReport" = "Report";
 "settings.agents.alwaysOn.botKindSuggestion" = "Suggestion";
-"settings.agents.alwaysOn.botKindApproval" = "Approval";
 "settings.agents.alwaysOn.botRecommended" = "recommended";
 "settings.agents.alwaysOn.botAnswer" = "Answer";
+"settings.agents.alwaysOn.botAnswerPlaceholder" = "Type another answer";
 "settings.agents.alwaysOn.botAnswerSend" = "Answer";
 "settings.agents.alwaysOn.botDismiss" = "Dismiss";
 "settings.agents.alwaysOn.botAccept" = "Go ahead";
 "settings.agents.alwaysOn.botAccepted" = "Go ahead";
 "settings.agents.alwaysOn.botSeen" = "Done";
 "settings.agents.alwaysOn.botGuidancePlaceholder" = "For example: who comes first, tone, what never to do, quiet hours";
-"settings.agents.alwaysOn.botWork" = "Tasks";
-"settings.agents.alwaysOn.botWorkHelp" = "Task threads that Super Agent launches work like your own chats: they use the MCP servers in Connectors, your meetings in Dahlia, the working folder, and commands. Writes to other services go through the same approvals as in your chats.";
+"settings.agents.alwaysOn.botModels" = "Models";
+"settings.agents.alwaysOn.botEffort" = "Reasoning Effort";
+"settings.agents.alwaysOn.botIntakeModel" = "Intake";
+"settings.agents.alwaysOn.botIntakeModelHelp" = "The model that reads event sources and records events.";
+"settings.agents.alwaysOn.botUnattendedModel" = "Unattended Runs";
+"settings.agents.alwaysOn.botUnattendedModelHelp" = "The model Super Agent uses when it runs without your input, such as for event notices and task results. Your conversation keeps its own model.";
+"settings.agents.alwaysOn.botModelDefault" = "Default Model";
+"settings.agents.alwaysOn.botModelConversation" = "Same as Conversation";
+"settings.agents.alwaysOn.botSoul" = "Soul";
 "settings.agents.alwaysOn.openTask" = "Open task";
 
 "bots.section" = "Agents";
@@ -2003,3 +2015,15 @@
 "bots.resume" = "Resume";
 "bots.inboxTab" = "Inbox";
 "bots.finishTask" = "Mark Done";
+
+"settings.agents.alwaysOn.counts" = "%d read / %d recorded";
+
+"settings.agents.calendar.source" = "Calendar";
+"settings.agents.calendar.daily" = "Daily agenda";
+"settings.agents.calendar.dailyTime" = "Time to notify";
+"settings.agents.calendar.beforeMeeting" = "Before meetings";
+"settings.agents.calendar.leadHours" = "Hours before";
+"settings.agents.calendar.scheduleHelp" = "Uses calendars enabled in the app. Choose less than 168 hours before meetings.";
+"settings.agents.calendar.invalidSchedule" = "Enable daily or before meetings. Hours before must be greater than 0 and less than 168.";
+"settings.agents.calendar.dailyNote" = "Read today's schedule with calendar_read and consider preparation and unanswered invitations.";
+"settings.agents.calendar.meetingNote" = "A meeting is approaching. Read its current details with calendar_read and decide whether preparation is needed.";

@@ -13,6 +13,13 @@ final class CodexChatCoordinator {
     private(set) var historyCursor: String?
     private(set) var isLoadingHistory = false
     private(set) var historyError: String?
+    /// The Settled shelf: threads the user put away as done for now. Loaded on refresh, paged on demand.
+    private(set) var settledHistory: [CodexChatThreadSummary] = []
+    private(set) var settledCursor: String?
+    private(set) var isLoadingSettled = false
+    /// The sections' sizes in the database, beyond the loaded pages.
+    private(set) var activeCount = 0
+    private(set) var settledCount = 0
     /// Set once when the docked chat's new thread finishes a turn without being listed. The coordinator does not refresh
     /// for the docked session, so a visible history list refreshes while this is set. Any refresh clears it when it starts,
     /// so a failed or still-missing result stays as it is instead of retriggering.
@@ -317,7 +324,44 @@ final class CodexChatCoordinator {
         history = []
         historyCursor = nil
         isLoadingHistory = false
+        settledHistory = []
+        settledCursor = nil
+        isLoadingSettled = false
         await loadMoreHistory(generation: generation)
+        await loadMoreSettled(generation: generation)
+    }
+
+    func loadMoreSettled() async {
+        await loadMoreSettled(generation: historyGeneration)
+    }
+
+    private func loadMoreSettled(generation: Int) async {
+        guard generation == historyGeneration, !isLoadingSettled, dockedSession.isBoundToCurrentAccount else { return }
+        isLoadingSettled = true
+        defer {
+            if generation == historyGeneration { isLoadingSettled = false }
+        }
+        let accountID = dockedSession.accountID
+        do {
+            let page = try await service.listSettledThreads(cursor: settledCursor)
+            let counts = try await service.threadCounts()
+            guard generation == historyGeneration, dockedSession.isBoundToCurrentAccount,
+                  dockedSession.accountID == accountID else { return }
+            settledHistory += page.threads.filter { item in !settledHistory.contains { $0.id == item.id } }
+            settledCursor = page.nextCursor
+            (activeCount, settledCount) = counts
+        } catch {
+            if generation == historyGeneration { historyError = error.localizedDescription }
+        }
+    }
+
+    func setSettled(_ thread: CodexChatThreadSummary, _ settled: Bool) async {
+        do {
+            try await service.setThreadSettled(id: thread.id, settled: settled)
+            await refreshHistory()
+        } catch {
+            historyError = error.localizedDescription
+        }
     }
 
     func loadMoreHistory() async {

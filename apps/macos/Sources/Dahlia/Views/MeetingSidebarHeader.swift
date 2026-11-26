@@ -11,11 +11,77 @@ struct MeetingSidebarHeader: View {
     var addButtonSystemImage = "plus"
     var canAdd = true
     var onAdd: () -> Void = {}
+    /// How many items the section holds. With a count the header takes T3 Code's layout: the count and the chevron at
+    /// the trailing edge, and the add button in the count's place while hovered.
+    var count: Int?
+    /// Whether the count also shows while the section is expanded.
+    var showsCountWhenExpanded = false
 
     @State private var isHovered = false
     @FocusState private var isAddButtonFocused: Bool
 
     var body: some View {
+        if let count {
+            countedBody(count)
+        } else {
+            plainBody
+        }
+    }
+
+    private func countedBody(_ count: Int) -> some View {
+        HStack(spacing: 6) {
+            Button(action: onToggleExpansion) {
+                HStack(spacing: 5) {
+                    Text(title)
+                    Spacer(minLength: 8)
+                }
+                .contentShape(.rect)
+            }
+            .buttonStyle(.plain)
+            .font(.dahliaSectionHeader)
+            .accessibilityAddTraits(.isHeader)
+            .accessibilityHint(isExpanded ? L10n.collapse : L10n.expand)
+            .accessibilityValue(Text(count, format: .number))
+
+            ZStack(alignment: .trailing) {
+                Text(count, format: .number)
+                    .font(.dahliaSecondary)
+                    .monospacedDigit()
+                    .opacity(showsAddButton || !(showsCountWhenExpanded || !isExpanded) ? 0 : 1)
+                    .accessibilityHidden(true)
+                if let addButtonTitle {
+                    addButton(addButtonTitle).opacity(showsAddButton ? 1 : 0).allowsHitTesting(showsAddButton)
+                }
+            }
+
+            Button(action: onToggleExpansion) {
+                Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
+                    .font(.dahliaSecondary)
+                    .frame(width: 12)
+                    .contentShape(.rect)
+            }
+            .buttonStyle(.plain)
+            .accessibilityHidden(true)
+        }
+        .contentShape(.rect)
+        .onHover { isHovered = $0 }
+        .foregroundStyle(DahliaDesign.sidebarSecondaryTextColor)
+        .padding(.vertical, DahliaDesign.sidebarRowVerticalPadding)
+    }
+
+    private var showsAddButton: Bool { addButtonTitle != nil && (isHovered || isAddButtonFocused) }
+
+    private func addButton(_ title: String) -> some View {
+        Button(title, systemImage: addButtonSystemImage, action: onAdd)
+            .labelStyle(.iconOnly)
+            .dahliaFixedSymbol()
+            .buttonStyle(.plain)
+            .focused($isAddButtonFocused)
+            .disabled(!canAdd)
+            .help(title)
+    }
+
+    private var plainBody: some View {
         HStack {
             Button(action: onToggleExpansion) {
                 HStack(spacing: 5) {

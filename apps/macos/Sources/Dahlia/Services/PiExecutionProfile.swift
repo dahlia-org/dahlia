@@ -6,7 +6,7 @@ enum PiExecutionProfile: String, Sendable {
     /// and hands work to ordinary threads with the thread tools.
     case interactive, scheduled, review, intake, bot
 
-    static let botTools = ["inbox_read", "event_close", "item_create", "task_finish", "soul_write"]
+    static let botTools = ["inbox_read", "event_close", "item_create", "task_finish", "soul_write", "calendar_read", "remind"]
 
     var fileTools: [String] {
         switch self {

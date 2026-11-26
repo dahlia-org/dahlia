@@ -34,14 +34,17 @@ struct ChatThreadStore: ChatItemStore, Sendable {
     }
 
     /// `hiding` (Dahlia Bot's thread, which opens from the Bots section) is left out.
-    func listThreads(accountID: String, cursor: String?, limit: Int = 25, hiding: String? = nil) throws -> CodexChatThreadPage {
+    /// The active threads, or with `settled` the ones the user settled; both newest first.
+    func listThreads(
+        accountID: String, cursor: String?, limit: Int = 25, hiding: String? = nil, settled: Bool = false
+    ) throws -> CodexChatThreadPage {
         try dbQueue.read { db in
-            var condition = ""
+            var condition = settled ? "AND settledAt IS NOT NULL" : "AND settledAt IS NULL"
             var arguments: StatementArguments = [accountID, hiding]
             if let cursor, let data = Data(base64Encoded: cursor),
                let values = try? JSONDecoder().decode([String].self, from: data), values.count == 2,
                let time = Double(values[0]) {
-                condition = "AND (updatedAt, id) < (?, ?)"
+                condition += " AND (updatedAt, id) < (?, ?)"
                 let date = Date(timeIntervalSince1970: time)
                 arguments += [date, values[1]]
             }
@@ -73,9 +76,38 @@ struct ChatThreadStore: ChatItemStore, Sendable {
                     status: thread.status,
                     isUnread: thread.scheduleID == nil ? responseSeq > thread.lastSeenSeq : scheduledUnread,
                     lastResponseAt: response?["createdAt"],
-                    lastItemSeq: Int64.fetchOne(db, sql: "SELECT MAX(seq) FROM chat_items WHERE threadID = ?", arguments: [thread.id])
+                    lastItemSeq: Int64.fetchOne(db, sql: "SELECT MAX(seq) FROM chat_items WHERE threadID = ?", arguments: [thread.id]),
+                    settledAt: thread.settledAt
                 )
             }, nextCursor: next)
+        }
+    }
+
+    /// How many top-level threads the sidebar's Chat section (active) and Settled section hold.
+    func threadCounts(accountID: String, hiding: String? = nil) throws -> (active: Int, settled: Int) {
+        try dbQueue.read {
+            let row = try Row.fetchOne($0, sql: """
+            SELECT COUNT(*) FILTER (WHERE settledAt IS NULL) AS active, COUNT(*) FILTER (WHERE settledAt IS NOT NULL) AS settled
+            FROM chat_threads WHERE accountID = ? AND id IS NOT ? AND parentThreadID IS NULL
+            """, arguments: [accountID, hiding])
+            return (row?["active"] ?? 0, row?["settled"] ?? 0)
+        }
+    }
+
+    /// Un-settling returns the thread to the top of the active list, as in T3 Code; settling keeps its place in time.
+    func setSettled(_ settled: Bool, threadID: String, accountID: String, now: Date = .now) throws {
+        try dbQueue.write { db in
+            if settled, try Bool.fetchOne(db, sql: """
+            SELECT EXISTS(SELECT 1 FROM chat_runs WHERE threadID=? AND status IN ('queued', 'running', 'waitingForUser'))
+            """, arguments: [threadID]) == true {
+                throw PiRuntimeError.rpcError(code: nil, message: L10n.chatCannotSettleActiveThread)
+            }
+            try db.execute(
+                sql: settled
+                    ? "UPDATE chat_threads SET settledAt = ? WHERE id = ? AND accountID = ?"
+                    : "UPDATE chat_threads SET settledAt = NULL, updatedAt = ? WHERE id = ? AND accountID = ? AND settledAt IS NOT NULL",
+                arguments: [now, threadID, accountID]
+            )
         }
     }
 
@@ -104,11 +136,13 @@ struct ChatThreadStore: ChatItemStore, Sendable {
         }
     }
 
-    func beginTurn(threadID: String, message: JSONValue, model: String?, effort: String, runID: UUID? = nil) throws {
+    /// A nil model or effort keeps the thread's, as a turn the user did not start does.
+    func beginTurn(threadID: String, message: JSONValue, model: String?, effort: String?, runID: UUID? = nil) throws {
         try dbQueue.write { db in
             try Self.append([message], threadID: threadID, runID: runID, in: db)
             try db.execute(sql: """
-            UPDATE chat_threads SET status = 'running', model = COALESCE(?, model), reasoningEffort = ?, updatedAt = ? WHERE id = ?
+            UPDATE chat_threads SET status = 'running', model = COALESCE(?, model), reasoningEffort = COALESCE(?, reasoningEffort),
+                updatedAt = ? WHERE id = ?
             """, arguments: [model, effort, Date(), threadID])
         }
     }

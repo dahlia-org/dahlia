@@ -18,8 +18,13 @@
             }
 
             private static let twoItems: JSONValue = .object(["items": .array([
-                .object(["external_id": .string("m1"), "topic_key": .string("t1"), "url": .string("https://mail.example.com/m1")]),
-                .object(["external_id": .string("m2"), "topic_key": .string("t2")]),
+                .object([
+                    "key": .string("m1"),
+                    "note": .string("Reply needed"),
+                    "topic": .string("t1"),
+                    "url": .string("https://mail.example.com/m1"),
+                ]),
+                .object(["key": .string("m2"), "note": .string("Reply needed"), "topic": .string("t2")]),
             ])])
 
             /// Like real Pi, the fake makes each bridge call in turn and settles only after Dahlia answered the last one.
@@ -68,9 +73,9 @@
                 let source = UUID.v7().uuidString
                 try db.write {
                     try AgentSourceRecord(
-                        id: source, accountID: provider, name: "Mail", server: "gmail", instructions: "Unread mail",
-                        intervalMinutes: 15, sieve: "candidate", allowedSenders: "[]", cursor: nil, enabled: true,
-                        gapDetectedAt: nil, lastIntakeAt: nil, createdAt: .now, updatedAt: .now, connectionID: settings.connectionID(for: "gmail")!
+                        id: source, name: "Mail", server: "gmail", instructions: "Unread mail",
+                        intervalMinutes: 15, allowedSenders: "[]", cursor: nil, enabled: true,
+                        lastIntakeAt: nil, createdAt: .now, updatedAt: .now, connectionID: settings.connectionID(for: "gmail")!
                     ).insert($0)
                 }
                 let chat = PiChatService(
@@ -91,7 +96,7 @@
                         #require(try AgentSourceRecord.fetchOne(db, key: fixture.source)),
                         // The Router also runs once intake recorded events; these tests look at intake alone.
                         AgentSystemRunRecord.fetchAll(db, sql: "SELECT * FROM agent_system_runs WHERE task='intake' ORDER BY startedAt, id"),
-                        AgentEventRecord.fetchAll(db, sql: "SELECT * FROM agent_event_inbox ORDER BY externalID")
+                        AgentEventRecord.fetchAll(db, sql: "SELECT * FROM agent_event_inbox ORDER BY key")
                     )
                 }
             }
@@ -124,7 +129,7 @@
                 if scenario == "success" {
                     #expect(run.status == "completed" && source.cursor != nil && source.lastIntakeAt != nil)
                     // Gmail results carry no link; one is built from the thread ID when the model gives none.
-                    #expect(events.map(\.url) == ["https://mail.example.com/m1", "https://mail.google.com/mail/u/0/#all/t2"])
+                    #expect(events.map(\.topic) == ["t1", "t2"])
                 } else {
                     #expect(run.status == "failed" && source.cursor == nil && source.lastIntakeAt == nil)
                 }
@@ -167,13 +172,33 @@
                 )
                 defer { try? FileManager.default.removeItem(at: fixture.pi.rootURL) }
                 let start = Date.now
-                for attempt in 0 ... PiChatService.intakeMismatchLimit {
+                for attempt in 0 ... 3 {
                     await drain(fixture, at: start.addingTimeInterval(Double(attempt) * 1200))
                 }
                 let (source, runs, events) = try await saved(fixture)
-                #expect(runs.count == PiChatService.intakeMismatchLimit + 1 && runs.allSatisfy { $0.status == "failed" })
-                #expect(source.cursor == nil && source.lastIntakeAt == nil && source.gapDetectedAt == nil)
+                #expect(runs.count == 3 + 1 && runs.allSatisfy { $0.status == "failed" })
+                #expect(source.cursor == nil && source.lastIntakeAt == nil)
                 #expect(events.count == 2)
+            }
+
+            @Test func recordingCapSpansBatchesAndTheNextRunDrainsTheRemainder() async throws {
+                func payload(_ range: Range<Int>) -> JSONValue {
+                    .object(["items": .array(range.map { .object(["key": .string("m\($0)"), "note": .string("Needs reply")]) })])
+                }
+                let fixture = try fixture(calls: [
+                    ("intakeSeen", .object(["ids": .array((0 ..< 35).map { .string("m\($0)") })])),
+                    ("eventRecord", payload(0 ..< 15)), ("eventRecord", payload(10 ..< 35)),
+                ], ending: [TestPiTransport.assistantEnd("Selected."), TestPiTransport.settled()])
+                defer { try? FileManager.default.removeItem(at: fixture.pi.rootURL) }
+                let now = Date.now
+                await drain(fixture, at: now)
+                let first = try await saved(fixture)
+                #expect(first.0.cursor == nil && first.0.lastReadCount == 35 && first.0.lastRecordedCount == 20)
+                #expect(first.2.count == 20)
+                await drain(fixture, at: now.addingTimeInterval(1200))
+                let second = try await saved(fixture)
+                #expect(second.0.cursor != nil && second.0.lastReadCount == 35 && second.0.lastRecordedCount == 15)
+                #expect(second.2.count == 35 && second.1.allSatisfy { $0.status == "completed" })
             }
 
             private func page(_ cursor: String = "", next: String = "", key: String = "query", more: Bool = false) -> (String, JSONValue) {
@@ -205,12 +230,12 @@
                 let complete = ["complete", "outOfOrder"].contains(scenario)
                 let start = Date.now
                 // Incomplete pagination must never use the record-mismatch escape after repeated attempts.
-                for attempt in 0 ... (complete ? 0 : PiChatService.intakeMismatchLimit) {
+                for attempt in 0 ... (complete ? 0 : 3) {
                     await drain(fixture, at: start.addingTimeInterval(Double(attempt) * 1200))
                 }
                 let (source, runs, events) = try await saved(fixture)
-                #expect((source.cursor != nil) == complete && source.gapDetectedAt == nil)
-                #expect(runs.count == (complete ? 1 : PiChatService.intakeMismatchLimit + 1))
+                #expect((source.cursor != nil) == complete)
+                #expect(runs.count == (complete ? 1 : 3 + 1))
                 #expect(runs
                     .allSatisfy {
                         $0.status == (complete ? "completed" : "failed") && (complete || $0.report.contains("The Source read did not complete"))
@@ -234,7 +259,7 @@
                 defer { try? FileManager.default.removeItem(at: fixture.pi.rootURL) }
                 await drain(fixture)
                 let (source, runs, events) = try await saved(fixture)
-                #expect((source.cursor == nil) == missingSmallPage && source.gapDetectedAt == nil)
+                #expect((source.cursor == nil) == missingSmallPage)
                 #expect(runs.map(\.status) == [missingSmallPage ? "failed" : "completed"])
                 #expect(events.count == 2)
             }
@@ -264,7 +289,7 @@
                 await drain(fixture)
                 let (source, runs, _) = try await saved(fixture)
                 let complete = ["independent", "exact"].contains(scenario)
-                #expect((source.cursor != nil) == complete && source.gapDetectedAt == nil)
+                #expect((source.cursor != nil) == complete)
                 #expect(runs.map(\.status) == [complete ? "completed" : "failed"])
             }
 
@@ -289,7 +314,7 @@
 
             /// Listed items left unrecorded, or a batch Dahlia refused, hold the position; the limit keeps intake from stalling.
             @Test(arguments: ["listed", "refused"])
-            func incompleteRunsHoldThePositionUntilTheLimit(scenario: String) async throws {
+            func selectionCanSkipListedItemsButRefusedBatchesNeverAdvance(scenario: String) async throws {
                 let listed = JSONValue.object(["ids": .array(["m1", "m2", "m3"].map(JSONValue.string))])
                 let refused = JSONValue.object(["items": .array([.object(["subject": .string("no id")])])])
                 let fixture = try fixture(
@@ -299,16 +324,17 @@
                 defer { try? FileManager.default.removeItem(at: fixture.pi.rootURL) }
                 let start = Date.now
 
-                for run in 0 ..< PiChatService.intakeMismatchLimit - 1 {
+                for run in 0 ..< 3 - 1 {
                     await drain(fixture, at: start.addingTimeInterval(Double(run) * 1200))
                     let (source, runs, _) = try await saved(fixture)
-                    #expect(source.cursor == nil && source.gapDetectedAt == nil && runs.last?.status == "failed")
+                    #expect((source.cursor != nil) == (scenario == "listed") && runs.last?.status == (scenario == "listed" ? "completed" : "failed"))
                 }
-                await drain(fixture, at: start.addingTimeInterval(Double(PiChatService.intakeMismatchLimit) * 1200))
+                await drain(fixture, at: start.addingTimeInterval(Double(3) * 1200))
 
                 let (source, runs, _) = try await saved(fixture)
-                #expect(runs.count == PiChatService.intakeMismatchLimit && runs.last?.status == "completed")
-                #expect(source.cursor != nil && source.gapDetectedAt != nil)
+                #expect(runs.count == 3 && runs.last?.status == (scenario == "listed" ? "completed" : "failed"))
+                #expect((source.cursor != nil) == (scenario == "listed"))
+                #expect(source.lastReadCount == (scenario == "listed" ? 3 : 0))
             }
         }
     }

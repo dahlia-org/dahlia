@@ -28,14 +28,21 @@ struct DahliaBotSourceEditor: View {
                     if isNew {
                         LazyVGrid(columns: [GridItem(.adaptive(minimum: 140), spacing: 8)], alignment: .leading, spacing: 8) {
                             ForEach(model.servers, id: \.self) { server in
-                                let selected = server == draft.wrappedValue.server
+                                let selected = draft.wrappedValue.kind == "mcp" && server == draft.wrappedValue.server
                                 Button { model.choose(server: server) } label: {
                                     serverLabel(server).frame(maxWidth: .infinity, alignment: .leading)
                                 }
                                 .buttonStyle(.dahlia(selected ? .primary : .secondary))
                                 .accessibilityAddTraits(selected ? .isSelected : [])
                             }
+                            Button { model.chooseCalendar() } label: {
+                                Label(L10n.agentCalendarSource, systemImage: "calendar").frame(maxWidth: .infinity, alignment: .leading)
+                            }
+                            .buttonStyle(.dahlia(draft.wrappedValue.kind == "calendar" ? .primary : .secondary))
+                            .accessibilityAddTraits(draft.wrappedValue.kind == "calendar" ? .isSelected : [])
                         }
+                    } else if draft.wrappedValue.kind == "calendar" {
+                        Label(L10n.agentCalendarSource, systemImage: "calendar")
                     } else {
                         // Its events belong to this server, so an existing source keeps it.
                         serverLabel(draft.wrappedValue.server)
@@ -43,36 +50,48 @@ struct DahliaBotSourceEditor: View {
                 }
                 Form {
                     Section {
-                        TextField(
-                            L10n.agentAlwaysOnInstructions,
-                            text: draft.instructions,
-                            prompt: Text(L10n.agentAlwaysOnInstructionsPlaceholder),
-                            axis: .vertical
-                        )
-                        .lineLimit(2 ... 5)
-                        Picker(L10n.agentAlwaysOnInterval, selection: draft.intervalMinutes) {
-                            ForEach(Set(DahliaBotPanelModel.intervals + [draft.wrappedValue.intervalMinutes]).sorted(), id: \.self) {
-                                Text(L10n.agentAlwaysOnIntervalMinutes($0)).font(.dahliaBody).tag($0)
+                        if draft.wrappedValue.kind == "calendar" {
+                            Toggle(L10n.agentCalendarDaily, isOn: draft.dailyEnabled)
+                            if draft.wrappedValue.dailyEnabled {
+                                DatePicker(L10n.agentCalendarDailyTime, selection: draft.dailyTime, displayedComponents: .hourAndMinute)
+                            }
+                            Toggle(L10n.agentCalendarBeforeMeeting, isOn: draft.leadEnabled)
+                            if draft.wrappedValue.leadEnabled {
+                                TextField(L10n.agentCalendarLeadHours, value: draft.leadHours, format: .number)
+                            }
+                        } else {
+                            TextField(
+                                L10n.agentAlwaysOnInstructions,
+                                text: draft.instructions,
+                                prompt: Text(L10n.agentAlwaysOnInstructionsPlaceholder),
+                                axis: .vertical
+                            )
+                            .lineLimit(2 ... 5)
+                            Picker(L10n.agentAlwaysOnInterval, selection: draft.intervalMinutes) {
+                                ForEach(Set(DahliaBotPanelModel.intervals + [draft.wrappedValue.intervalMinutes]).sorted(), id: \.self) {
+                                    Text(L10n.agentAlwaysOnIntervalMinutes($0)).font(.dahliaBody).tag($0)
+                                }
                             }
                         }
-                        Picker(L10n.agentAlwaysOnSieve, selection: draft.sieve) {
-                            // "ignore" reads nothing to tell, which the switch on the card already does; only an old source shows it.
-                            ForEach(["explicit", "candidate"] + (draft.wrappedValue.sieve == "ignore" ? ["ignore"] : []), id: \.self) {
-                                Text(DahliaBotPanelView.sieveLabel($0)).font(.dahliaBody).tag($0)
-                            }
-                        }
-                        .pickerStyle(.radioGroup)
                     } footer: {
-                        Text(L10n.agentAlwaysOnInstructionsHelp).font(.dahliaSecondary).foregroundStyle(.secondary)
+                        Text(draft.wrappedValue.kind == "calendar" ? L10n.agentCalendarScheduleHelp : L10n.agentAlwaysOnInstructionsHelp)
+                            .font(.dahliaSecondary).foregroundStyle(.secondary)
                     }
                     Section {
                         DisclosureGroup(L10n.agentAlwaysOnAdvanced) {
-                            TextField(L10n.name, text: draft.name, prompt: Text(model.displayName(draft.wrappedValue.server)))
                             TextField(
-                                L10n.agentAlwaysOnAllowedSenders,
-                                text: draft.allowedSenders,
-                                prompt: Text(L10n.agentAlwaysOnAllowedSendersPlaceholder)
+                                L10n.name,
+                                text: draft.name,
+                                prompt: Text(draft.wrappedValue.kind == "calendar" ? L10n.agentCalendarSource : model
+                                    .displayName(draft.wrappedValue.server))
                             )
+                            if draft.wrappedValue.kind != "calendar" {
+                                TextField(
+                                    L10n.agentAlwaysOnAllowedSenders,
+                                    text: draft.allowedSenders,
+                                    prompt: Text(L10n.agentAlwaysOnAllowedSendersPlaceholder)
+                                )
+                            }
                         }
                     }
                 }
@@ -102,7 +121,7 @@ struct DahliaBotSourceEditor: View {
                     .buttonStyle(.borderedProminent)
                     .controlSize(.extraLarge)
                     .keyboardShortcut(.defaultAction)
-                    .disabled(model.isBusy || draft.wrappedValue.server.isEmpty)
+                    .disabled(model.isBusy || (draft.wrappedValue.kind == "mcp" && draft.wrappedValue.server.isEmpty))
                 }
             }
             .padding(24)

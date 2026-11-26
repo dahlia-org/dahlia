@@ -13,7 +13,6 @@
                 createdAt: Date(timeIntervalSince1970: 1_700_000_000)
             )
             try queue.write { try provider.insert($0) }
-            let store = ChatThreadStore(dbQueue: queue)
             let thread = ChatThreadRecord(
                 id: UUID.v7().uuidString,
                 accountID: AppAccount.key,
@@ -21,7 +20,13 @@
                 createdAt: .now,
                 updatedAt: .now
             )
-            try store.createThread(thread)
+            // The record has columns later migrations add, so the old schema gets a plain insert.
+            try queue.write {
+                try $0.execute(
+                    sql: "INSERT INTO chat_threads (id, accountID, title, status, createdAt, updatedAt) VALUES (?, ?, ?, 'idle', ?, ?)",
+                    arguments: [thread.id, thread.accountID, thread.title, thread.createdAt, thread.updatedAt]
+                )
+            }
             let runID = try #require(UUID(uuidString: "018bcfe5-6800-7000-8000-000000000002"))
             let followUpID = try #require(UUID(uuidString: "018bcfe5-6800-7000-8000-000000000001"))
             let manualID = UUID.v7()

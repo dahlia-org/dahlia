@@ -166,9 +166,13 @@
             try AppDatabaseManager.migrator.migrate(queue, upTo: "v64_agentLearning")
             let store = ChatThreadStore(dbQueue: queue)
             let target = thread()
-            try store.createThread(target)
             let existing = run(target: target.id)
             try queue.write { db in
+                // The record has columns later migrations add, so the old schema gets a plain insert.
+                try db.execute(
+                    sql: "INSERT INTO chat_threads (id, accountID, title, status, createdAt, updatedAt) VALUES (?, ?, ?, 'idle', ?, ?)",
+                    arguments: [target.id, target.accountID, target.title, target.createdAt, target.updatedAt]
+                )
                 try db.execute(sql: """
                 INSERT INTO chat_runs(id, threadID, rootRunID, status, input, effort, approvalMethod, createdAt, resultExcerpt)
                 VALUES (?, ?, ?, 'completed', 'Preserved request', 'medium', 'ask', ?, 'Preserved result')
@@ -212,7 +216,7 @@
 
         @Test(arguments: ["interrupted", "failed"], [false, true])
         func terminalUnstartedRunsKeepTheirAcceptancePosition(terminal: String, queuedReplacement: Bool) throws {
-            let store = ChatThreadStore(dbQueue: try AppDatabaseManager(path: ":memory:").dbQueue)
+            let store = try ChatThreadStore(dbQueue: AppDatabaseManager(path: ":memory:").dbQueue)
             let parent = thread(), target = thread()
             try store.createThread(parent)
             try store.createThread(target)
@@ -512,7 +516,7 @@
 
         @Test(arguments: [false, true])
         func repeatedRecoveryPreservesQueueAndResultBatchOrder(queuedBeforeManual: Bool) throws {
-            let store = ChatThreadStore(dbQueue: try AppDatabaseManager(path: ":memory:").dbQueue)
+            let store = try ChatThreadStore(dbQueue: AppDatabaseManager(path: ":memory:").dbQueue)
             let parent = thread(), target = thread()
             try store.createThread(parent)
             try store.createThread(target)
@@ -535,7 +539,7 @@
             let second = try #require(try store.queuedRuns(accountID: "local").first)
             #expect(second.id != first.id && second.logicalSequence == first.logicalSequence)
             #expect(second.executionSequence != nil && second.executionSequence == first.executionSequence)
-            #expect(second.executionSequence == (try store.run(id: original.id)?.executionSequence))
+            #expect(try second.executionSequence == (store.run(id: original.id)?.executionSequence))
             #expect(second.createdAt == now.addingTimeInterval(1))
             #expect(try store.queuedRuns(accountID: "local").map(\.id) == [second.id, followUp.id, tail.id])
             #expect(try store.latestRun(threadID: target.id)?.id == tail.id)
@@ -578,6 +582,48 @@
             }
             try store.deleteThread(id: target.id)
             #expect(try reloaded.idleLaunch(requesterID: caller.id, rootRunID: root, clientRequestID: "once") == nil)
+        }
+
+        /// As T3 Code's Settled shelf: a settled thread leaves the active list, un-settling brings it back to the top, and any
+        /// run that starts in it makes it active again.
+        @Test func aSettledThreadLeavesTheActiveListUntilItIsUnsettledOrARunStarts() throws {
+            let store = try ChatThreadStore(dbQueue: AppDatabaseManager(path: ":memory:").dbQueue)
+            let older = thread(), newer = thread()
+            try store.createThread(older)
+            try store.createThread(newer)
+            func active() throws -> [String] { try store.listThreads(accountID: "local", cursor: nil).threads.map(\.id) }
+
+            try store.setSettled(true, threadID: older.id, accountID: "local")
+            #expect(try active() == [newer.id])
+            #expect(try store.listThreads(accountID: "local", cursor: nil, settled: true).threads.map(\.id) == [older.id])
+            #expect(try store.threadCounts(accountID: "local") == (1, 1))
+
+            try store.setSettled(false, threadID: older.id, accountID: "local")
+            #expect(try active() == [older.id, newer.id])
+            #expect(try store.threadCounts(accountID: "local") == (2, 0))
+
+            try store.setSettled(true, threadID: newer.id, accountID: "local")
+            let started = try store.enqueueRun(run(target: newer.id))
+            try store.setRunStatus(started.id, status: "running")
+            #expect(try active().first == newer.id && store.threadCounts(accountID: "local") == (2, 0))
+        }
+
+        @Test(arguments: ["queued", "running", "waitingForUser"])
+        func outstandingWorkCannotBeSettled(status: String) throws {
+            let store = try ChatThreadStore(dbQueue: AppDatabaseManager(path: ":memory:").dbQueue)
+            let target = thread()
+            try store.createThread(target)
+            let work = try store.enqueueRun(run(target: target.id))
+            try store.setRunStatus(work.id, status: status)
+
+            #expect(throws: (any Error).self) {
+                try store.setSettled(true, threadID: target.id, accountID: "local")
+            }
+            #expect(try store.thread(id: target.id, accountID: "local").settledAt == nil)
+            try store.setSettled(false, threadID: target.id, accountID: "local")
+            try store.setRunStatus(work.id, status: "completed")
+            try store.setSettled(true, threadID: target.id, accountID: "local")
+            #expect(try store.thread(id: target.id, accountID: "local").settledAt != nil)
         }
 
         @Test func notificationDisplaysResultsWithoutTheRuntimeEnvelope() {

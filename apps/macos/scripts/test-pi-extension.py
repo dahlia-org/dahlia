@@ -1095,7 +1095,7 @@ def main():
     assert "not available" in results[0] and "GATEWAY_OK" not in results[0], results
 
     # Intake reads its one source and records events; it cannot write to the source or read files, even under fullAccess.
-    record = {"items": [{"external_id": "m1", "topic_key": "t1", "url": "https://mail.example.com/m1"}]}
+    record = {"items": [{"key": "m1", "topic": "t1", "note": "A reply is needed", "ref": {"messageId": "m1"}}]}
     _, results, bridge, _ = run(
         pi, "chat",
         [{"tool": "mcp__gmail__search_messages"}, {"tool": "event_record", "args": record}, {"tool": "mcp__gmail__send_message"},
@@ -1110,7 +1110,7 @@ def main():
     assert not any(method == "approval" for method, _ in bridge), bridge
     # Super Agent routes through ordinary thread tools, but has no external MCP or command access, even under fullAccess.
     route = {"title": "Follow up", "message": "Read the event", "event_ids": ["e1"], "client_request_id": "launch"}
-    bot_calls = [("inbox_read", {}), ("event_close", {"event_ids": ["e2"]}),
+    bot_calls = [("calendar_read", {}), ("remind", {"at": "2030-01-01T08:00:00Z", "note": "Follow up"}), ("inbox_read", {}), ("event_close", {"event_ids": ["e2"]}),
                  ("item_create", {"kind": "report", "title": "Read it"}),
                  ("task_finish", {"thread_id": "task", "status": "done"}), ("soul_write", {"text": "Be concise"})]
     _, results, bridge, _ = run(

@@ -96,12 +96,12 @@ extension PiChatService {
     }
 
     /// The queue and its final post-preparation claim use the same current eligibility.
-    func unattendedRunEligible(_ run: ChatRunRecord, account: String) -> Bool {
+    func unattendedRunEligible(_ run: ChatRunRecord, account _: String) -> Bool {
         // Super Agent's notices, and the work it hands to threads, are the always-on agent's: none starts while recording.
         let fromSuperAgent = (run.origin != "user" && run.profile == PiExecutionProfile.bot.rawValue)
             || (run.requestedByThreadID.map(isBotThread) ?? false)
         if run.origin == "schedule" || fromSuperAgent, AgentBackgroundActivity.isRecording { return false }
-        if isBotNotice(run) { return (try? inboxService().isPaused(account: account)) == false }
+        if isBotNotice(run) { return (try? inboxService().isPaused()) == false }
         return true
     }
 
@@ -163,8 +163,8 @@ extension PiChatService {
                     rootRunID: first.rootRunID,
                     status: "queued",
                     input: text,
-                    model: parent.model,
-                    effort: parent.reasoningEffort ?? "medium",
+                    model: unattended(requester, account: accountID)?.model ?? parent.model,
+                    effort: unattended(requester, account: accountID)?.effort ?? parent.reasoningEffort ?? "medium",
                     approvalMethod: chosenApprovalMethod(requester)?.rawValue ?? CodexChatApprovalMethod.autoReview.rawValue,
                     createdAt: .now
                 )
@@ -175,6 +175,14 @@ extension PiChatService {
         } catch {
             ErrorReportingService.capture(error, context: ["source": "chatRunDelivery"])
         }
+    }
+
+    /// Super Agent's model and effort for turns that start without the user; other threads keep their own.
+    private func unattended(_ threadID: String, account: String) -> (model: String, effort: String?)? {
+        guard isSuperAgentThread(threadID) else { return nil }
+        return AgentBotSettings.choice(
+            model: AgentBotSettings.unattendedModelKey(for: account), effort: AgentBotSettings.unattendedEffortKey(for: account)
+        )
     }
 
     func notificationText(_ runs: [ChatRunRecord], accountID: String) throws -> String {
@@ -382,7 +390,7 @@ extension PiChatService {
             targetID: targetID, caller: caller, turn: callerTurn, input: input, requestID: requestID, arguments: args
         ) { db in
             if isTaskSender {
-                try AgentInboxService.continueTask(threadID: targetID, eventIDs: eventIDs, account: caller.accountID, in: db)
+                try AgentInboxService.continueTask(threadID: targetID, eventIDs: eventIDs, in: db)
             }
         }
         // A retry returns its earlier run; the same key for another thread would silently drop this input.
@@ -399,8 +407,8 @@ extension PiChatService {
         guard !ids.isEmpty else { return (message, []) }
         let inbox = try inboxService()
         do {
-            let events = try inbox.undecidedEvents(ids, account: AppAccount.key)
-            let sources = try Dictionary(uniqueKeysWithValues: inbox.sources(account: AppAccount.key).map { ($0.id, $0.name) })
+            let events = try inbox.undecidedEvents(ids)
+            let sources = try Dictionary(uniqueKeysWithValues: inbox.sources().map { ($0.id, $0.name) })
             return (message + Self.handedEvents(events, sources: sources), ids)
         } catch let failure as AgentInboxService.Failure {
             throw PiRuntimeError.rpcError(code: nil, message: failure.message)
@@ -410,7 +418,7 @@ extension PiChatService {
     /// When Super Agent sends to a Task's thread, the Task is in progress again and the events it handed over are its.
     private func continueTask(_ threadID: String, eventIDs: [String], caller: ChatThreadRecord) throws {
         guard isSuperAgentThread(caller.id) else { return }
-        try inboxService().continueTask(threadID: threadID, eventIDs: eventIDs, account: caller.accountID)
+        try inboxService().continueTask(threadID: threadID, eventIDs: eventIDs)
     }
 
     func interruptThread(_ targetID: String, arguments args: [String: JSONValue], account: String) async throws -> JSONValue {
@@ -528,7 +536,7 @@ extension PiChatService {
                 if isTask {
                     try AgentInboxService.openTask(
                         threadID: thread.id, title: title, instructions: args["message"]?.stringValue ?? "",
-                        eventIDs: eventIDs, account: caller.accountID, in: db
+                        eventIDs: eventIDs, in: db
                     )
                 }
             }

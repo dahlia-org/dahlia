@@ -62,6 +62,8 @@ final class GoogleCalendarStore: ObservableObject, CalendarConnectionStore {
     private let daysAhead: Int
     private let presentingWindowProvider: @MainActor () -> NSWindow?
     private var currentSession: GoogleSession?
+    var hasFetchedEvents: Bool { lastRefreshAt != nil && state == .loaded }
+
     private var lastRefreshAt: Date?
     private var didAttemptRestore = false
     private var isDisconnecting = false
@@ -359,6 +361,7 @@ final class GoogleCalendarStore: ObservableObject, CalendarConnectionStore {
     func setCalendarSelection(_ ids: Set<String>) {
         guard isAuthorized else { return }
         invalidateCurrentRefresh()
+        lastRefreshAt = nil
         updateSelectedCalendarIDs(ids)
         Task {
             await refreshIfNeeded(force: true)

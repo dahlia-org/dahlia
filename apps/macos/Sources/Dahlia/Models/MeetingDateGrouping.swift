@@ -44,7 +44,8 @@ enum MeetingDateGrouping {
         }
     }
 
-    private static func title(for day: Date, calendar: Calendar, now: Date) -> String {
+    /// Today, Yesterday, or the date: the label for a day in a list sorted newest first.
+    static func title(for day: Date, calendar: Calendar = .current, now: Date = Date()) -> String {
         if calendar.isDate(day, inSameDayAs: now) {
             return L10n.today
         }
