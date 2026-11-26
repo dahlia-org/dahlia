@@ -1,6 +1,6 @@
 import Foundation
 
-enum CodexAppServerInput: Equatable, Sendable {
+enum CodexAppServerInput: Codable, Equatable, Sendable {
     case text(String)
     case imageMetadata(String)
     case imageDataURI(String)

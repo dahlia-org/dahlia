@@ -12,6 +12,7 @@ struct MeetingListSidebarView: View {
     let isShowingChat: Bool
     let onNewChat: () -> Void
     let onOpenChatThread: (CodexChatThreadSummary) -> Void
+    let onOpenBot: () -> Void
     let omnigentSessionID: String?
     let onOpenOmnigentSession: (String) -> Void
     let onShowUnprocessedRecordings: () -> Void
@@ -28,6 +29,7 @@ struct MeetingListSidebarView: View {
     @State private var isPinnedSectionExpanded = true
     @State private var isProjectSectionExpanded = true
     @State private var isRecentSectionExpanded = true
+    @State private var isSettledExpanded = false
     @FocusState private var isRenameFieldFocused: Bool
     @AppStorage(AppSettings.meetingSidebarRowStyleUserDefaultsKey)
     private var rowStyleRawValue = MeetingSidebarRowStyle.standard.rawValue
@@ -60,6 +62,7 @@ struct MeetingListSidebarView: View {
             )
             if sidebarTab == .chat {
                 List {
+                    MainSidebarBotsSection(coordinator: chatCoordinator, isShowingChat: isShowingChat, onOpen: onOpenBot)
                     MainSidebarChatHistorySection(
                         coordinator: chatCoordinator,
                         sidebarViewModel: sidebarViewModel,
@@ -76,10 +79,18 @@ struct MeetingListSidebarView: View {
                         )
                         .id(connectionID)
                     }
+                    if isSettledExpanded { settledSection }
                 }
                 .listStyle(.sidebar)
                 .contentMargins(.trailing, 12, for: .scrollContent)
                 .scrollContentBackground(.hidden)
+                // Collapsed, the Settled header waits against the footer, outside the scrolling list.
+                if !isSettledExpanded {
+                    settledSection
+                        .padding(.leading, 18)
+                        .padding(.trailing, 22)
+                        .padding(.bottom, 4)
+                }
             } else {
                 meetingList
             }
@@ -121,6 +132,12 @@ struct MeetingListSidebarView: View {
     }
 
     private var sidebarTab: MainSidebarTab { mainWindowNavigation.sidebarTab }
+
+    private var settledSection: some View {
+        MainSidebarSettledSection(
+            coordinator: chatCoordinator, isShowingChat: isShowingChat, isExpanded: $isSettledExpanded, onOpenThread: onOpenChatThread
+        )
+    }
 
     private var upcomingEventsSection: some View {
         MainSidebarUpcomingEventsSection(

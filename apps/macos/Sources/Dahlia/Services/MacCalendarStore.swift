@@ -61,6 +61,8 @@ final class MacCalendarStore: ObservableObject {
     private let refreshInterval: TimeInterval
     private let daysAhead: Int
     private let storeChangedNotification: Notification.Name?
+    var hasFetchedEvents: Bool { lastRefreshAt != nil && state == .loaded }
+
     private var lastRefreshAt: Date?
     private var storeChangedTask: Task<Void, Never>?
     private var refreshGeneration: UInt64 = 0
@@ -224,6 +226,7 @@ final class MacCalendarStore: ObservableObject {
     func setCalendarSelection(_ ids: Set<String>) -> Task<Void, Never>? {
         guard isAuthorized else { return nil }
         invalidateCurrentRefresh()
+        lastRefreshAt = nil
         updateSelectedCalendarIDs(ids)
         return Task {
             await refreshIfNeeded(force: true)
@@ -403,6 +406,16 @@ actor EventKitMacCalendarEventStore: MacCalendarEventStoreProviding {
         return Self.sortAndFilter(events, now: now, intervalEnd: intervalEnd)
     }
 
+    static func responseStatus(_ status: EKParticipantStatus?) -> CalendarEvent.ResponseStatus {
+        switch status {
+        case .pending: .pending
+        case .tentative: .tentative
+        case .accepted: .accepted
+        case .declined: .declined
+        default: .unknown
+        }
+    }
+
     static func makeEvent(from event: EKEvent) -> CalendarEvent? {
         guard let startDate = event.startDate,
               let endDate = event.endDate,
@@ -434,6 +447,8 @@ actor EventKitMacCalendarEventStore: MacCalendarEventStoreProviding {
             isAttending: event.attendees == nil
                 || event.organizer?.isCurrentUser == true
                 || event.attendees?.first(where: \.isCurrentUser)?.participantStatus == .accepted,
+            responseStatus: event.organizer?.isCurrentUser == true || event.attendees == nil
+                ? .accepted : Self.responseStatus(event.attendees?.first(where: \.isCurrentUser)?.participantStatus),
             isOutOfOffice: event.availability == .unavailable,
             participants: calendarParticipants(from: event),
             location: event.location,

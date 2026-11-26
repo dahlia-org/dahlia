@@ -216,7 +216,7 @@ import Foundation
                 showsStandaloneThinking: session.showsStandaloneThinking
             )
             #expect(waitingItems.count == 2)
-            if case let .message(message, _) = waitingItems.first {
+            if case let .message(message) = waitingItems.first {
                 #expect(message.role == .user)
                 #expect(message.text == "Question")
             } else {
@@ -245,8 +245,8 @@ import Foundation
                 showsStandaloneThinking: session.showsStandaloneThinking
             )
             #expect(!reasoningItems.contains(.thinking))
-            if case let .message(_, showsInlineActivity) = reasoningItems.last {
-                #expect(!showsInlineActivity)
+            if case .message = reasoningItems.last {
+                #expect(!reasoningItems.contains(.thinking))
             } else {
                 Issue.record("Expected the active response message")
             }

@@ -65,7 +65,6 @@ struct OmnigentSessionView: View {
     private func row(id: String, role: String, text: String, isStreaming: Bool) -> some View {
         CodexChatMessageRow(
             message: CodexChatMessage(id: id, role: role == "user" ? .user : .assistant, text: text, isStreaming: isStreaming),
-            showsInlineActivity: false,
             meetingNamesByID: [:],
             meetingReferencesByID: [:]
         )

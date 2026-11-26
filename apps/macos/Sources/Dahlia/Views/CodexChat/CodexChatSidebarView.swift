@@ -10,6 +10,7 @@ struct CodexChatSidebarView: View {
     let onShowFullScreen: (() -> Void)?
     let onPopOut: () -> Void
     let onOpenDetachedSession: (CodexChatSessionID) -> Void
+    var panelToggle: CodexChatPanelToggle?
 
     var body: some View {
         CodexChatView(
@@ -29,7 +30,8 @@ struct CodexChatSidebarView: View {
             reservesWindowControls: false,
             headerLeadingInset: headerLeadingInset,
             contentMaxWidth: isFullScreen ? DahliaDesign.mainContentMaxWidth : nil,
-            isSidePanel: !isFullScreen
+            isSidePanel: !isFullScreen,
+            panelToggle: panelToggle
         )
         .task(id: sidebarViewModel.currentWorkspace?.id) {
             sidebarViewModel.loadMeetingReferencesIfNeeded()

@@ -33,20 +33,24 @@ struct ChatThreadStore: ChatItemStore, Sendable {
         }
     }
 
-    func listThreads(accountID: String, cursor: String?, limit: Int = 25) throws -> CodexChatThreadPage {
+    /// `hiding` (Dahlia Bot's thread, which opens from the Bots section) is left out.
+    /// The active threads, or with `settled` the ones the user settled; both newest first.
+    func listThreads(
+        accountID: String, cursor: String?, limit: Int = 25, hiding: String? = nil, settled: Bool = false
+    ) throws -> CodexChatThreadPage {
         try dbQueue.read { db in
-            var condition = ""
-            var arguments: StatementArguments = [accountID]
+            var condition = settled ? "AND settledAt IS NOT NULL" : "AND settledAt IS NULL"
+            var arguments: StatementArguments = [accountID, hiding]
             if let cursor, let data = Data(base64Encoded: cursor),
                let values = try? JSONDecoder().decode([String].self, from: data), values.count == 2,
                let time = Double(values[0]) {
-                condition = "AND (updatedAt, id) < (?, ?)"
+                condition += " AND (updatedAt, id) < (?, ?)"
                 let date = Date(timeIntervalSince1970: time)
                 arguments += [date, values[1]]
             }
             arguments += [limit + 1]
             let rows = try ChatThreadRecord.fetchAll(db, sql: """
-            SELECT * FROM chat_threads WHERE accountID = ? \(condition)
+            SELECT * FROM chat_threads WHERE accountID = ? AND id IS NOT ? \(condition)
             ORDER BY updatedAt DESC, id DESC LIMIT ?
             """, arguments: arguments)
             let visible = Array(rows.prefix(limit))
@@ -72,9 +76,38 @@ struct ChatThreadStore: ChatItemStore, Sendable {
                     status: thread.status,
                     isUnread: thread.scheduleID == nil ? responseSeq > thread.lastSeenSeq : scheduledUnread,
                     lastResponseAt: response?["createdAt"],
-                    lastItemSeq: Int64.fetchOne(db, sql: "SELECT MAX(seq) FROM chat_items WHERE threadID = ?", arguments: [thread.id])
+                    lastItemSeq: Int64.fetchOne(db, sql: "SELECT MAX(seq) FROM chat_items WHERE threadID = ?", arguments: [thread.id]),
+                    settledAt: thread.settledAt
                 )
             }, nextCursor: next)
+        }
+    }
+
+    /// How many top-level threads the sidebar's Chat section (active) and Settled section hold.
+    func threadCounts(accountID: String, hiding: String? = nil) throws -> (active: Int, settled: Int) {
+        try dbQueue.read {
+            let row = try Row.fetchOne($0, sql: """
+            SELECT COUNT(*) FILTER (WHERE settledAt IS NULL) AS active, COUNT(*) FILTER (WHERE settledAt IS NOT NULL) AS settled
+            FROM chat_threads WHERE accountID = ? AND id IS NOT ? AND parentThreadID IS NULL
+            """, arguments: [accountID, hiding])
+            return (row?["active"] ?? 0, row?["settled"] ?? 0)
+        }
+    }
+
+    /// Un-settling returns the thread to the top of the active list, as in T3 Code; settling keeps its place in time.
+    func setSettled(_ settled: Bool, threadID: String, accountID: String, now: Date = .now) throws {
+        try dbQueue.write { db in
+            if settled, try Bool.fetchOne(db, sql: """
+            SELECT EXISTS(SELECT 1 FROM chat_runs WHERE threadID=? AND status IN ('queued', 'running', 'waitingForUser'))
+            """, arguments: [threadID]) == true {
+                throw PiRuntimeError.rpcError(code: nil, message: L10n.chatCannotSettleActiveThread)
+            }
+            try db.execute(
+                sql: settled
+                    ? "UPDATE chat_threads SET settledAt = ? WHERE id = ? AND accountID = ?"
+                    : "UPDATE chat_threads SET settledAt = NULL, updatedAt = ? WHERE id = ? AND accountID = ? AND settledAt IS NOT NULL",
+                arguments: [now, threadID, accountID]
+            )
         }
     }
 
@@ -103,13 +136,19 @@ struct ChatThreadStore: ChatItemStore, Sendable {
         }
     }
 
-    func beginTurn(threadID: String, message: JSONValue, model: String?, effort: String, runID: UUID? = nil) throws {
+    /// A nil model or effort keeps the thread's, as a turn the user did not start does.
+    func beginTurn(threadID: String, message: JSONValue, model: String?, effort: String?, runID: UUID? = nil) throws {
         try dbQueue.write { db in
-            try Self.append([message], threadID: threadID, runID: runID, in: db)
-            try db.execute(sql: """
-            UPDATE chat_threads SET status = 'running', model = COALESCE(?, model), reasoningEffort = ?, updatedAt = ? WHERE id = ?
-            """, arguments: [model, effort, Date(), threadID])
+            try Self.beginTurn(threadID: threadID, message: message, model: model, effort: effort, runID: runID, in: db)
         }
+    }
+
+    static func beginTurn(threadID: String, message: JSONValue, model: String?, effort: String?, runID: UUID?, in db: Database) throws {
+        try append([message], threadID: threadID, runID: runID, in: db)
+        try db.execute(sql: """
+        UPDATE chat_threads SET status = 'running', model = COALESCE(?, model), reasoningEffort = COALESCE(?, reasoningEffort),
+            updatedAt = ? WHERE id = ?
+        """, arguments: [model, effort, Date(), threadID])
     }
 
     func appendItems(threadID: String, items: [JSONValue]) throws {
@@ -192,13 +231,73 @@ struct ChatThreadStore: ChatItemStore, Sendable {
         }
     }
 
-    func recoverInterruptedThreads() throws {
+    /// T3 Code's words for a turn a restart cut short: what it started may have taken effect.
+    nonisolated static let continuePrompt = "Continue where you left off. Your last turn was cut short, so a command or other "
+        + "action it started may have finished or may still be running. Before you repeat one that changes state, confirm it "
+        + "did not take effect and is not still running; if you cannot tell, say so instead of repeating it."
+
+    /// Settles the runs the last app session left. When `continuing`, as T3 Code's "Continue threads after restarts", each
+    /// cut-short run continues in a new run, queued runs still start, and a run that cannot continue reports to its requester.
+    func recoverInterruptedThreads(continuing: Bool = false, now: Date = .now) throws {
         try dbQueue.write { db in
+            var continued: [UUID] = []
+            if continuing {
+                // Not a run the user stopped, one that waited for the user (its request is gone), a schedule's (it keeps no
+                // Pi session), or one the app keeps crashing on: three continuations within five minutes end it.
+                let cut = try ChatRunRecord.fetchAll(db, sql: """
+                SELECT r.* FROM chat_runs r WHERE r.status = 'running' AND r.stoppedByUser = 0 AND r.origin <> 'schedule'
+                    AND r.profile IN ('interactive', 'bot')
+                    AND NOT EXISTS (SELECT 1 FROM chat_runs root WHERE root.id=r.rootRunID AND root.stoppedByUser=1)
+                """)
+                for run in cut {
+                    let recent = try Int.fetchOne(
+                        db,
+                        sql: "SELECT COUNT(*) FROM chat_runs WHERE threadID = ? AND origin = 'restart' AND createdAt > ?",
+                        arguments: [run.threadID, now.addingTimeInterval(-300)]
+                    ) ?? 0
+                    // Older or incomplete records without durable input cannot safely tell Pi what to resume.
+                    guard recent < 3, let inputs = try? ChatHistoryCodec.decodeInputs(run.input), !inputs.isEmpty else { continue }
+                    if run.origin != "restart", run.origin == "user" || run.requestedByThreadID != nil {
+                        let hasOpening = try Bool.fetchOne(db, sql: """
+                        SELECT EXISTS(SELECT 1 FROM chat_items WHERE runID=? AND json_extract(data, '$.role')='user')
+                        """, arguments: [run.id]) ?? false
+                        if !hasOpening {
+                            try Self.append([ChatHistoryCodec.user(inputs)], threadID: run.threadID, runID: run.id, in: db)
+                        }
+                    }
+                    var next = run
+                    next.id = UUID.v7()
+                    next.status = "queued"
+                    next.input = run.input
+                    next.origin = "restart"
+                    // The choices of the last session are gone, as after any restart.
+                    next.approvalMethod = CodexChatApprovalMethod.autoReview.rawValue
+                    next.clientRequestID = nil
+                    next.resultDeliveredAt = nil
+                    next.resultExcerpt = ""
+                    next.startedAt = nil
+                    next.completedAt = nil
+                    next.logicalSequence = run.logicalSequence
+                    next.executionSequence = run.executionSequence
+                    next.createdAt = now
+                    try next.insert(db)
+                    continued.append(run.id)
+                }
+            }
             try db.execute(sql: "UPDATE chat_threads SET status = 'interrupted' WHERE status IN ('running', 'waitingForUser')")
             try db.execute(
-                sql: "UPDATE chat_runs SET status = 'interrupted', resultDeliveredAt = ? WHERE status IN ('queued', 'running', 'waitingForUser') AND NOT (origin='schedule' AND status='queued')",
-                arguments: [Date()]
+                sql: """
+                UPDATE chat_runs SET status = 'interrupted', input = '',
+                    resultDeliveredAt = CASE WHEN ? AND requestedByThreadID IS NOT NULL THEN NULL ELSE ? END
+                WHERE status IN ('queued', 'running', 'waitingForUser') AND NOT (origin='schedule' AND status='queued')
+                    AND NOT (? AND status = 'queued')
+                """,
+                arguments: [continuing, now, continuing]
             )
+            // A continued run's requester hears from its continuation instead.
+            for id in continued {
+                try db.execute(sql: "UPDATE chat_runs SET resultDeliveredAt = ? WHERE id = ?", arguments: [now, id])
+            }
         }
     }
 

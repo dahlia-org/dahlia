@@ -288,8 +288,38 @@ final class AppDatabaseManager: Sendable {
 
         migrator.registerMigration("v68_alwaysOnAgent") { db in
             try AlwaysOnAgentMigration.migrate(in: db)
+            try addColumnIfNeeded(in: db, table: "chat_runs", column: "logicalSequence", type: .integer)
+            try addColumnIfNeeded(in: db, table: "chat_runs", column: "executionSequence", type: .integer)
+            let nextRunSequence = """
+            (SELECT MAX(COALESCE((SELECT MAX(logicalSequence) FROM chat_runs), 0),
+                COALESCE((SELECT MAX(executionSequence) FROM chat_runs), 0))+1)
+            """
+            try db.execute(sql: """
+            UPDATE chat_runs SET logicalSequence=rowid WHERE logicalSequence IS NULL;
+            UPDATE chat_runs SET executionSequence=logicalSequence
+                WHERE executionSequence IS NULL AND (startedAt IS NOT NULL OR status IN ('running', 'waitingForUser', 'completed'));
+            CREATE INDEX IF NOT EXISTS chat_runs_logical_sequence ON chat_runs(logicalSequence);
+            CREATE INDEX IF NOT EXISTS chat_runs_execution_sequence ON chat_runs(executionSequence);
+            CREATE INDEX IF NOT EXISTS chat_runs_logical_thread
+                ON chat_runs(threadID, (status='queued' AND executionSequence IS NULL), COALESCE(executionSequence, logicalSequence), logicalSequence);
+            CREATE INDEX IF NOT EXISTS chat_runs_logical_queue
+                ON chat_runs(status, (status='queued' AND executionSequence IS NULL), COALESCE(executionSequence, logicalSequence), logicalSequence);
+            CREATE TRIGGER IF NOT EXISTS chat_runs_assign_sequences AFTER INSERT ON chat_runs BEGIN
+                UPDATE chat_runs SET logicalSequence=\(nextRunSequence) WHERE id=NEW.id AND logicalSequence IS NULL;
+                UPDATE chat_runs SET executionSequence=\(nextRunSequence)
+                    WHERE id=NEW.id AND executionSequence IS NULL AND status IN ('running', 'waitingForUser', 'completed');
+            END;
+            CREATE TRIGGER IF NOT EXISTS chat_runs_start_update AFTER UPDATE OF status ON chat_runs
+            WHEN NEW.executionSequence IS NULL AND NEW.status IN ('running', 'waitingForUser', 'completed') BEGIN
+                UPDATE chat_runs SET executionSequence=\(nextRunSequence) WHERE id=NEW.id;
+            END;
+            """)
         }
 
+        // A thread the user put away as done for now, as T3 Code's Settled shelf; a new run brings it back.
+        migrator.registerMigration("v69_chatThreadSettled") { db in
+            try addColumnIfNeeded(in: db, table: "chat_threads", column: "settledAt", type: .datetime)
+        }
         return migrator
     }()
 

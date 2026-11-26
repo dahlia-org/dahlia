@@ -102,6 +102,10 @@ enum PiSandbox {
             // A development build must not reach a released user's data either.
             "RELEASED_APP_SUPPORT": realPath(DahliaApplicationSupport.directoryURL(profile: .production)),
             "RELEASED_AGENT": realPath(DahliaApplicationSupport.agentDirectoryURL(profile: .production)),
+            // Dahlia Bot's home: its guidance must not change through chat's commands or files.
+            "BOTS": realPath(agentURL.deletingLastPathComponent().appending(path: "bots")),
+            "RELEASED_BOTS": realPath(DahliaApplicationSupport.agentDirectoryURL(profile: .production).deletingLastPathComponent()
+                .appending(path: "bots")),
         ]
         var arguments = parameters.flatMap { ["-D", "\($0)=\($1)"] }
         var rules: [String] = []
@@ -123,7 +127,21 @@ enum PiSandbox {
         var profile = try String(contentsOf: PiBundle.resourceURL("pi.sb"), encoding: .utf8)
             .replacingOccurrences(of: "; ADDITIONAL_FILE_ACCESS", with: rules.joined(separator: "\n"))
             .replacingOccurrences(of: "; SHELL_STARTUP_PROTECTION", with: shellRules.joined(separator: "\n"))
-        if executionProfile != .interactive { profile += "\n(deny file-write*)\n" }
+        switch executionProfile {
+        case .interactive: break
+        case .bot:
+            // Writes stay in Super Agent's home (inside Dahlia's data in a development build). The files that steer it are
+            // never written with file tools, even there.
+            profile += """
+
+            (deny file-write*)
+            (allow file-read* file-write* (subpath (param "WORK")))
+            (allow file-write-data (literal "/dev/null") (literal "/dev/stdout") (literal "/dev/stderr") (regex #"^/dev/fd/"))
+            (deny file-write*\(DahliaBotHome.protectedFiles.map { " (literal (string-append (param \"WORK\") \"/\($0)\"))" }.joined()))
+
+            """
+        default: profile += "\n(deny file-write*)\n"
+        }
         return ["/usr/bin/sandbox-exec", "-p", profile] + arguments
     }
 

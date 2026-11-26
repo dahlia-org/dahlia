@@ -7,6 +7,11 @@ protocol CodexChatServicing: Sendable {
     func models(forceRefresh: Bool) async throws -> [CodexModel]
     func commands(threadID: String?) async throws -> [CodexChatSlashCommand]
     func listThreads(cursor: String?) async throws -> CodexChatThreadPage
+    /// The threads the user settled, newest first.
+    func listSettledThreads(cursor: String?) async throws -> CodexChatThreadPage
+    /// How many top-level threads are active and settled, for the sidebar's section counts.
+    func threadCounts() async throws -> (active: Int, settled: Int)
+    func setThreadSettled(id: String, settled: Bool) async throws
     func markThreadSeen(id: String, through seq: Int64) async throws
     func loadThread(id: String) async throws -> CodexChatThread
     func loadEarlierMessages(threadID: String, cursor: String) async throws -> CodexChatMessagePage
@@ -44,6 +49,13 @@ protocol CodexChatServicing: Sendable {
 
 extension CodexChatServicing {
     func markThreadSeen(id _: String, through _: Int64) async throws {}
+    func listSettledThreads(cursor _: String?) async throws -> CodexChatThreadPage {
+        CodexChatThreadPage(threads: [], nextCursor: nil)
+    }
+
+    func threadCounts() async throws -> (active: Int, settled: Int) { (0, 0) }
+
+    func setThreadSettled(id _: String, settled _: Bool) async throws {}
     func relatedThreads(parentThreadID _: String) async throws -> [CodexChatThreadSummary] { [] }
     func attach(threadID _: String) async throws -> CodexChatTurnHandle? { nil }
     func observeThreads() async -> AsyncStream<[CodexChatRuntimeState]> { AsyncStream { $0.finish() } }

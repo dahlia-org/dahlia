@@ -2,6 +2,7 @@ import Foundation
 import GRDB
 
 extension PiChatService {
+    /// The threads a conversation started: its children and the threads it sent work to.
     func relatedThreads(parentThreadID: String) async throws -> [CodexChatThreadSummary] {
         try await runtime.requireConfigured()
         let store = try history()
@@ -29,9 +30,7 @@ extension PiChatService {
                 SELECT id FROM chat_items WHERE threadID = ? AND runID = ?
                 AND \(ChatItemRecord.messagePredicate()) ORDER BY seq LIMIT 1
                 """, arguments: [parentThreadID, sourceRunID]) ?? source?["id"]
-                let latestRun = try ChatRunRecord.fetchOne(
-                    db, sql: "SELECT * FROM chat_runs WHERE threadID = ? ORDER BY createdAt DESC, id DESC LIMIT 1", arguments: [thread.id]
-                )
+                let latestRun = try ChatThreadStore.latestRun(threadID: thread.id, in: db)
                 return try CodexChatThreadSummary(
                     id: thread.id,
                     title: thread.title,
@@ -73,7 +72,7 @@ extension PiChatService {
         }
         let active = Set(states.map(\.threadID))
         let queued: [ChatRunRecord] = (try? history().dbQueue.read { db in
-            try ChatRunRecord.fetchAll(db, sql: "SELECT * FROM chat_runs WHERE status = 'queued' ORDER BY createdAt LIMIT 100")
+            try ChatRunRecord.fetchAll(db, sql: "SELECT * FROM chat_runs WHERE status = 'queued' ORDER BY \(ChatThreadStore.runOrderSQL()) LIMIT 100")
         }) ?? []
         var included = active
         for run in queued where !included.contains(run.threadID) {
@@ -125,7 +124,7 @@ extension PiChatService {
             model: record.model,
             reasoningEffort: record.reasoningEffort,
             approvalMethod: sessions[threadID]?.approvalMethod,
-            earlierMessagesCursor: page.earlierCursor, isReadOnly: record.scheduleID != nil || isTaskThread(record.id),
+            earlierMessagesCursor: page.earlierCursor, isReadOnly: record.scheduleID != nil || Self.isRetiredBotThread(record.id, in: store.dbQueue),
             parentThread: parent,
             lastItemSeq: page.lastItemSeq
         )
@@ -173,7 +172,12 @@ extension PiChatService {
     func effectiveApprovalMethod(_ threadID: String) -> CodexChatApprovalMethod {
         guard let session = sessions[threadID], var method = session.approvalMethod else { return .ask }
         let parent = (try? history().thread(id: threadID, accountID: AppAccount.key))?.parentThreadID
-        for ceiling in [session.turn?.run.requestedByThreadID, parent].compactMap(\.self) {
+        var requester: String?
+        if let turn = session.turn {
+            guard let saved = try? history().run(id: turn.id) else { return .ask }
+            requester = saved.requestedByThreadID
+        }
+        for ceiling in [requester, parent].compactMap(\.self) {
             if let chosen = chosenApprovalMethod(ceiling) { method = Self.stricterApproval(method, chosen) }
         }
         return method

@@ -6,7 +6,21 @@ enum CalendarEventPlatform {
     static let macOSCalendar = "MacOSCalendar"
 }
 
-struct CalendarEvent: Identifiable, Equatable, Codable {
+struct CalendarEvent: Identifiable, Equatable, Codable, Sendable {
+    enum ResponseStatus: String, Codable, Sendable {
+        case pending, tentative, accepted, declined, unknown
+
+        init(google value: String?) {
+            self = switch value {
+            case "needsAction": .pending
+            case "tentative": .tentative
+            case "accepted": .accepted
+            case "declined": .declined
+            default: .unknown
+            }
+        }
+    }
+
     let id: String
     var providerID: String?
     let calendarID: String
@@ -24,6 +38,7 @@ struct CalendarEvent: Identifiable, Equatable, Codable {
     let hasOtherAttendees: Bool
     let isDeclined: Bool
     let isAttending: Bool
+    let responseStatus: ResponseStatus
     let isOutOfOffice: Bool
     let participants: [CalendarParticipant]
     let location: String?
@@ -47,6 +62,7 @@ struct CalendarEvent: Identifiable, Equatable, Codable {
         hasOtherAttendees: Bool = false,
         isDeclined: Bool = false,
         isAttending: Bool = false,
+        responseStatus: ResponseStatus = .unknown,
         isOutOfOffice: Bool = false,
         participants: [CalendarParticipant] = [],
         location: String? = nil,
@@ -69,6 +85,7 @@ struct CalendarEvent: Identifiable, Equatable, Codable {
         self.hasOtherAttendees = hasOtherAttendees
         self.isDeclined = isDeclined
         self.isAttending = isAttending && !isDeclined
+        self.responseStatus = responseStatus == .unknown ? (isDeclined ? .declined : isAttending ? .accepted : .unknown) : responseStatus
         self.isOutOfOffice = isOutOfOffice || Self.titleIndicatesOutOfOffice(title)
         self.participants = participants
         self.location = location?.nilIfBlank
@@ -168,6 +185,7 @@ private extension CalendarEvent {
             hasOtherAttendees: hasOtherAttendees || fallback.hasOtherAttendees,
             isDeclined: differentRegistrations ? isDeclined && fallback.isDeclined : isDeclined || fallback.isDeclined,
             isAttending: isAttending || fallback.isAttending,
+            responseStatus: responseStatus == .unknown && !differentRegistrations ? fallback.responseStatus : responseStatus,
             isOutOfOffice: isOutOfOffice || fallback.isOutOfOffice,
             participants: mergedParticipants(with: fallback.participants),
             location: location ?? fallback.location,
@@ -217,6 +235,7 @@ extension CalendarEvent {
         case hasOtherAttendees
         case isDeclined
         case isAttending
+        case responseStatus
         case isOutOfOffice
         case participants
         case location
@@ -250,6 +269,8 @@ extension CalendarEvent {
         isDeclined = try container.decodeIfPresent(Bool.self, forKey: .isDeclined) ?? false
         let decodedIsAttending = try container.decodeIfPresent(Bool.self, forKey: .isAttending) ?? false
         isAttending = decodedIsAttending && !isDeclined
+        responseStatus = try container.decodeIfPresent(ResponseStatus.self, forKey: .responseStatus)
+            ?? (isDeclined ? .declined : isAttending ? .accepted : .unknown)
         let decodedIsOutOfOffice = try container.decodeIfPresent(Bool.self, forKey: .isOutOfOffice) ?? false
         isOutOfOffice = decodedIsOutOfOffice || Self.titleIndicatesOutOfOffice(title)
         participants = try container.decodeIfPresent([CalendarParticipant].self, forKey: .participants) ?? []

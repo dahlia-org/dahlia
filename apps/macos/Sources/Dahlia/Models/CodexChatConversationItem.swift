@@ -2,7 +2,7 @@ import Foundation
 
 enum CodexChatConversationItem: Identifiable, Equatable {
     case contextDivider(id: String, context: CodexChatContext?)
-    case message(CodexChatMessage, showsInlineActivity: Bool = false)
+    case message(CodexChatMessage)
     case relatedThreads(messageID: String, threads: [CodexChatThreadSummary])
     case thinking
     /// The steps of a finished run before its final answer, shown collapsed.
@@ -12,7 +12,7 @@ enum CodexChatConversationItem: Identifiable, Equatable {
         switch self {
         case let .contextDivider(id, _):
             "context-\(id)"
-        case let .message(message, _):
+        case let .message(message):
             "message-\(message.id)"
         case let .relatedThreads(messageID, _):
             "related-\(messageID)"
@@ -35,7 +35,7 @@ enum CodexChatConversationItem: Identifiable, Equatable {
         var hasPreviousUserMessage = initialHasPreviousUserMessage
 
         for segment in collapsingFinishedRuns(messages) {
-            guard case let .message(message, _) = segment else {
+            guard case let .message(message) = segment else {
                 if case let .work(_, steps, _) = segment,
                    let steer = steps.last(where: { $0.role == .user }) {
                     previousUserContext = steer.context
@@ -59,23 +59,15 @@ enum CodexChatConversationItem: Identifiable, Equatable {
             }
         }
 
-        var showsInlineActivity = false
-        if let lastIndex = items.indices.last,
-           case let .message(message, _) = items[lastIndex],
-           message.role == .assistant,
-           message.isStreaming,
-           message.text.isEmpty,
-           !message.reasoning.isEmpty {
-            items[lastIndex] = .message(message, showsInlineActivity: true)
-            showsInlineActivity = true
+        let hasStreamingReasoning: Bool = if case let .message(message)? = items.last {
+            message.role == .assistant && message.isStreaming && message.text.isEmpty && !message.reasoning.isEmpty
+        } else {
+            false
         }
 
-        if showsStandaloneThinking, !showsInlineActivity {
-            items.append(.thinking)
-        }
-        return items.flatMap { item -> [Self] in
+        items = items.flatMap { item -> [Self] in
             let messageIDs: [String] = switch item {
-            case let .message(message, _): [message.id]
+            case let .message(message): [message.id]
             // The answer row carries its own threads; its steps copy shares its ID.
             case let .work(answerID, steps, _): steps.map(\.id).filter { $0 != answerID }
             default: []
@@ -84,6 +76,8 @@ enum CodexChatConversationItem: Identifiable, Equatable {
             guard let messageID = messageIDs.last, !threads.isEmpty else { return [item] }
             return [item, .relatedThreads(messageID: messageID, threads: threads)]
         }
+        if showsStandaloneThinking || hasStreamingReasoning { items.append(.thinking) }
+        return items
     }
 
     /// Splits each finished run into its opening message, collapsed steps, and final answer.

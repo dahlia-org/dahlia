@@ -181,11 +181,10 @@ struct CodexChatConversationView: View {
                     switch item {
                     case let .contextDivider(_, context):
                         CodexChatContextDivider(context: context)
-                    case let .message(message, showsInlineActivity):
+                    case let .message(message):
                         if message.threadResults.isEmpty {
                             CodexChatMessageRow(
                                 message: message,
-                                showsInlineActivity: showsInlineActivity,
                                 meetingNamesByID: meetingNamesByID,
                                 meetingReferencesByID: meetingReferencesByID
                             )

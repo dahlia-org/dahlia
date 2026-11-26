@@ -15,6 +15,7 @@ struct CodexChatThreadSummary: Identifiable, Equatable {
     var completedAt: Date?
     var lastResponseAt: Date?
     var lastItemSeq: Int64?
+    var settledAt: Date?
 
     var hasUnseenCompletion: Bool {
         isUnread && (status == "idle" || status == "completed")

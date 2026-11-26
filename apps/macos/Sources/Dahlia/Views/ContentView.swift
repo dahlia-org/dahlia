@@ -18,6 +18,10 @@ struct ContentView: View {
     @State private var isSidebarVisible = true
     @State private var isShowingUnprocessedRecordings = false
     @State private var isShowingChatConfiguration = false
+    /// Dahlia Bot's side panel beside its thread; the user's choice holds while the window is open.
+    @State private var isBotPanelVisible = true
+    @State private var botPanel = DahliaBotPanelModel()
+    @AppStorage(AgentBotSettings.botThreadKey(for: AppAccount.key)) private var botThreadID: String?
     @State private var notesEditorModel: DocumentEditorModel?
     @State private var selectedDetailTab: DetailTab = .summary
     @State private var searchModel = MainSearchModel()
@@ -35,10 +39,10 @@ struct ContentView: View {
             contentMinimumWidth: isSidebarVisible || isShowingSettings
                 ? MainSidebarLayout.minimumSplitWidth
                 : MainSidebarLayout.minimumDetailWidth,
-            isVisible: chatCoordinator.isDockedVisible
-                && !isShowingFullScreenChat
-                && !isShowingSettings,
-            animatesVisibilityChanges: !isShowingFullScreenChat,
+            // The same frame holds the docked chat beside other content, and Dahlia Bot's panel beside its thread.
+            isVisible: !isShowingSettings
+                && (isShowingBotThread ? isBotPanelVisible : chatCoordinator.isDockedVisible && !isShowingFullScreenChat),
+            animatesVisibilityChanges: !isShowingFullScreenChat || isShowingBotThread,
             onWidthChange: mainWindowNavigation.updateChatSidebarWidth
         ) {
             Group {
@@ -63,6 +67,7 @@ struct ContentView: View {
                             isShowingChat: isShowingDahliaChat,
                             onNewChat: startNewFullScreenChat,
                             onOpenChatThread: openFullScreenChatThread,
+                            onOpenBot: openBotThread,
                             omnigentSessionID: omnigentSessionID,
                             onOpenOmnigentSession: openOmnigentSession,
                             onShowUnprocessedRecordings: showUnprocessedRecordings,
@@ -108,7 +113,10 @@ struct ContentView: View {
                                 headerLeadingInset: isSidebarVisible ? 0 : mainWindowNavigation.sidebarWidth,
                                 onShowFullScreen: nil,
                                 onPopOut: popOutDockedChat,
-                                onOpenDetachedSession: openDetachedChat
+                                onOpenDetachedSession: openDetachedChat,
+                                panelToggle: isShowingBotThread
+                                    ? CodexChatPanelToggle(isShown: isBotPanelVisible) { isBotPanelVisible.toggle() }
+                                    : nil
                             )
                         } else {
                             detailView
@@ -157,16 +165,20 @@ struct ContentView: View {
             .mainSidebarHelpOverlay(isVisible: !isShowingSettings)
 
         } sidebar: {
-            CodexChatSidebarView(
-                coordinator: chatCoordinator,
-                sidebarViewModel: sidebarViewModel,
-                showsHistory: $chatCoordinator.showsHistory,
-                showsConfiguration: $isShowingChatConfiguration,
-                isFullScreen: false,
-                onShowFullScreen: showFullScreenChat,
-                onPopOut: popOutDockedChat,
-                onOpenDetachedSession: openDetachedChat
-            )
+            if isShowingBotThread {
+                DahliaBotPanelView(model: botPanel)
+            } else {
+                CodexChatSidebarView(
+                    coordinator: chatCoordinator,
+                    sidebarViewModel: sidebarViewModel,
+                    showsHistory: $chatCoordinator.showsHistory,
+                    showsConfiguration: $isShowingChatConfiguration,
+                    isFullScreen: false,
+                    onShowFullScreen: showFullScreenChat,
+                    onPopOut: popOutDockedChat,
+                    onOpenDetachedSession: openDetachedChat
+                )
+            }
         }
         .allowsHitTesting(!searchModel.isPresented || isShowingSettings)
         .disabled(searchModel.isPresented && !isShowingSettings)
@@ -232,6 +244,9 @@ struct ContentView: View {
                     .disabled(isShowingSettings)
                     .accessibilityHidden(isShowingSettings)
                 }
+            }
+            .overlay {
+                if botPanel.draft != nil { DahliaBotSourceEditor(model: botPanel) }
             }
             .screenshotOverlayPresentation(
                 presentation: $expandedScreenshot,
@@ -383,6 +398,18 @@ private extension ContentView {
     /// The chat section shows Dahlia's own chat, not an Omnigent session; only then does the docked chat follow it.
     private var isShowingDahliaChat: Bool {
         isShowingFullScreenChat && omnigentSessionID == nil
+    }
+
+    /// The main area shows Dahlia Bot's current thread, so its panel takes the side frame.
+    private var isShowingBotThread: Bool {
+        isShowingDahliaChat && botThreadID != nil && chatCoordinator.dockedSession.backendThreadID == botThreadID
+    }
+
+    private func openBotThread() {
+        Task {
+            guard let id = try? await PiChatService.shared.botThread() else { return }
+            openFullScreenChatThread(CodexChatThreadSummary(id: id, title: L10n.agentBotName, updatedAt: .now))
+        }
     }
 
     private var omnigentSessionID: String? {

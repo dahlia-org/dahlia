@@ -397,7 +397,7 @@
         }
 
         @Test func profileCeilingsIgnoreApprovalMode() {
-            for tool in ["bash", "write", "edit", "memory", "skill_manage", "cronjob", "dah_thread_start"] {
+            for tool in ["bash", "write", "edit", "memory", "skill_manage", "cronjob", "thread_launch", "delegate_task"] {
                 #expect(!PiExecutionProfile.scheduled.allows(tool, readOnly: true))
             }
             #expect(PiExecutionProfile.scheduled.allows("mcp__mail__read", readOnly: true))

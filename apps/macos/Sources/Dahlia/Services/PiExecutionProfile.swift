@@ -1,20 +1,20 @@
 import Foundation
 
 enum PiExecutionProfile: String, Sendable {
-    /// `intake` reads one always-on Source and records what it read; it cannot write anything else. `router` reads
-    /// nothing outside its prompt and only routes events and makes Items. `worker` reads its Task's sources and reports.
-    case interactive, scheduled, review, intake, router, worker
+    /// `intake` reads one always-on Source and records what it read; it cannot write anything else. `bot` is Super Agent's
+    /// thread (and the tasks it delegates): it talks with the user and routes events, reads Dahlia's meetings and its home,
+    /// and hands work to ordinary threads with the thread tools.
+    case interactive, scheduled, review, intake, bot
 
-    static let routerTools = ["task_create", "task_suggest", "task_assign", "event_close", "task_finish", "item_create"]
-    static let workerTools = ["task_report", "task_return", "task_wait"]
-    /// The secretary's Home thread is an interactive chat with this one more tool.
-    static let homeTools = ["secretary_request"]
+    static let botTools = ["inbox_read", "event_close", "item_create", "task_finish", "soul_write", "calendar_read", "remind"]
 
     var fileTools: [String] {
         switch self {
         case .interactive: ["read", "ls", "write", "edit", "bash"]
         case .scheduled: ["read", "ls"]
-        case .review, .intake, .router, .worker: []
+        // Seatbelt keeps its writes in its home.
+        case .bot: ["read", "ls", "write", "edit"]
+        case .review, .intake: []
         }
     }
 
@@ -24,8 +24,8 @@ enum PiExecutionProfile: String, Sendable {
         case .scheduled: ["read", "ls", "skills_list", "skill_view"].contains(tool) || (tool.hasPrefix("mcp__") && readOnly)
         case .review: ["memory", "skills_list", "skill_view", "skill_manage"].contains(tool)
         case .intake: tool == "event_record" || (tool.hasPrefix("mcp__") && !tool.hasPrefix("mcp__dahlia__") && readOnly)
-        case .router: Self.routerTools.contains(tool)
-        case .worker: Self.workerTools.contains(tool) || (tool.hasPrefix("mcp__") && readOnly)
+        case .bot: Self.botTools.contains(tool) || fileTools.contains(tool)
+            || (PiChatService.readThreadTools + PiChatService.manageThreadTools).contains(tool) || (tool.hasPrefix("mcp__dahlia__") && readOnly)
         }
     }
 }

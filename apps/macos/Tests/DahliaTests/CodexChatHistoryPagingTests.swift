@@ -67,7 +67,7 @@
                 return false
             })
             #expect(!items.contains { item in
-                if case let .message(message, _) = item { return message.text.contains("Investigating") }
+                if case let .message(message) = item { return message.text.contains("Investigating") }
                 return false
             })
             session.release()

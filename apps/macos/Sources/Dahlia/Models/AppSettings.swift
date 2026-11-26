@@ -136,6 +136,13 @@ final class AppSettings: ObservableObject {
     fileprivate nonisolated static let defaultAutomaticScreenshotChangeThresholdPercent = 5
 
     nonisolated static let chatDeliveryModeUserDefaultsKey = "chatDeliveryMode"
+    /// On by default, as in T3 Code.
+    nonisolated static let chatContinueAfterRestartUserDefaultsKey = "chatContinueAfterRestart"
+
+    nonisolated static func continuesChatsAfterRestart(_ defaults: UserDefaults = .standard) -> Bool {
+        defaults.object(forKey: chatContinueAfterRestartUserDefaultsKey) as? Bool ?? true
+    }
+
     @AppStorage(AppSettings.chatDeliveryModeUserDefaultsKey) var chatDeliveryMode: CodexChatDeliveryMode = .queue
 
     init(

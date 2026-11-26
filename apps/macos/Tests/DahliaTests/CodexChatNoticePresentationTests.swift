@@ -26,7 +26,7 @@
             """
             let host = NSHostingView(rootView: CodexChatMessageRow(
                 message: CodexChatMessage(role: .notice(.info), text: text),
-                showsInlineActivity: false, meetingNamesByID: [:], meetingReferencesByID: [:]
+                meetingNamesByID: [:], meetingReferencesByID: [:]
             ).padding(16).frame(width: width))
             host.frame = NSRect(origin: .zero, size: host.fittingSize)
             let window = NSWindow(contentRect: host.frame, styleMask: .titled, backing: .buffered, defer: false)

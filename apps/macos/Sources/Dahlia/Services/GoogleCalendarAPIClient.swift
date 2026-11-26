@@ -205,6 +205,7 @@ final class GoogleCalendarAPIClient: GoogleCalendarAPIClientProviding {
             hasOtherAttendees: item.hasOtherAttendees,
             isDeclined: item.isDeclinedByCurrentUser,
             isAttending: item.isCurrentUserAttending,
+            responseStatus: CalendarEvent.ResponseStatus(google: item.attendees?.first(where: \.isCurrentUser)?.responseStatus),
             isOutOfOffice: item.eventType == "outOfOffice",
             participants: item.calendarParticipants,
             location: item.location,

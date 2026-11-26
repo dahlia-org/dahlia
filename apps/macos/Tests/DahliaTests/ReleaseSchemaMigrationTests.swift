@@ -464,6 +464,7 @@
                 "v66_skillCurator",
                 "v67_providerAccounts",
                 "v68_alwaysOnAgent",
+                "v69_chatThreadSettled",
             ])
             try database.dbQueue.read { db throws in
                 #expect(try Row.fetchAll(db, sql: "PRAGMA foreign_key_check").isEmpty)
@@ -542,6 +543,27 @@
             try queue.write { db in
                 try Self.expectNoReferenceToTheConnectionsTable(in: db)
                 try WorkspaceRecord(id: .v7(), path: nil, name: "New", createdAt: .now, lastOpenedAt: .now).insert(db)
+                #expect(try AppDatabaseManager.hasExpectedCurrentSchema(db))
+            }
+        }
+
+        @Test
+        func settledMigrationKeepsThreadsActive() throws {
+            let queue = try DatabaseQueue(configuration: AppDatabaseManager.configuration())
+            try AppDatabaseManager.migrator.migrate(queue, upTo: "v68_alwaysOnAgent")
+            let id = UUID.v7().uuidString
+            try queue.write { db in
+                try db.execute(
+                    sql: "INSERT INTO chat_threads (id, accountID, title, status, createdAt, updatedAt) VALUES (?, 'local', 'Kept', 'idle', ?, ?)",
+                    arguments: [id, Date.now, Date.now]
+                )
+            }
+
+            try AppDatabaseManager.migrator.migrate(queue)
+
+            try queue.read { db in
+                let thread = try #require(try ChatThreadRecord.fetchOne(db, key: id))
+                #expect(thread.title == "Kept" && thread.settledAt == nil)
                 #expect(try AppDatabaseManager.hasExpectedCurrentSchema(db))
             }
         }

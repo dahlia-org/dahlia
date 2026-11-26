@@ -78,6 +78,30 @@ import GRDB
             #expect(reopened.enabledIDs == collection.enabledIDs)
         }
 
+        @Test func calendarSignalsWaitForAnActualEventFetch() async {
+            let provider = connection()
+            let store = Store()
+            store.hasFetchedEvents = false
+            let collection = CalendarProviderCollection(
+                defaults: defaults(enabling: [provider]),
+                observesChanges: false,
+                loadConnections: { [provider] },
+                makeStore: { _ in store }
+            )
+            await collection.activateAfterAccountMigration()
+            #expect(collection.successfullyLoadedProviderIDs.isEmpty)
+            #expect(AgentCalendarSnapshot.current(enabledSources: [.google], providers: collection).selectedProviders == [provider.id])
+            store.hasFetchedEvents = true
+            #expect(collection.successfullyLoadedProviderIDs == [provider.id])
+            store.state = .failed
+            #expect(collection.successfullyLoadedProviderIDs.isEmpty)
+            let failed = AgentCalendarSnapshot.current(enabledSources: [.google], providers: collection)
+            #expect(failed.selectedProviders == [provider.id] && failed.successfulProviders.isEmpty)
+            #expect(AgentCalendarSnapshot.current(enabledSources: [], providers: collection).selectedProviders?.isEmpty == true)
+            collection.setEnabled(false, for: provider.id)
+            #expect(AgentCalendarSnapshot.current(enabledSources: [.google], providers: collection).selectedProviders?.isEmpty == true)
+        }
+
         @Test
         func displayMergesProviderRostersWhileLinkedMeetingsKeepOneLiveCopy() async throws {
             let catalog = [connection(), connection()]
@@ -379,6 +403,7 @@ import GRDB
         @Published var state: CalendarConnectionState
         @Published var upcomingEvents: [CalendarEvent]
         var lastErrorMessage: String? { state == .failed ? "Failed" : nil }
+        var hasFetchedEvents = true
         var active = true
         var refreshCount = 0
         let blocksRefresh: Bool
