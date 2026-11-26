@@ -364,5 +364,5 @@ test("browser commands pass the complete URL as one argument without a shell", (
   const url = "https://example.com/approve?one=1&two=2";
   assert.deepEqual(browserCommand(url, "darwin"), ["open", [url]]);
   assert.deepEqual(browserCommand(url, "win32"), ["rundll32.exe", ["url.dll,FileProtocolHandler", url]]);
-  assert.deepEqual(browserCommand(url, "linux"), ["xdg-open", [url]]);
+  assert.deepEqual(browserCommand(url, "linux"), ["gio", ["open", url]]);
 });

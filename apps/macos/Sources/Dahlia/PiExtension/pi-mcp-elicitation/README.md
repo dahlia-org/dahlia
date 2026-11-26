@@ -29,6 +29,9 @@ It needs Pi installed from npm (`@earendil-works/pi-coding-agent`), which keeps 
 warns that elicitation is off. Pi has no elicitation support of its own
 ([earendil-works/pi#10274](https://github.com/earendil-works/pi/issues/10274)).
 
+Linux needs `gio` (the GLib command-line tools) and a desktop browser association. It reports URL handoff without
+waiting for the browser to close. A missing launcher or failed handoff cancels elicitation.
+
 ## Use from a host
 
 `withElicitation(transport, server, prompt, openURL)` from `elicitation.ts` wraps any MCP transport and needs nothing
