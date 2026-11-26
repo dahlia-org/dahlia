@@ -337,8 +337,8 @@ import Foundation
             let local = try locator.agentURL()
             let deviceID = try locator.deviceID()
 
-            // The app's one account has one agent folder, named for neither Pi nor an account.
-            #expect(local == rootURL.appending(path: "Dahlia/agent", directoryHint: .isDirectory))
+            // The app's one account has one Pi folder, which every agent shares.
+            #expect(local == rootURL.appending(path: "Dahlia/pi", directoryHint: .isDirectory))
             let attributes = try FileManager.default.attributesOfItem(atPath: local.path)
             #expect((attributes[.posixPermissions] as? NSNumber)?.intValue == 0o700)
             #expect(try locator.deviceID() == deviceID)
@@ -364,7 +364,7 @@ import Foundation
             let local = try locator.sessionsURL(workspaceID: workspaceID)
 
             #expect(local == rootURL.appending(
-                path: "Dahlia/agent/sessions/\(workspaceID.uuidString.lowercased())",
+                path: "Dahlia/pi/sessions/\(workspaceID.uuidString.lowercased())",
                 directoryHint: .isDirectory
             ))
             let attributes = try FileManager.default.attributesOfItem(atPath: local.path)

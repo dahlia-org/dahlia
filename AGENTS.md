@@ -67,6 +67,7 @@ Use these terms in code, docs, and reports.
 - **Processing location**: `local` uses Apple Speech and the installed Pi on the Mac; `remote` has the Server process saved recordings.
 - **Finalized transcript**: transcript segments durably saved in SQLite. Previews and live captions are not finalized.
 - **Projection**: display or derived data rebuilt from a durable source of truth, such as `TranscriptStore`, live captions, or the search index. Projections may be bounded, coalesced, or discarded under load.
+- **Agent**: a persona the user names on the Desktop (the bots of Orca), with its home in `~/.dahlia/agents/<folder>`, one current Thread, event sources, an inbox, and Tasks. Its `SOUL.md` decides what it does. Pi, the runtime every agent shares, keeps its sign-ins, settings, and skills in `~/.dahlia/pi`.
 - **Thread**: a persistent desktop AI conversation owned by the app account. Its append-only **Items** are stored separately from Pi's runtime session file; Databricks calls the corresponding conversation a session.
 - **Document**: a collaborative Yjs document in a Workspace. A Meeting's Notes are its `notes` Document. The Summary is not a Document yet, even though the schema reserves a `summary` kind.
 

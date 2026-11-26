@@ -53,10 +53,10 @@
             )
             #expect(throws: CopyFailure.self) { try migration.run() }
             #expect(!fixture.defaults.bool(forKey: SingleAccountMigration.completedKey))
-            #expect(fixture.read("agent/skills/shared/SKILL.md") == nil)
+            #expect(fixture.read("pi/skills/shared/SKILL.md") == nil)
             try fixture.run()
-            #expect(fixture.read("agent/skills/shared/SKILL.md") == "databricks skill")
-            #expect(fixture.read("agent/skills/notes/SKILL.md") == "local only")
+            #expect(fixture.read("pi/skills/shared/SKILL.md") == "databricks skill")
+            #expect(fixture.read("pi/skills/notes/SKILL.md") == "local only")
         }
 
         @Test(arguments: [false, true])
@@ -230,16 +230,16 @@
             #expect(fixture.defaults.data(forKey: "accountInferenceSettings.local") == Data("inference".utf8))
             #expect(fixture.secrets[PiLaunchSettings.secretKey(id: fixture.secretID)] == "secret")
 
-            #expect(fixture.read("agent/sessions/shared/databricks.jsonl") == "databricks")
-            #expect(fixture.read("agent/sessions/shared/local.jsonl") == "local")
-            #expect(fixture.read("agent/skills/shared/SKILL.md") == "databricks skill")
-            #expect(fixture.read("agent/skills/notes/SKILL.md") == "local only")
-            #expect(fixture.read("agent/dahlia-device-id") == "device")
-            let signIns = try JSONDecoder().decode(JSONValue.self, from: Data(fixture.read("agent/auth.json")?.utf8 ?? "".utf8))
+            #expect(fixture.read("pi/sessions/shared/databricks.jsonl") == "databricks")
+            #expect(fixture.read("pi/sessions/shared/local.jsonl") == "local")
+            #expect(fixture.read("pi/skills/shared/SKILL.md") == "databricks skill")
+            #expect(fixture.read("pi/skills/notes/SKILL.md") == "local only")
+            #expect(fixture.read("pi/dahlia-device-id") == "device")
+            let signIns = try JSONDecoder().decode(JSONValue.self, from: Data(fixture.read("pi/auth.json")?.utf8 ?? "".utf8))
             #expect(signIns.objectValue.map { Set($0.keys) } == ["openai", "dbc-2.cloud.databricks.com"])
             // The old folders stay for a release.
             #expect(fixture.read("accounts/local/pi/skills/shared/SKILL.md") == "local skill")
-            #expect(try fixture.locator.agentURL() == fixture.locator.sharedAgentURL)
+            #expect(try fixture.locator.agentURL() == fixture.locator.piDirectoryURL)
         }
 
         @Test
@@ -273,8 +273,8 @@
             let saved = try JSONSerialization.jsonObject(with: #require(fixture.defaults.data(forKey: "agentMCPs.local"))) as? [String: Any]
             #expect((saved?["providers"] as? [[String: String]])?.first?["id"] == host)
             #expect((saved?["listedServices"] as? [String: [String]])?[host] == ["system.ai.github"])
-            #expect(fixture.read("agent/gateway-models.json")?.contains(host) == true)
-            #expect(fixture.read("agent/gateway-models.json")?.contains("\"databricks\"") == false)
+            #expect(fixture.read("pi/gateway-models.json")?.contains(host) == true)
+            #expect(fixture.read("pi/gateway-models.json")?.contains("\"databricks\"") == false)
         }
 
         @Test
@@ -285,8 +285,8 @@
 
             #expect(try fixture.threadAccounts() == [fixture.databricksThread: fixture.key, fixture.localThread: "local"])
             #expect(fixture.defaults.string(forKey: "agentMCPs.local") == "local")
-            #expect(fixture.read("agent/skills/shared/SKILL.md") == "local skill")
-            #expect(fixture.read("agent/sessions/shared/databricks.jsonl") == nil)
+            #expect(fixture.read("pi/skills/shared/SKILL.md") == "local skill")
+            #expect(fixture.read("pi/sessions/shared/databricks.jsonl") == nil)
             #expect(try fixture.database.dbQueue.read { db in
                 try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM workspaces WHERE databricksConnectionId IS NOT NULL")
             } == 0)
@@ -345,7 +345,7 @@
             try fixture.run()
 
             #expect(try fixture.threadAccounts() == [fixture.databricksThread: "local", fixture.localThread: "local"])
-            #expect(fixture.read("agent/skills/shared/SKILL.md") == "databricks skill")
+            #expect(fixture.read("pi/skills/shared/SKILL.md") == "databricks skill")
             #expect(fixture.defaults.string(forKey: "agentMCPs.local") == "dbc-1.cloud.databricks.com")
         }
 

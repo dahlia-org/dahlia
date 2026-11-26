@@ -19,6 +19,8 @@ struct CodexChatView: View {
     /// The side panel leaves out the title and keeps a new chat's composer at the bottom, as in a conversation. Elsewhere a
     /// new chat centers its composer under a welcome.
     var isSidePanel = false
+    /// The agent whose thread this is: its conversation keeps the composer at the bottom even while empty.
+    var agent: AgentRecord?
 
     @Environment(MainWindowNavigation.self) private var navigation
     @State private var dismissedIntegrationsSessionID: CodexChatSessionID?
@@ -39,7 +41,8 @@ struct CodexChatView: View {
                 parentTitle: session.parentThread.map {
                     CodexChatMeetingReference.displayText(for: $0.title.nilIfBlank ?? L10n.newChat, namesByID: session.meetingNamesByID)
                 },
-                onOpenParent: session.parentThread.map { parent in { openHistoryThread(parent) } }
+                onOpenParent: session.parentThread.map { parent in { openHistoryThread(parent) } },
+                agent: agent
             )
             .zIndex(1)
 
@@ -292,7 +295,7 @@ struct CodexChatView: View {
     }
 
     private var showsWelcome: Bool {
-        !isSidePanel && showsEmptyState && !showsHistory
+        !isSidePanel && agent == nil && showsEmptyState && !showsHistory
     }
 
     private func prepare() async {

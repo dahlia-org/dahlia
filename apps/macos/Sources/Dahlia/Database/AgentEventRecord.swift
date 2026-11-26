@@ -5,6 +5,7 @@ import GRDB
 struct AgentEventRecord: Codable, FetchableRecord, PersistableRecord, Identifiable, Sendable {
     static let databaseTableName = "agent_event_inbox"
     var id: String
+    var agentID: String
     var sourceID: String?
     var key: String?
     var topic: String?

@@ -18,10 +18,10 @@ struct ContentView: View {
     @State private var isSidebarVisible = true
     @State private var isShowingUnprocessedRecordings = false
     @State private var isShowingChatConfiguration = false
-    /// Dahlia Bot's side panel beside its thread; the user's choice holds while the window is open.
+    /// An agent's side panel beside its thread; the user's choice holds while the window is open.
     @State private var isBotPanelVisible = true
     @State private var botPanel = DahliaBotPanelModel()
-    @AppStorage(AgentBotSettings.botThreadKey(for: AppAccount.key)) private var botThreadID: String?
+    @State private var agents = AgentsModel()
     @State private var selectedDetailTab: DetailTab = .summary
     @State private var searchModel = MainSearchModel()
     @State private var projectEditorRequest: ProjectEditorRequest?
@@ -39,8 +39,8 @@ struct ContentView: View {
                 : MainSidebarLayout.minimumDetailWidth,
             // The same frame holds the docked chat beside other content, and Dahlia Bot's panel beside its thread.
             isVisible: !isShowingSettings
-                && (isShowingBotThread ? isBotPanelVisible : chatCoordinator.isDockedVisible && !isShowingFullScreenChat),
-            animatesVisibilityChanges: !isShowingFullScreenChat || isShowingBotThread,
+                && ((shownAgent != nil) ? isBotPanelVisible : chatCoordinator.isDockedVisible && !isShowingFullScreenChat),
+            animatesVisibilityChanges: !isShowingFullScreenChat || (shownAgent != nil),
             onWidthChange: mainWindowNavigation.updateChatSidebarWidth
         ) {
             Group {
@@ -65,6 +65,7 @@ struct ContentView: View {
                             isShowingChat: isShowingDahliaChat,
                             onNewChat: startNewFullScreenChat,
                             onOpenChatThread: openFullScreenChatThread,
+                            agents: agents,
                             onOpenBot: openBotThread,
                             omnigentSessionID: omnigentSessionID,
                             onOpenOmnigentSession: openOmnigentSession,
@@ -111,7 +112,8 @@ struct ContentView: View {
                                 headerLeadingInset: isSidebarVisible ? 0 : mainWindowNavigation.sidebarWidth,
                                 onShowFullScreen: nil,
                                 onOpenDetachedSession: openDetachedChat,
-                                reservesPanelToggle: isShowingBotThread && !isBotPanelVisible
+                                reservesPanelToggle: shownAgent != nil && !isBotPanelVisible,
+                                agent: shownAgent
                             )
                         } else {
                             detailView
@@ -160,8 +162,8 @@ struct ContentView: View {
             .mainSidebarHelpOverlay(isVisible: !isShowingSettings)
 
         } sidebar: {
-            if isShowingBotThread {
-                DahliaBotPanelView(model: botPanel)
+            if shownAgent != nil {
+                DahliaBotPanelView(model: botPanel, agents: agents)
             } else {
                 CodexChatSidebarView(
                     coordinator: chatCoordinator,
@@ -177,16 +179,17 @@ struct ContentView: View {
         .allowsHitTesting(!searchModel.isPresented || isShowingSettings)
         .disabled(searchModel.isPresented && !isShowingSettings)
         .overlay(alignment: .topTrailing) {
-            // One fixed place for the side panel toggle, whether the panel is open or not: the docked chat, or Super Agent's panel.
-            if !isShowingSettings, isShowingBotThread || !isShowingFullScreenChat {
-                let isShown = isShowingBotThread ? isBotPanelVisible : chatCoordinator.isDockedVisible
+            // One fixed place for the side panel toggle: the docked chat, or the shown agent's panel.
+            if !isShowingSettings, shownAgent != nil || !isShowingFullScreenChat {
+                let isShowingAgent = shownAgent != nil
+                let isShown = isShowingAgent ? isBotPanelVisible : chatCoordinator.isDockedVisible
                 DahliaWindowHeader(allowsWindowDragging: false, backgroundColor: .clear) {
                     DahliaWindowHeaderIconButton(
-                        label: isShowingBotThread
+                        label: isShowingAgent
                             ? (isShown ? L10n.agentBotHidePanel : L10n.agentBotShowPanel)
                             : (isShown ? L10n.hideChat : L10n.showChat),
                         systemImage: "sidebar.right",
-                        action: isShowingBotThread ? { isBotPanelVisible.toggle() } : toggleChat
+                        action: isShowingAgent ? { isBotPanelVisible.toggle() } : toggleChat
                     )
                     .accessibilityValue(isShown ? L10n.shown : L10n.hidden)
                 }
@@ -245,6 +248,17 @@ struct ContentView: View {
             }
             .overlay {
                 if botPanel.draft != nil { DahliaBotSourceEditor(model: botPanel) }
+                if agents.draft != nil { AgentEditorView(model: agents, onCreated: openBotThread) }
+            }
+            .confirmationDialog(
+                L10n.agentDeleteConfirmation(agents.pendingDeletion?.name ?? ""),
+                isPresented: Binding(get: { agents.pendingDeletion != nil }, set: { if !$0 { agents.pendingDeletion = nil } }),
+                // The dialog clears `pendingDeletion` as it closes, before the button's task runs; the agent comes from here.
+                presenting: agents.pendingDeletion
+            ) { agent in
+                Button(L10n.delete, role: .destructive) { Task { await agents.delete(agent) } }
+            } message: { _ in
+                Text(L10n.agentDeleteMessage)
             }
             .screenshotOverlayPresentation(
                 presentation: $expandedScreenshot,
@@ -274,6 +288,9 @@ struct ContentView: View {
     var body: some View {
         presentedContent
             .background { chatNavigationObservation }
+            .onChange(of: mainWindowNavigation.isShowingSettings ? nil : shownAgent?.id, initial: true) { _, agentID in
+                botPanel.agentID = agentID
+            }
             .task(id: sidebarViewModel.currentWorkspace?.id) {
                 await sidebarViewModel.refreshUnprocessedRecordings()
             }
@@ -393,15 +410,17 @@ private extension ContentView {
         isShowingFullScreenChat && omnigentSessionID == nil
     }
 
-    /// The main area shows Dahlia Bot's current thread, so its panel takes the side frame.
-    private var isShowingBotThread: Bool {
-        isShowingDahliaChat && botThreadID != nil && chatCoordinator.dockedSession.backendThreadID == botThreadID
+    /// The agent whose current thread the main area shows, so its panel takes the side frame.
+    private var shownAgent: AgentRecord? {
+        isShowingDahliaChat ? agents.agent(currentThread: chatCoordinator.dockedSession.backendThreadID) : nil
     }
 
-    private func openBotThread() {
+    private func openBotThread(_ agent: AgentRecord) {
         Task {
-            guard let id = try? await PiChatService.shared.botThread() else { return }
-            openFullScreenChatThread(CodexChatThreadSummary(id: id, title: L10n.agentBotName, updatedAt: .now))
+            guard let id = try? await PiChatService.shared.botThread(agent.id) else { return }
+            // Its thread may be new, and the panel follows the thread the main area shows.
+            await agents.refresh()
+            openFullScreenChatThread(CodexChatThreadSummary(id: id, title: agent.name, updatedAt: .now))
         }
     }
 

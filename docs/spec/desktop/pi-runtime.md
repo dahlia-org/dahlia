@@ -50,7 +50,7 @@ Pi の更新時に `test-pi-extension.py` で確かめる。ユーザーの `~/.
 
 ## Process と境界
 
-Pi の agent directory は `~/.dahlia/agent`（0700）。development profile は自分のデータの folder の `agent` を使い、production のサインインを共有しない。Pi 以外のエージェントでも使えるよう、名前に Pi もアカウントも含めない。`Application Support/Dahlia/accounts/<アカウント>/pi` は移行元としてだけ読む。ユーザーの `~/.pi` は使わない。
+Pi の agent directory は `~/.dahlia/pi`（0700）。development profile は自分のデータの folder の `pi` を使い、production のサインインを共有しない。中身は Pi の形式なので名前に Pi を含める。別の実行環境を足すときは `~/.dahlia/<実行環境名>/` に置き、自己学習した skill は `pi/skills` を正本のまま動かさず、その実行環境の home から symlink で参照する（2026-11-26 ユーザー決定）。エージェント（人格）の home は隣の `~/.dahlia/agents/` に置く（[always-on](always-on-agent.md)）。`Application Support/Dahlia/accounts/<アカウント>/pi` は移行元としてだけ読む。ユーザーの `~/.pi` は使わない。
 アカウント別の設定キーの接尾辞と DB の `accountID` は `local`（`AppAccount.key`）。`PI_OFFLINE`・`PI_SKIP_VERSION_CHECK`・`PI_TELEMETRY=0` と、
 extension・context file・theme・project trust の自動読込を無効化して起動する。チャットでは標準 skill、アカウントの `pi/skills` に保存した skill、追加したパッケージの skill・prompt template を読み込む（2026-11-12 ユーザー承認）。要約・画像解析・通常の control は skill・prompt template も無効にする。「スキル」タブ専用の一覧プロセスは同じ resource loader で読み込み、モデル・MCP・tool を実行せず `get_commands` の認識結果を一覧にする。スキル名と最大2行の説明を表示し、保存先はフォルダを開く操作に使う。詳細はアプリ内モーダルで説明と SKILL.md を表示し、ファイル読込と Markdown 解析は MainActor 外で行う。追加・変更は新しいチャットプロセスから反映する。
 内蔵 `skill-creator` はチャットから Pi 向け skill の作成・更新・検証を支援する。`/skill:skill-creator <依頼>` でも呼び出せる。
@@ -86,7 +86,7 @@ Pi 本体は sandbox の外で動かす。Seatbelt は入れ子にできず、Pi
 | sandbox の外で実行されるもの: インストールされた Pi（実行ファイルの実体の folder。npm package なら `node` を含む prefix）、Dahlia の extension と skill、上の Pi の一時フォルダ | 書き込み不可（作業フォルダがこれを含んでいても） |
 | 現在のアカウントの `pi/skills` | ファイル道具には読み取り専用。変更は `skill_manage` からアプリのサービスを通す（[自己学習](pi-self-learning.md)）。Pi が再利用する skill の保存先。認証・設定・他アカウントへのリンク先は許可しない。保存先への symlink 作成・移動を拒否し、skill 探索でも symlink を除外する。保存先またはその配下が実効 PATH に含まれる設定は、全 Pi モードとパッケージ操作の起動前に拒否する |
 | Dahlia の preset skill、アカウントの Pi directory の `npm`・`git` 配下（インストール済みパッケージ）、画像の保存先（`FileStore`）、app の SQLite（`dahlia.sqlite` と `-wal`・`-shm`） | 読み取りだけ（画像と SQLite はデバッグ用） |
-| Dahlia の Application Support のそれ以外と agent directory（録音、backup、`~/.dahlia/agent`。development build からは production のものも） | 読み書き不可（作業フォルダがこれを含んでいても） |
+| Dahlia の Application Support のそれ以外、agent directory、エージェントの home（録音、backup、`~/.dahlia/pi`、`~/.dahlia/agents`。development build からは production のものも） | 読み書き不可（作業フォルダがこれを含んでいても）。エージェントの Pi には、自分の home だけを作業フォルダとして開く |
 | システムと全ユーザー向けの tool（`/System`・`/usr`・`/bin`・`/sbin`・`/Library/Developer`・`/Applications`・`/opt`・`/private/etc` など、`pi.sb` に名前で列挙） | 読み取りだけ。ただし local service の data と設定（`/opt/homebrew`・`/usr/local` の `var` と `etc`）は不可 |
 | セキュリティ設定で追加したファイル・フォルダ | アカウントごと・この Mac のチャットだけに、読み取りのみ／読み書きを追加。ファイルはその実体だけ、フォルダは配下を含む。既存の保護対象への例外にはならない |
 | それ以外すべて（ホーム、`/Volumes`、利用者の一時フォルダと cache など） | 追加の許可がなければ読み書き不可（metadata は読める） |

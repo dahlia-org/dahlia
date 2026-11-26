@@ -73,10 +73,10 @@ public enum DahliaApplicationSupport {
         directoryURL()
     }
 
-    /// The agent's folder (credentials, settings, sessions, skills). A released build keeps it at `~/.dahlia/agent`,
-    /// where users find it as they find `~/.pi/agent`; a development build keeps its own beside its data, so it never
-    /// shares a released build's sign-ins.
-    public static func agentDirectoryURL(
+    /// Pi's folder (credentials, settings, sessions, and the skills every agent shares). A released build keeps it at
+    /// `~/.dahlia/pi`, where users find it as they find `~/.pi/agent`; a development build keeps its own beside its
+    /// data, so it never shares a released build's sign-ins. The agents' homes are in `agents` beside it.
+    public static func piDirectoryURL(
         profile: DahliaRuntimeProfile,
         home: URL = URL(fileURLWithPath: NSHomeDirectory(), isDirectory: true),
         developmentDirectory: URL? = embeddedDevelopmentDirectory,
@@ -84,10 +84,10 @@ public enum DahliaApplicationSupport {
     ) -> URL {
         switch profile {
         case .production:
-            home.appending(path: ".dahlia/agent", directoryHint: .isDirectory)
+            home.appending(path: ".dahlia/pi", directoryHint: .isDirectory)
         case .development:
             directoryURL(profile: .development, developmentDirectory: developmentDirectory, applicationSupportDirectory: applicationSupportDirectory)
-                .appending(path: "agent", directoryHint: .isDirectory)
+                .appending(path: "pi", directoryHint: .isDirectory)
         }
     }
 }

@@ -298,8 +298,8 @@ export default async function (pi: any) {
       const root = realpathSync(process.cwd());
       const suffix = relative(root, ancestor);
       if (suffix === ".." || suffix.startsWith("../") || isAbsolute(suffix)) throw new Error("Super Agent file tools only access its home.");
-      if (writing && dirname(ancestor) === root && ["AGENTS.md", "bot.json", "SOUL.md"].includes(basename(ancestor))) {
-        throw new Error("AGENTS.md and bot.json belong to Dahlia, and SOUL.md changes only through soul_write.");
+      if (writing && dirname(ancestor) === root && ["AGENTS.md", "agent.json", "SOUL.md"].includes(basename(ancestor))) {
+        throw new Error("AGENTS.md and agent.json belong to Dahlia, and SOUL.md changes only through soul_write.");
       }
     };
     const fileOperation = (path: string, args: string[], input?: string, writing = false) => {
@@ -374,8 +374,8 @@ export default async function (pi: any) {
         if (!fileTool && !name.startsWith("mcp__dahlia__")) return block("Super Agent only reads Dahlia's meetings and its home, and works through its own tools.");
         // The files that steer the bot change only through Dahlia; Seatbelt refuses these writes too.
         const path = resolve(process.cwd(), String(event.input?.path ?? ""));
-        if (["write", "edit"].includes(name) && dirname(path) === process.cwd() && ["AGENTS.md", "bot.json", "SOUL.md"].includes(basename(path))) {
-          return block("AGENTS.md and bot.json belong to Dahlia, and SOUL.md changes only through soul_write.");
+        if (["write", "edit"].includes(name) && dirname(path) === process.cwd() && ["AGENTS.md", "agent.json", "SOUL.md"].includes(basename(path))) {
+          return block("AGENTS.md and agent.json belong to Dahlia, and SOUL.md changes only through soul_write.");
         }
       }
       if (name === "memory" && env.DAHLIA_PI_MEMORY_ENABLED !== "1") return block("Memory is disabled.");

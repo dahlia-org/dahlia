@@ -52,7 +52,10 @@ extension ChatThreadStore {
             guard let parent = try ChatThreadRecord.fetchOne(db, key: parentID), parent.accountID == accountID, parent.parentThreadID == nil,
                   let child = try ChatThreadRecord.fetchOne(db, key: threadID), child.accountID == accountID, child.parentThreadID == nil,
                   threadID != parentID else { throw PiRuntimeError.invalidProtocolResponse }
-            try db.execute(sql: "UPDATE chat_threads SET parentThreadID = ? WHERE id = ?", arguments: [parentID, threadID])
+            // A task an agent delegates is that agent's, and works in its home.
+            try db.execute(
+                sql: "UPDATE chat_threads SET parentThreadID = ?, agentID = ? WHERE id = ?", arguments: [parentID, parent.agentID, threadID]
+            )
         }
     }
 
@@ -77,10 +80,15 @@ extension ChatThreadStore {
         }
     }
 
-    func toolThreadPage(accountID: String, arguments args: [String: JSONValue]) throws -> JSONValue {
+    /// `callerAgentID` is the calling thread's agent: no thread of another agent is listed.
+    func toolThreadPage(accountID: String, callerAgentID: String? = nil, arguments args: [String: JSONValue]) throws -> JSONValue {
         try dbQueue.read { db in
             var conditions = ["accountID = ?"]
             var values: StatementArguments = [accountID]
+            if let callerAgentID {
+                conditions.append("(agentID IS NULL OR agentID = ?)")
+                values += [callerAgentID]
+            }
             let activeStatus = """
             COALESCE((SELECT status FROM chat_runs WHERE threadID = chat_threads.id
                 AND status IN ('running', 'waitingForUser', 'queued')

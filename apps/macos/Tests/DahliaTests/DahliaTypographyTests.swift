@@ -107,9 +107,10 @@ import SwiftUI
             let states: [DahliaDesign.Button.InteractionState] = [.normal, .hovered, .pressed]
 
             for appearance in appearances {
+                let foreground = resolved(DahliaDesign.Accent.onFill, with: appearance)
                 for state in states {
                     let color = resolved(DahliaDesign.primaryButtonBackgroundNSColor(for: state), with: appearance)
-                    #expect(contrast(color, against: .white) >= 4.5)
+                    #expect(contrast(color, against: foreground) >= 4.5)
                 }
             }
         }

@@ -91,7 +91,7 @@ struct DatabricksOAuthStorage: Sendable {
             removeProviderRegistrations: { connection in
                 guard let url = URL(string: connection.host) else { throw AIConfigurationError.invalidDatabricksWorkspaceURL }
                 try AgentMCPSettings.removeProviderAccount(
-                    AgentMCPProvider.id(for: url), agentURL: PiAgentDirectoryLocator().sharedAgentURL
+                    AgentMCPProvider.id(for: url), agentURL: PiAgentDirectoryLocator().piDirectoryURL
                 )
             }
         )

@@ -20,4 +20,6 @@ struct ChatThreadRecord: Codable, FetchableRecord, PersistableRecord, Sendable {
     var scheduleID: String?
     /// When the user settled it: done for now, kept out of the active list until a run starts in it again.
     var settledAt: Date?
+    /// The agent whose thread this is (its conversation, an earlier one, or a task it delegated); nil for other chats.
+    var agentID: String?
 }

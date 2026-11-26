@@ -14,6 +14,7 @@
 | [Always-on エージェント](2026-11-19-always-on-agent.md) | 段階0〜2を実装・自動検証済み。[仕様](../spec/desktop/always-on-agent.md)はユーザー承認済み。実アプリでの設定画面の確認が残る。段階3以降は Dahlia Bot の計画に移した |
 | [Dahlia Bot（AI 秘書）](2026-11-23-dahlia-bot-secretary.md) | 3A-0、3A-2、3A-5 を実装・自動検証済み。Router・秘書のスレッド・Worker は、1本のスレッドにまとめる改修で Super Agent とそのタスクのスレッドに置き換えた。3A-1、3A-3、3A-4、3B は未着手 |
 | [Super Agent（旧称 Dahlia Bot）を1本のスレッドにまとめる改修](2026-11-25-dahlia-bot-thread.md) | 実装・自動検証済み。タスクは Super Agent が起動したスレッドに付ける記録。実アプリと実モデルでの確認が残る |
+| [エージェントを複数持てるようにする](2026-11-26-multi-agent.md) | 段階1〜6を実装・自動検証済み。[仕様](../spec/desktop/always-on-agent.md)に反映。実アプリでの画面の確認が残る |
 
 ## 計画の扱い
 

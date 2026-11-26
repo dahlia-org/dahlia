@@ -2,9 +2,9 @@ import DahliaRuntimeSupport
 import Foundation
 import GRDB
 
-/// The always-on agent's inbox, and the only owner of its event, Task, and Item state. Intake, Super Agent, and the user
-/// reach it only through these methods. The native side sets `Caller` from the Pi session that made the call, never from
-/// what the model says it is.
+/// The agents' inboxes, and the only owner of their event, Task, and Item state. Intake, an agent, and the user reach it
+/// only through these methods. The native side sets `Caller` and `agentID` from the Pi session that made the call,
+/// never from what the model says it is.
 struct AgentInboxService: Sendable {
     enum Caller: Sendable, Equatable {
         case intake(sourceID: String, revision: Int = 1)
@@ -31,6 +31,9 @@ struct AgentInboxService: Sendable {
     static let dismissalMemory: TimeInterval = 30 * 86400
 
     let dbQueue: any DatabaseWriter
+    /// The agent whose sources, events, Tasks, and Items these methods read and write. Methods that name a Source, Task,
+    /// or Item by its ID, and the app's housekeeping, use none.
+    var agentID = ""
 
     // MARK: - intake
 
@@ -75,9 +78,17 @@ struct AgentInboxService: Sendable {
         try dbQueue.read {
             try AgentSourceRecord.fetchAll(
                 $0,
-                sql: "SELECT * FROM agent_event_sources ORDER BY createdAt, id"
+                sql: "SELECT * FROM agent_event_sources WHERE agentID=? ORDER BY createdAt, id", arguments: [agentID]
             )
         }
+    }
+
+    func source(_ id: String) throws -> AgentSourceRecord? {
+        try dbQueue.read { try AgentSourceRecord.fetchOne($0, key: id) }
+    }
+
+    func hasCalendarSource() throws -> Bool {
+        try dbQueue.read { try Bool.fetchOne($0, sql: "SELECT EXISTS(SELECT 1 FROM agent_event_sources WHERE kind='calendar')") ?? false }
     }
 
     func saveSource(_ source: AgentSourceRecord, now: Date = .now) throws {
@@ -94,7 +105,8 @@ struct AgentInboxService: Sendable {
         try dbQueue.write { db in
             var source = source
             if let previous = try AgentSourceRecord.fetchOne(db, key: source.id) {
-                guard previous.kind == source.kind, previous.server == source.server, previous.connectionID == source.connectionID else {
+                guard previous.agentID == source.agentID, previous.kind == source.kind, previous.server == source.server,
+                      previous.connectionID == source.connectionID else {
                     throw Failure(message: "Create a new Source to use another server.")
                 }
                 source.revision = previous.revision + 1
@@ -144,8 +156,8 @@ struct AgentInboxService: Sendable {
         try dbQueue.read {
             try AgentEventRecord.fetchAll(
                 $0,
-                sql: "SELECT * FROM agent_event_inbox  ORDER BY createdAt DESC, id DESC LIMIT ?",
-                arguments: [limit]
+                sql: "SELECT * FROM agent_event_inbox WHERE agentID=? ORDER BY createdAt DESC, id DESC LIMIT ?",
+                arguments: [agentID, limit]
             )
         }
     }
@@ -182,7 +194,7 @@ struct AgentInboxService: Sendable {
                     continue
                 }
                 let event = try AgentEventRecord(
-                    id: UUID.v7().uuidString, sourceID: sourceID, key: item.key, topic: item.topic,
+                    id: UUID.v7().uuidString, agentID: source.agentID, sourceID: sourceID, key: item.key, topic: item.topic,
                     note: String(item.note.prefix(Self.noteLimit)), ref: item.ref.map(Self.text), occurredAt: min(item.occurredAt ?? now, now),
                     taskID: nil, handledAt: nil, createdAt: now
                 )
@@ -229,22 +241,25 @@ struct AgentInboxService: Sendable {
         }
     }
 
-    // MARK: - Super Agent
+    // MARK: - The agent
 
-    /// The events nobody decided on yet, oldest first, the open Tasks, and the Items the user has not closed: what
-    /// `inbox_read` shows Super Agent.
+    /// The agent's events nobody decided on yet, oldest first, its open Tasks, and its Items the user has not closed:
+    /// what `inbox_read` shows it.
     func inbox(now: Date = .now) throws -> (events: [AgentEventRecord], tasks: [AgentTaskRecord], items: [AgentItemRecord]) {
         try dbQueue.read { db in
             try (
                 AgentEventRecord.fetchAll(
-                    db, sql: "SELECT * FROM agent_event_inbox WHERE handledAt IS NULL AND occurredAt<=? ORDER BY occurredAt, id LIMIT 50",
-                    arguments: [now]
+                    db, sql: """
+                    SELECT * FROM agent_event_inbox WHERE agentID=? AND handledAt IS NULL AND occurredAt<=? ORDER BY occurredAt, id LIMIT 50
+                    """, arguments: [agentID, now]
                 ),
                 AgentTaskRecord.fetchAll(
-                    db, sql: "SELECT * FROM agent_tasks WHERE status='active' ORDER BY updatedAt DESC LIMIT 30"
+                    db, sql: "SELECT * FROM agent_tasks WHERE agentID=? AND status='active' ORDER BY updatedAt DESC LIMIT 30",
+                    arguments: [agentID]
                 ),
                 AgentItemRecord.fetchAll(
-                    db, sql: "SELECT * FROM agent_user_inbox WHERE status='open' ORDER BY createdAt DESC LIMIT 30"
+                    db, sql: "SELECT * FROM agent_user_inbox WHERE agentID=? AND status='open' ORDER BY createdAt DESC LIMIT 30",
+                    arguments: [agentID]
                 )
             )
         }
@@ -254,13 +269,23 @@ struct AgentInboxService: Sendable {
         try dbQueue.read {
             try Bool.fetchOne(
                 $0,
-                sql: "SELECT EXISTS(SELECT 1 FROM agent_event_inbox WHERE handledAt IS NULL AND occurredAt<=?)", arguments: [now]
+                sql: "SELECT EXISTS(SELECT 1 FROM agent_event_inbox WHERE agentID=? AND handledAt IS NULL AND occurredAt<=?)",
+                arguments: [agentID, now]
             )
                 ?? false
         }
     }
 
-    /// Topic matches are hints only; the bot decides whether to hand the event to that thread.
+    /// The agents with events nobody decided on, for Dahlia to tell each one.
+    func agentsWithUndecidedEvents(now: Date = .now) throws -> [String] {
+        try dbQueue.read {
+            try String.fetchAll($0, sql: """
+            SELECT DISTINCT agentID FROM agent_event_inbox WHERE handledAt IS NULL AND occurredAt<=? ORDER BY agentID
+            """, arguments: [now])
+        }
+    }
+
+    /// Topic matches are hints only; the agent decides whether to hand the event to that thread.
     func relatedThreads(for events: [AgentEventRecord]) throws -> [String: [String]] {
         try dbQueue.read { db in
             var result: [String: [String]] = [:]
@@ -268,59 +293,70 @@ struct AgentInboxService: Sendable {
                 guard let topic = event.topic else { continue }
                 result[event.id] = try String.fetchAll(db, sql: """
                 SELECT DISTINCT t.threadID FROM agent_tasks t JOIN agent_event_inbox e ON e.taskID=t.id
-                WHERE t.status='active' AND t.threadID IS NOT NULL AND e.topic=? AND e.sourceID IS ?
+                WHERE t.agentID=? AND t.status='active' AND t.threadID IS NOT NULL AND e.topic=? AND e.sourceID IS ?
                 ORDER BY t.threadID
-                """, arguments: [topic, event.sourceID])
+                """, arguments: [agentID, topic, event.sourceID])
             }
             return result
         }
     }
 
-    /// Undecided events by ID, for Super Agent to hand to a thread; an ID that is not one is an error the model sees.
+    /// The agent's undecided events by ID, to hand to a thread; an ID that is not one of them is an error the model sees.
     func undecidedEvents(_ ids: [String]) throws -> [AgentEventRecord] {
         try dbQueue.read { db in
             try ids.map { id in
-                guard let event = try AgentEventRecord.fetchOne(db, key: id), event.handledAt == nil, event.occurredAt <= .now
+                guard let event = try AgentEventRecord.fetchOne(db, key: id), event.agentID == agentID, event.handledAt == nil,
+                      event.occurredAt <= .now
                 else { throw Failure(message: "Event \(id) is not waiting for a decision.") }
                 return event
             }
         }
     }
 
-    /// Makes a thread Super Agent launched into a Task, and marks the events it was handed as gone to it.
+    /// Makes a thread the agent launched into its Task, and marks the events it was handed as gone to it.
     @discardableResult
     func openTask(threadID: String, title: String, instructions: String, eventIDs: [String], now: Date = .now) throws
         -> AgentTaskRecord {
         try dbQueue.write {
-            try Self.openTask(threadID: threadID, title: title, instructions: instructions, eventIDs: eventIDs, now: now, in: $0)
+            try Self.openTask(
+                agentID: agentID, threadID: threadID, title: title, instructions: instructions, eventIDs: eventIDs, now: now, in: $0
+            )
         }
     }
 
     @discardableResult
     static func openTask(
-        threadID: String, title: String, instructions: String, eventIDs: [String], now: Date = .now, in db: Database
+        agentID: String,
+        threadID: String,
+        title: String,
+        instructions: String,
+        eventIDs: [String],
+        now: Date = .now,
+        in db: Database
     ) throws -> AgentTaskRecord {
         let task = AgentTaskRecord(
-            id: UUID.v7().uuidString, title: String(title.prefix(Self.titleLimit)),
+            id: UUID.v7().uuidString, agentID: agentID, title: String(title.prefix(Self.titleLimit)),
             instructions: String(instructions.prefix(Self.bodyLimit)), threadID: threadID, status: "active", createdAt: now, updatedAt: now
         )
         try task.insert(db)
-        try Self.process(eventIDs, taskID: task.id, now: now, in: db)
+        try Self.process(eventIDs, agentID: agentID, taskID: task.id, now: now, in: db)
         return task
     }
 
-    /// Super Agent sent more to a Task's thread: the events go to it, and a finished Task is in progress again.
+    /// The agent sent more to one of its Tasks' threads: the events go to it, and a finished Task is in progress again.
     func continueTask(threadID: String, eventIDs: [String], now: Date = .now) throws {
-        try dbQueue.write { try Self.continueTask(threadID: threadID, eventIDs: eventIDs, now: now, in: $0) }
+        try dbQueue.write { try Self.continueTask(agentID: agentID, threadID: threadID, eventIDs: eventIDs, now: now, in: $0) }
     }
 
-    static func continueTask(threadID: String, eventIDs: [String], now: Date = .now, in db: Database) throws {
-        guard let task = try AgentTaskRecord.fetchOne(db, sql: "SELECT * FROM agent_tasks WHERE threadID=?", arguments: [threadID]) else {
-            try process(eventIDs, taskID: nil, now: now, in: db)
+    static func continueTask(agentID: String, threadID: String, eventIDs: [String], now: Date = .now, in db: Database) throws {
+        guard let task = try AgentTaskRecord.fetchOne(
+            db, sql: "SELECT * FROM agent_tasks WHERE threadID=? AND agentID=?", arguments: [threadID, agentID]
+        ) else {
+            try process(eventIDs, agentID: agentID, taskID: nil, now: now, in: db)
             return
         }
         try db.execute(sql: "UPDATE agent_tasks SET status='active', updatedAt=? WHERE id=?", arguments: [now, task.id])
-        try Self.process(eventIDs, taskID: task.id, now: now, in: db)
+        try Self.process(eventIDs, agentID: agentID, taskID: task.id, now: now, in: db)
     }
 
     /// Ends a Task without requiring its thread to still exist.
@@ -333,7 +369,7 @@ struct AgentInboxService: Sendable {
     }
 
     func finishTask(threadID: String, status: String, now: Date = .now) throws {
-        guard let task = try task(threadID: threadID) else { throw Failure(message: "That thread is not a task.") }
+        guard let task = try task(threadID: threadID), task.agentID == agentID else { throw Failure(message: "That thread is not a task.") }
         try finishTask(taskID: task.id, status: status, now: now)
     }
 
@@ -348,7 +384,10 @@ struct AgentInboxService: Sendable {
     func close(eventIDs: [String]) throws {
         try dbQueue.write { db in
             for id in eventIDs {
-                try db.execute(sql: "UPDATE agent_event_inbox SET handledAt=?, taskID=NULL WHERE id=? AND handledAt IS NULL", arguments: [Date(), id])
+                try db.execute(
+                    sql: "UPDATE agent_event_inbox SET handledAt=?, taskID=NULL WHERE id=? AND agentID=? AND handledAt IS NULL",
+                    arguments: [Date(), id, agentID]
+                )
             }
         }
     }
@@ -363,41 +402,31 @@ struct AgentInboxService: Sendable {
         }
     }
 
-    /// The account's open Tasks and the visible range of finished Tasks, in one snapshot.
+    /// The agent's open Tasks and the visible range of its finished Tasks, in one snapshot.
     func tasks(limit: Int = 30) throws -> (active: [AgentTaskRecord], finished: [AgentTaskRecord]) {
         try dbQueue.read { db in
             try (
-                AgentTaskRecord.fetchAll(db, sql: "SELECT * FROM agent_tasks WHERE status='active' ORDER BY updatedAt DESC, id DESC"),
                 AgentTaskRecord.fetchAll(db, sql: """
-                SELECT * FROM agent_tasks WHERE status<>'active' ORDER BY updatedAt DESC, id DESC LIMIT ?
-                """, arguments: [limit])
+                SELECT * FROM agent_tasks WHERE agentID=? AND status='active' ORDER BY updatedAt DESC, id DESC
+                """, arguments: [agentID]),
+                AgentTaskRecord.fetchAll(db, sql: """
+                SELECT * FROM agent_tasks WHERE agentID=? AND status<>'active' ORDER BY updatedAt DESC, id DESC LIMIT ?
+                """, arguments: [agentID, limit])
             )
         }
     }
 
-    /// Adopt the old unscoped pointer only in the database that actually owns it. Other profiles may still need it.
-    @discardableResult
-    static func adoptLegacyBotThread(account: String, in db: Database) throws -> String? {
-        let key = AgentBotSettings.botThreadKey(for: account)
-        guard UserDefaults.standard.string(forKey: key) == nil,
-              let id = UserDefaults.standard.string(forKey: AgentBotSettings.legacyBotThreadKey(for: account)),
-              try Bool.fetchOne(db, sql: "SELECT EXISTS(SELECT 1 FROM chat_threads WHERE id=? AND accountID=?)", arguments: [id, account]) == true
-        else { return nil }
-        db.afterNextTransaction { _ in UserDefaults.standard.set(id, forKey: key) }
-        return id
-    }
-
-    /// Super Agent's current thread, made the first time it is needed. `replacing` starts a new one in its place.
-    static func botThread(account: String, now: Date, replacing: Bool = false, in db: Database) throws -> String {
-        let key = AgentBotSettings.botThreadKey(for: account)
-        if !replacing, let id = UserDefaults.standard.string(forKey: key),
-           try Bool.fetchOne(db, sql: "SELECT EXISTS(SELECT 1 FROM chat_threads WHERE id=? AND accountID=?)", arguments: [id, account]) == true {
-            return id
-        }
-        if !replacing, let id = try adoptLegacyBotThread(account: account, in: db) { return id }
-        let thread = ChatThreadRecord(id: UUID.v7().uuidString, accountID: account, title: L10n.agentBotName, createdAt: now, updatedAt: now)
+    /// The agent's current thread, made the first time it is needed.
+    static func thread(agentID: String, now: Date, in db: Database) throws -> String {
+        guard var agent = try AgentRecord.fetchOne(db, key: agentID) else { throw Failure(message: "Agent not found.") }
+        if let id = agent.threadID { return id }
+        let thread = ChatThreadRecord(
+            id: UUID.v7().uuidString, accountID: AppAccount.key, title: agent.name, createdAt: now, updatedAt: now, agentID: agentID
+        )
         try thread.insert(db)
-        db.afterNextTransaction { _ in UserDefaults.standard.set(thread.id, forKey: key) }
+        agent.threadID = thread.id
+        agent.updatedAt = now
+        try agent.update(db)
         return thread.id
     }
 
@@ -406,7 +435,8 @@ struct AgentInboxService: Sendable {
     func items() throws -> [AgentItemRecord] {
         try dbQueue.read {
             try AgentItemRecord.fetchAll(
-                $0, sql: "SELECT * FROM agent_user_inbox WHERE status='open' ORDER BY createdAt DESC, id DESC"
+                $0, sql: "SELECT * FROM agent_user_inbox WHERE agentID=? AND status='open' ORDER BY createdAt DESC, id DESC",
+                arguments: [agentID]
             )
         }
     }
@@ -433,21 +463,24 @@ struct AgentInboxService: Sendable {
             let taskID = try threadID.map { thread in
                 guard let id = try String.fetchOne(
                     db,
-                    sql: "SELECT id FROM agent_tasks WHERE threadID=?",
-                    arguments: [thread]
+                    sql: "SELECT id FROM agent_tasks WHERE threadID=? AND agentID=?",
+                    arguments: [thread, agentID]
                 )
                 else { throw Failure(message: "That thread is not a task.") }
                 return id
             }
             if kind == "suggestion", try Bool.fetchOne(
                 db,
-                sql: "SELECT EXISTS(SELECT 1 FROM agent_user_inbox WHERE kind='suggestion' AND status='dismissed' AND title=? AND updatedAt>=?)",
-                arguments: [title, now.addingTimeInterval(-Self.dismissalMemory)]
+                sql: """
+                SELECT EXISTS(SELECT 1 FROM agent_user_inbox
+                    WHERE agentID=? AND kind='suggestion' AND status='dismissed' AND title=? AND updatedAt>=?)
+                """,
+                arguments: [agentID, title, now.addingTimeInterval(-Self.dismissalMemory)]
             ) == true {
                 throw Failure(message: "The user dismissed this suggestion recently. Do not suggest it again.")
             }
             let item = try AgentItemRecord(
-                id: UUID.v7().uuidString, kind: kind, status: "open", taskID: taskID,
+                id: UUID.v7().uuidString, agentID: agentID, kind: kind, status: "open", taskID: taskID,
                 title: title, body: String(body.prefix(Self.bodyLimit)), options: Self.text(.array(options.map(JSONValue.string))),
                 recommended: recommended.flatMap { options.indices.contains($0) ? $0 : nil }, answer: nil, revision: 1,
                 createdAt: now, updatedAt: now
@@ -458,13 +491,13 @@ struct AgentInboxService: Sendable {
     }
 
     /// The user's answer to the revision they saw. One transaction checks it is still open and current, saves the answer,
-    /// and adds the answer event for Super Agent, so it hears once; an older revision changes nothing.
+    /// and adds the answer event for the Item's agent, so it hears once; an older revision changes nothing.
     @discardableResult
     func answer(itemID: String, revision: Int, answer: String, now: Date = .now) throws -> Bool {
         try settle(itemID: itemID, revision: revision, answer: answer, now: now)
     }
 
-    /// Closes an Item without an answer. A dismissed question still tells Super Agent, so its thread does not wait for it.
+    /// Closes an Item without an answer. A dismissed question still tells its agent, so its thread does not wait for it.
     @discardableResult
     func dismiss(itemID: String, revision: Int, now: Date = .now) throws -> Bool {
         try settle(itemID: itemID, revision: revision, answer: nil, now: now)
@@ -482,7 +515,7 @@ struct AgentInboxService: Sendable {
             guard item.kind == "question" || (item.kind == "suggestion" && answer != nil) else { return true }
             let thread = try item.taskID.flatMap { try String.fetchOne(db, sql: "SELECT threadID FROM agent_tasks WHERE id=?", arguments: [$0]) }
             let event = try AgentEventRecord(
-                id: UUID.v7().uuidString, sourceID: nil, key: nil, topic: nil,
+                id: UUID.v7().uuidString, agentID: item.agentID, sourceID: nil, key: nil, topic: nil,
                 note: String(("User response to \(item.title): " + (answer ?? "dismissed without answering")).prefix(Self.noteLimit)),
                 ref: Self.text(.object([
                     "item": .string(item.id),
@@ -504,11 +537,11 @@ struct AgentInboxService: Sendable {
 
     // MARK: - helpers
 
-    private static func process(_ eventIDs: [String], taskID: String?, now: Date = .now, in db: Database) throws {
+    private static func process(_ eventIDs: [String], agentID: String, taskID: String?, now: Date = .now, in db: Database) throws {
         for id in eventIDs {
             try db.execute(
-                sql: "UPDATE agent_event_inbox SET handledAt=?, taskID=? WHERE id=? AND handledAt IS NULL AND occurredAt<=?",
-                arguments: [now, taskID, id, now]
+                sql: "UPDATE agent_event_inbox SET handledAt=?, taskID=? WHERE id=? AND agentID=? AND handledAt IS NULL AND occurredAt<=?",
+                arguments: [now, taskID, id, agentID, now]
             )
         }
     }

@@ -9,7 +9,8 @@ enum DahliaDesign {
             case pressed
         }
 
-        static let cornerRadius: CGFloat = 12
+        /// A rounded rectangle, not a pill: at a button's height a larger radius closes into a capsule.
+        static let cornerRadius: CGFloat = 6
     }
 
     enum Highlight {
@@ -45,35 +46,58 @@ enum DahliaDesign {
     static let sidebarHighlightColor = Color.primary.opacity(0.10)
     static let contentHighlightColor = Color.primary.opacity(0.05)
     static let chipHoverColor = Color.primary.opacity(0.10)
+    /// The app's accent: the fill of primary buttons and the text on it. Orca's monochrome for now (near black in light
+    /// mode, near white in dark); a choice of accent replaces these two values.
+    enum Accent {
+        static let fill = NSColor(name: nil) { appearance in
+            isDark(appearance)
+                ? NSColor(srgbRed: 236 / 255, green: 236 / 255, blue: 236 / 255, alpha: 1)
+                : NSColor(srgbRed: 24 / 255, green: 24 / 255, blue: 27 / 255, alpha: 1)
+        }
+
+        static let onFill = NSColor(name: nil) { appearance in
+            isDark(appearance) ? NSColor(srgbRed: 24 / 255, green: 24 / 255, blue: 27 / 255, alpha: 1) : .white
+        }
+    }
+
+    /// Hover and press move the accent toward the window's background, so any accent keeps its feedback.
     static func primaryButtonBackgroundNSColor(for state: Button.InteractionState) -> NSColor {
         NSColor(name: nil) { appearance in
-            let appearance = appearance.bestMatch(from: [
-                .accessibilityHighContrastDarkAqua,
-                .accessibilityHighContrastAqua,
-                .darkAqua,
-                .aqua,
-            ])
-            let isDark = appearance == .accessibilityHighContrastDarkAqua || appearance == .darkAqua
-
-            switch (isDark, state) {
-            case (true, .normal):
-                return NSColor(srgbRed: 71 / 255, green: 119 / 255, blue: 179 / 255, alpha: 1)
-            case (true, .hovered):
-                return NSColor(srgbRed: 64 / 255, green: 109 / 255, blue: 168 / 255, alpha: 1)
-            case (true, .pressed):
-                return NSColor(srgbRed: 56 / 255, green: 99 / 255, blue: 156 / 255, alpha: 1)
-            case (false, .normal):
-                return NSColor(srgbRed: 63 / 255, green: 110 / 255, blue: 168 / 255, alpha: 1)
-            case (false, .hovered):
-                return NSColor(srgbRed: 56 / 255, green: 101 / 255, blue: 157 / 255, alpha: 1)
-            case (false, .pressed):
-                return NSColor(srgbRed: 47 / 255, green: 90 / 255, blue: 145 / 255, alpha: 1)
+            var fill = Accent.fill
+            appearance.performAsCurrentDrawingAppearance { fill = Accent.fill.usingColorSpace(.sRGB) ?? Accent.fill }
+            let fraction: CGFloat = switch state {
+            case .normal: 0
+            case .hovered: 0.12
+            case .pressed: 0.22
             }
+            return fill.blended(withFraction: fraction, of: isDark(appearance) ? .black : .white) ?? fill
         }
+    }
+
+    private static func isDark(_ appearance: NSAppearance) -> Bool {
+        [.darkAqua, .accessibilityHighContrastDarkAqua].contains(
+            appearance.bestMatch(from: [.accessibilityHighContrastDarkAqua, .accessibilityHighContrastAqua, .darkAqua, .aqua])
+        )
     }
 
     static func primaryButtonBackgroundColor(for state: Button.InteractionState) -> Color {
         Color(nsColor: primaryButtonBackgroundNSColor(for: state))
+    }
+
+    static let primaryButtonForegroundColor = Color(nsColor: Accent.onFill)
+    /// Orca's secondary button: the content background (white in light mode), set off by its border. Hover and press
+    /// move it toward the text color.
+    static func secondaryButtonBackgroundColor(for state: Button.InteractionState) -> Color {
+        Color(nsColor: NSColor(name: nil) { appearance in
+            var base = NSColor.controlBackgroundColor
+            appearance.performAsCurrentDrawingAppearance { base = NSColor.controlBackgroundColor.usingColorSpace(.sRGB) ?? base }
+            let fraction: CGFloat = switch state {
+            case .normal: 0
+            case .hovered: 0.06
+            case .pressed: 0.10
+            }
+            return base.blended(withFraction: fraction, of: isDark(appearance) ? .white : .black) ?? base
+        })
     }
 
     static let primaryTextNSColor = adaptiveTextColor(

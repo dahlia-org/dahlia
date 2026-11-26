@@ -2,9 +2,9 @@ import AppKit
 import Foundation
 import Observation
 
-/// Super Agent's side panel and its event source editor: the Items that need the user, its Tasks, the Sources intake
-/// reads, `SOUL.md`, and the events intake recorded. The database and the home folder are read off MainActor through
-/// `PiChatService`.
+/// An agent's side panel and its event source editor: the Items that need the user, its Tasks, the Sources intake
+/// reads, `SOUL.md`, and the events intake recorded, all of the agent shown in `agentID`. The database and the home
+/// folder are read off MainActor through `PiChatService`.
 @MainActor
 @Observable
 final class DahliaBotPanelModel {
@@ -45,57 +45,128 @@ final class DahliaBotPanelModel {
     private(set) var isLoadingFinishedTasks = false
     var soul = ""
     var models: [CodexModel] = []
-    /// Empty follows the default: Pi's model for intake, the conversation's for notices.
-    var intakeModel: String {
-        didSet { defaults.set(intakeModel, forKey: AgentBotSettings.intakeModelKey(for: AppAccount.key)) }
-    }
-
-    var unattendedModel: String {
-        didSet { defaults.set(unattendedModel, forKey: AgentBotSettings.unattendedModelKey(for: AppAccount.key)) }
-    }
-
-    var intakeEffort: String {
-        didSet { defaults.set(intakeEffort, forKey: AgentBotSettings.intakeEffortKey(for: AppAccount.key)) }
-    }
-
-    var unattendedEffort: String {
-        didSet { defaults.set(unattendedEffort, forKey: AgentBotSettings.unattendedEffortKey(for: AppAccount.key)) }
-    }
+    private(set) var areModelSettingsLoaded = false
+    /// Empty follows the default: Pi's model for intake, the conversation's for notices. Saved on the agent.
+    private(set) var intakeModel = ""
+    private(set) var unattendedModel = ""
+    private(set) var intakeEffort = ""
+    private(set) var unattendedEffort = ""
 
     /// The text being edited, while the user edits `SOUL.md`.
     var soulDraft: String?
     var error: String?
     var isBusy = false
 
-    init(
-        defaults: UserDefaults = .standard,
-        loadTasks: @escaping @Sendable (Int) async throws -> TaskPage = {
-            try await PiChatService.shared.loadBotTasks(limit: $0)
+    /// The agent shown; changing it clears what the previous one showed.
+    var agentID: String? {
+        didSet {
+            guard agentID != oldValue else { return }
+            reset(for: agentID)
         }
-    ) {
-        self.defaults = defaults
-        self.loadTasks = loadTasks
-        intakeModel = AgentBotSettings.model(AgentBotSettings.intakeModelKey(for: AppAccount.key), defaults: defaults) ?? ""
-        unattendedModel = AgentBotSettings.model(AgentBotSettings.unattendedModelKey(for: AppAccount.key), defaults: defaults) ?? ""
-        intakeEffort = AgentBotSettings.model(AgentBotSettings.intakeEffortKey(for: AppAccount.key), defaults: defaults) ?? ""
-        unattendedEffort = AgentBotSettings.model(AgentBotSettings.unattendedEffortKey(for: AppAccount.key), defaults: defaults) ?? ""
     }
 
+    init(
+        loadAgent: @escaping @Sendable (String) async throws -> AgentRecord = { try await PiChatService.shared.agent($0) },
+        saveAgentModel: @escaping @Sendable (String, AgentRecord.ModelUse, String, String) async throws -> Void = {
+            try await PiChatService.shared.setAgentModel($0, use: $1, model: $2, effort: $3)
+        },
+        saveSoulFile: @escaping @Sendable (String, String) async throws -> Void = {
+            try await PiChatService.shared.saveBotSoul($0, $1)
+        },
+        loadTasks: @escaping @Sendable (String, Int) async throws -> TaskPage = {
+            try await PiChatService.shared.loadBotTasks($0, limit: $1)
+        }
+    ) {
+        self.loadAgent = loadAgent
+        self.saveAgentModel = saveAgentModel
+        self.saveSoulFile = saveSoulFile
+        self.loadTasks = loadTasks
+    }
+
+    private let loadAgent: @Sendable (String) async throws -> AgentRecord
+    private let saveAgentModel: @Sendable (String, AgentRecord.ModelUse, String, String) async throws -> Void
+    private var modelSettingsRevision = 0
+    private var pendingModelSaves = 0
     private var taskGeneration = 0
+    /// Distinguishes selection lifetimes, including leaving an agent and returning before work completes.
+    private var agentGeneration = 0
     private var finishedTaskLimit = taskPage
-    private let loadTasks: @Sendable (Int) async throws -> TaskPage
-    private let defaults: UserDefaults
+    private let loadTasks: @Sendable (String, Int) async throws -> TaskPage
+    private let saveSoulFile: @Sendable (String, String) async throws -> Void
+
+    private func reset(for _: String?) {
+        agentGeneration += 1
+        areModelSettingsLoaded = false
+        pendingModelSaves = 0
+        modelSettingsRevision += 1
+        taskGeneration += 1
+        isBusy = false
+        isLoadingFinishedTasks = false
+        finishedTaskLimit = Self.taskPage
+        (sources, events, items, taskThreads, answers) = ([], [], [], [:], [:])
+        (activeTasks, finishedTasks, hasMoreFinishedTasks) = ([], [], false)
+        (soul, soulDraft, draft, error) = ("", nil, nil, nil)
+        (intakeModel, intakeEffort, unattendedModel, unattendedEffort) = ("", "", "", "")
+    }
 
     /// A model and its effort are one choice: following the default clears the effort, and a model takes its own default
     /// effort when the saved one is not among its levels.
     func setIntakeModel(_ selected: String) {
+        guard areModelSettingsLoaded else { return }
         intakeModel = selected
         intakeEffort = effort(intakeEffort, for: selected)
+        saveModel(.intake)
     }
 
     func setUnattendedModel(_ selected: String) {
+        guard areModelSettingsLoaded else { return }
         unattendedModel = selected
         unattendedEffort = effort(unattendedEffort, for: selected)
+        saveModel(.unattended)
+    }
+
+    func setIntakeEffort(_ effort: String) {
+        guard areModelSettingsLoaded else { return }
+        intakeEffort = effort
+        saveModel(.intake)
+    }
+
+    func setUnattendedEffort(_ effort: String) {
+        guard areModelSettingsLoaded else { return }
+        unattendedEffort = effort
+        saveModel(.unattended)
+    }
+
+    private func saveModel(_ use: AgentRecord.ModelUse) {
+        guard let agentID else { return }
+        modelSettingsRevision += 1
+        pendingModelSaves += 1
+        let generation = agentGeneration
+        let (model, effort) = switch use {
+        case .intake: (intakeModel, intakeEffort)
+        case .unattended: (unattendedModel, unattendedEffort)
+        }
+        Task {
+            defer { if generation == agentGeneration { pendingModelSaves -= 1 } }
+            do {
+                try await saveAgentModel(agentID, use, model, effort)
+            } catch {
+                guard generation == agentGeneration else { return }
+                self.error = error.localizedDescription
+            }
+        }
+    }
+
+    /// A periodic read must not replace a choice edited while it was awaiting the database.
+    func refreshModelSettings() async throws {
+        guard let agentID, pendingModelSaves == 0 else { return }
+        let generation = agentGeneration
+        let revision = modelSettingsRevision
+        let agent = try await loadAgent(agentID)
+        guard generation == agentGeneration, revision == modelSettingsRevision else { return }
+        (intakeModel, intakeEffort) = (agent.intakeModel ?? "", agent.intakeEffort ?? "")
+        (unattendedModel, unattendedEffort) = (agent.unattendedModel ?? "", agent.unattendedEffort ?? "")
+        areModelSettingsLoaded = true
     }
 
     private func effort(_ current: String, for selected: String) -> String {
@@ -108,41 +179,35 @@ final class DahliaBotPanelModel {
     }
 
     func saveSoul() async {
-        guard let text = soulDraft else { return }
+        guard let text = soulDraft, let agentID else { return }
+        let generation = agentGeneration
         do {
-            try await PiChatService.shared.saveBotSoul(text)
+            try await saveSoulFile(agentID, text)
+            guard generation == agentGeneration else { return }
             soul = text
             soulDraft = nil
-        } catch { self.error = error.localizedDescription }
+        } catch {
+            guard generation == agentGeneration else { return }
+            self.error = error.localizedDescription
+        }
     }
 
     func showSoulInFinder() async {
-        guard let url = try? await PiChatService.shared.botSoulURL() else { return }
+        guard let agentID, let url = try? await PiChatService.shared.botSoulURL(agentID) else { return }
         NSWorkspace.shared.activateFileViewerSelecting([url])
-    }
-
-    /// Starts the conversation over; returns the new thread to open.
-    func reset() async -> String? {
-        guard !isBusy else { return nil }
-        isBusy = true
-        defer { isBusy = false }
-        do {
-            return try await PiChatService.shared.resetBotThread()
-        } catch {
-            self.error = error.localizedDescription
-            return nil
-        }
     }
 
     func loadMoreFinishedTasks() async {
         guard !isLoadingFinishedTasks, !finishedTasks.isEmpty else { return }
+        let generation = agentGeneration
         isLoadingFinishedTasks = true
-        defer { isLoadingFinishedTasks = false }
+        defer { if generation == agentGeneration { isLoadingFinishedTasks = false } }
         let previousLimit = finishedTaskLimit
         finishedTaskLimit = max(finishedTaskLimit, finishedTasks.count) + Self.taskPage
         do {
             try await refreshTasks()
         } catch {
+            guard generation == agentGeneration else { return }
             finishedTaskLimit = previousLimit
             self.error = error.localizedDescription
         }
@@ -150,12 +215,13 @@ final class DahliaBotPanelModel {
 
     /// Every request reads the entire visible range, so newer refreshes preserve pending pagination and saved changes.
     func refreshTasks() async throws {
+        guard let agentID else { return }
         taskGeneration += 1
         let generation = taskGeneration
         let limit = max(finishedTaskLimit, finishedTasks.count)
         let tasks: TaskPage
         do {
-            tasks = try await loadTasks(limit)
+            tasks = try await loadTasks(agentID, limit)
         } catch {
             guard generation == taskGeneration else { return }
             throw error
@@ -168,7 +234,9 @@ final class DahliaBotPanelModel {
 
     /// Answers the revision on screen; when the Item changed meanwhile, nothing is applied and the list reloads.
     func answer(_ item: AgentItemRecord, with text: String) async {
+        let generation = agentGeneration
         await perform { inbox in _ = try inbox.answer(itemID: item.id, revision: item.revision, answer: text) }
+        guard generation == agentGeneration else { return }
         answers[item.id] = nil
     }
 
@@ -182,19 +250,36 @@ final class DahliaBotPanelModel {
     }
 
     func refresh() async {
+        guard let agentID else { return }
+        let generation = agentGeneration
         do {
-            let loaded = try await PiChatService.shared.loadAlwaysOnSettings()
+            try await refreshModelSettings()
+            guard generation == agentGeneration else { return }
+            let loaded = try await PiChatService.shared.loadAlwaysOnSettings(agentID)
+            let inbox = try await PiChatService.shared.loadBotInbox(agentID)
+            // The window may have moved to another agent while this one loaded.
+            guard generation == agentGeneration else { return }
             (sources, events, paused) = loaded
-            (items, taskThreads) = try await PiChatService.shared.loadBotInbox()
+            (items, taskThreads) = inbox
             try await refreshTasks()
-            if soulDraft == nil { soul = try await PiChatService.shared.loadBotSoul() }
-            models = await (try? PiRuntimeService.shared.models(forceRefresh: false))?.filter { !$0.hidden } ?? []
+            guard generation == agentGeneration else { return }
+            if soulDraft == nil {
+                let soul = try await PiChatService.shared.loadBotSoul(agentID)
+                guard generation == agentGeneration else { return }
+                self.soul = soul
+            }
+            let models = await (try? PiRuntimeService.shared.models(forceRefresh: false))?.filter { !$0.hidden } ?? []
+            guard generation == agentGeneration else { return }
+            self.models = models
             // Only servers with a sign-in reach mcp.json, so only they can be read.
             let settings = AgentMCPSettings.load()
             servers = Self.sourceServers(in: settings)
             services = Dictionary(settings.servers.map { ($0.name, $0.service) }) { first, _ in first }
             connections = Dictionary(uniqueKeysWithValues: servers.compactMap { name in settings.connectionID(for: name).map { (name, $0) } })
-        } catch { self.error = error.localizedDescription }
+        } catch {
+            guard generation == agentGeneration else { return }
+            self.error = error.localizedDescription
+        }
     }
 
     static func sourceServers(in settings: AgentMCPSettings) -> [String] {
@@ -262,7 +347,8 @@ final class DahliaBotPanelModel {
     }
 
     func saveDraft() async {
-        guard let draft else { return }
+        guard let draft, let agentID else { return }
+        let generation = agentGeneration
         let isCalendar = draft.kind == "calendar"
         let name = draft.name.trimmingCharacters(in: .whitespacesAndNewlines).nilIfBlank
             ?? (isCalendar ? L10n.agentCalendarSource : displayName(draft.server))
@@ -279,7 +365,7 @@ final class DahliaBotPanelModel {
             return
         }
         var source = AgentSourceRecord(
-            id: existing?.id ?? UUID.v7().uuidString, name: name, server: draft.server,
+            id: existing?.id ?? UUID.v7().uuidString, agentID: agentID, name: name, server: draft.server,
             instructions: instructions, intervalMinutes: draft.intervalMinutes, allowedSenders: String(
                 decoding: (try? JSONEncoder().encode(senders)) ?? Data("[]".utf8),
                 as: UTF8.self
@@ -297,6 +383,7 @@ final class DahliaBotPanelModel {
         }
         let saved = source
         await perform { inbox in try inbox.saveSource(saved) }
+        guard generation == agentGeneration else { return }
         if error == nil { self.draft = nil }
     }
 
@@ -319,17 +406,25 @@ final class DahliaBotPanelModel {
 
     func deleteDraft() async {
         guard let id = draft?.id else { return }
+        let generation = agentGeneration
         await perform { inbox in try inbox.deleteSource(id: id) }
+        guard generation == agentGeneration else { return }
         if error == nil { draft = nil }
     }
 
     private func perform(_ change: @escaping @Sendable (AgentInboxService) throws -> Void) async {
+        guard let agentID else { return }
+        let generation = agentGeneration
         isBusy = true
-        defer { isBusy = false }
+        defer { if generation == agentGeneration { isBusy = false } }
         do {
-            try await PiChatService.shared.updateAlwaysOnSettings(change: change)
+            try await PiChatService.shared.updateAlwaysOnSettings(agentID, change: change)
+            guard generation == agentGeneration else { return }
             error = nil
-        } catch { self.error = error.localizedDescription }
+        } catch {
+            guard generation == agentGeneration else { return }
+            self.error = error.localizedDescription
+        }
         await refresh()
     }
 }

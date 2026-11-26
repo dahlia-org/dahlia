@@ -10,9 +10,12 @@
         private let now = Date(timeIntervalSince1970: 1_800_000_000)
 
         private func service() throws -> (AgentInboxService, String) {
-            let service = try AgentInboxService(dbQueue: AppDatabaseManager(path: ":memory:").dbQueue)
+            let queue = try AppDatabaseManager(path: ":memory:").dbQueue
+            let agent = try queue.write { try AgentRecord.insertForTest(in: $0) }
+            let service = AgentInboxService(dbQueue: queue, agentID: agent.id)
             var source = AgentSourceRecord(
                 id: UUID.v7().uuidString,
+                agentID: agent.id,
                 name: "Calendar",
                 server: "calendar",
                 instructions: "",

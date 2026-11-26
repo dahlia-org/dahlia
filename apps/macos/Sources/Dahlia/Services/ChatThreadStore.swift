@@ -33,14 +33,14 @@ struct ChatThreadStore: ChatItemStore, Sendable {
         }
     }
 
-    /// `hiding` (Dahlia Bot's thread, which opens from the Bots section) is left out.
+    /// SQL for the agents' current threads, which open from the Agents section and stay out of the history.
+    static let agentThreads = "(SELECT threadID FROM agents WHERE threadID IS NOT NULL)"
+
     /// The active threads, or with `settled` the ones the user settled; both newest first.
-    func listThreads(
-        accountID: String, cursor: String?, limit: Int = 25, hiding: String? = nil, settled: Bool = false
-    ) throws -> CodexChatThreadPage {
+    func listThreads(accountID: String, cursor: String?, limit: Int = 25, settled: Bool = false) throws -> CodexChatThreadPage {
         try dbQueue.read { db in
             var condition = settled ? "AND settledAt IS NOT NULL" : "AND settledAt IS NULL"
-            var arguments: StatementArguments = [accountID, hiding]
+            var arguments: StatementArguments = [accountID]
             if let cursor, let data = Data(base64Encoded: cursor),
                let values = try? JSONDecoder().decode([String].self, from: data), values.count == 2,
                let time = Double(values[0]) {
@@ -50,7 +50,7 @@ struct ChatThreadStore: ChatItemStore, Sendable {
             }
             arguments += [limit + 1]
             let rows = try ChatThreadRecord.fetchAll(db, sql: """
-            SELECT * FROM chat_threads WHERE accountID = ? AND id IS NOT ? \(condition)
+            SELECT * FROM chat_threads WHERE accountID = ? AND id NOT IN \(Self.agentThreads) \(condition)
             ORDER BY updatedAt DESC, id DESC LIMIT ?
             """, arguments: arguments)
             let visible = Array(rows.prefix(limit))
@@ -84,12 +84,12 @@ struct ChatThreadStore: ChatItemStore, Sendable {
     }
 
     /// How many top-level threads the sidebar's Chat section (active) and Settled section hold.
-    func threadCounts(accountID: String, hiding: String? = nil) throws -> (active: Int, settled: Int) {
+    func threadCounts(accountID: String) throws -> (active: Int, settled: Int) {
         try dbQueue.read {
             let row = try Row.fetchOne($0, sql: """
             SELECT COUNT(*) FILTER (WHERE settledAt IS NULL) AS active, COUNT(*) FILTER (WHERE settledAt IS NOT NULL) AS settled
-            FROM chat_threads WHERE accountID = ? AND id IS NOT ? AND parentThreadID IS NULL
-            """, arguments: [accountID, hiding])
+            FROM chat_threads WHERE accountID = ? AND id NOT IN \(Self.agentThreads) AND parentThreadID IS NULL
+            """, arguments: [accountID])
             return (row?["active"] ?? 0, row?["settled"] ?? 0)
         }
     }

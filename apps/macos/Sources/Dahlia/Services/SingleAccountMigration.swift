@@ -79,7 +79,7 @@ struct SingleAccountMigration {
     /// Copies the Databricks account's agent folder, then fills in what only the Local Account's had: its
     /// subscription sign-ins, its device ID, and sessions and skills the Databricks account lacked.
     private func copyAgentFiles(from source: UUID?) throws {
-        let target = locator.sharedAgentURL
+        let target = locator.piDirectoryURL
         let sources = ([source.map { $0.uuidString.lowercased() }].compactMap(\.self) + [Self.accountKey])
             .map { locator.legacyAgentURL(accountKey: $0) }
             .filter { FileManager.default.fileExists(atPath: $0.path) }
@@ -188,7 +188,7 @@ struct SingleAccountMigration {
                 let renamed = Self.rename(value, from: legacy, to: host, wholeIDs: key.hasPrefix("agentMCPs."))
                 if let renamed { defaults.set(renamed, forKey: key) }
             }
-            let saved = locator.sharedAgentURL.appending(path: "gateway-models.json")
+            let saved = locator.piDirectoryURL.appending(path: "gateway-models.json")
             if let data = FileManager.default.contents(atPath: saved.path),
                case var .object(services) = try JSONDecoder().decode(JSONValue.self, from: data),
                let listed = services.removeValue(forKey: legacy) {

@@ -25,6 +25,7 @@ suites=(
     SummaryHistoryTests                   # paged summary history and stale version selection
     CodexChatCoordinatorTests              # stale sidebar refresh and settled pagination
     DahliaBotPanelModelTests               # Task pages reject overlapping and stale refresh results
+    preparingAnAgentHomeDoesNotHoldTheSharedDatabaseWriter # home I/O never holds the durable SQLite writer
     ChatRunTests                         # bounded run subscriptions and history projections
     CodexChatSubscriptionTests           # dropped readers reattach or reload completed history
     CodexChatHistoryPagingTests           # bounded initial chat history and stale page cancellation

@@ -1,8 +1,8 @@
 import SwiftUI
 
-/// Super Agent's side panel, beside its thread. Its inbox (what waits for the user, its Tasks, the events intake recorded)
-/// comes first; its settings (event sources, `SOUL.md`, starting over) sit apart, behind the header's switch. Its model
-/// belongs to the window, which shows the event source editor over everything.
+/// An agent's side panel, beside its thread. Its inbox (what waits for the user, its Tasks, the events intake recorded)
+/// comes first; its settings (event sources, `SOUL.md`, its name and picture, deleting it) sit apart,
+/// behind the header's switch. Its model belongs to the window, which shows the editors over everything.
 struct DahliaBotPanelView: View {
     enum Tab: CaseIterable {
         case inbox, events, settings
@@ -25,8 +25,8 @@ struct DahliaBotPanelView: View {
     }
 
     let model: DahliaBotPanelModel
+    let agents: AgentsModel
     @State private var tab = Tab.inbox
-    @State private var isConfirmingReset = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -56,21 +56,11 @@ struct DahliaBotPanelView: View {
             }
             .formStyle(.grouped).toggleStyle(.switch).font(.dahliaBody).disabled(model.isBusy)
         }
-        .task {
+        .task(id: model.agentID) {
             while !Task.isCancelled {
                 await model.refresh()
                 try? await Task.sleep(for: .seconds(30))
             }
-        }
-        .confirmationDialog(L10n.agentBotReset, isPresented: $isConfirmingReset) {
-            Button(L10n.agentBotReset) {
-                Task {
-                    guard let thread = await model.reset() else { return }
-                    NotificationCenter.default.post(name: AgentLearningSettings.openThread, object: thread)
-                }
-            }
-        } message: {
-            Text(L10n.agentBotResetMessage)
         }
     }
 
@@ -136,22 +126,32 @@ struct DahliaBotPanelView: View {
             modelPicker(
                 L10n.agentBotIntakeModel, help: L10n.agentBotIntakeModelHelp, fallback: L10n.agentBotModelDefault,
                 selection: Binding(get: { model.intakeModel }, set: { model.setIntakeModel($0) }),
-                effort: Binding(get: { model.intakeEffort }, set: { model.intakeEffort = $0 })
+                effort: Binding(get: { model.intakeEffort }, set: { model.setIntakeEffort($0) })
             )
             modelPicker(
                 L10n.agentBotUnattendedModel, help: L10n.agentBotUnattendedModelHelp, fallback: L10n.agentBotModelConversation,
                 selection: Binding(get: { model.unattendedModel }, set: { model.setUnattendedModel($0) }),
-                effort: Binding(get: { model.unattendedEffort }, set: { model.unattendedEffort = $0 })
+                effort: Binding(get: { model.unattendedEffort }, set: { model.setUnattendedEffort($0) })
             )
         } header: {
             AgentSectionHeader(title: L10n.agentBotModels) { EmptyView() }
         }
+        .disabled(!model.areModelSettingsLoaded)
         soulSection
-        Section {
-            Text(L10n.agentBotResetMessage).foregroundStyle(.secondary)
-            Button(L10n.agentBotReset) { isConfirmingReset = true }
-        } header: {
-            AgentSectionHeader(title: L10n.agentBotConversation) { EmptyView() }
+        if let agent = agents.summaries.first(where: { $0.id == model.agentID })?.agent {
+            Section {
+                LabeledContent {
+                    Button(L10n.agentEdit) { agents.edit(agent) }
+                } label: {
+                    HStack(spacing: 8) {
+                        AgentAvatarView(avatar: agent.avatar, color: agent.color, size: DahliaTypography.size(offset: 14))
+                        Text(agent.name)
+                    }
+                }
+                Button(L10n.agentDelete, role: .destructive) { agents.pendingDeletion = agent }
+            } header: {
+                AgentSectionHeader(title: L10n.agentIdentity) { EmptyView() }
+            }
         }
     }
 

@@ -1,8 +1,8 @@
 import DahliaRuntimeSupport
 import Foundation
 
-/// The always-on agent's clock work: timers, routing, and reading one Source at a time with its own Pi process.
-/// Intake sees only that Source's read-only MCP tools and `event_record`. Super Agent's thread is in
+/// The agents' clock work: timers, routing, and reading one Source at a time, whichever agent owns it, with its own Pi
+/// process. Intake sees only that Source's read-only MCP tools and `event_record`. The agents' threads are in
 /// `PiChatService+DahliaBot`.
 extension PiChatService {
     struct IntakePages {
@@ -59,9 +59,8 @@ extension PiChatService {
         if let source {
             guard !source.connectionID.isEmpty,
                   mcpSettings().connectionID(for: source.server) == source.connectionID,
-                  try inbox.sources().contains(where: {
-                      $0.id == source.id && $0.enabled && $0.revision == source.revision
-                  }) else { throw CancellationError() }
+                  try inbox.source(source.id).map({ $0.enabled && $0.revision == source.revision }) == true
+            else { throw CancellationError() }
         }
     }
 
@@ -78,18 +77,19 @@ extension PiChatService {
     same other request arguments, including empty final pages, then stop. It is fine to record nothing after reading.
     """
 
-    func inboxService() throws -> AgentInboxService {
-        try AgentInboxService(dbQueue: history().dbQueue)
+    /// One agent's inbox; with none, only what names its rows by ID and the app's housekeeping.
+    func inboxService(_ agentID: String = "") throws -> AgentInboxService {
+        try AgentInboxService(dbQueue: history().dbQueue, agentID: agentID)
     }
 
-    func loadAlwaysOnSettings() throws -> ([AgentSourceRecord], [AgentEventRecord], Bool) {
-        let inbox = try inboxService()
+    func loadAlwaysOnSettings(_ agentID: String) throws -> ([AgentSourceRecord], [AgentEventRecord], Bool) {
+        let inbox = try inboxService(agentID)
         return try (inbox.sources(), inbox.recentEvents(), inbox.isPaused())
     }
 
-    /// The open Items, and the Thread of each Task they belong to, so the inbox can open a Task's work.
-    func loadBotInbox() throws -> ([AgentItemRecord], [String: String]) {
-        let inbox = try inboxService()
+    /// The agent's open Items, and the Thread of each Task they belong to, so the inbox can open a Task's work.
+    func loadBotInbox(_ agentID: String) throws -> ([AgentItemRecord], [String: String]) {
+        let inbox = try inboxService(agentID)
         let items = try inbox.items()
         let threads = try Dictionary(uniqueKeysWithValues: Set(items.compactMap(\.taskID)).compactMap { id in
             try inbox.task(id)?.threadID.map { (id, $0) }
@@ -97,31 +97,33 @@ extension PiChatService {
         return (items, threads)
     }
 
-    func updateAlwaysOnSettings(change: @Sendable (AgentInboxService) throws -> Void) throws {
-        try change(inboxService())
+    func updateAlwaysOnSettings(_ agentID: String, change: @Sendable (AgentInboxService) throws -> Void) throws {
+        try change(inboxService(agentID))
     }
 
-    func loadBotTasks(limit: Int) throws -> (active: [AgentTaskRecord], finished: [AgentTaskRecord]) {
-        try inboxService().tasks(limit: limit)
+    func loadBotTasks(_ agentID: String, limit: Int) throws -> (active: [AgentTaskRecord], finished: [AgentTaskRecord]) {
+        try inboxService(agentID).tasks(limit: limit)
     }
 
     /// The whole `SOUL.md`, for the side panel to show and edit.
-    func loadBotSoul() throws -> String {
-        try DahliaBotHome.soulFile(botHome())
+    func loadBotSoul(_ agentID: String) throws -> String {
+        try AgentHome.soulFile(botHome(agent(agentID)))
     }
 
-    func saveBotSoul(_ text: String) throws {
-        try DahliaBotHome.saveSoul(text, home: botHome())
+    func saveBotSoul(_ agentID: String, _ text: String) throws {
+        try AgentHome.saveSoul(text, home: botHome(agent(agentID)))
     }
 
-    func botSoulURL() throws -> URL {
-        try botHome().appending(path: "SOUL.md")
+    func botSoulURL(_ agentID: String) throws -> URL {
+        try botHome(agent(agentID)).appending(path: "SOUL.md")
     }
 
     /// Housekeeping chore for the app account. Recording stops new work and closes an intake in progress.
     func drainAlwaysOn(now: Date = .now) async {
-        // Puts the bot's home back when its files were changed outside Dahlia.
-        _ = botSoul()
+        // Puts each agent's home back when its files were changed outside Dahlia.
+        for agent in await (try? history().dbQueue.read { try AgentRecord.fetchAll($0) }) ?? [] {
+            _ = botSoul(agent)
+        }
         do {
             try await runtime.requireConfigured()
             let account = AppAccount.key
@@ -129,17 +131,15 @@ extension PiChatService {
             try inbox.cleanEvents(now: now)
             let paused = try inbox.isPaused()
             let stop = paused || AgentBackgroundActivity.isRecording || !runtime.isConfigured
-            let sources = try inbox.sources()
-            if let activeIntake, activeIntake.account != account || stop
-                || !sources.contains(where: {
-                    $0.id == activeIntake.sourceID && $0.enabled && $0.revision == activeIntake.revision
-                        && mcpSettings().connectionID(for: $0.server) == $0.connectionID
-                }) {
+            if let activeIntake, try activeIntake.account != account || stop
+                || inbox.source(activeIntake.sourceID).map({
+                    $0.enabled && $0.revision == activeIntake.revision && mcpSettings().connectionID(for: $0.server) == $0.connectionID
+                }) != true {
                 await runtime.close(activeIntake.connection)
             }
-            await closeBotRuns(account: account, stop: stop)
+            await closeBotRuns(stop: stop)
             guard !stop else { return }
-            if sources.contains(where: { $0.kind == "calendar" }) {
+            if try inbox.hasCalendarSource() {
                 let snapshot = await calendarSnapshot()
                 try validateBotActivity()
                 try inbox.reconcileCalendar(snapshot, now: now)
@@ -176,19 +176,18 @@ extension PiChatService {
             let initial = run
             try await history().dbQueue.write { try initial.insert($0) }
             try validateBotActivity(source: source)
+            let agent = try agent(source.agentID)
             let servers = mcpSettings().piServers
             guard servers[source.server] != nil else { throw AgentInboxService.Failure(message: "MCP server \(source.server) is not registered.") }
             try PiProviderConfiguration.writeMCPServers(servers, agentURL: agentLocator.agentURL())
             let connection = try await runtime.connect(
                 .init(
-                    // Intake is part of the bot's own work and shows in no history, so it runs in the bot's home.
-                    mode: .chat, cwd: botHome(),
+                    // Intake is its agent's own work and shows in no history, so it runs in that agent's home.
+                    mode: .chat, cwd: botHome(agent),
                     arguments: [
                         "--no-session", "-e", "builtin:mcp", "--tools", "event_record,mcp__\(source.server)__*",
                         "--system-prompt", Self.intakeSystemPrompt,
-                    ] + Self.intakeModelArguments(AgentBotSettings.choice(
-                        model: AgentBotSettings.intakeModelKey(for: AppAccount.key), effort: AgentBotSettings.intakeEffortKey(for: AppAccount.key)
-                    )),
+                    ] + Self.intakeModelArguments(agent.intakeChoice),
                     // The only server intake may call; the extension blocks the rest and every tool that is not read-only.
                     environment: ["DAHLIA_PI_MEMORY_ENABLED": "0", "DAHLIA_PI_MCP_SERVERS": HermesLearning.json([source.server])],
                     profile: .intake
