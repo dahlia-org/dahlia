@@ -9,15 +9,21 @@ final class PiPackageSettingsModel {
     private(set) var isAutoReviewInstalled = false
     private(set) var isWebAccessInstalled = false
     private(set) var isBusy = false
+    private(set) var changeSucceeded = false
     /// The plugin an install or removal is running for.
     private(set) var changingSource: String?
     private(set) var errorMessage: String?
     private(set) var errorDetails: String?
     private(set) var didChange = false
     private let service: PiPackageService
+    private let changePackage: @Sendable (String, Bool) async throws -> Void
 
-    init(service: PiPackageService = .shared) {
+    init(
+        service: PiPackageService = .shared,
+        changePackage: (@Sendable (String, Bool) async throws -> Void)? = nil
+    ) {
         self.service = service
+        self.changePackage = changePackage ?? { try await service.change($0, installing: $1) }
     }
 
     var canInstall: Bool { !isBusy && (try? PiPackageService.source(source)) != nil }
@@ -28,7 +34,7 @@ final class PiPackageSettingsModel {
             isWebAccessInstalled = await service.isWebAccessInstalled()
             packages = try await service.packages()
         } catch {
-            errorMessage = error.localizedDescription
+            if errorMessage == nil { errorMessage = error.localizedDescription }
         }
     }
 
@@ -51,6 +57,7 @@ final class PiPackageSettingsModel {
     private func change(_ source: String, installing: Bool) {
         guard !isBusy else { return }
         isBusy = true
+        changeSucceeded = false
         changingSource = source
         errorMessage = nil
         errorDetails = nil
@@ -61,7 +68,8 @@ final class PiPackageSettingsModel {
                 changingSource = nil
             }
             do {
-                try await service.change(source, installing: installing)
+                try await changePackage(source, installing)
+                changeSucceeded = true
                 if installing, source == self.source { self.source = "" }
                 didChange = true
                 NotificationCenter.default.post(name: PiPackageService.packagesDidChange, object: nil)

@@ -147,61 +147,73 @@ private struct AgentPackageInstallView: View {
     @FocusState private var isFocused: Bool
 
     var body: some View {
-        ZStack {
-            Button(action: onClose) {
-                Color.black.opacity(0.16).ignoresSafeArea()
-            }
-            .buttonStyle(.plain)
-            .focusable(false)
-            .accessibilityHidden(true)
-
-            VStack(alignment: .leading, spacing: 16) {
-                Text(L10n.agentPackageAdd)
-                    .font(.dahliaTitle2)
-                    .accessibilityAddTraits(.isHeader)
-                TextField(L10n.agentPackageSource, text: $model.source, prompt: Text("npm:package / https://github.com/owner/repo"))
-                    .textFieldStyle(.roundedBorder)
-                    .focused($isFocused)
-                    .disabled(model.isBusy)
-                    .onSubmit(install)
-                Text(L10n.agentPackageHelp).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-                Link(destination: URL(string: "https://pi.dev/packages")!) {
-                    Label(L10n.agentPackageCatalog, systemImage: "arrow.up.right.square")
+        GeometryReader { geometry in
+            ZStack {
+                Button(action: onClose) {
+                    Color.black.opacity(0.16).ignoresSafeArea()
                 }
-                if isInstalling, let message = model.errorMessage {
-                    Label(message, systemImage: "exclamationmark.triangle.fill")
-                        .foregroundStyle(.orange)
-                        .textSelection(.enabled)
-                    if let details = model.errorDetails {
-                        DisclosureGroup(L10n.agentPackageErrorDetails) {
-                            Text(details)
-                                .font(.dahliaSecondary)
-                                .foregroundStyle(.secondary)
-                                .textSelection(.enabled)
+                .buttonStyle(.plain)
+                .focusable(false)
+                .accessibilityHidden(true)
+
+                VStack(alignment: .leading, spacing: 16) {
+                    Text(L10n.agentPackageAdd)
+                        .font(.dahliaTitle2)
+                        .accessibilityAddTraits(.isHeader)
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 16) {
+                            TextField(L10n.agentPackageSource, text: $model.source, prompt: Text("npm:package / https://github.com/owner/repo"))
+                                .textFieldStyle(.roundedBorder)
+                                .focused($isFocused)
+                                .disabled(model.isBusy)
+                                .onSubmit(install)
+                            Text(L10n.agentPackageHelp).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                            Link(destination: URL(string: "https://pi.dev/packages")!) {
+                                Label(L10n.agentPackageCatalog, systemImage: "arrow.up.right.square")
+                            }
+                            if isInstalling, let message = model.errorMessage {
+                                Label(message, systemImage: "exclamationmark.triangle.fill")
+                                    .foregroundStyle(.orange)
+                                    .textSelection(.enabled)
+                                if let details = model.errorDetails {
+                                    DisclosureGroup(L10n.agentPackageErrorDetails) {
+                                        Text(details)
+                                            .font(.dahliaSecondary)
+                                            .foregroundStyle(.secondary)
+                                            .textSelection(.enabled)
+                                            .fixedSize(horizontal: false, vertical: true)
+                                            .frame(maxWidth: .infinity, alignment: .leading)
+                                    }
+                                }
+                            }
                         }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    .scrollBounceBehavior(.basedOnSize)
+                    HStack {
+                        if model.isBusy { ProgressView().controlSize(.small) }
+                        Spacer()
+                        Button(L10n.cancel, action: onClose)
+                            .buttonStyle(.dahlia())
+                            .keyboardShortcut(.cancelAction)
+                        Button(L10n.agentPackageInstall, action: install)
+                            .buttonStyle(.dahlia(.primary))
+                            .keyboardShortcut(.defaultAction)
+                            .disabled(!model.canInstall)
                     }
                 }
-                HStack {
-                    if model.isBusy { ProgressView().controlSize(.small) }
-                    Spacer()
-                    Button(L10n.cancel, action: onClose)
-                        .buttonStyle(.dahlia())
-                        .keyboardShortcut(.cancelAction)
-                    Button(L10n.agentPackageInstall, action: install)
-                        .buttonStyle(.dahlia(.primary))
-                        .keyboardShortcut(.defaultAction)
-                        .disabled(!model.canInstall)
-                }
+                .padding(24)
+                .frame(width: 480)
+                .frame(maxHeight: min(560, max(0, geometry.size.height - 48)))
+                .dahliaModalSurface()
             }
-            .padding(24)
-            .frame(width: 480)
-            .dahliaModalSurface()
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .font(.dahliaBody)
         .transition(.identity)
         .onAppear { isFocused = true }
         .onChange(of: model.isBusy) { _, isBusy in
-            if !isBusy, isInstalling, model.errorMessage == nil { onClose() }
+            if !isBusy, isInstalling, model.changeSucceeded { onClose() }
         }
     }
 
