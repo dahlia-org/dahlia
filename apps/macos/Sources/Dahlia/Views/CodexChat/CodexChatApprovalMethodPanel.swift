@@ -4,7 +4,6 @@ import SwiftUI
 struct CodexChatApprovalMethodPanel: View {
     @Bindable var session: CodexChatSessionModel
     let selectedMethod: CodexChatApprovalMethod
-    let isAutoReviewInstalled: Bool
     let width: CGFloat
     let onDismiss: () -> Void
 
@@ -17,12 +16,9 @@ struct CodexChatApprovalMethodPanel: View {
                 .padding(.bottom, 2)
 
             ForEach(CodexChatApprovalMethod.allCases) { method in
-                let isEnabled = method != .autoReview || isAutoReviewInstalled
                 CodexChatApprovalMethodRow(
                     method: method,
-                    description: isEnabled ? method.description : L10n.chatApprovalAutoReviewUnavailable,
                     isSelected: method == selectedMethod,
-                    isEnabled: isEnabled,
                     action: { select(method) }
                 )
             }

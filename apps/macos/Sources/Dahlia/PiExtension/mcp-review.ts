@@ -31,10 +31,10 @@ export function reviewerEffort(model: any): "low" | "high" {
 export async function reviewMCP(ctx: any, toolName: string, input: unknown, model = "", configuration?: TriageConfiguration | null) {
   const context = { ...ctx, sessionManager: { getBranch: () => reviewBranch(ctx.sessionManager.getBranch()) } };
   try {
-    // The pi-auto-review plugin the user installs; Dahlia imports only `review`, and Pi never loads its extension.
+    // The bundled pi-auto-review; Dahlia imports only `review`, and Pi never loads its extension.
     const { review, configured } = await import(process.env.DAHLIA_PI_AUTO_REVIEW ?? "");
     // Earlier versions ignore options.settings; never review with a model or classifier the host did not choose.
-    if (typeof configured !== "function") throw new Error("Install the recommended pi-auto-review version.");
+    if (typeof configured !== "function") throw new Error("The bundled pi-auto-review does not support host settings.");
     let triage: Record<string, unknown> | undefined;
     if (configuration?.model === "system.ai.openjev-qwen35-4b") {
       try {

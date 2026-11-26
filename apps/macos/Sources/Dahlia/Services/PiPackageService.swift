@@ -17,16 +17,6 @@ actor PiPackageService {
         try Self.packageSources(in: locator.agentURL().appending(path: "settings.json"))
     }
 
-    /// The chat's Auto review needs this plugin; its files are what the extension imports.
-    func isAutoReviewInstalled() -> Bool {
-        guard let agentURL = try? locator.agentURL() else { return false }
-        return Self.isAutoReviewInstalled(agentURL: agentURL)
-    }
-
-    nonisolated static func isAutoReviewInstalled(agentURL: URL) -> Bool {
-        FileManager.default.fileExists(atPath: AgentAutoReviewSettings.entryURL(agentURL: agentURL).path)
-    }
-
     func isWebAccessInstalled() -> Bool {
         guard let agentURL = try? locator.agentURL() else { return false }
         return FileManager.default.fileExists(atPath: AgentWebAccessSettings.entryURL(agentURL: agentURL).path)

@@ -3259,10 +3259,6 @@ enum L10n { // swiftlint:disable:this type_body_length
         localized: "Ask only about potentially unsafe actions.",
         bundle: bundle
     ) }
-    static var chatApprovalAutoReviewUnavailable: String { String(
-        localized: "chat.approval.autoReview.unavailable",
-        bundle: bundle
-    ) }
 
     static var chatApprovalFullAccess: String { String(localized: "Skip all approvals", bundle: bundle) }
     static var chatApprovalFullAccessDescription: String { String(

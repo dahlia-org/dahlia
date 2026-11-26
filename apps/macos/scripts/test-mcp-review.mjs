@@ -3,12 +3,12 @@ import { test } from "node:test";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { reviewBranch, reviewMCP, reviewerEffort } from "../Sources/Dahlia/PiExtension/mcp-review.ts";
 
-// Usage: DAHLIA_PI_AUTO_REVIEW=/path/to/pi-auto-review/index.ts node --test apps/macos/scripts/test-mcp-review.mjs
-// Use a checkout of the commit pinned in AgentAutoReviewSettings.packageSource.
-const reviewer = process.env.DAHLIA_PI_AUTO_REVIEW;
-assert.ok(reviewer, "Set DAHLIA_PI_AUTO_REVIEW to pi-auto-review's index.ts");
+// Usage: node --test apps/macos/scripts/test-mcp-review.mjs (reviews with the bundled pi-auto-review)
+const reviewer = fileURLToPath(new URL("../Sources/Dahlia/PiExtension/pi-auto-review/index.ts", import.meta.url));
+process.env.DAHLIA_PI_AUTO_REVIEW = reviewer;
 const agent = mkdtempSync(join(tmpdir(), "dahlia-review-test-"));
 process.env.PI_CODING_AGENT_DIR = agent;
 delete process.env.PI_AUTO_REVIEW_MODEL;
@@ -45,7 +45,7 @@ test("meeting context and live transcripts cannot authorize a tool call", () => 
   assert.equal(branch.filter((e) => e.message.role === "toolResult").length, 2);
 });
 
-test("without the plugin, a review fails closed to manual approval", async () => {
+test("a reviewer that cannot load fails closed to manual approval", async () => {
   process.env.DAHLIA_PI_AUTO_REVIEW = join(agent, "missing/index.ts");
   try {
     const verdict = await reviewMCP({

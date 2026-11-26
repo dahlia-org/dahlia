@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Check Dahlia's Pi extension against an installed Pi, a loopback model gateway, and loopback MCPs.
 
-Usage: DAHLIA_PI_AUTO_REVIEW=/path/to/pi-auto-review/index.ts python3 apps/macos/scripts/test-pi-extension.py [--pi /path/to/pi]
-(default: pi on PATH; use a checkout of the commit pinned in AgentAutoReviewSettings.packageSource)
+Usage: python3 apps/macos/scripts/test-pi-extension.py [--pi /path/to/pi]
+(default: pi on PATH; uses the bundled pi-auto-review)
 Uses an isolated agent directory and synthetic tokens; nothing leaves 127.0.0.1.
 Optional: --web-access-package /path/to/npm/node_modules/pi-web-access also checks the real MCP worker.
 """
@@ -742,7 +742,7 @@ def main():
     args = parser.parse_args()
     pi = args.pi
     web_access_package = args.web_access_package
-    assert Path(os.environ.get("DAHLIA_PI_AUTO_REVIEW", "")).is_file(), "Set DAHLIA_PI_AUTO_REVIEW to pi-auto-review's index.ts"
+    os.environ.setdefault("DAHLIA_PI_AUTO_REVIEW", str(ROOT / "apps/macos/Sources/Dahlia/PiExtension/pi-auto-review/index.ts"))
     if args.only_web_access:
         web_access_regression(pi, web_access_package)
         return
@@ -815,8 +815,6 @@ def main():
             names = options.pop("tool_names", CHAT_ARGUMENTS[-1])
             isolated = dict(environment, DAHLIA_PI_PROFILE=profile, DAHLIA_PI_MEMORY_ENABLED="1",
                             DAHLIA_PI_ALLOWED_TOOLS=json.dumps(["mcp__dahlia__get_meeting"]))
-            if options.pop("missing_reviewer", False):
-                isolated["DAHLIA_PI_AUTO_REVIEW"] = "/nonexistent/pi-auto-review/index.ts"
             web_access = options.pop("web_access", None)
             return run(pi, "chat", [*steps, {"text": "done"}], [*CHAT_ARGUMENTS[:-2], "--tools", names], isolated,
                        web_access=web_access, **options)
@@ -949,11 +947,6 @@ def main():
                                     {"text": json.dumps({"risk_level": "high", "user_authorization": "low", "outcome": "deny", "rationale": "Ask the user"})},
                                     approval_mode="autoReview", approval="accept")
         assert results == ["MCP_OK"] and any(method == "approval" for method, _ in bridge), (results, bridge)
-        # Without the pi-auto-review plugin, Auto review asks as Always ask does, with no review request.
-        requests, results, bridge, _ = chat({"tool": "mcp__dahlia__update_meeting"}, approval_mode="autoReview",
-                                            approval="decline", missing_reviewer=True)
-        assert "declined" in results[0] and len(requests) == 2, (results, requests)
-        assert any(method == "approval" for method, _ in bridge) and not any(method == "reviewModel" for method, _ in bridge), bridge
 
     # Every model API Dahlia configures for a bridged provider gets the account's token.
     # The Databricks templates' APIs, plus the Dahlia Server's (OpenAI Responses).

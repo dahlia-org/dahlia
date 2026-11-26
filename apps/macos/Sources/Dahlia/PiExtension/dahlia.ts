@@ -217,8 +217,7 @@ export default async function (pi: any) {
       const approvalMode = await bridge(ctx, "approvalMode", {});
       if (approvalMode === "fullAccess" && !confirmFullAccess) return;
       let reason: string | undefined = payload.reason;
-      // Without the pi-auto-review plugin, Auto review asks as Supervised does.
-      if (approvalMode === "autoReview" && existsSync(env.DAHLIA_PI_AUTO_REVIEW ?? "")) {
+      if (approvalMode === "autoReview") {
         const model = await bridge(ctx, "reviewModel", {});
         // Only the reviewer sees earlier denials; a classifier cannot approve a workaround in this run.
         const triage = blockedThisRun ? null : await bridge(ctx, "reviewTriage", {});

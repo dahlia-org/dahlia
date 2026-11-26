@@ -63,8 +63,7 @@ extension・context file・theme・project trust の自動読込を無効化し�
 
 「Dahlia AI」>「プラグイン」から npm source または Git URL を Pi の `install`・`remove` で管理し、同じアカウントの `settings.json` を一覧の正本にする。変更は次に開始するチャット process から適用する。
 パッケージ操作はアカウントの Pi 選択と環境変数を使い、`PI_CODING_AGENT_DIR` は Dahlia のアカウント directory に固定する。`~/.pi` や project の設定には追加しない。拡張コードは無効のままとし、インストール元は利用者が信頼できるものを指定する。
-プラグインは「コネクタ」と同じカードで一覧し、カードのスイッチでインストール・アンインストールする。おすすめの `pi-auto-review` は未インストールでもオフのカードとして一覧に表示し、ユーザーの操作でインストールする（2026-11-19 ユーザー承認）。インストール元は審査済みコミットに固定した Git URL（`AgentAutoReviewSettings.packageSource`）で、npm レジストリには依存しない。Pi の Git パッケージと同じく `npm` が PATH に必要。
-インストール後はそのカードの設定ボタンから、審査モデルとトリアージの設定をアプリ内モーダルで開く。
+プラグインは「コネクタ」と同じカードで一覧し、カードのスイッチでインストール・アンインストールする。Dahlia に同梱した `pi-auto-review` は、スイッチをオンに固定したカードとして先頭に表示し、オフにできない（2026-11-27 ユーザー承認）。そのカードの設定ボタンから、審査モデルとトリアージの設定をアプリ内モーダルで開く。以前のリリースでインストールした `pi-auto-review` の登録は一覧に出さず、使わない。
 おすすめの `pi-web-access` も同じくオフのカードとして表示する（2026-11-19 ユーザー依頼）。インストール元はバージョンを固定した npm source（`AgentWebAccessSettings.packageSource`）で、依存パッケージを npm レジストリから取得する。
 インストール済みなら、Dahlia は対話チャットにだけ upstream の standalone MCP worker（`<アカウントの pi>/npm/node_modules/pi-web-access/dist/mcp-cli.js`）を `dahlia_web_access` server として登録し、`mcp__dahlia_web_access__web_search`・`source_check`・`fetch_content`・`get_search_content` を利用可能にする。Pi 本体へプラグインの extension は読み込まず、予定実行とバックグラウンドレビューでは worker を登録しない。
 worker は専用の `web-access.sb` で実行し、子プロセスの作成は許可しない（GitHub clone・gh API・動画の外部 CLI などは使えない）。読み取りは OS・実行用コード・同じアカウントの npm package と `web-search.json`、書き込みはアカウント内の `web-access-runtime` に限る。チャットの作業フォルダ・追加のファイル許可は渡さず、ホストの CLI 設定・ブラウザの Cookie・Keychain は許可しない。環境は空から PATH・専用 HOME/TMPDIR・アカウントの agent directory だけを渡し、API キーはそのアカウントの設定ファイルから読む。worker の Node.js は Pi とは別に PATH から解決し、version manager の shim からも実際の interpreter を確認する（管理版 Pi も同じ経路）。Node.js がなければインストールを案内するエラーにする。worker は Pi の MCP lifecycle に従って停止・キャンセルされる。
@@ -268,12 +267,10 @@ MCP の tool は Dahlia がその chat に登録した server（Dahlia MCP と�
 それ以外はどの選択でも拒否する。Dahlia MCP の `get`・`query`・`list`・`search` と、gateway MCP の `readOnlyHint` が true の tool は確認・審査なし。
 MCP の読み取り結果も untrusted data として扱う。
 
-`pi-auto-review` は同梱せず、利用者が「プラグイン」からアカウントにインストールする（2026-11-19 ユーザー承認）。Pi は `--no-extensions` で起動するため
-その既定 extension は読み込まれず、Dahlia の MCP gate が Pi の clone 先（`<アカウントの pi>/git/github.com/mats16/pi-auto-review/index.ts`、`DAHLIA_PI_AUTO_REVIEW`）から
-公開された `review` 関数だけを import し、審査モデル・推論強度・トリアージを呼び出しごとの設定で渡す。clone 先はチャットのファイル道具から読み取り専用で、審査コードは書き換えられない。
-Auto review の利用可否は import 先のファイルの存在で判定する。旧版の API は設定を無視するため審査せず、手動確認へ戻す。カードのスイッチはインストール登録の有無を示し、ファイルが欠けた登録も削除できる。
-未インストールのアカウントでは、チャットの「AIにより確認する」を選べず（選択済みの thread は「常に確認する」と表示）、MCP gate も Auto review も「常に確認する」と同じ確認として扱う。
-インストール・アンインストールは起動済みのチャットでも次の MCP 変更操作から効く。既に読み込んだ旧版を置き換えた場合は、新しいチャットで固定版を読み直す。
+`pi-auto-review` は審査済みコミットの `index.ts` をアプリに同梱する（`PiExtension/pi-auto-review`、固定コミットは同じフォルダーの `UPSTREAM.md`。2026-11-27 ユーザー承認）。
+Pi は `--no-extensions` で起動するためその既定 extension は読み込まれず、Dahlia の MCP gate が同梱ファイル（`DAHLIA_PI_AUTO_REVIEW`）から
+公開された `review` 関数だけを import し、審査モデル・推論強度・トリアージを呼び出しごとの設定で渡す。同梱ファイルはアプリの bundle にあり、チャットから書き換えられない。
+import できない、または設定を受け取らない API の場合は審査せず、手動確認へ戻す。チャットの「AIにより確認する」はどのアカウントでもいつも選べる。
 審査モデルは「Dahlia AI」>「プラグイン」> pi-auto-review のカードの設定で指定し、`autoReviewModel.local` に保存する。
 空の選択（既定）は審査時点のチャットモデルを使う。変更は起動済みのチャットでも次の審査から効き、`PI_AUTO_REVIEW_MODEL` や Pi 側の `autoReview` 設定より優先する。
 reasoning effort は審査モデルの価格情報から自動設定する。Pi の100万トークン当たりの入力価格が2 USD以上、または出力価格が10 USD以上なら low、それ未満なら high。
@@ -293,7 +290,7 @@ Jev は upstream の32,000文字上限を維持し、それを超える予定操
 審査の期限・再試行・取消は upstream に従う。否認・失敗の理由を承認画面で表示する。
 
 承認方式は Dahlia が保持し、extension は MCP の変更操作ごとに bridge で問い合わせる（turn 中の変更も次の呼び出しから効く。不明なら「常に確認する」）。
-Pi の session file に承認方式を保存しない。全アカウントで、新しい thread も開き直した thread も「AIにより確認する（Auto review）」を初期選択する（pi-auto-review が未インストールなら「常に確認する」として扱う）。開いているチャットで明示的に選んだ承認方式は保持する。
+Pi の session file に承認方式を保存しない。全アカウントで、新しい thread も開き直した thread も「AIにより確認する（Auto review）」を初期選択する。開いているチャットで明示的に選んだ承認方式は保持する。
 承認対象の UTF-8 合計は command／file change／MCP 共通で、既存の process transport の受信保護上限と同じ4MiBまで保持する。
 MCP は server・tool・整形済み引数全文・reason を含めて検査する。4MiBを超えて表示を切り詰めた呼び出しは、承認方式によらず許可しない。
 AI 審査の入力容量とアプリの受信保護上限は分けて扱う（参考: [公開実装の入力予算](https://github.com/openai/codex/blob/ca21fe65d18a9b6326759fb4263c65dfbb645aa5/codex-rs/guardian-context/src/budget.rs)）。4MiB は Dahlia の保護上限である。

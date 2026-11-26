@@ -5,6 +5,8 @@ struct AgentMCPServiceCard<Actions: View>: View {
     let comment: String
     let icon: Image
     @Binding var isEnabled: Bool
+    /// Built-in features show their switch on and cannot be turned off.
+    var isLocked = false
     @ViewBuilder let actions: Actions
 
     var body: some View {
@@ -20,6 +22,7 @@ struct AgentMCPServiceCard<Actions: View>: View {
                     .toggleStyle(.dahliaSwitch)
                     .controlSize(.small)
                     .accessibilityLabel(name)
+                    .disabled(isLocked)
                     .fixedSize()
             }
             Text(comment)
