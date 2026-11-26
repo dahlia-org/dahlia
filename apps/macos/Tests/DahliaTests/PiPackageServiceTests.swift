@@ -52,6 +52,14 @@ import Foundation
         }
 
         @Test
+        func mcpElicitationIsBundled() throws {
+            let entry = try AgentMCPElicitationSettings.entryURL()
+            #expect(FileManager.default.fileExists(atPath: entry.path))
+            let package = try PiBundle.resourceURL(AgentMCPElicitationSettings.packageName)
+            #expect(FileManager.default.fileExists(atPath: package.appending(path: "package.json").path))
+        }
+
+        @Test
         func webAccessSettingsDefaultWebSearchOffAndKeepOtherSettings() throws {
             let agent = FileManager.default.temporaryDirectory.appending(path: "PiWebAccess-\(UUID())")
             try FileManager.default.createDirectory(at: agent, withIntermediateDirectories: true)

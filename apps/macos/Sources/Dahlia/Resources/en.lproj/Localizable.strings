@@ -1558,6 +1558,15 @@
 "settings.agents.packageBuiltIn" = "pi-auto-review is built into Dahlia and does not need to be installed.";
 "settings.agents.autoReview.package" = "AI reviews MCP actions that change data and asks only about potentially unsafe ones. Built into Dahlia and used by Ask with AI in chat.";
 "settings.agents.webAccess.package" = "Lets chat read web pages, PDFs, and GitHub. Turn on web search in its settings.";
+"settings.agents.piRegistry" = "npm registry";
+"settings.agents.piRegistry.help" = "The npm registry Dahlia-managed Pi installs and updates (pi update) from. Enter one only to use another, such as a company proxy. When empty, the default registry is used.";
+"settings.agents.piRegistry.default" = "Default registry";
+"settings.agents.piRegistry.settings" = "Set Registry";
+"settings.agents.piRegistry.invalid" = "Enter an npm registry URL that starts with https://.";
+"settings.agents.mcpElicitation.package" = "Lets MCP servers send you to a page to sign in or approve. You check the URL before it opens, and the call runs again when you finish.";
+"settings.agents.mcpElicitation.builtIn" = "Built into Dahlia and always on.";
+"chat.approval.confirmation.title" = "An MCP server needs your confirmation.";
+"chat.approval.continue" = "Continue";
 "settings.agents.webAccess.settings" = "Web access";
 "settings.agents.webAccess.webSearch" = "Enable web search";
 "settings.agents.webAccess.webSearch.help" = "Lets chat search the web with web_search and source_check. Search queries are sent to the search provider. Without an API key, Exa's keyless search is used. Changes apply to new chats.";
@@ -1650,8 +1659,7 @@
 "GitHub has limited requests from this network. Wait before trying again, or use another network." = "GitHub has limited requests from this network. Wait before trying again, or use another network.";
 "The server returned an unexpected response. Try again later." = "The server returned an unexpected response. Try again later.";
 "The Pi release information is invalid. Try again later." = "The Pi release information is invalid. Try again later.";
-"This Pi release has no macOS Apple Silicon download. Try again later." = "This Pi release has no macOS Apple Silicon download. Try again later.";
-"This Pi release has no SHA-256 checksum. Try again later." = "This Pi release has no SHA-256 checksum. Try again later.";
+"settings.agents.piPackageFailed" = "Pi's npm package could not be installed. Check your network and the npm registry setting.";
 "The downloaded file failed SHA-256 verification. Download it again; if this continues, check your network." = "The downloaded file failed SHA-256 verification. Download it again; if this continues, check your network.";
 "The downloaded archive could not be extracted. Check available disk space and try again." = "The downloaded archive could not be extracted. Check available disk space and try again.";
 "The extracted archive has no executable Pi. Try downloading it again." = "The extracted archive has no executable Pi. Try downloading it again.";

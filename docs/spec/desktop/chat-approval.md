@@ -22,6 +22,8 @@
 - 承認は今回だけの許可として返す。セッション単位・永続の許可は受け付けず、拒否と同じに扱う。
 - 拒否・停止は取り消しとする。チャット本文の「承認」は tool gate への応答の代用にならない。
 - 承認 UI の command・path・reason を log や Sentry に送らない（[Telemetry policy](../../telemetry.md)）。
+- Pi 拡張の `confirm`（`pi-mcp-elicitation` がページを開く前など）も承認カードで尋ね、題名と本文を表示する。合計 4096 文字を超える確認は承認不可にする。承認方式によらず利用者が答え、「続行」以外は「いいえ」として返す。
+- MCP elicitation の取り消しは Dahlia の確認 adapter が該当カードまで伝え、同じターンの他の確認を残す。Pi の汎用 `confirm` RPC は取り消し通知を持たないため、elicitation には使わない。
 
 ## 停止と未応答の承認
 

@@ -1022,6 +1022,29 @@ import os
             await connection.close()
         }
 
+        @Test
+        func extensionConfirmationsAskAsApprovalsAndAnswerWithConfirmed() async {
+            for (decision, confirmed) in [("accept", true), ("decline", false)] {
+                let transport = TestPiTransport()
+                let connection = PiRPCConnection(transport: transport) { method, payload in
+                    #expect(method == "approval")
+                    #expect(payload == .object([
+                        "kind": .string("confirmation"), "title": .string("Open example.com?"), "message": .string("https://example.com/a"),
+                    ]))
+                    return .string(decision)
+                }
+                await connection.start()
+                await transport.emit(.object([
+                    "type": .string("extension_ui_request"), "id": .string("c-1"), "method": .string("confirm"),
+                    "title": .string("Open example.com?"), "message": .string("https://example.com/a"),
+                ]))
+                let response = await transport.command("extension_ui_response")
+                #expect(response["id"]?.stringValue == "c-1")
+                #expect(response["confirmed"]?.boolValue == confirmed)
+                await connection.close()
+            }
+        }
+
         final class OpenedURLs: @unchecked Sendable {
             // Guarded by `lock`.
             private let lock = NSLock()

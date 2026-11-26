@@ -5,7 +5,7 @@ struct AgentMCPServiceCard<Actions: View>: View {
     let comment: String
     let icon: Image
     @Binding var isEnabled: Bool
-    /// Built-in features show their switch on and cannot be turned off.
+    /// Shown switched on and disabled: built in, with no way to turn it off.
     var isLocked = false
     @ViewBuilder let actions: Actions
 

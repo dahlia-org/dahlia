@@ -18,6 +18,8 @@ struct CodexChatApprovalDetails: View {
                     CodexChatFileApprovalDetails(request: request)
                 case .mcpToolCall:
                     CodexChatMCPApprovalDetails(request: request)
+                case .confirmation:
+                    EmptyView()
                 }
 
                 if request.reviewability != .ready {

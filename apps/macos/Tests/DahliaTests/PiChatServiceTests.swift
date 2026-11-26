@@ -12,7 +12,7 @@ import Synchronization
             try ChatThreadStore(dbQueue: AppDatabaseManager(path: ":memory:").dbQueue)
         }
 
-        private struct Fixture {
+        struct Fixture {
             let pi: TestPiRuntime
             let chat: PiChatService
             let chatTransport: TestPiTransport
@@ -20,7 +20,7 @@ import Synchronization
         }
 
         /// The chat process answers every command and runs `onPrompt` for user prompts.
-        private static func fixture(
+        static func fixture(
             customInstructions: @escaping @Sendable () -> String = { "" },
             commands: JSONValue? = nil,
             delaysCommands: Bool = false,
@@ -385,7 +385,9 @@ import Synchronization
             await fixture.chatTransport.emit(TestPiTransport.assistantEnd("Done"))
             await fixture.chatTransport.emit(TestPiTransport.settled())
             var replay: [CodexChatTurnEvent] = []
-            for try await event in attached.events { replay.append(event) }
+            for try await event in attached.events {
+                replay.append(event)
+            }
             #expect(replay.contains(.compactionStarted) == !alreadyCompacted)
             #expect(replay.contains(.compactionEnded(result)) == !alreadyCompacted)
             #expect(replay.last?.terminalCompletion == true)
@@ -974,7 +976,7 @@ import Synchronization
             #expect(launch.arguments.contains("--skill"))
             let creator = try #require(PiBundle.presetSkillURLs().first { $0.lastPathComponent == "skill-creator" })
             #expect(launch.arguments.contains(creator.path))
-            #expect(launch.arguments.contains("builtin:mcp"))
+            #expect(try launch.arguments.contains(AgentMCPElicitationSettings.entryURL().path))
             #expect(await fixture.chatTransport.isClosed)
             #expect(await fixture.chatTransport.commands.allSatisfy { ["get_state", "get_commands"].contains($0["type"]?.stringValue ?? "") })
         }
@@ -1158,7 +1160,7 @@ import Synchronization
                 ))
             let work = fixture.pi.rootURL.appending(path: "work")
             #expect(launch.cwd == work)
-            #expect(launch.arguments.contains("builtin:mcp"))
+            #expect(try launch.arguments.contains(AgentMCPElicitationSettings.entryURL().path))
             #expect(launch.environment["DAHLIA_PI_MCP_COMMAND"]?.contains("--account") == false)
             // Commands and file tools run under Seatbelt, confined to the working folder.
             #expect(launch.fileAccess.grants.isEmpty)

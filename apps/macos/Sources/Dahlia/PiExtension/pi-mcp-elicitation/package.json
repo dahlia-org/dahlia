@@ -1,0 +1,16 @@
+{
+  "name": "pi-mcp-elicitation",
+  "version": "0.1.0",
+  "description": "MCP URL mode elicitation for Pi: servers can send the user to a web page to sign in or approve a call, and the request is sent again afterwards.",
+  "license": "MIT",
+  "type": "module",
+  "keywords": ["pi-package", "mcp", "elicitation"],
+  "engines": { "node": ">=22.19.0" },
+  "scripts": { "test": "node --test test/*.test.ts" },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*"
+  },
+  "pi": {
+    "extensions": ["./index.ts"]
+  }
+}

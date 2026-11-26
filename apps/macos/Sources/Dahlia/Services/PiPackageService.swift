@@ -102,10 +102,11 @@ actor PiPackageService {
                     defer { try? FileManager.default.removeItem(at: output) }
                     let handle = try FileHandle(forUpdating: output)
                     defer { try? handle.close() }
+                    let command = PiBundle.processCommand(executable, arguments, environment: environment)
                     let process = Process()
-                    process.executableURL = executable
-                    process.arguments = arguments
-                    process.environment = environment
+                    process.executableURL = command.executable
+                    process.arguments = command.arguments
+                    process.environment = command.environment
                     process.currentDirectoryURL = directory
                     process.standardInput = FileHandle.nullDevice
                     process.standardOutput = handle

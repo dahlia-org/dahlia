@@ -27,8 +27,9 @@ from datetime import datetime, timedelta, timezone
 
 ROOT = Path(__file__).resolve().parents[3]
 EXTENSION = ROOT / "apps/macos/Sources/Dahlia/PiExtension/dahlia.ts"
-# dahlia.ts registers the Unity AI Gateway sign-ins in every process, so chat adds only Pi's MCP extension, as Dahlia does.
-CHAT_EXTENSIONS = ["-e", "builtin:mcp"]
+# Chat replaces Pi's MCP extension with the same host wrapper as PiChatService.
+MCP_EXTENSION = EXTENSION.with_name("dahlia-mcp.ts")
+CHAT_EXTENSIONS = ["-e", str(MCP_EXTENSION)]
 CHAT_ARGUMENTS = ["--no-session", *CHAT_EXTENSIONS, "--tools", "read,ls,write,edit,bash,mcp__dahlia__*"]
 SANDBOX = EXTENSION.with_name("pi.sb")
 # Standalone MCP fixture: verifies transport, the worker environment, and the direct URL/auth gate.
@@ -113,7 +114,11 @@ def http_mcp(authorizations):
                 result = {"tools": [
                     {"name": "search_messages", "inputSchema": {"type": "object"}, "annotations": {"readOnlyHint": True}},
                     {"name": "send_message", "inputSchema": {"type": "object"}},
+                    {"name": "post_message", "inputSchema": {"type": "object", "required": ["message"], "properties": {
+                        "message": {"type": "string"}, "thread_ts": {"type": "string"}, "broadcast": {"type": "boolean"}, "parent": {"type": ["string", "null"]}}}},
                 ]}
+            elif method == "tools/call" and msg["params"]["name"] == "post_message":
+                result = {"content": [{"type": "text", "text": "POSTED " + json.dumps(msg["params"].get("arguments", {}), sort_keys=True)}]}
             elif method == "tools/call":
                 # Gmail lists messages as JSON text; a thread listing has no threadId and is not a list of items.
                 items = msg["params"].get("arguments", {}).get("probe_items")
@@ -429,7 +434,7 @@ def run(pi, mode, script, arguments, environment, approval="accept", approval_mo
                    PI_TELEMETRY="0", DAHLIA_PI_MODE=mode, DAHLIA_PI_BRIDGED_PROVIDERS="databricks",
                    DAHLIA_PI_SANDBOX=json.dumps(sandbox(root)), DAHLIA_PI_SANDBOX_HIDDEN_ENV=json.dumps(["USER_SECRET"]),
                    DAHLIA_PI_SANDBOX_TMPDIR=str(root / "tmp"), TMPDIR=str(root / "pi-tmp"),
-                   USER_SECRET="ENV_SECRET_MARKER", **environment)
+                   USER_SECRET="ENV_SECRET_MARKER", DAHLIA_PI_MCP_EXTENSION=str(MCP_EXTENSION), **environment)
         if web_access:
             package = Path(web_access)
             if package.is_dir():
@@ -1078,10 +1083,30 @@ def main():
     assert authorizations and set(authorizations) == {"Bearer mcp-access-1"}, authorizations
     assert foreign and set(foreign) == {None}, foreign
     assert results == ["GATEWAY_OK"] and not any(method == "approval" for method, _ in bridge), (results, bridge)
+    # The native schedule service freezes these discovered tools into approved_read_only_tools after approval.
+    for action in ("create", "update", "resume"):
+        _, _, schedule_bridge, _ = gateway_chat(
+            {"tool": "cronjob", "args": {"action": action}},
+            arguments=["--no-session", *CHAT_EXTENSIONS, "--tools", "cronjob,mcp__gmail__*"],
+            bridge_answers={"cronjob": {}})
+        payloads = [payload for method, payload in schedule_bridge if method == "cronjob"]
+        assert len(payloads) == 1 and payloads[0]["_readOnlyTools"] == ["mcp__gmail__search_messages"], schedule_bridge
     _, results, bridge, _ = gateway_chat({"tool": "mcp__gmail__send_message"}, approval="decline")
     approvals = [payload for method, payload in bridge if method == "approval"]
     assert [(p["server"], p["tool"]) for p in approvals] == [("gmail", "send_message")], bridge
     assert "declined" in results[0], results
+    # Gateway providers must explicitly opt out of Responses' strict default so thread_ts remains optional.
+    requests, results, bridge, _ = gateway_chat({"tool": "mcp__gmail__post_message", "args": {"message": "new post"}})
+    post_tool = next(tool for tool in requests[0]["body"]["tools"] if tool.get("name") == "mcp__gmail__post_message")
+    assert post_tool["strict"] is False, post_tool
+    assert post_tool["parameters"]["required"] == ["message"], post_tool
+    assert results == ['POSTED {"message": "new post"}'], results
+    # Empty and null can mean clear/reset; preserve them, required values, and false through approval and execution.
+    call_args = {"message": "", "thread_ts": "", "broadcast": False, "parent": None}
+    _, results, bridge, _ = gateway_chat({"tool": "mcp__gmail__post_message", "args": call_args})
+    assert results == ['POSTED ' + json.dumps(call_args, sort_keys=True)], results
+    approvals = [payload for method, payload in bridge if method == "approval"]
+    assert [p["arguments"] for p in approvals] == [call_args], approvals
     # A server Dahlia did not register stays blocked even if its tools get past --tools.
     _, results, bridge, _ = gateway_chat({"tool": "mcp__foreign__search_messages"}, approval_mode="fullAccess",
                                          arguments=["--no-session", *CHAT_EXTENSIONS, "--tools", "read,mcp__gmail__*,mcp__foreign__*"])

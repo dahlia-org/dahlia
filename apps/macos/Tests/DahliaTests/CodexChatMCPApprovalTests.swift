@@ -6,6 +6,27 @@ import Foundation
 
     struct CodexChatMCPApprovalTests {
         @Test
+        func extensionConfirmationsShowTheirWholeTextAndContinueOrCancel() throws {
+            let request = try #require(PiChatService.approvalRequest(id: "c", payload: .object([
+                "kind": .string("confirmation"), "title": .string("MCP server \"gateway\" asks you to open example.com"),
+                "message": .string("Approve\n\nhttps://example.com/approve?x=1"),
+            ])))
+            #expect(request.kind == .confirmation)
+            #expect(request.reason == "MCP server \"gateway\" asks you to open example.com\n\nApprove\n\nhttps://example.com/approve?x=1")
+            #expect(request.actions == [.allowOnce, .deny])
+            #expect(request.canApprove)
+            let empty = PiChatService.approvalRequest(id: "d", payload: .object(["kind": .string("confirmation")]))
+            #expect(empty?.canApprove == false)
+            let oversized = try #require(PiChatService.approvalRequest(id: "long", payload: .object([
+                "kind": .string("confirmation"), "title": .string("Open page?"),
+                "message": .string(String(repeating: "x", count: 4096) + "\nhttps://example.com/approve"),
+            ])))
+            #expect(oversized.reviewability == .tooLarge)
+            #expect(!oversized.canApprove)
+            #expect(oversized.actions == [.deny])
+        }
+
+        @Test
         func correlatedToolInputIsReviewableWithBoundedDetails() throws {
             let request = try normalizedRequest()
 
