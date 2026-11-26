@@ -11,10 +11,27 @@ import Foundation
         }
 
         @Test(arguments: [
+            "https://github.com/mats16/pi-auto-review-tools.git",
+            "https://github.com/mats16/pi-auto-reviewer@main",
+            "git@github.com:mats16/pi-auto-review-tools.git",
+            "git:github.com/mats16/pi-auto-review/tools",
+            "https://other-github.com/mats16/pi-auto-review",
+            "https://example.com/github.com/mats16/pi-auto-review",
+        ])
+        func unrelatedRepositoriesStayVisibleAndInstallable(_ source: String) throws {
+            #expect(!AgentAutoReviewSettings.isPackage(source))
+            #expect(try PiPackageService.source(source) == source)
+        }
+
+        @Test(arguments: [
             "https://github.com/mats16/pi-auto-review",
             "https://github.com/mats16/pi-auto-review@3a12a7d",
             "git:github.com/mats16/pi-auto-review@main",
             "git@github.com:mats16/pi-auto-review.git",
+            "ssh://git@github.com/mats16/pi-auto-review.git@feature/review",
+            "git:https://github.com/mats16/pi-auto-review.git@main",
+            "http://github.com/mats16/pi-auto-review.git",
+            "https://github.com/mats16/pi-auto-review.git#main",
         ])
         func rejectsHiddenReviewerInstallsAndPreservesExistingDeclarations(_ source: String) async throws {
             let root = FileManager.default.temporaryDirectory.appending(path: "PiBuiltInPackage-\(UUID())")

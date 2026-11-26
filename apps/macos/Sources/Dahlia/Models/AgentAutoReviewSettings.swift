@@ -10,7 +10,9 @@ enum AgentAutoReviewSettings {
 
     /// Earlier releases installed the plugin from the Plugins tab; the Plugins tab hides that leftover declaration.
     static func isPackage(_ source: String) -> Bool {
-        source.contains("github.com/mats16/pi-auto-review") || source.contains("github.com:mats16/pi-auto-review")
+        let repository =
+            #/(?:git:)?(?:(?:https?|ssh|git)://(?:[^/@\s]+@)?github\.com/|git@github\.com:|github\.com/)mats16/pi-auto-review(?:\.git)?/?(?:[@#].+)?/#
+        return source.wholeMatch(of: repository.ignoresCase()) != nil
     }
 
     static func triageDefaultsKey() -> String {
