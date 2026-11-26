@@ -416,10 +416,10 @@ struct AgentInboxService: Sendable {
         }
     }
 
-    /// The agent's current thread, made the first time it is needed. `replacing` starts a new one in its place.
-    static func thread(agentID: String, now: Date, replacing: Bool = false, in db: Database) throws -> String {
+    /// The agent's current thread, made the first time it is needed.
+    static func thread(agentID: String, now: Date, in db: Database) throws -> String {
         guard var agent = try AgentRecord.fetchOne(db, key: agentID) else { throw Failure(message: "Agent not found.") }
-        if !replacing, let id = agent.threadID { return id }
+        if let id = agent.threadID { return id }
         let thread = ChatThreadRecord(
             id: UUID.v7().uuidString, accountID: AppAccount.key, title: agent.name, createdAt: now, updatedAt: now, agentID: agentID
         )

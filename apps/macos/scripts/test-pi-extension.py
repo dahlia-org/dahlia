@@ -62,7 +62,7 @@ def sandbox(root):
     """The command prefix that runs chat's commands and file operations under Dahlia's Seatbelt profile, as `PiSandbox` does."""
     parameters = {"WORK": root / "workspace", "TMP": root / "tmp", "PI_TMP": root / "pi-tmp", "AGENT": root / "agent",
                   "APP_SUPPORT": root / "support", "RELEASED_APP_SUPPORT": root / "released", "RELEASED_AGENT": root / "released-agent", "PI": root / "pi",
-                  "RESOURCES": EXTENSION.parent, "BOTS": root / "bots", "RELEASED_BOTS": root / "released-bots",
+                  "RESOURCES": EXTENSION.parent, "AGENTS": root / "agents", "RELEASED_AGENTS": root / "released-agents",
                   "SKILLS": root / "skills", "FILE_STORE": root / "FileStore", "DATABASE": root / "dahlia.sqlite"}
     defines = [arg for key, value in parameters.items() for arg in ("-D", f"{key}={os.path.realpath(value)}")]
     return ["/usr/bin/sandbox-exec", "-f", str(SANDBOX), *defines]
@@ -401,7 +401,7 @@ def run(pi, mode, script, arguments, environment, approval="accept", approval_mo
             database.execute("CREATE TABLE debug (value TEXT)")
             database.execute("INSERT INTO debug VALUES ('SQLITE_MARKER')")
         (root / "workspace/inside.txt").write_text("INSIDE_MARKER")
-        for protected in ("SOUL.md", "AGENTS.md", "bot.json"):
+        for protected in ("SOUL.md", "AGENTS.md", "agent.json"):
             (root / "workspace" / protected).write_text("PROTECTED_MARKER")
         (root / "workspace/pixel.png").write_bytes(base64.b64decode(
             "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="))

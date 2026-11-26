@@ -2011,10 +2011,7 @@
 "bots.soulHelp" = "このエージェントへの常設の指示で、何をするかはここで決まります。会話で頼むと書き換えますが、書き換える前に必ず確認します。";
 "bots.soulEmpty" = "まだ何も書かれていません。";
 "bots.showInFinder" = "Finder で表示";
-"bots.reset" = "会話をやり直す";
-"bots.resetMessage" = "今の会話は履歴に残り、読むだけになります。タスクとユーザーの確認待ちはそのまま引き継がれます。";
 "bots.settings" = "設定";
-"bots.conversation" = "会話";
 "bots.paused" = "エージェントはすべて止まっています。";
 "bots.resume" = "再開する";
 "bots.inboxTab" = "受信箱";

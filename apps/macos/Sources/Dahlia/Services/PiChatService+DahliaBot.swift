@@ -198,34 +198,6 @@ extension PiChatService {
         try history().dbQueue.write { try AgentInboxService.thread(agentID: agentID, now: .now, in: $0) }
     }
 
-    /// Starts the conversation over in a new thread. The old one stays in the history, read-only, and its notice and turn
-    /// stop; the open tasks, inbox, and pending task results carry over.
-    func resetBotThread(_ agentID: String) async throws -> String {
-        let store = try history()
-        let (old, new) = try await store.dbQueue.write { db in
-            let old = try AgentRecord.fetchOne(db, key: agentID)?.threadID
-            let new = try AgentInboxService.thread(agentID: agentID, now: .now, replacing: true, in: db)
-            if let old {
-                // Tasks outlive this conversation. Future results, and results queued but not yet read, reach its replacement.
-                try db.execute(sql: """
-                UPDATE chat_runs SET requestedByThreadID=? WHERE requestedByThreadID=? AND resultDeliveredAt IS NULL
-                    AND threadID IN (SELECT threadID FROM agent_tasks WHERE agentID=?)
-                """, arguments: [new, old, agentID])
-                try db.execute(sql: """
-                UPDATE chat_runs SET threadID=? WHERE threadID=? AND status='queued' AND origin='thread'
-                    AND requestedByThreadID IS NULL
-                """, arguments: [new, old])
-            }
-            return (old, new)
-        }
-        chosenApprovalMethods[new] = .autoReview
-        if let old { await retireBotThread(old) }
-        publishStates()
-        Task { await self.drainAlwaysOn() }
-        // Another reset may have committed while cleanup awaited Pi. Never reopen an intermediate replacement.
-        return (try? agent(agentID).threadID) ?? new
-    }
-
     /// Stops what runs in a thread that is no longer an agent's current one.
     func retireBotThread(_ threadID: String) async {
         await interruptActiveTurn(threadID: threadID, turnID: nil, stoppingRequest: false)

@@ -162,9 +162,8 @@ struct ContentView: View {
             .mainSidebarHelpOverlay(isVisible: !isShowingSettings)
 
         } sidebar: {
-            if let agent = shownAgent {
+            if shownAgent != nil {
                 DahliaBotPanelView(model: botPanel, agents: agents)
-                    .onChange(of: agent.id, initial: true) { botPanel.agentID = agent.id }
             } else {
                 CodexChatSidebarView(
                     coordinator: chatCoordinator,
@@ -289,6 +288,9 @@ struct ContentView: View {
     var body: some View {
         presentedContent
             .background { chatNavigationObservation }
+            .onChange(of: mainWindowNavigation.isShowingSettings ? nil : shownAgent?.id, initial: true) { _, agentID in
+                botPanel.agentID = agentID
+            }
             .task(id: sidebarViewModel.currentWorkspace?.id) {
                 await sidebarViewModel.refreshUnprocessedRecordings()
             }

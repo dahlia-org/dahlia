@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// An agent's side panel, beside its thread. Its inbox (what waits for the user, its Tasks, the events intake recorded)
-/// comes first; its settings (event sources, `SOUL.md`, its name and picture, starting over, deleting it) sit apart,
+/// comes first; its settings (event sources, `SOUL.md`, its name and picture, deleting it) sit apart,
 /// behind the header's switch. Its model belongs to the window, which shows the editors over everything.
 struct DahliaBotPanelView: View {
     enum Tab: CaseIterable {
@@ -27,7 +27,6 @@ struct DahliaBotPanelView: View {
     let model: DahliaBotPanelModel
     let agents: AgentsModel
     @State private var tab = Tab.inbox
-    @State private var isConfirmingReset = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -62,16 +61,6 @@ struct DahliaBotPanelView: View {
                 await model.refresh()
                 try? await Task.sleep(for: .seconds(30))
             }
-        }
-        .confirmationDialog(L10n.agentBotReset, isPresented: $isConfirmingReset) {
-            Button(L10n.agentBotReset) {
-                Task {
-                    guard let thread = await model.reset() else { return }
-                    NotificationCenter.default.post(name: AgentLearningSettings.openThread, object: thread)
-                }
-            }
-        } message: {
-            Text(L10n.agentBotResetMessage)
         }
     }
 
@@ -148,12 +137,6 @@ struct DahliaBotPanelView: View {
             AgentSectionHeader(title: L10n.agentBotModels) { EmptyView() }
         }
         soulSection
-        Section {
-            Text(L10n.agentBotResetMessage).foregroundStyle(.secondary)
-            Button(L10n.agentBotReset) { isConfirmingReset = true }
-        } header: {
-            AgentSectionHeader(title: L10n.agentBotConversation) { EmptyView() }
-        }
         if let agent = agents.summaries.first(where: { $0.id == model.agentID })?.agent {
             Section {
                 LabeledContent {

@@ -706,315 +706,40 @@
                 AgentBackgroundActivity.setRecording(false)
             }
 
-            /// Starting over keeps the old thread in the history, read-only; the new one stays out of it, and Tasks carry over.
-            @Test func startingOverLeavesTheOldThreadReadOnly() async throws {
-                let provider = AppAccount.key
-                let db = try AppDatabaseManager(path: ":memory:").dbQueue
-                let fixture = try fixture(db: db, provider: provider, calls: [:])
-                defer { cleanUp(fixture) }
-                let old = try await fixture.service.botThread(fixture.agentID)
-                let handle = try await fixture.service.beginTurn(
-                    threadID: old,
-                    inputs: [.text("Hi")],
-                    model: nil,
-                    effort: "medium",
-                    approvalMethod: .ask
-                )
-                for try await _ in handle.events {}
-                let taskThread = UUID.v7().uuidString
-                try ChatThreadStore(dbQueue: db).createThread(ChatThreadRecord(
-                    id: taskThread,
-                    accountID: provider,
-                    title: "Read",
-                    createdAt: .now,
-                    updatedAt: .now
-                ))
-                let task = try fixture.inbox.openTask(threadID: taskThread, title: "Read", instructions: "Read", eventIDs: [])
-
-                let new = try await fixture.service.resetBotThread(fixture.agentID)
-
-                #expect(try new != old && fixture.currentThread() == new)
-                #expect(try await fixture.service.loadThread(id: old).isReadOnly)
-                #expect(try await !fixture.service.loadThread(id: new).isReadOnly)
-                await #expect(throws: (any Error).self) {
-                    _ = try await fixture.service.beginTurn(
-                        threadID: old,
-                        inputs: [.text("Again")],
-                        model: nil,
-                        effort: "medium",
-                        approvalMethod: .ask
-                    )
-                }
-                let listed = try await fixture.service.listThreads(cursor: nil).threads.map(\.id)
-                #expect(listed.contains(old) && !listed.contains(new) && listed.contains(taskThread))
-                #expect(try fixture.inbox.tasks().active.map(\.id) == [task.id])
-            }
-
-            @Test(arguments: ["model", "startup"])
-            func startingOverInvalidatesTheOldBotWhileItsTurnIsPreparing(phase: String) async throws {
-                let models = [TestPiTransport.model(provider: "openai", id: "gpt-test")]
-                let control = TestPiTransport { command in
-                    if phase == "model", command["type"] == .string("get_available_models") { return [] }
-                    return TestPiRuntime.modelsReply(models)(command)
-                }
-                let chat = TestPiTransport(delaysStartup: true)
-                let pi = TestPiRuntime { $0.mode == .chat ? chat : control }
-                defer { try? FileManager.default.removeItem(at: pi.rootURL) }
-                let store = try ChatThreadStore(dbQueue: AppDatabaseManager(path: ":memory:").dbQueue)
-                let agent = try await store.dbQueue.write { try AgentRecord.insertForTest(in: $0) }
-                let service = PiChatService(
-                    runtime: pi.service, historyStore: store,
-                    workingDirectory: PiWorkingDirectory(override: pi.rootURL.appending(path: "work")),
-                    agentLocator: PiAgentDirectoryLocator(applicationSupportURL: pi.rootURL),
-                    mcpExecutableURL: URL(filePath: "/usr/bin/true"), mcpSettings: { .init() }, fileAccessSettings: { .init() }
-                )
-                let old = try await service.botThread(agent.id)
-                let preparing = Task {
-                    try await service.beginTurn(threadID: old, inputs: [.text("Hello")], model: nil, effort: "medium", approvalMethod: .ask)
-                }
-                let gate = await (phase == "model" ? control : chat).command(phase == "model" ? "get_available_models" : "get_state")
-                let new = try await service.resetBotThread(agent.id)
-                if phase == "model" {
-                    try await control.emit(TestPiTransport.response(id: #require(gate["id"]), data: .object(["models": .array(models)])))
-                    let startup = await chat.command("get_state")
-                    try await chat.emit(TestPiTransport.response(id: #require(startup["id"])))
-                } else {
-                    try await chat.emit(TestPiTransport.response(id: #require(gate["id"])))
-                }
-                await #expect(throws: (any Error).self) { _ = try await preparing.value }
-                #expect(await chat.commands.allSatisfy { $0["type"] != .string("prompt") })
-                #expect(try store.latestRun(threadID: old) == nil)
-                #expect(await service.sessions[old] == nil)
-                #expect(try await !service.loadThread(id: new).isReadOnly)
-                await service.closeSession(old)
-            }
-
-            @Test(arguments: ["earlierCandidate", "noticePreparation", "taskPreparation"])
-            func resetDuringQueuePreparationUsesTheSavedRoute(phase: String) async throws {
-                let db = try AppDatabaseManager(path: ":memory:").dbQueue
-                let store = ChatThreadStore(dbQueue: db)
-                let agent = try await db.write { try AgentRecord.insertForTest(in: $0) }
-                let old = try await db.write { try AgentInboxService.thread(agentID: agent.id, now: .now, in: $0) }
-                let worker = UUID.v7().uuidString
-                try store.createThread(ChatThreadRecord(id: worker, accountID: AppAccount.key, title: "Task", createdAt: .now, updatedAt: .now))
-                var root = ChatRunRecord(
-                    id: .v7(),
-                    threadID: old,
-                    rootRunID: .v7(),
-                    status: "completed",
-                    input: "",
-                    effort: "medium",
-                    approvalMethod: "fullAccess",
-                    createdAt: .now
-                )
-                root.rootRunID = root.id
-                root.profile = "bot"
-                root.resultDeliveredAt = .now
-                try await db.write { [root] in try root.insert($0) }
-                var notice = ChatRunRecord(
-                    id: .v7(),
-                    threadID: old,
-                    rootRunID: root.id,
-                    status: "queued",
-                    input: "Preserved result notification",
-                    effort: "medium",
-                    approvalMethod: "autoReview",
-                    createdAt: .now.addingTimeInterval(1)
-                )
-                notice.origin = "thread"
-                notice.profile = "bot"
-                if phase == "noticePreparation" { try await db.write { [notice] in try notice.insert($0) } }
-                var work = ChatRunRecord(
-                    id: .v7(),
-                    threadID: worker,
-                    requestedByThreadID: old,
-                    rootRunID: root.id,
-                    status: "queued",
-                    input: "Work",
-                    effort: "medium",
-                    approvalMethod: "fullAccess",
-                    createdAt: .now
-                )
-                work.origin = "thread"
-                if phase != "noticePreparation" {
-                    try await db.write { [work] in try work.insert($0) }
-                    try AgentInboxService(dbQueue: db, agentID: agent.id).openTask(
-                        threadID: worker,
-                        title: "Task",
-                        instructions: "Work",
-                        eventIDs: []
-                    )
-                }
-                if phase == "earlierCandidate" {
-                    try await db.write { [notice] in try notice.insert($0) }
-                    #expect(try store.queuedRuns(accountID: AppAccount.key).map(\.id) == [work.id, notice.id])
-                }
-                let delayed = TestPiTransport(delaysStartup: true)
-                let normal = TestPiTransport()
-                let control = TestPiTransport(reply: TestPiRuntime.modelsReply([TestPiTransport.model(provider: "openai", id: "gpt-test")]))
-                let first = Mutex(true)
-                let blockedID = phase == "noticePreparation" ? old : worker
-                let pi = TestPiRuntime { options in
-                    guard options.mode == .chat else { return control }
-                    if options.arguments.contains(blockedID), first.withLock({ value in
-                        let result = value
-                        value = false
-                        return result
-                    }) { return delayed }
-                    return normal
-                }
-                defer { try? FileManager.default.removeItem(at: pi.rootURL) }
-                let service = PiChatService(
-                    runtime: pi.service,
-                    historyStore: store,
-                    workingDirectory: PiWorkingDirectory(override: pi.rootURL.appending(path: "work")),
-                    agentLocator: PiAgentDirectoryLocator(applicationSupportURL: pi.rootURL),
-                    mcpExecutableURL: URL(filePath: "/usr/bin/true"),
-                    mcpSettings: { .init() },
-                    fileAccessSettings: { .init() }
-                )
-                _ = try await service.updateApprovalMethod(threadID: old, approvalMethod: .fullAccess)
-                _ = try await service.updateApprovalMethod(threadID: worker, approvalMethod: .fullAccess)
-                let scheduling = Task { await service.scheduleRuns(accountID: AppAccount.key) }
-                let gate = await delayed.command("get_state")
-                let new = try await service.resetBotThread(agent.id)
-                _ = try await service.updateApprovalMethod(threadID: new, approvalMethod: .ask)
-                try await delayed.emit(TestPiTransport.response(id: #require(gate["id"])))
-                await scheduling.value
-                // A stale attempt may have been abandoned; a fresh scheduler must claim the persisted route.
-                await service.scheduleRuns(accountID: AppAccount.key)
-                if phase == "taskPreparation" {
-                    #expect(await pollUntil { (try? store.run(id: work.id)?.status) == "running" })
-                    let saved = try #require(try store.run(id: work.id))
-                    #expect(saved.status == "running" && saved.requestedByThreadID == new)
-                    #expect(await service.effectiveApprovalMethod(worker) == .ask)
-                    #expect(await normal.commands.filter { $0["type"] == .string("prompt") && $0["message"]?.stringValue == "Work" }.count == 1)
-                    _ = try await service.updateApprovalMethod(threadID: new, approvalMethod: .fullAccess)
-                    _ = try await service.updateApprovalMethod(threadID: worker, approvalMethod: .fullAccess)
-                    let replacement = try await service.resetBotThread(agent.id)
-                    _ = try await service.updateApprovalMethod(threadID: replacement, approvalMethod: .ask)
-                    // This active run still caches the earlier requester; the live ceiling uses its saved owner.
-                    #expect(await service.sessions[worker]?.turn?.run.requestedByThreadID == new)
-                    #expect(try store.run(id: work.id)?.requestedByThreadID == replacement)
-                    #expect(await service.effectiveApprovalMethod(worker) == .ask)
-                    #expect(try store.run(id: work.id)?.status == "running")
-                } else {
-                    #expect(await pollUntil { (try? store.run(id: notice.id)?.status) == "running" })
-                    let saved = try #require(try store.run(id: notice.id))
-                    #expect(saved.status == "running" && saved.threadID == new)
-                    #expect(await normal.commands.filter { $0["type"] == .string("prompt") && $0["message"]?.stringValue == notice.input }.count == 1)
-                }
-                #expect(await delayed.commands.allSatisfy { $0["type"] != .string("prompt") })
-                await service.closeSession(worker)
-                await service.closeSession(new)
-                await service.closeSession(old)
-            }
-
-            @Test func aRolledBackResetDoesNotPublishItsNewIdentity() async throws {
+            @Test func clearingContextKeepsTheAgentThreadTasksAndInbox() async throws {
                 let db = try AppDatabaseManager(path: ":memory:").dbQueue
                 let fixture = try fixture(db: db, provider: AppAccount.key, calls: [:])
                 defer { cleanUp(fixture) }
-                let old = try await fixture.service.botThread(fixture.agentID)
-                enum Rollback: Error { case requested }
-                await #expect(throws: Rollback.self) {
-                    try await db.write { db in
-                        _ = try AgentInboxService.thread(agentID: fixture.agentID, now: .now, replacing: true, in: db)
-                        throw Rollback.requested
-                    }
-                }
-                #expect(try fixture.currentThread() == old)
-                #expect(try await fixture.service.botThread(fixture.agentID) == old)
-            }
-
-            @Test func overlappingResetsKeepPendingTaskResultsAtTheCurrentBot() async throws {
-                let db = try AppDatabaseManager(path: ":memory:").dbQueue
-                let fixture = try fixture(db: db, provider: AppAccount.key, calls: [:], ending: [])
-                defer { cleanUp(fixture) }
                 let store = ChatThreadStore(dbQueue: db)
-                let old = try await fixture.service.botThread(fixture.agentID)
-                _ = try await fixture.service.beginTurn(threadID: old, inputs: [.text("Work")], model: nil, effort: "medium", approvalMethod: .ask)
-                let root = try await firstRun(fixture, thread: old)
-                let child = UUID.v7().uuidString
-                try store.createThread(ChatThreadRecord(id: child, accountID: AppAccount.key, title: "Task", createdAt: .now, updatedAt: .now))
-                try fixture.inbox.openTask(threadID: child, title: "Task", instructions: "Work", eventIDs: [])
-                let run = try store.enqueueRun(ChatRunRecord(
-                    id: .v7(), threadID: child, requestedByThreadID: old, rootRunID: root.id, status: "queued",
-                    input: "Work", effort: "medium", approvalMethod: "ask", createdAt: .now
-                ))
-                // Both transitions enter the same serial writer and may finish their Pi cleanup in either order.
-                async let first = fixture.service.resetBotThread(fixture.agentID)
-                async let second = fixture.service.resetBotThread(fixture.agentID)
-                _ = try await (first, second)
-                let current = try #require(try fixture.currentThread())
-                #expect(try store.run(id: run.id)?.requestedByThreadID == current)
-                #expect(try store.run(id: root.id)?.stoppedByUser == false)
-            }
-
-            @Test func aHiddenHelperStillWaitsForRecordingAfterReset() async throws {
-                let db = try AppDatabaseManager(path: ":memory:").dbQueue
-                let fixture = try fixture(db: db, provider: AppAccount.key, calls: [:], ending: [])
-                defer { cleanUp(fixture)
-                    AgentBackgroundActivity.setRecording(false)
-                }
-                let store = ChatThreadStore(dbQueue: db)
-                let old = try await fixture.service.botThread(fixture.agentID)
-                _ = try await fixture.service.beginTurn(threadID: old, inputs: [.text("Work")], model: nil, effort: "medium", approvalMethod: .ask)
-                let root = try await firstRun(fixture, thread: old)
-                let child = UUID.v7().uuidString
+                let thread = try await fixture.service.botThread(fixture.agentID)
+                _ = await fixture.service.acquireThreadLease(threadID: thread)
+                let first = try await fixture.service.beginTurn(
+                    threadID: thread, inputs: [.text("Before")], model: nil, effort: "medium", approvalMethod: .ask
+                )
+                for try await _ in first.events {}
+                let worker = UUID.v7().uuidString
                 try store.createThread(ChatThreadRecord(
-                    id: child, accountID: AppAccount.key, parentThreadID: old, title: "Helper", createdAt: .now, updatedAt: .now
+                    id: worker, accountID: AppAccount.key, title: "Task", createdAt: .now, updatedAt: .now
                 ))
-                var helper = ChatRunRecord(
-                    id: .v7(), threadID: child, requestedByThreadID: old, rootRunID: root.id, status: "queued",
-                    input: "Work", effort: "medium", approvalMethod: "ask", createdAt: .now
-                )
-                helper.profile = "bot"
-                helper = try store.enqueueRun(helper)
-                AgentBackgroundActivity.setRecording(true)
-                #expect(await !fixture.service.unattendedRunEligible(helper, account: AppAccount.key))
-                _ = try await fixture.service.resetBotThread(fixture.agentID)
-                #expect(try store.run(id: helper.id)?.requestedByThreadID == old)
-                #expect(try store.run(id: helper.id)?.status == "queued")
-                #expect(await !fixture.service.unattendedRunEligible(helper, account: AppAccount.key))
-                AgentBackgroundActivity.setRecording(false)
-                #expect(await fixture.service.unattendedRunEligible(helper, account: AppAccount.key))
-            }
+                let task = try fixture.inbox.openTask(threadID: worker, title: "Task", instructions: "Work", eventIDs: [])
+                let item = try fixture.inbox.createItem(kind: "question", title: "Continue?", threadID: worker)
 
-            @Test(arguments: ["queued", "running", "completed"])
-            func startingOverTransfersTaskResultsAndQueuedNotifications(status: String) async throws {
-                let db = try AppDatabaseManager(path: ":memory:").dbQueue
-                let fixture = try fixture(db: db, provider: AppAccount.key, calls: [:], ending: [])
-                defer { cleanUp(fixture) }
-                let store = ChatThreadStore(dbQueue: db)
-                let old = try await fixture.service.botThread(fixture.agentID)
-                _ = try await fixture.service.beginTurn(threadID: old, inputs: [.text("Work")], model: nil, effort: "medium", approvalMethod: .ask)
-                let root = try await firstRun(fixture, thread: old)
-                let child = UUID.v7().uuidString
-                try store.createThread(ChatThreadRecord(id: child, accountID: AppAccount.key, title: "Task", createdAt: .now, updatedAt: .now))
-                try fixture.inbox.openTask(threadID: child, title: "Task", instructions: "Work", eventIDs: [])
-                var taskRun = ChatRunRecord(
-                    id: .v7(), threadID: child, requestedByThreadID: old, rootRunID: root.id, status: status,
-                    input: "Work", effort: "medium", approvalMethod: "ask", createdAt: .now
+                let fresh = try await fixture.service.beginTurn(
+                    threadID: thread, inputs: [.text("After")], model: nil, effort: "medium", approvalMethod: .ask,
+                    startsFreshSession: true
                 )
-                taskRun.origin = "thread"
-                try await db.write { [taskRun] in try taskRun.insert($0) }
-                var notice = ChatRunRecord(
-                    id: .v7(), threadID: old, rootRunID: root.id, status: "queued", input: "Pending task result",
-                    effort: "medium", approvalMethod: "ask", createdAt: .now
-                )
-                notice.origin = "thread"
-                notice.profile = "bot"
-                try await db.write { [notice] in try notice.insert($0) }
+                for try await _ in fresh.events {}
 
-                let new = try await fixture.service.resetBotThread(fixture.agentID)
-
-                #expect(try store.run(id: taskRun.id)?.requestedByThreadID == new)
-                #expect(try store.run(id: notice.id)?.threadID == new)
-                #expect(try store.run(id: root.id)?.stoppedByUser == false)
-                try store.setRunStatus(taskRun.id, status: "completed")
-                await fixture.service.deliverResults(accountID: AppAccount.key)
-                #expect(try store.undeliveredRuns(requesterID: old).isEmpty)
-                #expect(try store.undeliveredRuns(requesterID: new).map(\.id).contains(taskRun.id))
+                #expect(try fixture.currentThread() == thread)
+                #expect(try await !fixture.service.loadThread(id: thread).isReadOnly)
+                #expect(await fixture.service.sessions[thread]?.profile == .bot)
+                let users = try store.messagePage(threadID: thread).messages.filter { $0.role == .user }
+                #expect(users.map(\.text) == ["Before", "After"])
+                #expect(users.map(\.startsFreshSession) == [false, true])
+                #expect(try fixture.inbox.tasks().active.map(\.id) == [task.id])
+                #expect(try fixture.inbox.items().map(\.id) == [item.id])
+                #expect(try await !fixture.service.listThreads(cursor: nil).threads.map(\.id).contains(thread))
+                await fixture.service.closeSession(thread)
             }
 
             @Test(arguments: ["bot", "thread", "restart", "user"])

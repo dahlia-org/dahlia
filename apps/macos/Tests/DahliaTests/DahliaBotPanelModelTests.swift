@@ -104,16 +104,20 @@
             #expect(model.finishedTasks.map(\.id) == [new.id])
         }
 
-        @Test(arguments: [false, true], [false, true])
-        func soulSaveCannotPublishAfterSwitchingAgent(fails: Bool, returnsToOriginal: Bool) async throws {
+        enum SelectionChange: CaseIterable {
+            case anotherAgent, returnToOriginal, detachAndReturn
+        }
+
+        @Test(arguments: [false, true], SelectionChange.allCases)
+        func soulSaveCannotPublishAfterSwitchingAgent(fails: Bool, change: SelectionChange) async throws {
             let writer = PendingSoulSave()
             let model = DahliaBotPanelModel(saveSoulFile: { _, _ in try await writer.save() })
             model.agentID = "A"
             model.soulDraft = "A saved guidance"
             let pending = Task { await model.saveSoul() }
             try #require(await pollUntil { await writer.isPending })
-            model.agentID = "B"
-            if returnsToOriginal { model.agentID = "A" }
+            model.agentID = change == .detachAndReturn ? nil : "B"
+            if change != .anotherAgent { model.agentID = "A" }
             model.soul = "Current guidance"
             model.soulDraft = "Current unsaved draft"
             await writer.complete(fails: fails)

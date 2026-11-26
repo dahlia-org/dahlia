@@ -2011,10 +2011,7 @@
 "bots.soulHelp" = "Standing instructions for this agent, which decide what it does. It rewrites them when you ask it to in the conversation, and always asks you to approve the change first.";
 "bots.soulEmpty" = "Nothing written yet.";
 "bots.showInFinder" = "Show in Finder";
-"bots.reset" = "Start Over";
-"bots.resetMessage" = "The current conversation stays in the history, read-only. Tasks and items waiting for you carry over.";
 "bots.settings" = "Settings";
-"bots.conversation" = "Conversation";
 "bots.paused" = "All agents are stopped.";
 "bots.resume" = "Resume";
 "bots.inboxTab" = "Inbox";

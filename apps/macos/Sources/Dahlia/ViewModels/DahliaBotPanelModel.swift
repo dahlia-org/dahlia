@@ -164,22 +164,6 @@ final class DahliaBotPanelModel {
         NSWorkspace.shared.activateFileViewerSelecting([url])
     }
 
-    /// Starts the conversation over; returns the new thread to open.
-    func reset() async -> String? {
-        guard !isBusy, let agentID else { return nil }
-        let generation = agentGeneration
-        isBusy = true
-        defer { if generation == agentGeneration { isBusy = false } }
-        do {
-            let threadID = try await PiChatService.shared.resetBotThread(agentID)
-            return generation == agentGeneration ? threadID : nil
-        } catch {
-            guard generation == agentGeneration else { return nil }
-            self.error = error.localizedDescription
-            return nil
-        }
-    }
-
     func loadMoreFinishedTasks() async {
         guard !isLoadingFinishedTasks, !finishedTasks.isEmpty else { return }
         let generation = agentGeneration

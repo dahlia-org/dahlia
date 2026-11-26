@@ -259,11 +259,8 @@ enum L10n { // swiftlint:disable:this type_body_length
     static var agentBotSoulHelp: String { String(localized: "bots.soulHelp", bundle: bundle) }
     static var agentBotSoulEmpty: String { String(localized: "bots.soulEmpty", bundle: bundle) }
     static var agentBotShowInFinder: String { String(localized: "bots.showInFinder", bundle: bundle) }
-    static var agentBotReset: String { String(localized: "bots.reset", bundle: bundle) }
-    static var agentBotResetMessage: String { String(localized: "bots.resetMessage", bundle: bundle) }
     static var agentBotInboxTab: String { String(localized: "bots.inboxTab", bundle: bundle) }
     static var agentBotSettings: String { String(localized: "bots.settings", bundle: bundle) }
-    static var agentBotConversation: String { String(localized: "bots.conversation", bundle: bundle) }
     static var agentBotPaused: String { String(localized: "bots.paused", bundle: bundle) }
     static var agentBotResume: String { String(localized: "bots.resume", bundle: bundle) }
 
