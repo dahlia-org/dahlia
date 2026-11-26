@@ -2080,3 +2080,4 @@
 "settings.agents.mcpDirectJSONHelp" = "Enter one connection, a named server entry, or an mcpServers object containing one server. Named JSON supplies the server name.";
 "settings.agents.mcpDirectJSONInvalid" = "Enter JSON for one MCP server, up to 64 KiB. Supported fields: type, command, args, env, url, headers.";
 "settings.agents.mcpDirectJSONNameMismatch" = "An existing server cannot be renamed. Use its current name in the JSON.";
+"settings.agents.mcpDirectJSONTooLarge" = "JSON mode supports configurations up to 64 KiB.";

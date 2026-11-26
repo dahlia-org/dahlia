@@ -2558,6 +2558,7 @@ enum L10n { // swiftlint:disable:this type_body_length
     static var mcpDirectURL: String { String(localized: "settings.agents.mcpDirectURL", bundle: bundle) }
     static var mcpDirectArgument: String { String(localized: "settings.agents.mcpDirectArgument", bundle: bundle) }
     static var mcpDirectJSONHelp: String { String(localized: "settings.agents.mcpDirectJSONHelp", bundle: bundle) }
+    static var mcpDirectJSONTooLarge: String { String(localized: "settings.agents.mcpDirectJSONTooLarge", bundle: bundle) }
     static var mcpDirectJSONInvalid: String { String(localized: "settings.agents.mcpDirectJSONInvalid", bundle: bundle) }
     static var mcpDirectJSONNameMismatch: String { String(localized: "settings.agents.mcpDirectJSONNameMismatch", bundle: bundle) }
     static var mcpDirectName: String { String(localized: "settings.agents.mcpDirectName", bundle: bundle) }

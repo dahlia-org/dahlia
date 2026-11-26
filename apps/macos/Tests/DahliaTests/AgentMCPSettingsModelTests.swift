@@ -649,6 +649,24 @@ import os
         }
 
         @Test
+        func generatedDirectJSONFitsTheImportBudget() throws {
+            let empty = AgentMCPDirectConfiguration(command: "mcp", args: [""])
+            let argumentBytes = try 65536 - (empty.jsonString().utf8.count)
+            let boundary = AgentMCPDirectConfiguration(command: "mcp", args: [String(repeating: "a", count: argumentBytes)])
+            let json = try boundary.jsonString()
+            #expect(json.utf8.count == 65536)
+            #expect(try AgentMCPDirectConfiguration.parseJSON(json).configuration == boundary)
+            for argument in [
+                String(repeating: "a", count: argumentBytes + 1),
+                String(repeating: "あ", count: argumentBytes / 3 + 1),
+                String(repeating: "\n", count: argumentBytes / 2 + 1),
+            ] {
+                let oversized = AgentMCPDirectConfiguration(command: "mcp", args: [argument])
+                #expect(throws: AgentMCPSettingsError.self) { try oversized.jsonString() }
+            }
+        }
+
+        @Test
         func incompleteDirectJSONCanReturnToFormButCannotBeSaved() throws {
             let (model, _) = try Self.model(Self.runtime(commands: OSAllocatedUnfairLock(initialState: [])))
             for draft in [AgentMCPDirectConfiguration(), .init(transport: .http), .init(transport: .http, url: "https://example.com:99999")] {

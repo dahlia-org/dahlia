@@ -223,11 +223,15 @@ struct AgentMCPDirectServerView: View {
             } else {
                 let configuration = try jsonConfiguration()
                 transport = configuration.transport
-                command = configuration.command
-                args = configuration.args.map { ArgumentRow(value: $0) }
-                env = KeyValueRow.rows(configuration.env)
-                url = configuration.url
-                headers = KeyValueRow.rows(configuration.headers)
+                switch transport {
+                case .stdio:
+                    command = configuration.command
+                    args = configuration.args.map { ArgumentRow(value: $0) }
+                    env = KeyValueRow.rows(configuration.env)
+                case .http:
+                    url = configuration.url
+                    headers = KeyValueRow.rows(configuration.headers)
+                }
             }
             isJSON = useJSON
             errorMessage = nil

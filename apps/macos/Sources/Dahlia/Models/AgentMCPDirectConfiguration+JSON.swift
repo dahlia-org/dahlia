@@ -1,6 +1,12 @@
 import Foundation
 
 extension AgentMCPDirectConfiguration {
+    private static let maximumJSONBytes = 64 * 1024
+
+    private static func validateJSONSize(_ byteCount: Int) throws {
+        guard byteCount <= maximumJSONBytes else { throw AgentMCPSettingsError(message: L10n.mcpDirectJSONTooLarge) }
+    }
+
     /// Standard MCP fields only. App enablement and registration identity stay outside the imported JSON.
     private struct JSONEntry: Codable {
         var type: String?
@@ -19,13 +25,15 @@ extension AgentMCPDirectConfiguration {
         )
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
-        return try String(decoding: encoder.encode(entry), as: UTF8.self)
+        let data = try encoder.encode(entry)
+        try Self.validateJSONSize(data.count)
+        return String(decoding: data, as: UTF8.self)
     }
 
     static func parseJSON(_ text: String) throws -> (name: String?, configuration: Self) {
         do {
-            guard text.utf8.prefix(65537).count <= 65536,
-                  var object = try JSONSerialization.jsonObject(with: Data(text.utf8)) as? [String: Any] else {
+            try validateJSONSize(text.utf8.prefix(maximumJSONBytes + 1).count)
+            guard var object = try JSONSerialization.jsonObject(with: Data(text.utf8)) as? [String: Any] else {
                 throw AgentMCPSettingsError(message: L10n.mcpDirectJSONInvalid)
             }
             var name: String?
