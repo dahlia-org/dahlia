@@ -179,7 +179,7 @@ extension PiChatService {
             let agent = try agent(source.agentID)
             let servers = mcpSettings().piServers
             guard servers[source.server] != nil else { throw AgentInboxService.Failure(message: "MCP server \(source.server) is not registered.") }
-            try PiProviderConfiguration.writeMCPServers(servers, agentURL: agentLocator.agentURL())
+            try PiProviderConfiguration.writeMCPServers([:], agentURL: agentLocator.agentURL())
             let connection = try await runtime.connect(
                 .init(
                     // Intake is its agent's own work and shows in no history, so it runs in that agent's home.
@@ -189,7 +189,10 @@ extension PiChatService {
                         "--system-prompt", Self.intakeSystemPrompt,
                     ] + Self.intakeModelArguments(agent.intakeChoice),
                     // The only server intake may call; the extension blocks the rest and every tool that is not read-only.
-                    environment: ["DAHLIA_PI_MEMORY_ENABLED": "0", "DAHLIA_PI_MCP_SERVERS": HermesLearning.json([source.server])],
+                    environment: [
+                        "DAHLIA_PI_MEMORY_ENABLED": "0", "DAHLIA_PI_MCP_SERVERS": HermesLearning.json([source.server]),
+                        "DAHLIA_PI_MCP_CONFIG": HermesLearning.json(servers.filter { $0.key == source.server }),
+                    ],
                     profile: .intake
                 )
             ) { [weak self] method, payload in

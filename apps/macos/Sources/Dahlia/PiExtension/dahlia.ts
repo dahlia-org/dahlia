@@ -134,6 +134,12 @@ export default async function (pi: any) {
   // Unity AI Gateway sign-ins serve chat's MCP servers and every process's models.
   registerDatabricksProviders(pi, bridgedProviders);
 
+  // Native MCP connects every configured server before tool hooks. Dahlia supplies this process's scope here;
+  // the shared mcp.json stays empty so another chat cannot change what this process starts.
+  for (const [name, config] of Object.entries(JSON.parse(env.DAHLIA_PI_MCP_CONFIG ?? "{}"))) {
+    if (chatMcpServers.has(name)) pi.registerMcpServer(name, config);
+  }
+
   pi.on("before_provider_request", (event: any, ctx: any) => {
     let payload = event.payload;
     // Responses can make optional arguments required when Gateway providers omit strict.
@@ -274,7 +280,8 @@ export default async function (pi: any) {
     // `read`, `ls`, `write`, and `edit`, so the kernel decides each path as it is opened and a symlink cannot lead outside.
     // Pi itself stays outside the sandbox, so nothing chat runs can read Pi's sign-ins or talk to its MCP servers.
     const sandbox: string[] = JSON.parse(env.DAHLIA_PI_SANDBOX ?? "[]");
-    const hidden: string[] = JSON.parse(env.DAHLIA_PI_SANDBOX_HIDDEN_ENV ?? "[]");
+    // The MCP snapshot may contain literal credentials; only the native MCP client may receive it.
+    const hidden: string[] = ["DAHLIA_PI_MCP_CONFIG", ...JSON.parse(env.DAHLIA_PI_SANDBOX_HIDDEN_ENV ?? "[]")];
     const sandboxEnv = (env: NodeJS.ProcessEnv) => Object.fromEntries(Object.entries(env).filter(([key]) => !hidden.includes(key)));
     // The real home and temporary folders are out of reach in the sandbox, which gets one folder of its own for both
     // (tools such as git keep their settings there). They are set inside the sandbox only: the shell Pi starts a

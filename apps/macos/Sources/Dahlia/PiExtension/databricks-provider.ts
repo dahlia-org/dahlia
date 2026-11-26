@@ -38,6 +38,7 @@ export function registerDatabricksProviders(pi: any, bridged: string[] = []) {
     }
   };
   const ids = new Set([
+    ...Object.values(JSON.parse(process.env.DAHLIA_PI_MCP_CONFIG ?? "{}")).map((server: any) => server?.auth?.provider),
     ...Object.values(read("mcp.json")?.mcpServers ?? {}).map((server: any) => server?.auth?.provider),
     ...Object.keys(read("models.json")?.providers ?? {}),
   ].filter((id) => typeof id === "string" && id.includes(".") && !bridged.includes(id)));

@@ -104,7 +104,7 @@ struct AgentMCPSettingsView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                 .contentShape(.rect)
             }
-            .buttonStyle(.dahlia())
+            .buttonStyle(.dahlia(cornerRadius: DahliaDesign.Card.regularCornerRadius))
         }
     }
 

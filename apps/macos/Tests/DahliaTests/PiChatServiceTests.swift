@@ -1574,17 +1574,18 @@ import Synchronization
             // Dahlia's extension registers the sign-ins mcp.json names in every process; none loads the provider file on its own.
             #expect(pi.launches.all.allSatisfy { !$0.arguments.contains { $0.hasSuffix("databricks-provider.ts") } })
             #expect(withGmail.environment["DAHLIA_PI_MCP_SERVERS"] == #"["dahlia","gmail","notion"]"#)
-            // The mcp.json entry names the workspace sign-in, which the extension registers from that file.
+            // The process snapshot names the sign-in; the shared file cannot broaden concurrent launches.
             #expect(withGmail.environment["DAHLIA_PI_MCP_PROVIDERS"] == nil)
             #expect(withGmail.arguments.contains { $0.hasSuffix("/" + file.lastPathComponent) })
             let mcpJSON = try PiAgentDirectoryLocator(applicationSupportURL: pi.rootURL).agentURL().appending(path: "mcp.json")
             let written = FileManager.default.contents(atPath: mcpJSON.path).map { String(decoding: $0, as: UTF8.self) } ?? ""
-            #expect(written.contains("system.ai.gmail"))
-            let entries = try JSONDecoder().decode(JSONValue.self, from: Data(written.utf8)).objectValue?["mcpServers"]?.objectValue
+            #expect(written == #"{"mcpServers":{}}"#)
+            let configuration = try #require(withGmail.environment["DAHLIA_PI_MCP_CONFIG"])
+            let entries = try JSONDecoder().decode(JSONValue.self, from: Data(configuration.utf8)).objectValue
             #expect(entries?["notion"]?
                 .objectValue?["url"] == .string("https://example.cloud.databricks.com/ai-gateway/mcp-services/main.default.notion"))
             #expect(entries?["notion"]?.objectValue?["auth"]?.objectValue?["provider"] == .string(provider.id))
-            #expect(written.contains(#""provider":"example.cloud.databricks.com""#))
+            #expect(configuration.contains(#""provider":"example.cloud.databricks.com""#))
 
             // Turning Omnigent on reaches the next process.
             omnigentEnabled.withLock { $0 = true }

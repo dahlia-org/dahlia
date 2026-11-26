@@ -39,7 +39,10 @@
                 let provider = AppAccount.key
                 let gateway = AgentMCPProvider(workspaceURL: URL(string: "https://dbc-1.cloud.databricks.com")!)
                 let settings = AgentMCPSettings(
-                    providers: [gateway], servers: [AgentMCPServer(id: .v7(), name: "gmail", providerID: gateway.id, service: service)]
+                    providers: [gateway], servers: [
+                        AgentMCPServer(id: .v7(), name: "gmail", providerID: gateway.id, service: service),
+                        AgentMCPServer(id: .v7(), name: "unrelated", providerID: nil, service: "unrelated", direct: .init(command: "unrelated-command")),
+                    ]
                 )
                 let registry = Mutex(settings)
                 @Sendable func replaceRegistration(_ settings: inout AgentMCPSettings) {
@@ -129,6 +132,8 @@
                 let launch = try #require(fixture.pi.launches.all.first { $0.profile == .intake })
                 #expect(launch.profile == .intake && launch.arguments.contains("event_record,mcp__gmail__*"))
                 #expect(launch.environment["DAHLIA_PI_MCP_SERVERS"] == #"["gmail"]"#)
+                let configuration = try #require(launch.environment["DAHLIA_PI_MCP_CONFIG"])
+                #expect(configuration.contains("gmail") && !configuration.contains("unrelated"))
                 let (source, runs, events) = try await saved(fixture)
                 let run = try #require(runs.first)
                 #expect(run.task == "intake" && run.finishedAt != nil)

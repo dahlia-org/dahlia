@@ -54,7 +54,10 @@ struct AgentScheduleSettingsView: View {
                 resuming = nil
             } }
         } message: {
-            if let row = resuming { Text("\(row.schedule)\n\(row.prompt)\n\(row.skills)\n\(row.allowedTools)") }
+            if let row = resuming {
+                let tools = (try? JSONDecoder().decode([String].self, from: Data(row.allowedTools.utf8))) ?? []
+                Text("\(row.schedule)\n\(row.prompt)\n\(row.skills)\n\(tools.filter { $0.hasPrefix("mcp__") }.joined(separator: ", "))")
+            }
         }
         .confirmationDialog(L10n.delete, isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } })) {
             if let row = deleting { Button(L10n.delete, role: .destructive) { Task { await model.schedule(row, action: "remove") }

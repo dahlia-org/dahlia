@@ -2560,8 +2560,11 @@ enum L10n { // swiftlint:disable:this type_body_length
     static var mcpDirectEnvironment: String { String(localized: "settings.agents.mcpDirectEnvironment", bundle: bundle) }
     static var mcpDirectHeaders: String { String(localized: "settings.agents.mcpDirectHeaders", bundle: bundle) }
     static var mcpDirectHelp: String { String(localized: "settings.agents.mcpDirectHelp", bundle: bundle) }
+    static var mcpDirectPairKey: String { String(localized: "settings.agents.mcpDirectPairKey", bundle: bundle) }
+    static var mcpDirectPairValue: String { String(localized: "settings.agents.mcpDirectPairValue", bundle: bundle) }
     static var mcpDirectPairsInvalid: String { String(localized: "settings.agents.mcpDirectPairsInvalid", bundle: bundle) }
     static var mcpDirectCommandRequired: String { String(localized: "settings.agents.mcpDirectCommandRequired", bundle: bundle) }
+    static var mcpDirectConnectionChanged: String { String(localized: "settings.agents.mcpDirectConnectionChanged", bundle: bundle) }
     static var mcpDirectURLInvalid: String { String(localized: "settings.agents.mcpDirectURLInvalid", bundle: bundle) }
     static var mcpNoProviders: String { String(localized: "settings.agents.mcpNoProviders", bundle: bundle) }
     static var mcpProviderSignInRequired: String { String(localized: "settings.agents.mcpProviderSignInRequired", bundle: bundle) }

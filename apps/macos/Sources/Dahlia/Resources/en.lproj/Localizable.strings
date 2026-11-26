@@ -1479,10 +1479,12 @@
 "settings.agents.mcpDirectTransport" = "Transport";
 "settings.agents.mcpDirectCommand" = "Command";
 "settings.agents.mcpDirectArguments" = "Arguments (one per line)";
-"settings.agents.mcpDirectEnvironment" = "Environment (KEY=value per line)";
-"settings.agents.mcpDirectHeaders" = "Headers (Name: value per line)";
+"settings.agents.mcpDirectEnvironment" = "Environment Variables";
+"settings.agents.mcpDirectHeaders" = "Headers";
 "settings.agents.mcpDirectHelp" = "Write ${VAR} in a value to read it from the chat's environment variables. Keep secrets under Environment Variables and reference them. A stdio command runs outside the chat's sandbox. Changes apply to new chats.";
-"settings.agents.mcpDirectPairsInvalid" = "Write environment variables and headers one name and value per line.";
+"settings.agents.mcpDirectPairKey" = "Name";
+"settings.agents.mcpDirectPairValue" = "Value";
+"settings.agents.mcpDirectPairsInvalid" = "Give every environment variable and header with a value a name, and use each name once.";
 "settings.agents.mcpDirectCommandRequired" = "Enter a command.";
 "settings.agents.mcpDirectURLInvalid" = "Enter an http or https URL.";
 "settings.agents.mcpNoProviders" = "Add a Databricks workspace under Providers on the Models tab to turn on its Unity AI Gateway MCPs here.";
@@ -1497,7 +1499,7 @@
 "settings.agents.mcpNoServices" = "This workspace's Unity AI Gateway (system.ai) has no MCPs you can use.";
 "settings.agents.mcpRemoveWorkspaceDescription" = "Signs out of this workspace and deletes every MCP server registered on it.";
 "settings.agents.mcpRemoveWorkspace %@" = "Delete “%@”?";
-"settings.agents.mcpServerNameInvalid" = "Use up to 40 lowercase letters, digits, and _ in the server name.";
+"settings.agents.mcpServerNameInvalid" = "Use up to 40 lowercase letters, digits, and _ in the server name, without consecutive _.";
 "settings.agents.mcpServerNameTaken" = "Another server already has this name.";
 "chat.mcpSignInRequired %@" = "%@ needs sign-in. Sign in again under Settings > Providers.";
 "settings.agents.piCommandInUse" = "Command in use";
@@ -2068,3 +2070,5 @@
 "Remove attached images before compacting context" = "Remove attached images before compacting context";
 
 "Skip and continue" = "Skip and continue";
+
+"settings.agents.mcpDirectConnectionChanged" = "A connector changed during approval. Review the schedule again.";

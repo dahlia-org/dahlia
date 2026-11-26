@@ -89,10 +89,25 @@ struct AgentMCPDirectConfiguration: Codable, Hashable, Sendable {
     var error: String? {
         switch transport {
         case .stdio:
-            command.trimmingCharacters(in: .whitespaces).isEmpty ? L10n.mcpDirectCommandRequired : nil
+            return command.trimmingCharacters(in: .whitespaces).isEmpty ? L10n.mcpDirectCommandRequired : nil
         case .http:
-            URL(string: url).flatMap(\.scheme).map { ["http", "https"].contains($0.lowercased()) } == true ? nil : L10n.mcpDirectURLInvalid
+            if let endpoint = URL(string: url), let scheme = endpoint.scheme,
+               ["http", "https"].contains(scheme.lowercased()), endpoint.host()?.isEmpty == false { return nil }
+            return L10n.mcpDirectURLInvalid
         }
+    }
+
+    static func parse(
+        transport: Transport, command: String, arguments: String, environment: [Pair], url: String, headers: [Pair]
+    ) throws -> Self {
+        guard let env = transport == .stdio ? pairs(environment) : [:],
+              let headers = transport == .http ? pairs(headers) : [:]
+        else { throw AgentMCPSettingsError(message: L10n.mcpDirectPairsInvalid) }
+        return Self(
+            transport: transport, command: command.trimmingCharacters(in: .whitespaces),
+            args: arguments.split(whereSeparator: \.isNewline).map(String.init), env: env,
+            url: url.trimmingCharacters(in: .whitespaces), headers: headers
+        )
     }
 
     /// The `mcp.json` entry. Pi resolves `${VAR}` in `env` and `headers` from the chat's environment.
@@ -110,20 +125,17 @@ struct AgentMCPDirectConfiguration: Codable, Hashable, Sendable {
         return .object(entry)
     }
 
-    /// `KEY<separator>value` lines as a dictionary, or nil when a non-empty line has no key.
-    static func pairs(_ text: String, separator: Character) -> [String: String]? {
+    typealias Pair = (key: String, value: String)
+
+    /// Key and value rows as a dictionary, skipping empty rows, or nil when a row has no key or repeats one.
+    static func pairs(_ rows: [Pair]) -> [String: String]? {
         var pairs: [String: String] = [:]
-        for line in text.split(whereSeparator: \.isNewline) where !line.trimmingCharacters(in: .whitespaces).isEmpty {
-            guard let index = line.firstIndex(of: separator) else { return nil }
-            let key = line[..<index].trimmingCharacters(in: .whitespaces)
-            guard !key.isEmpty else { return nil }
-            pairs[key] = line[line.index(after: index)...].trimmingCharacters(in: .whitespaces)
+        for row in rows {
+            let key = row.key.trimmingCharacters(in: .whitespaces)
+            if key.isEmpty, row.value.isEmpty { continue }
+            guard !key.isEmpty, pairs.updateValue(row.value, forKey: key) == nil else { return nil }
         }
         return pairs
-    }
-
-    static func lines(_ pairs: [String: String], separator: String) -> String {
-        pairs.sorted { $0.key < $1.key }.map { "\($0.key)\(separator)\($0.value)" }.joined(separator: "\n")
     }
 }
 
@@ -174,7 +186,7 @@ struct AgentMCPSettings: Codable, Equatable, Sendable {
         settings.save(defaults: defaults)
         guard FileManager.default.fileExists(atPath: agentURL.path) else { return }
         try PiProviderConfiguration.updateProviders(agentURL: agentURL) { $0[id] = nil }
-        try PiProviderConfiguration.writeMCPServers(settings.piServers, agentURL: agentURL)
+        try PiProviderConfiguration.writeMCPServers([:], agentURL: agentURL)
     }
 
     /// An explicitly added service may use the host again after it has been connected as an app provider account.
@@ -210,9 +222,48 @@ struct AgentMCPSettings: Codable, Equatable, Sendable {
         servers.first { self.connectionID(for: $0.name) == connectionID }?.name
     }
 
+    var directConnectionIDs: [String: String] {
+        servers.reduce(into: [:]) { result, server in
+            if server.direct != nil { result[server.name] = connectionID(for: server.name) }
+        }
+    }
+
+    var scheduledServers: Set<String> { Set(piServers.keys).union(["dahlia"]) }
+
+    /// Legacy names can overlap tool prefixes. Refuse ambiguity rather than start an unapproved server.
+    static func scheduledServer(for tool: String, servers: Set<String>) -> String? {
+        let matches = servers.filter { tool.hasPrefix("mcp__\($0)__") }
+        return matches.count == 1 ? matches.first : nil
+    }
+
+    /// Identity tokens stay alongside tool names in the existing schedule grant array.
+    static func scheduledToolGrants(_ tools: [String], connections: [String: String], servers: Set<String>) -> [String] {
+        let tools = tools.filter { scheduledServer(for: $0, servers: servers) != nil }
+        return tools + tools.compactMap { tool in
+            guard let server = scheduledServer(for: tool, servers: servers), let identity = connections[server] else { return nil }
+            return "connection|\(tool)|\(identity)"
+        }
+    }
+
+    func allowsScheduledTool(_ tool: String, grants: Set<String>) -> Bool {
+        guard grants.contains(tool), Self.scheduledServer(for: tool, servers: scheduledServers) != nil else { return false }
+        let prefix = "connection|\(tool)|"
+        let approved = Set(grants.filter { $0.hasPrefix(prefix) })
+        let expected = Set(Self.scheduledToolGrants([tool], connections: directConnectionIDs, servers: scheduledServers)
+            .filter { $0.hasPrefix(prefix) })
+        return approved == expected
+    }
+
+    func validateScheduledGrants(_ tools: [String]) throws {
+        let grants = Set(tools)
+        guard tools.filter({ $0.hasPrefix("mcp__") }).allSatisfy({ allowsScheduledTool($0, grants: grants) })
+        else { throw HermesLearning.failure(L10n.mcpDirectConnectionChanged) }
+    }
+
     /// Why `name` cannot name a new server, or nil. Internal server names cannot be overridden by gateway services.
     func nameError(_ name: String) -> String? {
-        guard name.count <= 40, name.wholeMatch(of: /[a-z0-9_]+/) != nil else { return L10n.mcpServerNameInvalid }
+        // `__` would make `mcp__a__b__c` match both servers `a` and `a__b`, so a scheduled run could start both.
+        guard name.count <= 40, name.wholeMatch(of: /[a-z0-9_]+/) != nil, !name.contains("__") else { return L10n.mcpServerNameInvalid }
         guard name != "dahlia", name != AgentWebAccessSettings.serverName,
               !servers.contains(where: { $0.name == name }) else { return L10n.mcpServerNameTaken }
         return nil
@@ -222,11 +273,13 @@ struct AgentMCPSettings: Codable, Equatable, Sendable {
     /// or one of `taken` already has it.
     func defaultName(for service: String, taken: Set<String> = []) -> String {
         let last = service.split(separator: ".").last.map(String.init) ?? service
-        let base = String(last.lowercased().map { $0.isASCII && ($0.isLetter || $0.isNumber) ? $0 : "_" }.prefix(36)).nilIfBlank ?? "mcp"
+        let safe = String(last.lowercased().map { $0.isASCII && ($0.isLetter || $0.isNumber) ? $0 : "_" })
+            .replacing(/_{2,}/, with: "_")
+        let base = String(safe.prefix(36)).nilIfBlank ?? "mcp"
         var name = base
         var number = 2
         while nameError(name) != nil || taken.contains(name) {
-            name = "\(base)_\(number)"
+            name = base + (base.hasSuffix("_") ? "" : "_") + String(number)
             number += 1
         }
         return name

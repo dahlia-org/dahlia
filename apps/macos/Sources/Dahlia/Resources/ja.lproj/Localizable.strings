@@ -1479,10 +1479,12 @@
 "settings.agents.mcpDirectTransport" = "接続方式";
 "settings.agents.mcpDirectCommand" = "コマンド";
 "settings.agents.mcpDirectArguments" = "引数（1行に1つ）";
-"settings.agents.mcpDirectEnvironment" = "環境変数（1行に KEY=value）";
-"settings.agents.mcpDirectHeaders" = "ヘッダー（1行に Name: value）";
+"settings.agents.mcpDirectEnvironment" = "環境変数";
+"settings.agents.mcpDirectHeaders" = "ヘッダー";
 "settings.agents.mcpDirectHelp" = "値に ${VAR} と書くと、チャットの環境変数から読み込みます。秘密の値は「環境変数」に設定して参照してください。stdio のコマンドはチャットの sandbox の外で実行されます。変更は新しいチャットから適用されます。";
-"settings.agents.mcpDirectPairsInvalid" = "環境変数とヘッダーは、1行に1つずつ名前と値を書いてください。";
+"settings.agents.mcpDirectPairKey" = "名前";
+"settings.agents.mcpDirectPairValue" = "値";
+"settings.agents.mcpDirectPairsInvalid" = "環境変数とヘッダーは、値のある行に名前を入力し、同じ名前を重ねないでください。";
 "settings.agents.mcpDirectCommandRequired" = "コマンドを入力してください。";
 "settings.agents.mcpDirectURLInvalid" = "http または https の URL を入力してください。";
 "settings.agents.mcpNoProviders" = "「モデル」の「プロバイダー」で Databricks ワークスペースを追加すると、その Unity AI Gateway の MCP をここでオンにできます。";
@@ -1497,7 +1499,7 @@
 "settings.agents.mcpNoServices" = "このワークスペースの Unity AI Gateway（system.ai）に、使える MCP はありません。";
 "settings.agents.mcpRemoveWorkspaceDescription" = "このワークスペースからサインアウトし、登録した MCP サーバーもすべて削除します。";
 "settings.agents.mcpRemoveWorkspace %@" = "「%@」を削除しますか？";
-"settings.agents.mcpServerNameInvalid" = "サーバー名には英小文字・数字・_ を40文字まで使えます。";
+"settings.agents.mcpServerNameInvalid" = "サーバー名には英小文字・数字・_ を40文字まで使えます。_ は連続できません。";
 "settings.agents.mcpServerNameTaken" = "このサーバー名はすでに使われています。";
 "chat.mcpSignInRequired %@" = "%@ を使うにはサインインが必要です。設定の「プロバイダー」でサインインし直してください。";
 "settings.agents.piCommandInUse" = "使用するコマンド";
@@ -2068,3 +2070,5 @@
 "Remove attached images before compacting context" = "コンテキストを圧縮する前に添付画像を削除してください";
 
 "Skip and continue" = "スキップして続行";
+
+"settings.agents.mcpDirectConnectionChanged" = "承認中にコネクタが変更されました。予定をもう一度確認してください。";

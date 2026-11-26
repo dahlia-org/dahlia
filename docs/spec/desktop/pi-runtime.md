@@ -131,7 +131,7 @@ extension は `read`・`ls`・`write`・`edit`・`bash` を Pi の `create*Tool`
 「セキュリティ」タブは作業フォルダに加え、スキル保存先・一時フォルダ・標準 skill・パッケージの既定のアクセス権と、優先する保護対象の例外を表示する。画像・SQLite は「Dahlia データ」、OS の読み取り許可は「システムフォルダ」に折りたたむ。Dahlia データは画像フォルダと DB 関連ファイルだけを許可し、認証情報や設定を含む親フォルダ全体は許可しない。
 
 sandbox の引数は Dahlia が `DAHLIA_PI_SANDBOX` で渡す。引数がないとき、または呼ばれる tool が Pi の built-in のまま（extension の登録が置き換えていない）のときは、5つの tool を拒否する。
-`HOME` と `TMPDIR` は追加の許可にかかわらず専用の一時フォルダを指す。`~/.desk.toml` などを追加した場合は絶対パス（必要なら `DESK_CONFIG` などの環境変数）で参照する。追加していないホーム内の設定・tool（uv・nvm・pyenv など）は読めない。sandbox の中の環境からは、利用者が「環境変数」で秘密にした変数（`DAHLIA_PI_SANDBOX_HIDDEN_ENV`）を除く。
+`HOME` と `TMPDIR` は追加の許可にかかわらず専用の一時フォルダを指す。`~/.desk.toml` などを追加した場合は絶対パス（必要なら `DESK_CONFIG` などの環境変数）で参照する。追加していないホーム内の設定・tool（uv・nvm・pyenv など）は読めない。sandbox の中の環境からは、利用者が「環境変数」で秘密にした変数（`DAHLIA_PI_SANDBOX_HIDDEN_ENV`）と、認証値を含みうる MCP の接続設定（`DAHLIA_PI_MCP_CONFIG`）を除く。
 作業フォルダはチャットが書けるので、Pi がそこから設定を読まないことが前提になる。Pi は `--no-approve` で project の設定（`.pi/mcp.json` など）を無視する。
 Dahlia MCP は Pi の子のままで、コマンドは SQLite に書けず MCP にも届かないので、Dahlia のデータの変更は上記の承認方式に従う MCP の tool だけが行う。
 Pi の codemode（未有効）の script は Pi の process 内の QuickJS で動き、file system も network も持たない。script が呼ぶ tool には同じ制限（Seatbelt と MCP の承認）が掛かる。
@@ -146,7 +146,7 @@ Pi の codemode（未有効）の script は Pi の process 内の QuickJS で�
 - 画像非対応・能力不明のモデルには画像を渡さず、テキストで続ける。
 - Dahlia は RPC の extension UI（`ctx.ui.input("dahlia:<method>")`）でだけ extension と通信する。token は要求ごとに stdin で渡し、config・環境変数・log に残さない。
 - Databricks の接続と Dahlia account の provider（`DAHLIA_PI_BRIDGED_PROVIDERS`）は、extension が pi-ai の `createProvider` で認証だけを持つ provider として登録し、使うたびに bridge の `token` で起動時の接続 ID に結び付いた credential を解決する。RPC の初期化応答までに設定が変わった起動は閉じてやり直す。別の接続へ切り替わった古い要求は拒否し、モデル一覧の取得先と credential も同じ接続に固定する。切り替え前に始めた一覧は新しい設定へ保存しない（モデルは `models.json` を重ねる。session 開始前の利用可否の確認には要求に使わない仮の値を返す）。`models.json` に key は書かない。
-- Unity AI Gateway の sign-in は、extension が OAuth の provider として登録する（[Unity AI Gateway の MCP](#unity-ai-gateway-の-mcp)）。モデルは Dahlia が `models.json` に書く。`mcp.json` の項目は `auth.provider` でその credential を要求ごとに使う（Pi の文書にない項目で、Pi 更新時に回帰確認する）。
+- Unity AI Gateway の sign-in は、extension が OAuth の provider として登録する（[Unity AI Gateway の MCP](#unity-ai-gateway-の-mcp)）。モデルは Dahlia が `models.json` に書く。MCP の接続設定は `auth.provider` でその credential を要求ごとに使う（Pi の文書にない項目で、Pi 更新時に回帰確認する）。
 
 ### stdio
 
@@ -349,16 +349,16 @@ Unity Gateway の MCP service は登録の操作なしで一覧からトグル�
 `GET /api/2.1/unity-catalog/mcp-services`）と、登録済みの service である。最後に取った一覧を設定に残して展開したときに先に示し、展開する
 たびに取り直す。取り直しに失敗しても前の一覧を残し、失敗を示す。一覧は token を持つ Pi が control process の `/databricks-mcp-services <workspace URL>`
 で取り、Dahlia には名前と `comment` を返す。説明も最後の一覧とともに保存し、取得失敗時は保持する。`system.ai` 以外の schema は自動列挙せず、完全名で登録した有効な service だけを個別の GET API で取得する。server 名は tool
-名の接頭辞（`mcp__<name>__`）になるので、英小文字・数字・`_` の40文字までとし、アカウントの中で重複させず、`dahlia` を使わない。既定は
+名の接頭辞（`mcp__<name>__`）になるので、英小文字・数字・`_` の40文字までとし、`_` を連続させず（`mail` と `mail__work` の tool 名が区別できなくなるため。登録済みの名前はそのまま残す）、アカウントの中で重複させず、`dahlia` を使わない。既定は
 service 名の最後の部分（`system.ai.github` なら `github`）で、重複するときは番号を付ける。名前は自動で割り当て、設定からの変更は提供しない。同じアカウントで複数の workspace を登録できる。
 
 ### 直接設定の MCP
 
 「コネクタ」タブの provider の見出しより上に「直接設定」の見出しを置き、stdio のコマンドまたは streamable HTTP の URL で設定した server を同じカードで並べる（2026-11-27 ユーザー依頼）。
-最後の「MCP サーバーを追加」カードはどちらの方式も共通で、アプリ内モーダルの切り替えで stdio（コマンド・1行1つの引数・`KEY=value` の環境変数）か HTTP（URL・`Name: value` のヘッダー）を入力する。
+最後の「MCP サーバーを追加」カードはどちらの方式も共通で、アプリ内モーダルの切り替えで stdio（コマンド・1行1つの引数・環境変数）か HTTP（URL・ヘッダー）を入力する。環境変数とヘッダーは名前と値の欄を分けた行で、＋ボタンで行を足し、－ボタンで消す。
 名前は Unity Gateway の server と同じ規則・同じ名前空間で、追加時だけ入力する。カードには名前とコマンドまたは URL を表示し、鉛筆ボタンで同じモーダルを開いて設定の変更・削除を行う。接続内容を変えると既存の Source の許可は無効になり、新しい Source の作成が必要になる。
-トグルは設定を残したまま `mcp.json` への書き出しとイベントソースの許可を止める。登録は Unity Gateway の server と同じ `agentMCPs.local` に `providerID` なしで保存し、`env`・`headers` は入力どおり平文で残す。
-秘密の値は「環境変数」に置き、Pi が `${VAR}` で解決する。`mcp.json` には `command`・`args`・`env`、または `url`・`headers` と `exposure: "direct"` を書き、`auth.provider` は持たない。
+トグルは設定を残したまま Pi への接続設定の受け渡しとイベントソースの許可を止める。登録は Unity Gateway の server と同じ `agentMCPs.local` に `providerID` なしで保存し、`env`・`headers` は入力どおり平文で残す。
+秘密の値は「環境変数」に置き、Pi が `${VAR}` で解決する。Pi に渡す設定は `command`・`args`・`env`、または `url`・`headers` と `exposure: "direct"` を持ち、`auth.provider` は持たない。
 stdio の server は Dahlia MCP と同じく Pi の子として Seatbelt の外で実行される。tool の承認は他の MCP server と同じ。OAuth が必要な HTTP server のサインイン（Pi の `/mcp login`）は提供しない。
 
 sign-in は workspace ごとに1つで、その workspace の server すべてが共有する。どの server を使っても同じ refresh token が更新される。
@@ -368,7 +368,7 @@ host（port があれば `:<port>` を付ける）で、同じ workspace をも�
 この provider の `auth.oauth` が workspace の `/oidc/v1/authorize`・`/oidc/v1/token` に対して PKCE の認可コードフローと refresh を行い、
 Pi がその credential を agent directory の `auth.json` に保存し、ロックの中で refresh する。credential には token と一緒に workspace の
 origin と client を保存するので、どの process も provider の ID だけで refresh できる。`dahlia.ts` がどの process でも
-`registerDatabricksProviders` を呼び、起動時に `mcp.json` の `auth.provider` と `models.json` の provider のうちドットを含む ID
+`registerDatabricksProviders` を呼び、起動時に `DAHLIA_PI_MCP_CONFIG` の `auth.provider` と `models.json` の provider のうちドットを含む ID
 （Pi 自身の provider の ID にはない）を provider として登録する。Dahlia は provider の一覧を環境変数で渡さない。`/databricks-login`・
 `/databricks-mcp-services`・`/databricks-model-services` は `dahlia.ts` の control 用の分岐が import して登録する。
 client の既定は Databricks CLI の公開 client `databricks-cli`（redirect は `http://localhost:<8020〜8040>`）で、Pi が自身の
@@ -393,11 +393,12 @@ control process の `/databricks-connection-login <workspace URL> <service>` が
 
 OpenAI Responses の function tool は、`strict` の指定がない場合に `false` を明示し、MCP schema の任意引数を任意のまま渡す。明示された空文字・`null`・`false` は省略に置き換えず、承認と実行に同じ値を渡す。
 
-チャットの process を起動するたびに、Dahlia は登録した Gateway の server を `mcp.json`（0600）に `<workspace>/ai-gateway/mcp-services/system.ai.<name>`
-の `url`・`exposure: "direct"`・`auth: { provider: "<sign-in の provider>" }` だけで書き、オンの直接設定の server を[その設定](#直接設定の-mcp)で加える（登録がなければ空）。Pi は `mcp.json` を起動時に
-だけ読むので、登録の変更はその後に起動する chat process から効く。開いている thread の process は、閉じるまで前の設定のまま動く（遅れは
-ユーザーが許容。2026-11-07）。`--tools`・`DAHLIA_PI_MCP_SERVERS` は process ごとに同じ時点の設定から作るので、
-別の thread が先に書いた新しい `mcp.json` を読んでも、その process で使える MCP は起動時の設定の範囲に留まる。
+チャットの process を起動するたびに、Dahlia は許可する MCP の接続設定をその process の環境変数 `DAHLIA_PI_MCP_CONFIG` に固定し、extension が Pi の `registerMcpServer` で登録する。
+Gateway は `<workspace>/ai-gateway/mcp-services/<service>` の `url`・`exposure: "direct"`・`auth: { provider: "<sign-in の provider>" }`、直接設定は[その設定](#直接設定の-mcp)を渡す。
+共有の `mcp.json`（0600）は空に保ち、別の thread の起動が接続範囲を広げない。`--no-approve` で作業フォルダの Pi 設定も読み込まない。
+通常のチャットには有効な接続、エージェントの会話には Dahlia MCP だけ、取り込みには Source の接続だけ、定期実行には承認済みの接続だけを渡す。
+`--tools`・`DAHLIA_PI_MCP_SERVERS` も同じ時点の設定から作る。接続設定の変更はその後に起動する process から効き、開いている thread は閉じるまで前の設定のまま動く（遅れはユーザーが許容。2026-11-07）。
+直接設定を使う定期実行の許可は接続 ID にも結び付け、承認中の変更、実行中の変更、削除と同名での再登録を許可の引き継ぎに使えない。接続変更後はチャットから予定を更新して再承認する。
 
 履歴の正本は app の GRDB の `chat_threads` と追記専用 `chat_items`。Dahlia では永続的な会話を Thread、
 その時系列ログを Item と呼ぶ。session は Pi／Databricks のアダプタ内と録音の用語に留める。台帳は常に GRDB に置き、

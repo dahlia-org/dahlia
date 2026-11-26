@@ -19,6 +19,7 @@ import os
 import re
 from pathlib import Path
 import subprocess
+import sys
 import tempfile
 import threading
 import urllib.parse
@@ -422,7 +423,7 @@ def run(pi, mode, script, arguments, environment, approval="accept", approval_mo
         (root / "workspace/protected-alias").symlink_to(root / "workspace/SOUL.md")
         (root / "tmp/shared.txt").write_text("OTHER_CHAT_MARKER")
         if mcp_servers is not None:
-            (root / "agent/mcp.json").write_text(json.dumps({"mcpServers": mcp_servers}))
+            (root / "agent/mcp.json").write_text(json.dumps({"mcpServers": {}}))
         # Like Dahlia's models.json: no key; the extension resolves the bridged provider's credential.
         provider = {"baseUrl": f"http://127.0.0.1:{server.server_port}/v1", "api": api, "authHeader": True,
                     "headers": {"Databricks-Ai-Gateway-Request-Tags": '{"source": "dahlia"}'},
@@ -435,6 +436,9 @@ def run(pi, mode, script, arguments, environment, approval="accept", approval_mo
                    DAHLIA_PI_SANDBOX=json.dumps(sandbox(root)), DAHLIA_PI_SANDBOX_HIDDEN_ENV=json.dumps(["USER_SECRET"]),
                    DAHLIA_PI_SANDBOX_TMPDIR=str(root / "tmp"), TMPDIR=str(root / "pi-tmp"),
                    USER_SECRET="ENV_SECRET_MARKER", DAHLIA_PI_MCP_EXTENSION=str(MCP_EXTENSION), **environment)
+        if mcp_servers is not None:
+            env["DAHLIA_PI_MCP_CONFIG"] = json.dumps({**mcp_servers, "unrelated_stdio": {
+                "command": "/usr/bin/touch", "args": [str(root / "unrelated-started.txt")], "exposure": "direct"}})
         if web_access:
             package = Path(web_access)
             if package.is_dir():
@@ -491,6 +495,7 @@ def run(pi, mode, script, arguments, environment, approval="accept", approval_mo
         process.stdin.close()
         process.wait(timeout=20)
         server.shutdown()
+        assert not (root / "unrelated-started.txt").exists(), "An out-of-scope stdio server started"
         outside_written = (root / "outside.txt").exists() or "CHANGED" in (root / "agent/auth.json").read_text()
     return requests, tool_results, bridge, outside_written
 
@@ -738,16 +743,43 @@ def schedule_approval_regression(pi):
     print("PASS: schedule approval modes, review fallback, critical denial, frozen revision and read-only listing")
 
 
+def scoped_mcp_startup(pi):
+    with tempfile.TemporaryDirectory() as temporary:
+        marker = Path(temporary) / "selected-started.txt"
+        script = """import json,sys
+from pathlib import Path
+Path(sys.argv[1]).write_text('started')
+for line in sys.stdin:
+    request=json.loads(line)
+    if 'id' not in request: continue
+    result={'protocolVersion':'2024-11-05','capabilities':{'tools':{}},'serverInfo':{'name':'selected','version':'1'}} if request['method']=='initialize' else {'tools':[]}
+    print(json.dumps({'jsonrpc':'2.0','id':request['id'],'result':result}),flush=True)
+"""
+        _, results, _, _ = run(pi, "chat", [{"tool": "bash", "args": {
+            "command": "test -z \"${DAHLIA_PI_MCP_CONFIG+x}\" && printf CONFIG_PROTECTED || printf CONFIG_VISIBLE"
+        }}, {"text": "done"}], ["--no-session", *CHAT_EXTENSIONS, "--tools", "bash,mcp__selected__*"],
+            {"DAHLIA_PI_MCP_SERVERS": '["selected"]'},
+            mcp_servers={"selected": {"command": sys.executable, "args": ["-c", script, str(marker)],
+                                      "env": {"MCP_TEST_VALUE": "LOCAL_MCP_MARKER"}, "exposure": "direct"}})
+        assert marker.read_text() == "started"
+        assert len(results) == 1 and "CONFIG_PROTECTED" in results[0], results
+    print("PASS: process-scoped native MCP starts its selected stdio server and no unrelated server")
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--pi", default="pi")
     parser.add_argument("--only-schedules", action="store_true")
     parser.add_argument("--only-web-access", action="store_true")
+    parser.add_argument("--only-mcp-config", action="store_true")
     parser.add_argument("--web-access-package", help="Installed pi-web-access 0.47.0 package directory; also test the real MCP worker offline")
     args = parser.parse_args()
     pi = args.pi
     web_access_package = args.web_access_package
     os.environ.setdefault("DAHLIA_PI_AUTO_REVIEW", str(ROOT / "apps/macos/Sources/Dahlia/PiExtension/pi-auto-review/index.ts"))
+    scoped_mcp_startup(pi)
+    if args.only_mcp_config:
+        return
     if args.only_web_access:
         web_access_regression(pi, web_access_package)
         return
@@ -1081,7 +1113,7 @@ def main():
     assert {"mcp__gmail__search_messages", "mcp__gmail__send_message"} <= set(names), names
     assert "mcp__foreign__search_messages" not in names, names
     assert authorizations and set(authorizations) == {"Bearer mcp-access-1"}, authorizations
-    assert foreign and set(foreign) == {None}, foreign
+    assert not foreign, foreign
     assert results == ["GATEWAY_OK"] and not any(method == "approval" for method, _ in bridge), (results, bridge)
     # The native schedule service freezes these discovered tools into approved_read_only_tools after approval.
     for action in ("create", "update", "resume"):
@@ -1107,10 +1139,10 @@ def main():
     assert results == ['POSTED ' + json.dumps(call_args, sort_keys=True)], results
     approvals = [payload for method, payload in bridge if method == "approval"]
     assert [p["arguments"] for p in approvals] == [call_args], approvals
-    # A server Dahlia did not register stays blocked even if its tools get past --tools.
+    # An out-of-scope server never connects or registers tools, even with a broader --tools argument.
     _, results, bridge, _ = gateway_chat({"tool": "mcp__foreign__search_messages"}, approval_mode="fullAccess",
                                          arguments=["--no-session", *CHAT_EXTENSIONS, "--tools", "read,mcp__gmail__*,mcp__foreign__*"])
-    assert "not available" in results[0] and "GATEWAY_OK" not in results[0], results
+    assert results == ["Tool mcp__foreign__search_messages not found"] and not foreign, (results, foreign)
 
     # Intake reads its one source and records events; it cannot write to the source or read files, even under fullAccess.
     record = {"items": [{"key": "m1", "topic": "t1", "note": "A reply is needed", "ref": {"messageId": "m1"}}]}
