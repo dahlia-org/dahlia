@@ -3115,6 +3115,15 @@ enum L10n { // swiftlint:disable:this type_body_length
     static var chatSettleThread: String { String(localized: "chat.settleThread", bundle: bundle) }
     static var chatCannotSettleActiveThread: String { String(localized: "chat.cannotSettleActiveThread", bundle: bundle) }
     static var chatUnsettleThread: String { String(localized: "chat.unsettleThread", bundle: bundle) }
+
+    static func chatSettleThreads(_ count: Int) -> String {
+        String(format: String(localized: "chat.settleThreads", bundle: bundle), locale: .current, count)
+    }
+
+    static func chatUnsettleThreads(_ count: Int) -> String {
+        String(format: String(localized: "chat.unsettleThreads", bundle: bundle), locale: .current, count)
+    }
+
     static var chatContinueAfterRestart: String { String(localized: "Continue chats after a crash", bundle: bundle) }
     static var chatContinueAfterRestartHelp: String { String(localized: "chat.continueAfterRestart.help", bundle: bundle) }
     static var chatContinuedAfterRestart: String { String(localized: "chat.continuedAfterRestart", bundle: bundle) }

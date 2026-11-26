@@ -647,7 +647,7 @@
             let work = try store.enqueueRun(run(target: target.id))
             try store.setRunStatus(work.id, status: status)
 
-            #expect(throws: (any Error).self) {
+            #expect(throws: ChatThreadStore.SettleError.threadBusy) {
                 try store.setSettled(true, threadID: target.id, accountID: "local")
             }
             #expect(try store.thread(id: target.id, accountID: "local").settledAt == nil)

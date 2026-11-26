@@ -1917,6 +1917,8 @@
 "chat.settleThread" = "スレッドを対応済みにする";
 "chat.cannotSettleActiveThread" = "実行中・待機中のスレッドは対応済みにできません。";
 "chat.unsettleThread" = "スレッドの対応済みを解除";
+"chat.settleThreads" = "%d 件のスレッドを対応済みにする";
+"chat.unsettleThreads" = "%d 件のスレッドの対応済みを解除";
 "Follow-up behavior" = "実行中の追加送信";
 "While responding, send using the default behavior. Hold Command or press Command-Return to use the other action." = "応答中は既定の方式で送信します。Command キーを押しながらクリックするか、⌘Return でもう一方の方式を使います。";
 "Queue paused" = "キューは一時停止中";

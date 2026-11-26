@@ -6,6 +6,66 @@ import Foundation
 
     @MainActor
     struct CodexChatCoordinatorTests {
+        @Test(arguments: [false, true])
+        func busyFallbackPreservesHistoryReloadErrors(settledHistoryFails: Bool) async {
+            let service = CoordinatorTestCodexChatService(failFirstHistoryRequest: !settledHistoryFails)
+            await service.failSettledHistory(settledHistoryFails)
+            await service.rejectSettle(on: "b", busy: true)
+            let coordinator = CodexChatCoordinator(service: service, settings: AppSettings())
+
+            await coordinator.setSettled([Self.threadSummary(id: "b")], true)
+
+            #expect(coordinator.historyError == PiRuntimeError.processExited(nil).localizedDescription)
+            #expect(await service.historyRequests == 1)
+            await service.failSettledHistory(false)
+            await coordinator.refreshHistory()
+            #expect(coordinator.historyError == nil)
+            #expect(coordinator.history.map(\.id) == ["history-thread"])
+        }
+
+        @Test(arguments: [["b"], ["a", "b", "c"], []])
+        func allBusySettlesReportTheRejectionAfterRefreshing(ids: [String]) async {
+            let service = CoordinatorTestCodexChatService()
+            for id in ids { await service.rejectSettle(on: id, busy: true) }
+            let coordinator = CodexChatCoordinator(service: service, settings: AppSettings())
+
+            await coordinator.setSettled(ids.map { Self.threadSummary(id: $0) }, true)
+
+            #expect(await service.settleAttempts == ids)
+            #expect(await service.settledIDs.isEmpty)
+            #expect(await service.historyRequests == 1)
+            #expect(coordinator.historyError == (ids.isEmpty ? nil : L10n.chatCannotSettleActiveThread))
+        }
+
+        @Test(arguments: [false, true])
+        func bulkSettlingSkipsBusyTargetsAndRefreshesOnce(settled: Bool) async {
+            let service = CoordinatorTestCodexChatService()
+            await service.rejectSettle(on: "b", busy: true)
+            let coordinator = CodexChatCoordinator(service: service, settings: AppSettings())
+            let targets = ["a", "b", "c"].map { Self.threadSummary(id: $0) }
+
+            await coordinator.setSettled(targets, settled)
+
+            #expect(await service.settleAttempts == ["a", "b", "c"])
+            #expect(await service.settledIDs == (settled ? ["a", "c"] : ["a", "b", "c"]))
+            #expect(await service.historyRequests == 1)
+            #expect(coordinator.historyError == nil)
+        }
+
+        @Test func bulkSettlingReportsRealWriteFailuresAfterRefreshing() async {
+            let service = CoordinatorTestCodexChatService()
+            await service.rejectSettle(on: "b", busy: false)
+            let coordinator = CodexChatCoordinator(service: service, settings: AppSettings())
+            let targets = ["a", "b", "c"].map { Self.threadSummary(id: $0) }
+
+            await coordinator.setSettled(targets, true)
+
+            #expect(await service.settleAttempts == ["a", "b"])
+            #expect(await service.settledIDs == ["a"])
+            #expect(await service.historyRequests == 1)
+            #expect(coordinator.historyError == PiRuntimeError.processExited(nil).localizedDescription)
+        }
+
         @Test(arguments: ["docked", "detached"], [false, true])
         func openingACompletedThreadAcknowledgesItsResult(surface: String, fromLink: Bool) async {
             let service = CoordinatorTestCodexChatService()
@@ -1020,6 +1080,37 @@ import Foundation
     }
 
     private actor CoordinatorTestCodexChatService: CodexChatServicing {
+        private var failsSettledHistory = false
+
+        func failSettledHistory(_ fails: Bool) { failsSettledHistory = fails }
+
+        func listSettledThreads(cursor _: String?) async throws -> CodexChatThreadPage {
+            if failsSettledHistory { throw PiRuntimeError.processExited(nil) }
+            return CodexChatThreadPage(threads: [], nextCursor: nil)
+        }
+
+        private var rejectedSettleIDs: Set<String> = []
+        private var rejectsAsBusy = false
+        private(set) var settleAttempts: [String] = []
+        private(set) var settledIDs: [String] = []
+
+        func rejectSettle(on id: String, busy: Bool) {
+            rejectedSettleIDs.insert(id)
+            rejectsAsBusy = busy
+        }
+
+        func setThreadSettled(id: String, settled: Bool) async throws {
+            settleAttempts.append(id)
+            if rejectedSettleIDs.contains(id) {
+                if rejectsAsBusy {
+                    if settled { throw ChatThreadStore.SettleError.threadBusy }
+                } else {
+                    throw PiRuntimeError.processExited(nil)
+                }
+            }
+            settledIDs.append(id)
+        }
+
         private(set) var interruptedThreadIDs: [String] = []
 
         func interruptActiveTurn(threadID: String, turnID _: String?) async {

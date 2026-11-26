@@ -1917,6 +1917,8 @@
 "chat.settleThread" = "Settle thread";
 "chat.cannotSettleActiveThread" = "Threads with running or queued work cannot be settled.";
 "chat.unsettleThread" = "Un-settle thread";
+"chat.settleThreads" = "Settle %d threads";
+"chat.unsettleThreads" = "Un-settle %d threads";
 "Follow-up behavior" = "Follow-up behavior";
 "While responding, send using the default behavior. Hold Command or press Command-Return to use the other action." = "While responding, send using the default behavior. Hold Command or press Command-Return to use the other action.";
 "Queue paused" = "Queue paused";
