@@ -73,7 +73,7 @@ struct AgentMemorySettingsView: View {
             if let error = history.error { Text(error).foregroundStyle(.red).textSelection(.enabled) }
             if let error = model.error { Text(error).foregroundStyle(.red).textSelection(.enabled) }
         }
-        .formStyle(.grouped).toggleStyle(.switch)
+        .formStyle(.grouped).toggleStyle(.dahliaSwitch)
         .font(.dahliaBody)
         .disabled(model.isBusy)
         .task {

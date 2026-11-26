@@ -36,7 +36,7 @@ struct AgentAutoReviewSettingsSection: View {
             LabeledContent {
                 Toggle(L10n.autoReviewTriage, isOn: triageBinding)
                     .labelsHidden()
-                    .toggleStyle(.switch)
+                    .toggleStyle(.dahliaSwitch)
                     .disabled(isCheckingTriage)
             } label: {
                 HStack {

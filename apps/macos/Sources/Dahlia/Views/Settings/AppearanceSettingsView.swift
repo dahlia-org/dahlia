@@ -87,20 +87,20 @@ struct AppearanceSettingsView: View {
                 Text(L10n.menuBarCalendarDisplay)
                 Text(L10n.menuBarCalendarDisplayDescription)
             }
-            .toggleStyle(.switch)
+            .toggleStyle(.dahliaSwitch)
 
             Toggle(isOn: $settings.menuBarCalendarShowsEventTitle) {
                 Text(L10n.menuBarCalendarEventTitle)
                 Text(L10n.menuBarCalendarEventTitleDescription)
             }
-            .toggleStyle(.switch)
+            .toggleStyle(.dahliaSwitch)
             .disabled(!settings.menuBarCalendarEnabled)
 
             Toggle(isOn: $settings.menuBarCalendarShowsCountdown) {
                 Text(L10n.menuBarCalendarCountdown)
                 Text(L10n.menuBarCalendarCountdownDescription)
             }
-            .toggleStyle(.switch)
+            .toggleStyle(.dahliaSwitch)
             .disabled(!settings.menuBarCalendarEnabled)
         } header: {
             Text(L10n.menuBarCalendar)
