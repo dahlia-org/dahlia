@@ -355,11 +355,14 @@ final class CodexChatCoordinator {
         }
     }
 
-    func setSettled(_ thread: CodexChatThreadSummary, _ settled: Bool) async {
+    func setSettled(_ threads: [CodexChatThreadSummary], _ settled: Bool) async {
         do {
-            try await service.setThreadSettled(id: thread.id, settled: settled)
+            for thread in threads {
+                try await service.setThreadSettled(id: thread.id, settled: settled)
+            }
             await refreshHistory()
         } catch {
+            await refreshHistory()
             historyError = error.localizedDescription
         }
     }

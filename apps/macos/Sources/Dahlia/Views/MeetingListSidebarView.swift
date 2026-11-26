@@ -31,6 +31,7 @@ struct MeetingListSidebarView: View {
     @State private var isProjectSectionExpanded = true
     @State private var isRecentSectionExpanded = true
     @State private var isSettledExpanded = false
+    @State private var chatSelection = MainSidebarChatSelection()
     @FocusState private var isRenameFieldFocused: Bool
     @AppStorage(AppSettings.meetingSidebarRowStyleUserDefaultsKey)
     private var rowStyleRawValue = MeetingSidebarRowStyle.standard.rawValue
@@ -68,6 +69,7 @@ struct MeetingListSidebarView: View {
                         coordinator: chatCoordinator,
                         sidebarViewModel: sidebarViewModel,
                         isShowingChat: isShowingChat,
+                        selection: $chatSelection,
                         onNewChat: onNewChat,
                         onOpenThread: onOpenChatThread
                     )
@@ -136,7 +138,8 @@ struct MeetingListSidebarView: View {
 
     private var settledSection: some View {
         MainSidebarSettledSection(
-            coordinator: chatCoordinator, isShowingChat: isShowingChat, isExpanded: $isSettledExpanded, onOpenThread: onOpenChatThread
+            coordinator: chatCoordinator, isShowingChat: isShowingChat, isExpanded: $isSettledExpanded,
+            selection: $chatSelection, onOpenThread: onOpenChatThread
         )
     }
 
