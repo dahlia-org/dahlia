@@ -5,6 +5,32 @@
 
     @MainActor
     struct CodexChatSubscriptionTests {
+        @Test(arguments: ["stop", "failure", "eof"])
+        func terminatingCompactionRemovesOnlyItsPendingRow(ending: String) async {
+            let service = TestCodexChatService(mode: .staleRollout)
+            let completed = CodexChatMessage(role: .compaction(.init(tokensBefore: 900, tokensAfter: 300)), text: "")
+            let (events, reader) = AsyncThrowingStream<CodexChatTurnEvent, any Error>.makeStream()
+            await service.setAttachment(CodexChatTurnHandle(id: .v7(), events: events))
+            let session = CodexChatSessionModel(
+                backendThreadID: "thread-1", messages: [completed], service: service, settings: AppSettings()
+            )
+            await session.synchronizeThread()
+            reader.yield(.compactionStarted)
+            #expect(await pollUntil { session.isCompacting })
+            if ending == "stop" {
+                session.stop()
+            } else if ending == "failure" {
+                reader.finish(throwing: PiRuntimeError.backendResetForSafety)
+            } else {
+                reader.finish()
+            }
+            #expect(await pollUntil { !session.hasPendingGenerationWork })
+            #expect(!session.isCompacting)
+            #expect(!session.messages.contains { $0.role == .compaction(nil) })
+            #expect(session.messages.contains(completed))
+            reader.finish()
+        }
+
         @Test
         func noticePreservingReconciliationKeepsChildCardsAcrossManualRuns() async throws {
             let service = TestCodexChatService(mode: .blockBeforeOutput)

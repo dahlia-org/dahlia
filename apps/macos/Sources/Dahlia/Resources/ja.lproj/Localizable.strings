@@ -1050,6 +1050,9 @@
 "Send message" = "メッセージを送信";
 "Stop generating" = "生成を停止";
 "Thinking" = "考えています";
+"Compacting context" = "コンテキストを圧縮しています";
+"Summarize the conversation and reduce context usage" = "会話を要約してコンテキストの使用量を減らします";
+"Context compacted %@ → %@ tokens" = "コンテキストを圧縮しました %@ → %@ トークン";
 "Message Dahlia AI" = "Dahlia AI にメッセージ";
 "Add to chat" = "チャットに追加";
 "Select model" = "モデルを選択";

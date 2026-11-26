@@ -82,8 +82,11 @@ final class CodexChatSessionModel: Identifiable {
     }
 
     var showsStandaloneThinking: Bool {
-        isGenerating && (isPreparingTurn || isAwaitingTurnOutput || isFinalizingTurn)
+        // A running compaction shows its own progress row.
+        isGenerating && !isCompacting && (isPreparingTurn || isAwaitingTurnOutput || isFinalizingTurn)
     }
+
+    private(set) var isCompacting = false
 
     @ObservationIgnored private let service: any CodexChatServicing
     @ObservationIgnored let settings: AppSettings
@@ -819,7 +822,7 @@ extension CodexChatSessionModel {
             if toolActivity != nil { toolActivity = nil }
             accumulator.completeResponse(itemID: itemID, text: text)
             completeStreamingOutput(itemID: itemID, using: updateLimiter)
-        case .completed(itemID: nil, text: _):
+        case .completed(itemID: nil, text: _), .interrupted:
             updateLimiter.submit(force: true)
             activeOutputItemIDs.removeAll()
             isAwaitingTurnOutput = false
@@ -846,11 +849,6 @@ extension CodexChatSessionModel {
         case let .approvalResolved(id):
             resolvePendingApproval(id)
             resolvePendingUserInput(id)
-        case .interrupted:
-            updateLimiter.submit(force: true)
-            activeOutputItemIDs.removeAll()
-            isAwaitingTurnOutput = false
-            activeTurnID = nil
         case let .failed(message):
             errorMessage = PiRuntimeError.turnFailed(message).localizedDescription
             updateLimiter.submit(force: true)
@@ -860,14 +858,35 @@ extension CodexChatSessionModel {
         case let .mcpSignInRequired(servers):
             mcpServersNeedingSignIn = servers
         case let .notice(message, level):
-            let notice = CodexChatMessage(role: .notice(level), text: message)
-            if let index = messages.firstIndex(where: {
-                $0.id == activeResponseID && $0.text.isEmpty && $0.reasoning.isEmpty
-            }) {
-                messages.insert(notice, at: index)
-            } else {
-                messages.append(notice)
-            }
+            insertBeforeActiveResponse(CodexChatMessage(role: .notice(level), text: message))
+        case .compactionStarted:
+            isCompacting = true
+            insertBeforeActiveResponse(CodexChatMessage(role: .compaction(nil), text: "", runID: activeTurnHandleID))
+        case let .compactionEnded(compaction):
+            endCompaction(compaction)
+        }
+    }
+
+    /// The progress row becomes the result, or goes away when the compaction failed or was stopped.
+    private func endCompaction(_ compaction: CodexChatCompaction?) {
+        isCompacting = false
+        guard let index = messages.lastIndex(where: { $0.role == .compaction(nil) }) else { return }
+        if let compaction {
+            messages[index] = CodexChatMessage(
+                id: messages[index].id, role: .compaction(compaction), text: "", runID: messages[index].runID, timestamp: .now
+            )
+        } else {
+            messages.remove(at: index)
+        }
+    }
+
+    private func insertBeforeActiveResponse(_ notice: CodexChatMessage) {
+        if let index = messages.firstIndex(where: {
+            $0.id == activeResponseID && $0.text.isEmpty && $0.reasoning.isEmpty
+        }) {
+            messages.insert(notice, at: index)
+        } else {
+            messages.append(notice)
         }
     }
 
@@ -999,6 +1018,7 @@ extension CodexChatSessionModel {
         if !lostRunEvents, let runID = activeTurnHandleID { displayedRunID = runID }
         isFollowingRun = false
         isGenerating = false
+        endCompaction(nil)
         toolActivity = nil
         isPreparingTurn = false
         pendingApprovals.removeAll()

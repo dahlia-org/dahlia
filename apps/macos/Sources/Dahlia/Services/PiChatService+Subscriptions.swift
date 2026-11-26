@@ -131,6 +131,7 @@ extension PiChatService {
         let id = UUID.v7()
         let (stream, reader) = AsyncThrowingStream<CodexChatTurnEvent, any Error>.makeStream(bufferingPolicy: .bufferingOldest(256))
         reader.yield(.started(turnID: turn.wireID))
+        if turn.broadcast.isCompacting { reader.yield(.compactionStarted) }
         if let itemID = turn.broadcast.itemID {
             if !turn.broadcast.reasoning.isEmpty { reader.yield(.reasoningDelta(itemID: itemID, summaryIndex: 0, text: turn.broadcast.reasoning)) }
             if !turn.broadcast.text.isEmpty { reader.yield(.delta(itemID: itemID, text: turn.broadcast.text)) }

@@ -44,6 +44,8 @@ struct CodexChatMessageRow: View {
                 }
             } else if case let .notice(level) = message.role {
                 CodexChatNoticeView(text: message.text, level: level)
+            } else if case let .compaction(compaction) = message.role {
+                CodexChatCompactionDivider(compaction: compaction)
             } else {
                 VStack(alignment: .leading, spacing: 6) {
                     if !displayReasoning.isEmpty {
