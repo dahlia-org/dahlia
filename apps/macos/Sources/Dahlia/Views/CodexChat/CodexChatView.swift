@@ -93,7 +93,8 @@ struct CodexChatView: View {
                     if let errorMessage = session.errorMessage {
                         CodexChatErrorView(
                             message: errorMessage,
-                            onRetry: session.hasRetryableSubmission ? session.retry : retryConnection
+                            onRetry: session.hasRetryableSubmission ? session.retry : retryConnection,
+                            onSkipAndContinue: session.canSkipFailedSubmission ? { session.skipFailedSubmissionAndResumeQueue() } : nil
                         )
                         .frame(maxWidth: contentMaxWidth ?? .infinity)
                     } else if let earlierMessagesError = session.earlierMessagesError {
@@ -180,6 +181,27 @@ struct CodexChatView: View {
                 }
                 .frame(maxHeight: 200)
             }
+        }
+
+        if session.startsFreshSession {
+            HStack(alignment: .firstTextBaseline) {
+                Label {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(L10n.chatFreshSessionArmed).foregroundStyle(.primary)
+                        Text(L10n.chatFreshSessionArmedDetail).font(.dahliaSecondary)
+                    }
+                } icon: {
+                    Image(systemName: "eraser")
+                }
+                Spacer()
+                CodexChatIconButton(label: L10n.chatKeepCurrentSession, systemImage: "xmark") {
+                    session.startsFreshSession = false
+                }
+            }
+            .font(.dahliaBody)
+            .foregroundStyle(DahliaDesign.secondaryTextColor)
+            .padding(.horizontal, CodexChatDesign.contentHorizontalPadding)
+            .padding(.vertical, 6)
         }
 
         if !session.mcpServersNeedingSignIn.isEmpty {

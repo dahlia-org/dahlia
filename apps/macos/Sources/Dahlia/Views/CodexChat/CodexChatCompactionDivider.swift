@@ -19,7 +19,7 @@ struct CodexChatCompactionDivider: View {
             .fixedSize()
             line
         }
-        .font(.dahliaSecondary)
+        .font(.system(size: DahliaTypography.size(offset: -4)))
         .foregroundStyle(DahliaDesign.secondaryTextColor)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(title)

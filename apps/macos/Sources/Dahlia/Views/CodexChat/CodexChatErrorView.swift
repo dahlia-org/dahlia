@@ -5,6 +5,7 @@ struct CodexChatErrorView: View {
 
     let message: String
     let onRetry: () -> Void
+    var onSkipAndContinue: (() -> Void)?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -13,6 +14,9 @@ struct CodexChatErrorView: View {
                 .foregroundStyle(.red)
             HStack {
                 Button(L10n.retry, action: onRetry)
+                if let onSkipAndContinue {
+                    Button(L10n.chatSkipAndContinue, action: onSkipAndContinue)
+                }
                 // Pi installation lives under General; provider sign-in and models live under Models.
                 // shortcut: matches the page's name in the text; carry the error's kind here if a message names Agents
                 // for another reason.

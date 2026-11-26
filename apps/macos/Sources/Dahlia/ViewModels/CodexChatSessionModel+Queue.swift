@@ -2,15 +2,22 @@ import Foundation
 
 extension CodexChatSessionModel {
     func resumeQueue() {
-        guard isBoundToCurrentAccount, !isReleased, errorMessage == nil else { return }
+        guard isBoundToCurrentAccount, !isReleased, canDispatchPendingInputs else { return }
         isQueuePaused = false
         processPendingInputIfPossible()
     }
 
+    /// Priority changes stay within a session, including while the queue is paused.
+    func canPromotePendingInput(_ input: CodexChatManualSubmission) -> Bool {
+        guard let index = pendingManualInputs.firstIndex(where: { $0.id == input.id }) else { return false }
+        return index == 0 || !pendingManualInputs[...index].contains(where: \.startsFreshSession)
+    }
+
     func canSendPendingInput(_ input: CodexChatManualSubmission) -> Bool {
         isBoundToCurrentAccount && !isReleased && !isRestoring && !needsRestore
-            && errorMessage == nil && editingPendingInputID == nil && !isTurnCleanupPending
-            && (!isGenerating || !isPreparingTurn && !input.text.hasPrefix("/"))
+            && canDispatchPendingInputs && editingPendingInputID == nil && !isTurnCleanupPending
+            && canPromotePendingInput(input)
+            && (!isGenerating || !isPreparingTurn && !input.text.hasPrefix("/") && !startsFreshSession && !input.startsFreshSession)
             && (input.images.isEmpty || selectedModelSupportsImages)
             && compactImageValidationMessage(text: input.text, hasImages: !input.images.isEmpty) == nil
     }
@@ -68,6 +75,7 @@ extension CodexChatSessionModel {
         pendingManualInputs[index] = CodexChatManualSubmission(
             id: id,
             deliveryMode: previous.deliveryMode,
+            startsFreshSession: previous.startsFreshSession,
             text: serialized,
             images: images,
             composerSnapshot: snapshot,

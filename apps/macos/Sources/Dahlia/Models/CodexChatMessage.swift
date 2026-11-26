@@ -28,6 +28,8 @@ struct CodexChatMessage: Identifiable, Equatable {
     var runID: UUID?
     var timestamp: Date?
     var endsWithToolActivity = false
+    /// The user message `/clear` sent: Pi saw nothing before it.
+    var startsFreshSession = false
 
     init(
         id: String = UUID.v7().uuidString,

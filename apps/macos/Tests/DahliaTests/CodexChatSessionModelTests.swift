@@ -1337,6 +1337,8 @@ import Foundation
         }
 
         let mode: Mode
+        private let commitsFreshSessionBeforeFailure: Bool
+        private let delaysFreshSessionStart: Bool
         private let availableCommands: [CodexChatSlashCommand]
         private let delaysLoad: Bool
         private let earlierPages: [String: CodexChatMessagePage]
@@ -1378,6 +1380,7 @@ import Foundation
         private(set) var approvalMethodUpdates: [CodexChatApprovalMethod] = []
         private(set) var completedApprovalMethodUpdates: [CodexChatApprovalMethod] = []
         private(set) var turnApprovalMethods: [CodexChatApprovalMethod] = []
+        private(set) var freshSessionStarts: [Bool] = []
         private(set) var returnedSendCount = 0
         private var turnErrors: [PiRuntimeError] = []
         private var blockedContinuation: AsyncThrowingStream<CodexChatTurnEvent, any Error>.Continuation?
@@ -1405,6 +1408,8 @@ import Foundation
 
         init(
             mode: Mode,
+            commitsFreshSessionBeforeFailure: Bool = false,
+            delaysFreshSessionStart: Bool = false,
             commands: [CodexChatSlashCommand] = [],
             steerErrors: [PiRuntimeError] = [],
             delaysLoad: Bool = false,
@@ -1417,6 +1422,8 @@ import Foundation
             delaysEarlierMessages: Bool = false
         ) {
             self.mode = mode
+            self.commitsFreshSessionBeforeFailure = commitsFreshSessionBeforeFailure
+            self.delaysFreshSessionStart = delaysFreshSessionStart
             self.availableCommands = commands
             self.steerErrors = steerErrors
             self.delaysLoad = delaysLoad
@@ -1621,14 +1628,28 @@ import Foundation
             model: String?,
             effort: String,
             approvalMethod: CodexChatApprovalMethod,
+            startsFreshSession: Bool
         ) async throws -> CodexChatTurnHandle {
             turnApprovalMethods.append(approvalMethod)
-            let stream = try await send(
-                threadID: threadID,
-                inputs: inputs,
-                model: model,
-                effort: effort
-            )
+            freshSessionStarts.append(startsFreshSession)
+            let stream: AsyncThrowingStream<CodexChatTurnEvent, any Error>
+            do {
+                if startsFreshSession, delaysFreshSessionStart, freshSessionStarts.filter({ $0 }).count == 1 {
+                    await withCheckedContinuation { delayedSendContinuation = $0 }
+                    try Task.checkCancellation()
+                }
+                stream = try await send(
+                    threadID: threadID,
+                    inputs: inputs,
+                    model: model,
+                    effort: effort
+                )
+            } catch {
+                if startsFreshSession, commitsFreshSessionBeforeFailure {
+                    throw CodexChatFreshSessionCommittedError(underlyingError: error)
+                }
+                throw error
+            }
             let id = UUID.v7()
             activeLocalTurnID = id
             if mode == .delayTurnHandleIgnoringCancellation, returnedSendCount == 1 {
@@ -1763,48 +1784,6 @@ import Foundation
             defaultReasoningEffort: "medium",
             inputModalities: ["text"]
         )
-    }
-
-    @MainActor
-    final class TestCodexChatContextProvider: CodexChatContextProviding {
-        var context: CodexChatContext?
-        var error: PiRuntimeError?
-        var requestCount = 0
-        private var shouldBlock: Bool
-        private var continuation: CheckedContinuation<Void, Never>?
-
-        init(
-            context: CodexChatContext? = nil,
-            error: PiRuntimeError? = nil,
-            shouldBlock: Bool = false
-        ) {
-            self.context = context
-            self.error = error
-            self.shouldBlock = shouldBlock
-        }
-
-        func currentContext(workspaceID _: UUID) async throws -> CodexChatContext? {
-            requestCount += 1
-            if shouldBlock {
-                await withCheckedContinuation { continuation in
-                    self.continuation = continuation
-                }
-            }
-            if let error {
-                throw error
-            }
-            return context
-        }
-
-        func resume() {
-            shouldBlock = false
-            continuation?.resume()
-            continuation = nil
-        }
-
-        func block() {
-            shouldBlock = true
-        }
     }
 
 #endif

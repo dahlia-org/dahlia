@@ -275,6 +275,8 @@ actor PiChatService: CodexChatServicing {
     var startingTurns: [String: Int] = [:]
     /// New threads have no session file until their first turn; Pi creates it then.
     private var newThreads: [String: (directory: URL, model: String)] = [:]
+    /// Threads whose `/clear` turn is starting: they have replies but no session file until the new session's first reply.
+    private var clearingThreads: [String: Int64] = [:]
     /// Names set before the thread's process runs, applied when it opens.
     private var pendingNames: [String: String] = [:]
     var stateReaders: [UUID: AsyncStream<[CodexChatRuntimeState]>.Continuation] = [:]
@@ -506,25 +508,39 @@ actor PiChatService: CodexChatServicing {
         inputs: [CodexAppServerInput],
         model: String?,
         effort: String,
-        approvalMethod: CodexChatApprovalMethod
+        approvalMethod: CodexChatApprovalMethod,
+        startsFreshSession: Bool = false
     ) async throws -> CodexChatTurnHandle {
         guard startingTurns[threadID] == nil else { throw PiRuntimeError.rpcError(code: nil, message: "turn already starting") }
         startingTurns[threadID] = 1
         let wasSuperAgent = isSuperAgentThread(threadID)
         curatorActivityGeneration.withLock { $0 += 1 }
         do {
+            if startsFreshSession { try await retireSessionFile(threadID: threadID) }
             let handle = try await startTurn(
                 threadID: threadID, inputs: inputs, model: model, effort: effort,
-                approvalMethod: approvalMethod, wasSuperAgent: wasSuperAgent
+                approvalMethod: approvalMethod, wasSuperAgent: wasSuperAgent, startsFreshSession: startsFreshSession
             )
+            if startsFreshSession { try? recoverSessionReset(threadID: threadID) }
+            clearingThreads[threadID] = nil
             finishStartingTurn(threadID)
             await closeIfUnused(threadID)
             return handle
         } catch {
+            var failure = error
+            // Only an attempt that passed the active-turn guard owns reset cleanup.
+            if let previousSequence = clearingThreads[threadID] {
+                await closeSession(threadID)
+                do { try recoverSessionReset(threadID: threadID) } catch { failure = error }
+                if let sequence = try? history().freshSessionSequence(threadID: threadID), sequence > previousSequence {
+                    failure = CodexChatFreshSessionCommittedError(underlyingError: failure)
+                }
+            }
+            clearingThreads[threadID] = nil
             finishStartingTurn(threadID)
             // A process opened for a turn that never started must not outlive it.
             await closeIfUnused(threadID)
-            throw error
+            throw failure
         }
     }
 
@@ -543,6 +559,19 @@ actor PiChatService: CodexChatServicing {
         return try inheritedApprovalMethod(threadID: threadID, requested: method)
     }
 
+    /// Moves the thread's session file out of Pi's and Dahlia's lookup (both read only `.jsonl`), so the next process
+    /// starts a new session under the same ID, as a new thread's first turn does. The file is kept, as every Pi file is.
+    private func retireSessionFile(threadID: String) async throws {
+        guard sessions[threadID]?.turn == nil else { throw PiRuntimeError.rpcError(code: nil, message: "turn already active") }
+        let previousSequence = try history().freshSessionSequence(threadID: threadID)
+        clearingThreads[threadID] = previousSequence
+        await closeSession(threadID)
+        try recoverSessionReset(threadID: threadID)
+        guard let file = try? await sessionFile(id: threadID) else { return }
+        let retired = file.appendingPathExtension("clearing.\(previousSequence)")
+        try FileManager.default.moveItem(at: file, to: retired)
+    }
+
     private func finishStartingTurn(_ threadID: String) {
         startingTurns[threadID, default: 1] -= 1
         if startingTurns[threadID] == 0 { startingTurns[threadID] = nil }
@@ -554,7 +583,8 @@ actor PiChatService: CodexChatServicing {
         model: String?,
         effort: String,
         approvalMethod: CodexChatApprovalMethod,
-        wasSuperAgent: Bool
+        wasSuperAgent: Bool,
+        startsFreshSession: Bool
     ) async throws -> CodexChatTurnHandle {
         try await runtime.requireConfigured()
         let record = try history().thread(id: threadID, accountID: AppAccount.key)
@@ -634,7 +664,7 @@ actor PiChatService: CodexChatServicing {
             run = claimed
             scheduledRuns[threadID] = nil
         } else {
-            run = try history().beginUserRun(userRun, message: ChatHistoryCodec.user(inputs))
+            run = try history().beginUserRun(userRun, message: ChatHistoryCodec.user(inputs, startsFreshSession: startsFreshSession))
         }
         sessions[threadID]?.approvalMethod = approvalMethod
         var turn = Turn(id: run.id, wireID: UUID.v7().uuidString, run: run)
@@ -644,7 +674,9 @@ actor PiChatService: CodexChatServicing {
         turn.broadcast.readers[readerID] = continuation
         continuation.onTermination = { [weak self] _ in Task { await self?.detachReader(threadID: threadID, runID: run.id, readerID: readerID) } }
         do {
-            try saveTurnOpening(run, inputs: inputs, notice: notice, model: requestedModel, alreadySaved: queued == nil)
+            try saveTurnOpening(
+                run, inputs: inputs, notice: notice, model: requestedModel, alreadySaved: queued == nil, startsFreshSession: startsFreshSession
+            )
             if run.origin == "schedule" {
                 try scheduleService().started(run)
             }
@@ -702,7 +734,9 @@ actor PiChatService: CodexChatServicing {
     }
 
     /// A direct manual turn already committed its opening and choices with the run; queued starts append here.
-    private func saveTurnOpening(_ run: ChatRunRecord, inputs: [CodexAppServerInput], notice: JSONValue?, model: String?, alreadySaved: Bool) throws {
+    private func saveTurnOpening(
+        _ run: ChatRunRecord, inputs: [CodexAppServerInput], notice: JSONValue?, model: String?, alreadySaved: Bool, startsFreshSession: Bool
+    ) throws {
         if let notice {
             // Notifications, including crash continuations, never change conversation defaults.
             try history().beginTurn(threadID: run.threadID, message: notice, model: nil, effort: nil, runID: run.id)
@@ -711,7 +745,8 @@ actor PiChatService: CodexChatServicing {
         } else {
             if !alreadySaved {
                 try history().beginTurn(
-                    threadID: run.threadID, message: ChatHistoryCodec.user(inputs), model: model, effort: run.effort, runID: run.id
+                    threadID: run.threadID, message: ChatHistoryCodec.user(inputs, startsFreshSession: startsFreshSession),
+                    model: model, effort: run.effort, runID: run.id
                 )
             }
             if run.origin == "user" {
@@ -890,7 +925,7 @@ actor PiChatService: CodexChatServicing {
         }
         let existingFile = try? await sessionFile(id: threadID)
         if existingFile == nil {
-            guard try !history().hasAssistantReply(threadID: threadID) else {
+            guard try clearingThreads[threadID] != nil || !history().hasAssistantReply(threadID: threadID) else {
                 throw PiRuntimeError.rpcError(code: nil, message: L10n.chatResumeStateMissing)
             }
             newThreads[threadID] = try (agentLocator.sessionsURL(), record.model ?? "")
@@ -1372,10 +1407,19 @@ actor PiChatService: CodexChatServicing {
         let root = try agentLocator.agentURL().appending(path: "sessions")
         // Keep reopening files written by releases that used one subdirectory per Workspace.
         let directories = (try? FileManager.default.contentsOfDirectory(at: root, includingPropertiesForKeys: nil)) ?? []
+        if clearingThreads[id] == nil { try recoverSessionReset(threadID: id, directories: directories) }
         for directory in directories {
             if let url = PiChatSessionFiles.file(id: id, in: directory) { return url }
         }
         throw PiRuntimeError.rpcError(code: nil, message: "thread not found")
+    }
+
+    private func recoverSessionReset(threadID: String, directories: [URL]? = nil) throws {
+        let root = try agentLocator.agentURL().appending(path: "sessions")
+        let directories = try directories ?? FileManager.default.contentsOfDirectory(at: root, includingPropertiesForKeys: nil)
+        try PiChatSessionFiles.recoverReset(
+            id: threadID, in: directories, committedSequence: history().freshSessionSequence(threadID: threadID)
+        )
     }
 
     // MARK: Mapping

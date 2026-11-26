@@ -31,7 +31,9 @@ protocol CodexChatServicing: Sendable {
         inputs: [CodexAppServerInput],
         model: String?,
         effort: String,
-        approvalMethod: CodexChatApprovalMethod
+        approvalMethod: CodexChatApprovalMethod,
+        // Set by `/clear`: the thread continues, but Pi starts this turn in a new session without earlier messages.
+        startsFreshSession: Bool
     ) async throws -> CodexChatTurnHandle
     func updateApprovalMethod(
         threadID: String,
@@ -75,7 +77,8 @@ extension CodexChatServicing {
         inputs: [CodexAppServerInput],
         model: String?,
         effort: String,
-        approvalMethod: CodexChatApprovalMethod
+        approvalMethod: CodexChatApprovalMethod,
+        startsFreshSession _: Bool
     ) async throws -> CodexChatTurnHandle {
         let events = try await send(
             threadID: threadID,

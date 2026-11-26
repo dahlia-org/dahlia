@@ -18,6 +18,11 @@ struct CodexChatQueuedInputRow: View {
             Spacer(minLength: 72)
             VStack(alignment: .trailing, spacing: 6) {
                 VStack(alignment: .leading, spacing: 6) {
+                    if input.startsFreshSession {
+                        Label(L10n.chatNewSession, systemImage: "eraser")
+                            .font(.dahliaSecondary)
+                            .foregroundStyle(DahliaDesign.secondaryTextColor)
+                    }
                     if isEditing {
                         TextField(L10n.messageDahliaAI, text: $session.pendingInputEditDraft, axis: .vertical)
                             .textFieldStyle(.plain)

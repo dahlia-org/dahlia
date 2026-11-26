@@ -4,33 +4,7 @@ struct CodexChatContextDivider: View {
     let context: CodexChatContext?
 
     var body: some View {
-        HStack(spacing: CodexChatDesign.contextDividerSpacing) {
-            Rectangle()
-                .fill(.separator)
-                .frame(maxWidth: .infinity)
-                .frame(height: 1)
-                .accessibilityHidden(true)
-
-            Label(title, systemImage: "rectangle.3.group")
-                .lineLimit(1)
-                .padding(.horizontal, CodexChatDesign.contextLabelHorizontalPadding)
-                .padding(.vertical, CodexChatDesign.contextLabelVerticalPadding)
-                .background {
-                    RoundedRectangle(cornerRadius: CodexChatDesign.contextLabelCornerRadius)
-                        .fill(.background)
-                        .stroke(.separator, lineWidth: 1)
-                }
-
-            Rectangle()
-                .fill(.separator)
-                .frame(maxWidth: .infinity)
-                .frame(height: 1)
-                .accessibilityHidden(true)
-        }
-        .font(.dahliaBody)
-        .foregroundStyle(DahliaDesign.secondaryTextColor)
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(accessibilityLabel)
+        CodexChatTimelineDivider(title: title, systemImage: "rectangle.3.group", accessibilityLabel: accessibilityLabel)
     }
 
     var title: String {
@@ -41,5 +15,33 @@ struct CodexChatContextDivider: View {
 
     var accessibilityLabel: String {
         L10n.chatContextChanged(title)
+    }
+}
+
+/// A labeled rule across the conversation that marks where something changed.
+struct CodexChatTimelineDivider: View {
+    let title: String
+    let systemImage: String
+    var accessibilityLabel: String?
+
+    var body: some View {
+        HStack(spacing: CodexChatDesign.contextDividerSpacing) {
+            rule
+            Label(title, systemImage: systemImage)
+                .lineLimit(1)
+            rule
+        }
+        .font(.system(size: DahliaTypography.size(offset: -4)))
+        .foregroundStyle(DahliaDesign.secondaryTextColor)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(accessibilityLabel ?? title)
+    }
+
+    private var rule: some View {
+        Rectangle()
+            .fill(.separator)
+            .frame(maxWidth: .infinity)
+            .frame(height: 1)
+            .accessibilityHidden(true)
     }
 }

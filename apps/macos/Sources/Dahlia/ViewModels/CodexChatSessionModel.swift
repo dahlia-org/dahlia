@@ -25,6 +25,8 @@ final class CodexChatSessionModel: Identifiable {
     private(set) var isLoadingEarlierMessages = false
     private(set) var earlierMessagesError: String?
     var draft = ""
+    /// Armed by `/clear`: the next turn starts a new Pi session while this thread and its history stay.
+    var startsFreshSession = false
     var scopeSnapshot: CodexChatScopeSnapshot?
     private(set) var hasSelectedProject = false
     private(set) var selectedScopeProjectID: UUID?
@@ -47,7 +49,13 @@ final class CodexChatSessionModel: Identifiable {
     @ObservationIgnored private var lostRunEvents = false
     private(set) var needsRestore: Bool
     var isGenerating = false
-    var errorMessage: String?
+    private var operationErrorMessage: String?
+
+    var errorMessage: String? {
+        get { operationErrorMessage ?? failedSubmission?.message }
+        set { operationErrorMessage = newValue }
+    }
+
     var noticeMessage: String?
     /// MCP servers the open chat process cannot use until the user signs in; reported again at each turn.
     var mcpServersNeedingSignIn: [String] = []
@@ -111,7 +119,7 @@ final class CodexChatSessionModel: Identifiable {
     var pendingInputEditDraft = ""
     var pendingInputEditImages: [CodexChatImageAttachment] = []
     var pendingManualInputs: [CodexChatManualSubmission] = []
-    @ObservationIgnored var preparingQueuedManualSubmission: CodexChatManualSubmission?
+    @ObservationIgnored var preparingSubmission: (input: CodexChatManualSubmission, fromQueue: Bool)?
     @ObservationIgnored var preparingManualComposerSnapshot: CodexChatComposerSnapshot?
     @ObservationIgnored var lastManualSubmission: CodexChatManualSubmission?
     var activeSteeringManualSubmission: CodexChatManualSubmission?
@@ -124,7 +132,12 @@ final class CodexChatSessionModel: Identifiable {
     @ObservationIgnored var turnOutputGeneration: UInt = 0
     @ObservationIgnored var turnTask: Task<Void, Never>?
     @ObservationIgnored private var steerTask: Task<Void, Never>?
-    @ObservationIgnored private var failedSubmission: CodexChatManualSubmission?
+    private struct SubmissionFailure {
+        let input: CodexChatManualSubmission
+        let message: String?
+    }
+
+    private var failedSubmission: SubmissionFailure?
     @ObservationIgnored private var threadDidStartHandler: (@MainActor () -> Void)?
     @ObservationIgnored private var generationCompletionHandler: (@MainActor () -> Void)?
     @ObservationIgnored private var syncedApprovalMethod: CodexChatApprovalMethod?
@@ -195,7 +208,25 @@ final class CodexChatSessionModel: Identifiable {
         let commands = try await service.commands(threadID: backendThreadID)
         try Task.checkCancellation()
         guard !isReleased else { throw CancellationError() }
-        return commands
+        // Dahlia's `/clear` replaces any Pi command of that name, which would act on a session the thread still treats as live.
+        guard canStartFreshSession else { return commands }
+        return [Self.clearCommand] + commands.filter { $0.name != Self.clearCommand.name }
+    }
+
+    static var clearCommand: CodexChatSlashCommand {
+        CodexChatSlashCommand(name: "clear", description: L10n.chatClearCommandDescription, source: "dahlia")
+    }
+
+    /// Arms `/clear` and removes the command from the draft; references and images stay for the next message.
+    func armFreshSession() {
+        guard canStartFreshSession else { return }
+        startsFreshSession = true
+        draft = ""
+    }
+
+    /// A conversation with nothing earlier has no context to clear.
+    var canStartFreshSession: Bool {
+        backendThreadID != nil && !isReadOnly && (!messages.isEmpty || earlierMessagesCursor != nil)
     }
 
     func prepare(forceRefresh: Bool = false) async {
@@ -325,6 +356,10 @@ final class CodexChatSessionModel: Identifiable {
 
     func sendDraft(mode: CodexChatDeliveryMode) {
         guard canSend else { return }
+        if canStartFreshSession, draft.trimmingCharacters(in: .whitespacesAndNewlines) == "/" + Self.clearCommand.name {
+            armFreshSession()
+            return
+        }
         let draftSnapshot = draft
         let referenceIDsSnapshot = selectedMeetingReferenceIDs
         let imagesSnapshot = attachedImages
@@ -350,7 +385,10 @@ final class CodexChatSessionModel: Identifiable {
         _ submission: CodexChatManualSubmission,
         reportsUsage: Bool = true
     ) {
-        let shouldEnqueue = isGenerating || isTurnCleanupPending || (errorMessage == nil && !pendingManualInputs.isEmpty)
+        let shouldEnqueue = isGenerating || isTurnCleanupPending
+            || failedSubmission?.input.startsFreshSession == true
+            || pendingManualInputs.contains(where: \.startsFreshSession)
+            || (errorMessage == nil && !pendingManualInputs.isEmpty)
         if shouldEnqueue, let composerSnapshot = submission.composerSnapshot {
             let isDuplicate = (activeSteeringManualSubmission?.clearsComposerOnDelivery == true
                 && activeSteeringManualSubmission?.composerSnapshot == composerSnapshot)
@@ -360,12 +398,35 @@ final class CodexChatSessionModel: Identifiable {
         if reportsUsage {
             usageTelemetryReporter(.aiChatPromptSubmitted)
         }
+        var submission = submission
+        submission.startsFreshSession = startsFreshSession
+        startsFreshSession = false
         isQueuePaused = false
         if shouldEnqueue {
             enqueueManualInput(submission)
             return
         }
         submitManualSubmission(submission)
+    }
+
+    var canDispatchPendingInputs: Bool {
+        errorMessage == nil && failedSubmission?.input.startsFreshSession != true
+    }
+
+    var canSkipFailedSubmission: Bool {
+        isBoundToCurrentAccount && !isReleased && !isRestoring && !needsRestore && !isGenerating && !isTurnCleanupPending
+            && failedSubmission != nil && !pendingManualInputs.isEmpty && errorMessage != nil
+            && errorMessage != approvalMethodUpdateErrorMessage
+    }
+
+    func skipFailedSubmissionAndResumeQueue() {
+        guard canSkipFailedSubmission else { return }
+        if failedSubmission?.input.startsFreshSession == true {
+            pendingManualInputs[0].startsFreshSession = true
+        }
+        failedSubmission = nil
+        errorMessage = nil
+        resumeQueue()
     }
 
     func retry() {
@@ -375,7 +436,7 @@ final class CodexChatSessionModel: Identifiable {
             synchronizeApprovalMethodIfNeeded()
             return
         }
-        guard let submission = failedSubmission ?? lastManualSubmission else { return }
+        guard let submission = failedSubmission?.input ?? lastManualSubmission else { return }
         retryManualSubmission(submission)
     }
 
@@ -669,14 +730,23 @@ extension CodexChatSessionModel {
                 context: context,
                 images: images
             )
-            let turn = try await requestTurnHandle(
-                threadID: backendThreadID,
-                inputs: inputs,
-                model: selectedModelID.nilIfBlank,
-                effort: selectedEffort,
-                approvalMethod: approvalMethod
-            )
-            preparingQueuedManualSubmission = nil
+            let startsFreshSession = preparingSubmission?.input.startsFreshSession == true
+            let turn: CodexChatTurnHandle
+            do {
+                turn = try await requestTurnHandle(
+                    threadID: backendThreadID,
+                    inputs: inputs,
+                    model: selectedModelID.nilIfBlank,
+                    effort: selectedEffort,
+                    approvalMethod: approvalMethod,
+                    startsFreshSession: startsFreshSession
+                )
+            } catch let error as CodexChatFreshSessionCommittedError {
+                consumePreparingFreshSession()
+                throw error.underlyingError
+            }
+            consumePreparingFreshSession()
+            preparingSubmission = nil
             applyEffectiveApprovalMethod(turn.approvalMethod ?? approvalMethod, requested: approvalMethod)
             do {
                 try ensureSubmissionCanContinue(submissionID)
@@ -695,7 +765,7 @@ extension CodexChatSessionModel {
             )
             lastSubmittedText = submission.text
             lastManualSubmission = submission
-            messages.append(CodexChatMessage(
+            var userMessage = CodexChatMessage(
                 id: preparingUserMessage?.id ?? UUID.v7().uuidString,
                 role: .user,
                 text: submission.text,
@@ -703,7 +773,9 @@ extension CodexChatSessionModel {
                 images: images,
                 runID: turn.id,
                 timestamp: preparingUserMessage?.timestamp ?? .now
-            ))
+            )
+            userMessage.startsFreshSession = startsFreshSession
+            messages.append(userMessage)
             preparingUserMessage = nil
 
             messages.append(CodexChatMessage(
@@ -1002,10 +1074,10 @@ extension CodexChatSessionModel {
         submissionID: UUID?
     ) {
         guard activeSubmissionID == submissionID else { return }
-        if isStopRequested, let preparingQueuedManualSubmission {
-            requeue(preparingQueuedManualSubmission)
+        let restoresQueuedInput = isStopRequested && preparingSubmission?.fromQueue == true
+        if restoresQueuedInput, let preparingSubmission {
+            requeue(preparingSubmission.input)
         }
-        preparingQueuedManualSubmission = nil
         if !hasComposerContent, pendingImagePreparationCount == 0, pendingManualInputs.isEmpty,
            let snapshot = preparingManualComposerSnapshot {
             draft = snapshot.draft
@@ -1013,6 +1085,9 @@ extension CodexChatSessionModel {
             selectedThreadReferences = snapshot.threadReferences
             attachedImages = snapshot.images
         }
+        // A cancelled direct submission returns to the composer; failed and queued inputs retain their own intent.
+        if isStopRequested, !restoresQueuedInput, preparingSubmission?.input.startsFreshSession == true { startsFreshSession = true }
+        preparingSubmission = nil
         preparingUserMessage = nil
         historySynchronizationGeneration += 1
         // What this view showed to the end needs no reload; it also holds what history does not, such as command notices.
@@ -1149,7 +1224,8 @@ extension CodexChatSessionModel {
         inputs: [CodexAppServerInput],
         model: String?,
         effort: String,
-        approvalMethod: CodexChatApprovalMethod
+        approvalMethod: CodexChatApprovalMethod,
+        startsFreshSession: Bool = false
     ) async throws -> CodexChatTurnHandle {
         isRequestingTurnHandle = true
         defer { isRequestingTurnHandle = false }
@@ -1158,7 +1234,8 @@ extension CodexChatSessionModel {
             inputs: inputs,
             model: model,
             effort: effort,
-            approvalMethod: approvalMethod
+            approvalMethod: approvalMethod,
+            startsFreshSession: startsFreshSession
         )
     }
 
@@ -1270,20 +1347,30 @@ extension CodexChatSessionModel {
         }
     }
 
+    private func consumePreparingFreshSession() {
+        preparingSubmission?.input.startsFreshSession = false
+        preparingUserMessage?.startsFreshSession = false
+    }
+
     func prepareFailureStateForSubmission() {
         failedSubmission = nil
     }
 
     func recordFailedSubmission(text: String?, images: [CodexChatImageAttachment] = [], includesCurrentContext: Bool = true) {
         if text?.nilIfBlank != nil || !images.isEmpty {
-            recordFailedManualSubmission(CodexChatManualSubmission(text: text ?? "", images: images, includesCurrentContext: includesCurrentContext))
+            recordFailedManualSubmission(CodexChatManualSubmission(
+                startsFreshSession: preparingSubmission?.input.startsFreshSession == true,
+                text: text ?? "", images: images, includesCurrentContext: includesCurrentContext
+            ))
         }
     }
 
     func recordFailedManualSubmission(_ submission: CodexChatManualSubmission) {
         lastSubmittedText = submission.text
         lastManualSubmission = submission
-        failedSubmission = submission
+        let message = submission.startsFreshSession ? errorMessage ?? noticeMessage : nil
+        failedSubmission = SubmissionFailure(input: submission, message: message)
+        if submission.startsFreshSession { operationErrorMessage = nil }
     }
 
     private func unsubscribeIfPossible() {
@@ -1360,7 +1447,7 @@ extension CodexChatSessionModel {
               isBoundToCurrentAccount,
               !isTurnCleanupPending,
               steerTask == nil,
-              errorMessage == nil else { return }
+              canDispatchPendingInputs else { return }
         if isGenerating {
             startSteeringPendingInputIfPossible()
         } else if !isQueuePaused, !pendingManualInputs.isEmpty {
@@ -1394,8 +1481,11 @@ extension CodexChatSessionModel {
     }
 
     func nextPendingSteerInput() -> CodexChatManualSubmission? {
-        guard !activeTurnIsCommand,
-              let index = pendingManualInputs.firstIndex(where: { $0.deliveryMode == .steer }),
+        // A steer would reach the session `/clear` is about to leave; the input waits to start the new one.
+        guard canDispatchPendingInputs, !activeTurnIsCommand, !startsFreshSession,
+              let index = pendingManualInputs.firstIndex(where: {
+                  $0.deliveryMode == .steer && !$0.startsFreshSession && canPromotePendingInput($0)
+              }),
               pendingManualInputs[index].id != editingPendingInputID,
               !isQueuePaused else { return nil }
         let submission = pendingManualInputs[index]

@@ -198,11 +198,21 @@ struct ChatThreadStore: ChatItemStore, Sendable {
         )
     }
 
+    /// Counts only replies in the thread's current Pi session, the one the latest `/clear` started.
     func hasAssistantReply(threadID: String) throws -> Bool {
         try dbQueue.read { db in
             try Bool.fetchOne(db, sql: """
-            SELECT EXISTS(SELECT 1 FROM chat_items WHERE threadID = ? AND json_extract(data, '$.role') = 'assistant')
-            """, arguments: [threadID]) ?? false
+            SELECT EXISTS(SELECT 1 FROM chat_items WHERE threadID = ? AND json_extract(data, '$.role') = 'assistant'
+                AND seq > COALESCE((SELECT MAX(seq) FROM chat_items WHERE threadID = ? AND json_extract(data, '$.freshSession') = 1), -1))
+            """, arguments: [threadID, threadID]) ?? false
+        }
+    }
+
+    func freshSessionSequence(threadID: String) throws -> Int64 {
+        try dbQueue.read { db in
+            try Int64.fetchOne(db, sql: """
+            SELECT MAX(seq) FROM chat_items WHERE threadID = ? AND json_extract(data, '$.freshSession') = 1
+            """, arguments: [threadID]) ?? -1
         }
     }
 

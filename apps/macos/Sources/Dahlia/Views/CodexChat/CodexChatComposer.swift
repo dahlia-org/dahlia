@@ -323,7 +323,12 @@ struct CodexChatComposer: View {
     }
 
     private func selectCommand(_ command: CodexChatSlashCommand) {
-        session.draft = "/" + command.name + " "
+        // `/clear` takes no arguments, so choosing it arms the next message at once.
+        if command == CodexChatSessionModel.clearCommand {
+            session.armFreshSession()
+        } else {
+            session.draft = "/" + command.name + " "
+        }
         showsSlashCommands = false
         isComposerFocused = true
     }
