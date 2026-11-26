@@ -11,6 +11,7 @@ final class AgentIdentityModel {
     var color: String
     private(set) var isSaving = false
     private(set) var error: String?
+    private var externalSaveGeneration = 0
     private let onSave: (String, String, String) async -> (agent: AgentRecord, error: String?)
 
     init(agent: AgentRecord, onSave: @escaping (String, String, String) async -> (agent: AgentRecord, error: String?)) {
@@ -33,6 +34,12 @@ final class AgentIdentityModel {
         }
     }
 
+    /// A sidebar save supersedes prior feedback without replacing an active inline draft.
+    func didSaveExternally() {
+        externalSaveGeneration += 1
+        error = nil
+    }
+
     func save() {
         guard !isSaving else { return }
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -42,13 +49,15 @@ final class AgentIdentityModel {
         }
         guard trimmed != agent.name || avatar != agent.avatar || color != agent.color else { return }
         isSaving = true
-        Task { [avatar, color] in
+        Task { [avatar, color, externalSaveGeneration] in
             let result = await onSave(trimmed, avatar, color)
-            agent = result.agent
-            name = result.agent.name
-            self.avatar = result.agent.avatar
-            self.color = result.agent.color
-            error = result.error
+            if self.externalSaveGeneration == externalSaveGeneration {
+                agent = result.agent
+                name = result.agent.name
+                self.avatar = result.agent.avatar
+                self.color = result.agent.color
+                error = result.error
+            }
             isSaving = false
         }
     }

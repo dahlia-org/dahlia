@@ -1,10 +1,81 @@
 #if canImport(Testing)
+    import DahliaRuntimeSupport
     import Foundation
     import Testing
     @testable import Dahlia
 
     @MainActor
     struct AgentIdentityModelTests {
+        @Test(arguments: [false, true])
+        func sidebarSavesClearRetainedFailureWithoutReplacingInlineDraft(editing: Bool) async throws {
+            let runtime = TestPiRuntime { _ in TestPiTransport() }
+            defer { try? FileManager.default.removeItem(at: runtime.rootURL) }
+            let store = try await Task.detached {
+                try ChatThreadStore(dbQueue: AppDatabaseManager(path: ":memory:").dbQueue)
+            }.value
+            let service = PiChatService(
+                runtime: runtime.service, historyStore: store,
+                agentLocator: PiAgentDirectoryLocator(applicationSupportURL: runtime.rootURL)
+            )
+            let original = try await service.createAgent(name: "Original", avatar: "mascot:E1", color: "#b3dbf4", soul: "")
+            let other = try await service.createAgent(name: "Other", avatar: "mascot:E1", color: "#b3dbf4", soul: "")
+            let owner = AgentsModel(service: service)
+            let identity = owner.identity(for: original)
+            identity.name = String(repeating: "x", count: 81)
+            identity.save()
+            try #require(await pollUntil { !identity.isSaving })
+            let failure = try #require(identity.error)
+            if editing { identity.name = "Unsaved inline draft" }
+
+            owner.edit(other)
+            owner.draft?.name = "Other renamed"
+            _ = await owner.save()
+            #expect(owner.draft == nil)
+            #expect(identity.error == failure)
+
+            owner.edit(original)
+            owner.draft?.name = String(repeating: "x", count: 81)
+            _ = await owner.save()
+            #expect(owner.error != nil)
+            #expect(identity.error == failure)
+
+            // No Settings row or identity refresh observes the intermediate saved name.
+            for name in ["Sidebar correction", original.name] {
+                owner.edit(original)
+                owner.draft?.name = name
+                _ = await owner.save()
+                #expect(owner.draft == nil)
+                #expect(owner.error == nil)
+                #expect(identity.error == nil)
+                #expect(identity.name == (editing ? "Unsaved inline draft" : original.name))
+            }
+            let persisted = try await service.agent(original.id)
+            identity.refresh(persisted, editingName: editing, pickingAvatar: false)
+            #expect(identity.error == nil)
+            #expect(identity.name == (editing ? "Unsaved inline draft" : original.name))
+        }
+
+        @Test
+        func sidebarSuccessSupersedesAnOlderPendingInlineFailure() async throws {
+            let original = agent()
+            var completion: CheckedContinuation<Void, Never>?
+            let identity = AgentIdentityModel(agent: original) { _, _, _ in
+                await withCheckedContinuation { completion = $0 }
+                return (original, "Older failure")
+            }
+            identity.name = String(repeating: "x", count: 81)
+            identity.save()
+            try #require(await pollUntil { completion != nil })
+            identity.didSaveExternally()
+            var corrected = original
+            corrected.name = "Saved from sidebar"
+            identity.refresh(corrected, editingName: false, pickingAvatar: false)
+            completion?.resume()
+            try #require(await pollUntil { !identity.isSaving })
+            #expect(identity.error == nil)
+            #expect(identity.name == corrected.name)
+        }
+
         @Test
         func windowOwnerReusesEachAgentsIdentityAcrossNavigation() {
             let owner = AgentsModel()
