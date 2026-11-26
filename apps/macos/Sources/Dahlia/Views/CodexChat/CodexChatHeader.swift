@@ -1,27 +1,18 @@
 import SwiftUI
 
-struct CodexChatPanelToggle {
-    let isShown: Bool
-    let action: () -> Void
-}
-
 struct CodexChatHeader: View {
     let title: String
     let showsHistory: Bool
     let hasConversation: Bool
     let onBack: () -> Void
-    let onShowHistory: () -> Void
     let onNewChat: () -> Void
     let onShowFullScreen: (() -> Void)?
-    let onPopOut: (() -> Void)?
     let reservesSidebarToggle: Bool
     let reservesWindowControls: Bool
     let leadingInset: CGFloat
     var showsTitle = true
     var parentTitle: String?
     var onOpenParent: (() -> Void)?
-    /// Opens and closes a panel beside the conversation, such as Dahlia Bot's.
-    var panelToggle: CodexChatPanelToggle?
     @State private var isParentHovered = false
 
     var body: some View {
@@ -82,26 +73,11 @@ struct CodexChatHeader: View {
 
             Spacer(minLength: 8)
 
-            if !showsHistory {
-                if hasConversation {
-                    DahliaWindowHeaderIconButton(
-                        label: L10n.newChat,
-                        systemImage: "plus.message",
-                        action: onNewChat
-                    )
-                }
+            if !showsHistory, hasConversation {
                 DahliaWindowHeaderIconButton(
-                    label: L10n.chatHistory,
-                    systemImage: "clock.arrow.circlepath",
-                    action: onShowHistory
-                )
-            }
-
-            if let onPopOut {
-                DahliaWindowHeaderIconButton(
-                    label: L10n.popOutChat,
-                    systemImage: "rectangle.on.rectangle",
-                    action: onPopOut
+                    label: L10n.newChat,
+                    systemImage: "plus.message",
+                    action: onNewChat
                 )
             }
 
@@ -111,15 +87,6 @@ struct CodexChatHeader: View {
                     systemImage: "arrow.up.left.and.arrow.down.right",
                     action: onShowFullScreen
                 )
-            }
-
-            if let panelToggle {
-                DahliaWindowHeaderIconButton(
-                    label: panelToggle.isShown ? L10n.agentBotHidePanel : L10n.agentBotShowPanel,
-                    systemImage: "sidebar.right",
-                    action: panelToggle.action
-                )
-                .accessibilityValue(panelToggle.isShown ? L10n.shown : L10n.hidden)
             }
 
             if reservesSidebarToggle {

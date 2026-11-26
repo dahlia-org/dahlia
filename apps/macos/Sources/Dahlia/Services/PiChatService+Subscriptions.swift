@@ -131,6 +131,7 @@ extension PiChatService {
         let id = UUID.v7()
         let (stream, reader) = AsyncThrowingStream<CodexChatTurnEvent, any Error>.makeStream(bufferingPolicy: .bufferingOldest(256))
         reader.yield(.started(turnID: turn.wireID))
+        if turn.broadcast.isCompacting { reader.yield(.compactionStarted) }
         if let itemID = turn.broadcast.itemID {
             if !turn.broadcast.reasoning.isEmpty { reader.yield(.reasoningDelta(itemID: itemID, summaryIndex: 0, text: turn.broadcast.reasoning)) }
             if !turn.broadcast.text.isEmpty { reader.yield(.delta(itemID: itemID, text: turn.broadcast.text)) }
@@ -143,7 +144,10 @@ extension PiChatService {
         sessions[threadID]?.turn = turn
         let runID = turn.id
         reader.onTermination = { [weak self] _ in Task { await self?.detachReader(threadID: threadID, runID: runID, readerID: id) } }
-        return CodexChatTurnHandle(id: turn.id, events: stream, approvalMethod: sessions[threadID]?.approvalMethod, snapshot: snapshot)
+        return CodexChatTurnHandle(
+            id: turn.id, events: stream, approvalMethod: sessions[threadID]?.approvalMethod,
+            snapshot: snapshot, isCommand: turn.isCommand
+        )
     }
 
     func stopAccountRuns(except accountID: String) async {

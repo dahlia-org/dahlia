@@ -13,6 +13,7 @@ extension CodexChatSessionModel {
             && (!isGenerating || !isPreparingTurn && !input.text.hasPrefix("/") && !startsFreshSession
                 && !input.startsFreshSession && !pendingManualInputs.prefix(while: { $0.id != input.id }).contains(where: \.startsFreshSession))
             && (input.images.isEmpty || selectedModelSupportsImages)
+            && compactImageValidationMessage(text: input.text, hasImages: !input.images.isEmpty) == nil
     }
 
     func sendPendingInputNow(id: UUID) {

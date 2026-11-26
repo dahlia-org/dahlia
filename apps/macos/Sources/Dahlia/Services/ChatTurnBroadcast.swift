@@ -10,6 +10,7 @@ struct ChatTurnBroadcast {
     var reasoning = ""
     var itemID: String?
     var activity: CodexChatToolActivity?
+    var isCompacting = false
     var approvals: [String: CodexChatApprovalRequest] = [:]
 
     mutating func yield(_ event: CodexChatTurnEvent) {
@@ -21,6 +22,8 @@ struct ChatTurnBroadcast {
         case .completed(itemID: .some, text: _): text = ""
             reasoning = ""
             itemID = nil
+        case .compactionStarted: isCompacting = true
+        case .compactionEnded: isCompacting = false
         case let .toolActivity(value): activity = value
         case let .approvalRequested(value): approvals[value.id] = value
         case let .approvalResolved(id): approvals[id] = nil

@@ -1,10 +1,18 @@
 import Foundation
 
+struct CodexChatCompaction: Equatable, Sendable {
+    let tokensBefore: Int
+    /// Pi's estimate of the rebuilt context, not a provider count.
+    let tokensAfter: Int
+}
+
 struct CodexChatMessage: Identifiable, Equatable {
     enum Role: Equatable {
         case user
         case assistant
         case notice(CodexChatNoticeLevel)
+        /// Pi summarized the context; nil while the summary is being written.
+        case compaction(CodexChatCompaction?)
     }
 
     let id: String

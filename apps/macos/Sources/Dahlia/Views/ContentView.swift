@@ -22,14 +22,12 @@ struct ContentView: View {
     @State private var isBotPanelVisible = true
     @State private var botPanel = DahliaBotPanelModel()
     @AppStorage(AgentBotSettings.botThreadKey(for: AppAccount.key)) private var botThreadID: String?
-    @State private var notesEditorModel: DocumentEditorModel?
     @State private var selectedDetailTab: DetailTab = .summary
     @State private var searchModel = MainSearchModel()
     @State private var projectEditorRequest: ProjectEditorRequest?
     @State private var projectPendingDeletion: ProjectOverviewItem?
     @State private var expandedScreenshot: ExpandedScreenshotPresentation?
     @State private var isSummaryGenerationConfirmationPresented = false
-    @State private var isNotesHistoryPresented = false
 
     private var mainContent: some View {
         let isShowingSettings = mainWindowNavigation.isShowingSettings
@@ -112,11 +110,8 @@ struct ContentView: View {
                                 isFullScreen: true,
                                 headerLeadingInset: isSidebarVisible ? 0 : mainWindowNavigation.sidebarWidth,
                                 onShowFullScreen: nil,
-                                onPopOut: popOutDockedChat,
                                 onOpenDetachedSession: openDetachedChat,
-                                panelToggle: isShowingBotThread
-                                    ? CodexChatPanelToggle(isShown: isBotPanelVisible) { isBotPanelVisible.toggle() }
-                                    : nil
+                                reservesPanelToggle: isShowingBotThread && !isBotPanelVisible
                             )
                         } else {
                             detailView
@@ -175,7 +170,6 @@ struct ContentView: View {
                     showsConfiguration: $isShowingChatConfiguration,
                     isFullScreen: false,
                     onShowFullScreen: showFullScreenChat,
-                    onPopOut: popOutDockedChat,
                     onOpenDetachedSession: openDetachedChat
                 )
             }
@@ -183,14 +177,18 @@ struct ContentView: View {
         .allowsHitTesting(!searchModel.isPresented || isShowingSettings)
         .disabled(searchModel.isPresented && !isShowingSettings)
         .overlay(alignment: .topTrailing) {
-            if !isShowingSettings, !isShowingFullScreenChat {
+            // One fixed place for the side panel toggle, whether the panel is open or not: the docked chat, or Super Agent's panel.
+            if !isShowingSettings, isShowingBotThread || !isShowingFullScreenChat {
+                let isShown = isShowingBotThread ? isBotPanelVisible : chatCoordinator.isDockedVisible
                 DahliaWindowHeader(allowsWindowDragging: false, backgroundColor: .clear) {
                     DahliaWindowHeaderIconButton(
-                        label: chatCoordinator.isDockedVisible ? L10n.hideChat : L10n.showChat,
+                        label: isShowingBotThread
+                            ? (isShown ? L10n.agentBotHidePanel : L10n.agentBotShowPanel)
+                            : (isShown ? L10n.hideChat : L10n.showChat),
                         systemImage: "sidebar.right",
-                        action: toggleChat
+                        action: isShowingBotThread ? { isBotPanelVisible.toggle() } : toggleChat
                     )
-                    .accessibilityValue(chatCoordinator.isDockedVisible ? L10n.shown : L10n.hidden)
+                    .accessibilityValue(isShown ? L10n.shown : L10n.hidden)
                 }
                 .frame(width: DahliaDesign.windowHeaderControlSize + 2 * DahliaDesign.windowHeaderHorizontalPadding)
             }
@@ -270,11 +268,6 @@ struct ContentView: View {
                 isPresented: $isSummaryGenerationConfirmationPresented,
                 viewModel: viewModel,
                 sidebarViewModel: sidebarViewModel
-            )
-            .documentRecoveryHistoryPresentation(
-                isPresented: $isNotesHistoryPresented,
-                model: headerNotesEditorModel,
-                editable: sidebarViewModel.canEditCurrentWorkspace
             )
     }
 
@@ -501,11 +494,6 @@ private extension ContentView {
         }
     }
 
-    private func popOutDockedChat() {
-        dismissChatConfiguration()
-        openDetachedChat(chatCoordinator.popOutDocked())
-    }
-
     private func dismissChatConfiguration() {
         isShowingChatConfiguration = false
     }
@@ -616,9 +604,7 @@ private extension ContentView {
         if let workspace = sidebarViewModel.currentWorkspace {
             MainDetailHeader(
                 reservesChatControl: !chatCoordinator.isDockedVisible,
-                leadingInset: isSidebarVisible ? 0 : MainWorkspaceHeader.controlsWidth,
-                notesEditorModel: headerNotesEditorModel,
-                onShowNotesHistory: { isNotesHistoryPresented = true }
+                leadingInset: isSidebarVisible ? 0 : MainWorkspaceHeader.controlsWidth
             ) {
                 MainNavigationBreadcrumbs(
                     workspace: workspace,
@@ -654,11 +640,6 @@ private extension ContentView {
         return viewModel.hasDraftMeeting ? viewModel.draftMeetingTitle : nil
     }
 
-    private var headerNotesEditorModel: DocumentEditorModel? {
-        guard !mainWindowNavigation.isShowingSettings, headerMeetingTitle != nil, selectedDetailTab == .notes else { return nil }
-        return notesEditorModel
-    }
-
     private var headerProjectID: UUID? {
         if case let .project(id) = mainWindowNavigation.currentLocation { return id }
         return headerMeetingTitle != nil ? viewModel.currentProjectId : nil
@@ -689,7 +670,6 @@ private extension ContentView {
                 sidebarViewModel: sidebarViewModel,
                 recordingCoordinator: recordingCoordinator,
                 onPresentSummaryGeneration: presentSummaryGeneration,
-                notesEditorModel: $notesEditorModel,
                 selectedTab: $selectedDetailTab,
                 expandedScreenshot: $expandedScreenshot
             )

@@ -10,6 +10,7 @@ extension CodexChatSessionModel {
             && isBoundToCurrentAccount
             && pendingImagePreparationCount == 0
             && (attachedImages.isEmpty || selectedModelSupportsImages)
+            && attachmentValidationMessage == nil
             && hasComposerContent
     }
 
@@ -24,6 +25,8 @@ extension CodexChatSessionModel {
     var attachmentValidationMessage: String? {
         if pendingImagePreparationCount > 0 {
             L10n.chatPreparingImages
+        } else if let message = compactImageValidationMessage(text: serializedComposerText, hasImages: !attachedImages.isEmpty) {
+            message
         } else if !attachedImages.isEmpty,
                   models.contains(where: { $0.model == selectedModelID }),
                   !selectedModelSupportsImages {

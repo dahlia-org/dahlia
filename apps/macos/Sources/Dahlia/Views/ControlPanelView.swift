@@ -33,7 +33,6 @@ struct ControlPanelView: View {
     var sidebarViewModel: SidebarViewModel
     let recordingCoordinator: RecordingCoordinator
     let onPresentSummaryGeneration: () -> Void
-    @Binding var notesEditorModel: DocumentEditorModel?
     @Binding var selectedTab: DetailTab
     @Binding var expandedScreenshot: ExpandedScreenshotPresentation?
 
@@ -42,6 +41,7 @@ struct ControlPanelView: View {
     @Environment(\.locale) private var locale
     @ObservedObject private var appSettings = AppSettings.shared
     @AppStorage("screenshotMinimumWidth") private var screenshotMinimumWidth = ScreenshotGridSizing.defaultMinimumWidth
+    @State private var notesEditorError = ""
     @State private var isSelectingScreenshots = false
     @State private var selectedScreenshotIds: Set<UUID> = []
     @State private var isConfirmingScreenshotDeletion = false
@@ -82,6 +82,14 @@ struct ControlPanelView: View {
         }
         .frame(minWidth: MainSidebarLayout.minimumDetailWidth, minHeight: 500)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .onPreferenceChange(DocumentEditorErrorPreferenceKey.self) { notesEditorError = $0 }
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            if selectedTab == .notes, !notesEditorError.isEmpty {
+                detailErrorBanner(message: notesEditorError, tint: .orange)
+                    .textSelection(.enabled)
+                    .background(Color(nsColor: .windowBackgroundColor))
+            }
+        }
         .simultaneousGesture(
             TapGesture().onEnded {
                 dismissFocusedInputs()
@@ -272,13 +280,6 @@ struct ControlPanelView: View {
                         }
                     },
                     editable: sidebarViewModel.canEditCurrentWorkspace,
-                    onModelChange: { model, visible in
-                        if visible {
-                            notesEditorModel = model
-                        } else if notesEditorModel === model {
-                            notesEditorModel = nil
-                        }
-                    },
                     resolveMeeting: {
                         guard viewModel.currentMeetingId == documentID || viewModel.draftMeeting?.id == documentID else { return nil }
                         return viewModel.materializeDraftMeeting()

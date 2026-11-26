@@ -1044,12 +1044,14 @@
 "Load more" = "Load more";
 "Earlier messages" = "Earlier messages";
 "Later messages" = "Later messages";
-"Open chat in a new window" = "Open chat in a new window";
 "Show chat full screen" = "Show chat full screen";
 "Hide chat" = "Hide chat";
 "Send message" = "Send message";
 "Stop generating" = "Stop generating";
 "Thinking" = "Thinking";
+"Compacting context" = "Compacting context";
+"Summarize the conversation and reduce context usage" = "Summarize the conversation and reduce context usage";
+"Context compacted %@ → %@ tokens" = "Context compacted %@ → %@ tokens";
 "Message Dahlia AI" = "Message Dahlia AI";
 "Add to chat" = "Add to chat";
 "Select model" = "Select model";
@@ -1398,8 +1400,6 @@
 "recovery.recordings" = "Recovered Recordings";
 "recovery.recording" = "Recovered Recording";
 
-"documentSavedLocally" = "Saved on this Mac";
-"documentSaving" = "Saving…";
 "documentSaveFailed" = "Could not save. Keep this view open and copy your edits.";
 "documentPrivateLegacy" = "Legacy Notes on this Mac (not shared)";
 
@@ -1407,7 +1407,6 @@
 "document.recovery.empty" = "There are no deleted paragraphs to restore.";
 "document.restore" = "Insert as new paragraphs";
 "document.keepLocal" = "Unsynced edits or private notes remain. Move this workspace to the Local Account to keep them.";
-"document.privateRecoverySaved" = "Your input was saved in a recovery copy on this Mac, available in Workspace settings.";
 
 
 "Use the Server version. Local data missing from the Server is kept in the backup and is not uploaded. Private Notes stay on this Mac." = "Use the Server version. Local data missing from the Server is kept in the backup and is not uploaded. Private Notes stay on this Mac.";
@@ -2032,3 +2031,5 @@
 "settings.agents.calendar.invalidSchedule" = "Enable daily or before meetings. Hours before must be greater than 0 and less than 168.";
 "settings.agents.calendar.dailyNote" = "Read today's schedule with calendar_read and consider preparation and unanswered invitations.";
 "settings.agents.calendar.meetingNote" = "A meeting is approaching. Read its current details with calendar_read and decide whether preparation is needed.";
+
+"Remove attached images before compacting context" = "Remove attached images before compacting context";
