@@ -45,13 +45,17 @@ extension CodexChatSessionModel {
             return
         }
         prepareFailureStateForSubmission()
-        preparingQueuedManualSubmission = queuedSubmission
+        let input = queuedSubmission ?? CodexChatManualSubmission(
+            startsFreshSession: freshSession ?? startsFreshSession, text: text, images: images,
+            composerSnapshot: composerSnapshot, includesCurrentContext: includesCurrentContext
+        )
+        preparingSubmission = (input: input, fromQueue: queuedSubmission != nil)
         isGenerating = true
         isPreparingTurn = true
         isAwaitingTurnOutput = false
         preparingManualComposerSnapshot = composerSnapshot
         preparingUserMessage = CodexChatMessage(role: .user, text: text, images: images, timestamp: .now)
-        preparingUserMessage?.startsFreshSession = freshSession ?? startsFreshSession
+        preparingUserMessage?.startsFreshSession = input.startsFreshSession
         if freshSession == nil { startsFreshSession = false }
         clearComposer(ifMatching: composerSnapshot)
         errorMessage = nil

@@ -45,6 +45,99 @@
         }
 
         @Test
+        func idleSendNowCannotCrossAResetInEitherDirection() async throws {
+            let service = TestCodexChatService(mode: .blockBeforeOutput)
+            let session = CodexChatSessionModel(service: service, settings: TestCodexChatFixtures.appSettings())
+            session.draft = "Root"
+            session.sendDraft()
+            try #require(await pollUntil { session.activeTurnID != nil })
+            session.draft = "A"
+            session.sendDraft(mode: .queue)
+            session.armFreshSession()
+            session.draft = "B"
+            session.sendDraft(mode: .queue)
+            session.draft = "C"
+            session.sendDraft(mode: .queue)
+            session.stop()
+            try #require(await pollUntil { !session.hasPendingGenerationWork })
+            let queued = session.pendingManualInputs
+            try #require(queued.count == 3)
+            #expect(session.canSendPendingInput(queued[0]))
+            #expect(!session.canSendPendingInput(queued[1]))
+            #expect(!session.canSendPendingInput(queued[2]))
+            session.sendPendingInputNow(id: queued[2].id)
+            session.sendPendingInputNow(id: queued[1].id)
+            #expect(session.pendingManualInputs == queued)
+            #expect(await service.freshSessionStarts == [false])
+            session.removePendingInput(id: queued[0].id)
+            #expect(session.canSendPendingInput(queued[1]))
+            #expect(!session.canSendPendingInput(queued[2]))
+            session.sendPendingInputNow(id: queued[1].id)
+            try #require(await pollUntil { session.activeTurnID != nil })
+            #expect(await service.freshSessionStarts == [false, true])
+            await service.completeBlockedTurn()
+            try #require(await pollUntil { await service.freshSessionStarts.count == 3 && session.activeTurnID != nil })
+            #expect(await service.freshSessionStarts == [false, true, false])
+            session.stop()
+            try #require(await pollUntil { !session.hasPendingGenerationWork })
+        }
+
+        @Test
+        func newInputAfterFailureWaitsBehindTheQueuedReset() async throws {
+            let service = TestCodexChatService(mode: .blockBeforeOutput)
+            let session = CodexChatSessionModel(service: service, settings: TestCodexChatFixtures.appSettings())
+            session.draft = "A"
+            session.sendDraft()
+            try #require(await pollUntil { session.activeTurnID != nil })
+            session.armFreshSession()
+            session.draft = "B"
+            session.sendDraft(mode: .queue)
+            await service.completeBlockedTurn(with: .failed(message: "Test failure"))
+            try #require(await pollUntil { !session.isGenerating && !session.isTurnCleanupPending && session.errorMessage != nil })
+            try #require(session.errorMessage != nil)
+            session.draft = "C"
+            session.sendDraft(mode: .queue)
+            #expect(session.pendingManualInputs.map(\.text) == ["B", "C"])
+            #expect(await service.freshSessionStarts == [false])
+            session.retry()
+            try #require(await pollUntil { session.activeTurnID != nil })
+            #expect(await service.freshSessionStarts == [false, false])
+            await service.completeBlockedTurn()
+            try #require(await pollUntil { await service.freshSessionStarts.count == 3 && session.activeTurnID != nil })
+            #expect(await service.freshSessionStarts == [false, false, true])
+            session.stop()
+            try #require(await pollUntil { !session.hasPendingGenerationWork })
+        }
+
+        @Test(arguments: [false, true])
+        func stoppingQueuedResetRetainsOnlyUncommittedIntent(committed: Bool) async throws {
+            let service = TestCodexChatService(
+                mode: .blockBeforeOutput, commitsFreshSessionBeforeFailure: committed, delaysFreshSessionStart: true
+            )
+            let session = CodexChatSessionModel(service: service, settings: TestCodexChatFixtures.appSettings())
+            session.draft = "Root"
+            session.sendDraft()
+            try #require(await pollUntil { session.activeTurnID != nil })
+            session.armFreshSession()
+            session.draft = "B"
+            session.sendDraft(mode: .queue)
+            await service.completeBlockedTurn()
+            try #require(await pollUntil { await service.isSendWaiting })
+            session.stop()
+            await service.resumeDelayedSend()
+            try #require(await pollUntil { !session.hasPendingGenerationWork })
+            let queued = try #require(session.pendingManualInputs.first)
+            #expect(queued.text == "B")
+            #expect(queued.startsFreshSession == !committed)
+            #expect(!session.startsFreshSession)
+            session.resumeQueue()
+            try #require(await pollUntil { session.activeTurnID != nil })
+            #expect(await service.freshSessionStarts == [false, true, !committed])
+            session.stop()
+            try #require(await pollUntil { !session.hasPendingGenerationWork })
+        }
+
+        @Test
         func committedResetFailureRetriesWithoutAnotherReset() async throws {
             let service = TestCodexChatService(mode: .failThenComplete, commitsFreshSessionBeforeFailure: true)
             let session = CodexChatSessionModel(

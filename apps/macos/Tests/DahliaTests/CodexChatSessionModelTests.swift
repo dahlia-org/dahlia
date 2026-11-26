@@ -1338,6 +1338,7 @@ import Foundation
 
         let mode: Mode
         private let commitsFreshSessionBeforeFailure: Bool
+        private let delaysFreshSessionStart: Bool
         private let availableCommands: [CodexChatSlashCommand]
         private let delaysLoad: Bool
         private let earlierPages: [String: CodexChatMessagePage]
@@ -1408,6 +1409,7 @@ import Foundation
         init(
             mode: Mode,
             commitsFreshSessionBeforeFailure: Bool = false,
+            delaysFreshSessionStart: Bool = false,
             commands: [CodexChatSlashCommand] = [],
             steerErrors: [PiRuntimeError] = [],
             delaysLoad: Bool = false,
@@ -1421,6 +1423,7 @@ import Foundation
         ) {
             self.mode = mode
             self.commitsFreshSessionBeforeFailure = commitsFreshSessionBeforeFailure
+            self.delaysFreshSessionStart = delaysFreshSessionStart
             self.availableCommands = commands
             self.steerErrors = steerErrors
             self.delaysLoad = delaysLoad
@@ -1631,6 +1634,10 @@ import Foundation
             freshSessionStarts.append(startsFreshSession)
             let stream: AsyncThrowingStream<CodexChatTurnEvent, any Error>
             do {
+                if startsFreshSession, delaysFreshSessionStart, freshSessionStarts.filter({ $0 }).count == 1 {
+                    await withCheckedContinuation { delayedSendContinuation = $0 }
+                    try Task.checkCancellation()
+                }
                 stream = try await send(
                     threadID: threadID,
                     inputs: inputs,
