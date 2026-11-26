@@ -1236,6 +1236,7 @@ actor PiChatService: CodexChatServicing {
             let error = object["errorMessage"]?.stringValue
             // Pi has nothing new to summarize; the request succeeded without a compaction, so it is not a failure.
             if let error, error.hasSuffix("Nothing to compact (session too small)") || error.hasSuffix("Already compacted") {
+                turn.lastError = nil
                 turn.broadcast.yield(.notice(message: L10n.chatNothingToCompact, level: .info))
             } else {
                 turn.lastError = error
@@ -1249,7 +1250,7 @@ actor PiChatService: CodexChatServicing {
     }
 
     /// A later `compaction_end` replaces it with Pi's own message.
-    private func setCompactionError(_ message: String, threadID: String, runID: UUID) {
+    func setCompactionError(_ message: String, threadID: String, runID: UUID) {
         guard sessions[threadID]?.turn?.id == runID else { return }
         sessions[threadID]?.turn?.lastError = message
     }

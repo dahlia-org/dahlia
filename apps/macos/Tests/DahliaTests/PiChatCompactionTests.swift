@@ -145,6 +145,40 @@ import Foundation
             #expect(result.run?.status == ["succeeded": "completed", "nothing": "completed", "already": "completed", "failed": "failed"][outcome] ?? "interrupted")
         }
 
+        @Test(arguments: ["Nothing to compact (session too small)", "Already compacted"], [false, true])
+        func noOpEndOverridesRPCRejection(message: String, rejectionRecordedFirst: Bool) async throws {
+            let transport = TestPiTransport { command in
+                command["type"] == .string("compact") ? [] : TestPiTransport.acknowledge(command)
+            }
+            let (pi, store, chat) = try Self.fixture(transport: transport)
+            defer { try? FileManager.default.removeItem(at: pi.rootURL) }
+            let thread = try await chat.startThread(model: nil, effort: "medium")
+            let turn = try await chat.beginTurn(
+                threadID: thread.id, inputs: [.text("/compact")], model: nil, effort: "medium", approvalMethod: .ask
+            )
+            let command = await transport.command("compact")
+            let id = try #require(command["id"])
+            let error = "Compaction failed: " + message
+            if rejectionRecordedFirst {
+                // Pin the ordering where the RPC task stores its error before the event pump processes the end.
+                await chat.setCompactionError(error, threadID: thread.id, runID: turn.id)
+            }
+            await transport.emit(Self.compactionStart)
+            await transport.emit(Self.compactionEnd(extra: ["errorMessage": .string(error)]))
+            await transport.emit(.object([
+                "type": .string("response"), "id": id, "success": .bool(false), "error": .string(error),
+            ]))
+            var events: [CodexChatTurnEvent] = []
+            for try await event in turn.events { events.append(event) }
+            #expect(Array(events.dropFirst()) == [
+                .compactionStarted, .compactionEnded(nil),
+                .notice(message: L10n.chatNothingToCompact, level: .info), .completed(itemID: nil, text: nil),
+            ])
+            await chat.setCompactionError(error, threadID: thread.id, runID: turn.id)
+            #expect(try store.latestRun(threadID: thread.id)?.status == "completed")
+            await pi.service.shutdown()
+        }
+
         private static func rejection(id: JSONValue) -> JSONValue {
             .object([
                 "type": .string("response"), "id": id, "command": .string("compact"),
