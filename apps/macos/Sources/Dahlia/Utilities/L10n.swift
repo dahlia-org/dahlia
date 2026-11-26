@@ -231,7 +231,6 @@ enum L10n { // swiftlint:disable:this type_body_length
     static var agentChangeAvatar: String { String(localized: "bots.changeAvatar", bundle: bundle) }
     static var agentAvatarPrevious: String { String(localized: "bots.avatarPrevious", bundle: bundle) }
     static var agentAvatarNext: String { String(localized: "bots.avatarNext", bundle: bundle) }
-    static var agentIdentity: String { String(localized: "bots.identity", bundle: bundle) }
     static var agentNameInvalid: String { String(localized: "bots.nameInvalid", bundle: bundle) }
     static var agentBotIdle: String { String(localized: "bots.idle", bundle: bundle) }
     static func agentBotNeedsAttention(_ count: Int) -> String {

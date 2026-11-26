@@ -2029,7 +2029,6 @@
 "bots.changeAvatar" = "Change Picture";
 "bots.avatarPrevious" = "Previous Picture";
 "bots.avatarNext" = "Next Picture";
-"bots.identity" = "Agent";
 "bots.nameInvalid" = "Enter a name of 1 to 80 characters.";
 
 "settings.agents.alwaysOn.counts" = "%d read / %d recorded";

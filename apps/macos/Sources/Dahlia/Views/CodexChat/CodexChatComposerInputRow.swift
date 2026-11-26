@@ -67,7 +67,7 @@ struct CodexChatComposerInputRow: View {
                     addPanel(windowBounds)
                         .fixedSize(horizontal: false, vertical: true)
                         .onGeometryChange(for: CGSize.self) { $0.size } action: { addPanelSize = $0 }
-                        .codexChatDismissOnOutsideClick(perform: onDismissAddPanel)
+                        .dismissOnOutsideClick(perform: onDismissAddPanel)
                         .offset(CodexChatAddPanelLayout.offset(panelSize: addPanelSize, windowBounds: windowBounds))
                         .opacity(addPanelSize == .zero ? 0 : 1)
                 }

@@ -54,7 +54,7 @@ struct DahliaBotPanelView: View {
                 case .settings: settings
                 }
             }
-            .formStyle(.grouped).toggleStyle(.switch).font(.dahliaBody).disabled(model.isBusy)
+            .formStyle(.grouped).toggleStyle(.switch).buttonStyle(.dahlia()).font(.dahliaBody).disabled(model.isBusy)
         }
         .task(id: model.agentID) {
             while !Task.isCancelled {
@@ -109,6 +109,16 @@ struct DahliaBotPanelView: View {
 
     @ViewBuilder
     private var settings: some View {
+        let agent = agents.summaries.first { $0.id == model.agentID }?.agent
+        // As Orca's: the agent's picture and name head its settings, changed where they are shown.
+        if let agent {
+            Section {
+                AgentIdentityRow(agent: agent) { name, avatar, color in
+                    Task { await agents.update(agent, name: name, avatar: avatar, color: color) }
+                }.id(agent.id)
+                if let error = agents.error, agents.draft == nil { Text(error).foregroundStyle(.red).textSelection(.enabled) }
+            }
+        }
         // One group, with a row per source.
         Section {
             ForEach(model.sources) { source in sourceCard(source) }
@@ -137,20 +147,22 @@ struct DahliaBotPanelView: View {
             AgentSectionHeader(title: L10n.agentBotModels) { EmptyView() }
         }
         .disabled(!model.areModelSettingsLoaded)
-        soulSection
-        if let agent = agents.summaries.first(where: { $0.id == model.agentID })?.agent {
-            Section {
-                LabeledContent {
-                    Button(L10n.agentEdit) { agents.edit(agent) }
-                } label: {
-                    HStack(spacing: 8) {
-                        AgentAvatarView(avatar: agent.avatar, color: agent.color, size: DahliaTypography.size(offset: 14))
-                        Text(agent.name)
-                    }
-                }
-                Button(L10n.agentDelete, role: .destructive) { agents.pendingDeletion = agent }
-            } header: {
-                AgentSectionHeader(title: L10n.agentIdentity) { EmptyView() }
+        soulSection(deleting: agent)
+    }
+
+    /// `SOUL.md`; its footer, the last thing in the settings, holds deleting the agent, outside a group as Orca's.
+    private func soulSection(deleting agent: AgentRecord?) -> some View {
+        Section {
+            soulContent
+        } header: {
+            HStack {
+                Text(L10n.agentBotSoul).font(.dahliaSectionHeader)
+                SettingsInfoButton(help: L10n.agentBotSoulHelp)
+            }
+        } footer: {
+            if let agent {
+                DeleteAgentButton { agents.pendingDeletion = agent }
+                    .padding(.top, 12)
             }
         }
     }
@@ -200,37 +212,31 @@ struct DahliaBotPanelView: View {
         }
     }
 
-    private var soulSection: some View {
-        Section {
-            if let draft = model.soulDraft {
-                TextField(
-                    L10n.agentBotSoul,
-                    text: Binding(get: { draft }, set: { model.soulDraft = $0 }),
-                    prompt: Text(L10n.agentBotGuidancePlaceholder),
-                    axis: .vertical
-                )
-                .labelsHidden()
-                .multilineTextAlignment(.leading)
-                .lineLimit(6 ... 20)
-                HStack {
-                    Spacer()
-                    Button(L10n.cancel) { model.soulDraft = nil }
-                    Button(L10n.save) { Task { await model.saveSoul() } }.keyboardShortcut(.defaultAction)
-                }
-            } else {
-                Text(model.soul.nilIfBlank ?? L10n.agentBotSoulEmpty)
-                    .foregroundStyle(model.soul.nilIfBlank == nil ? .secondary : .primary)
-                    .textSelection(.enabled)
-                HStack {
-                    Spacer()
-                    Button(L10n.agentBotShowInFinder) { Task { await model.showSoulInFinder() } }
-                    Button(L10n.edit) { model.editSoul() }
-                }
-            }
-        } header: {
+    @ViewBuilder
+    private var soulContent: some View {
+        if let draft = model.soulDraft {
+            TextField(
+                L10n.agentBotSoul,
+                text: Binding(get: { draft }, set: { model.soulDraft = $0 }),
+                prompt: Text(L10n.agentBotGuidancePlaceholder),
+                axis: .vertical
+            )
+            .labelsHidden()
+            .multilineTextAlignment(.leading)
+            .lineLimit(6 ... 20)
             HStack {
-                Text(L10n.agentBotSoul).font(.dahliaSectionHeader)
-                SettingsInfoButton(help: L10n.agentBotSoulHelp)
+                Spacer()
+                Button(L10n.cancel) { model.soulDraft = nil }
+                Button(L10n.save) { Task { await model.saveSoul() } }.buttonStyle(.dahlia(.primary)).keyboardShortcut(.defaultAction)
+            }
+        } else {
+            Text(model.soul.nilIfBlank ?? L10n.agentBotSoulEmpty)
+                .foregroundStyle(model.soul.nilIfBlank == nil ? .secondary : .primary)
+                .textSelection(.enabled)
+            HStack {
+                Spacer()
+                Button(L10n.agentBotShowInFinder) { Task { await model.showSoulInFinder() } }
+                Button(L10n.edit) { model.editSoul() }
             }
         }
     }
@@ -303,6 +309,7 @@ struct DahliaBotPanelView: View {
                     }
                     if item.kind == "suggestion" {
                         Button(L10n.agentBotAccept) { Task { await model.answer(item, with: L10n.agentBotAccepted) } }
+                            .buttonStyle(.dahlia(.primary))
                     }
                 }
             }
@@ -415,5 +422,131 @@ private struct DahliaBotEventRow: View {
         .onHover { isHovered = $0 }
         .accessibilityValue(event.handledAt == nil ? L10n.agentAlwaysOnEventUnassigned : L10n.agentAlwaysOnEventProcessed)
         .accessibilityHint(isExpanded ? L10n.collapse : L10n.expand)
+    }
+}
+
+/// The agent's picture and name at the top of its settings, as Orca's: the picture opens the picker, the name is typed
+/// over, and each is saved when the picker closes or the name is submitted or left.
+struct AgentIdentityRow: View {
+    let agent: AgentRecord
+    let onSave: (String, String, String) -> Void
+    @State private var name = ""
+    @State private var avatar = ""
+    @State private var color = ""
+    @State private var isPickingAvatar = false
+    @State private var isAvatarHovered = false
+    @State private var isEditingName = false
+    @State private var isNameHovered = false
+    @FocusState private var isNameFocused: Bool
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Button { isPickingAvatar = true } label: {
+                AgentAvatarView(avatar: avatar, color: color, size: Self.avatarSize)
+                    .overlay {
+                        if isAvatarHovered || isPickingAvatar {
+                            RoundedRectangle(cornerRadius: AgentAvatarView.cornerRadius(Self.avatarSize), style: .continuous)
+                                .fill(.black.opacity(0.35))
+                            Image(systemName: "pencil").dahliaFixedSymbol().foregroundStyle(.white)
+                        }
+                    }
+                    .contentShape(.rect)
+            }
+            .buttonStyle(.plain)
+            .onHover { isAvatarHovered = $0 }
+            .pointerStyle(.link)
+            .help(L10n.agentChangeAvatar)
+            .accessibilityLabel(L10n.agentChangeAvatar)
+            .popover(isPresented: $isPickingAvatar, arrowEdge: .bottom) {
+                AgentAvatarPicker(avatar: $avatar, color: $color)
+            }
+            // The name reads as text, with a pencil on hover; clicking it opens a bordered field, as Orca's.
+            if isEditingName {
+                TextField(L10n.agentName, text: $name, prompt: Text(L10n.agentName))
+                    .labelsHidden()
+                    .textFieldStyle(.roundedBorder)
+                    .focused($isNameFocused)
+                    .onAppear { isNameFocused = true }
+                    .onSubmit { isNameFocused = false }
+                    // A click anywhere else saves and closes it too; clicking empty space would not take the focus.
+                    .dismissOnOutsideClick { isNameFocused = false }
+                    .onExitCommand {
+                        name = agent.name
+                        isNameFocused = false
+                    }
+                    .onDisappear {
+                        // Switching tabs can remove the field before its focus change is delivered.
+                        if isEditingName { save() }
+                    }
+            } else {
+                Button { isEditingName = true } label: {
+                    HStack(spacing: 6) {
+                        Text(name).lineLimit(1)
+                        Image(systemName: "pencil")
+                            .dahliaFixedSymbol()
+                            .foregroundStyle(.secondary)
+                            .opacity(isNameHovered ? 1 : 0)
+                        Spacer(minLength: 0)
+                    }
+                    .contentShape(.rect)
+                }
+                .buttonStyle(.plain)
+                .onHover { isNameHovered = $0 }
+                .pointerStyle(.link)
+                .help(L10n.agentName)
+            }
+        }
+        .font(Self.nameFont)
+        .onAppear(perform: load)
+        .onChange(of: agent) { load() }
+        .onChange(of: isPickingAvatar) { if !isPickingAvatar { save() } }
+        .onChange(of: isNameFocused) {
+            guard !isNameFocused else { return }
+            save()
+            isEditingName = false
+        }
+    }
+
+    private static let avatarSize: CGFloat = 32
+    /// The base size plus 2 pt, as Orca's.
+    private static var nameFont: Font { .system(size: DahliaTypography.size(offset: 2), weight: .semibold) }
+
+    private func load() {
+        if !isEditingName { name = agent.name }
+        if !isPickingAvatar { avatar = agent.avatar
+            color = agent.color
+        }
+    }
+
+    private func save() {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        // A blank name is not saved; the field goes back to the saved one.
+        guard !trimmed.isEmpty else { name = agent.name
+            return
+        }
+        guard trimmed != agent.name || avatar != agent.avatar || color != agent.color else { return }
+        onSave(trimmed, avatar, color)
+    }
+}
+
+/// Deleting the agent, as Orca's: red text with no fill, tinted red while the pointer is over it.
+private struct DeleteAgentButton: View {
+    let action: () -> Void
+    @State private var isHovered = false
+
+    var body: some View {
+        Button(role: .destructive, action: action) {
+            Label(L10n.agentDelete, systemImage: "trash")
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                .background(Color.red.opacity(isHovered ? 0.1 : 0), in: .rect(cornerRadius: DahliaDesign.Button.cornerRadius))
+                .contentShape(.rect(cornerRadius: DahliaDesign.Button.cornerRadius))
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(.red)
+        .onHover { isHovered = $0 }
+        .pointerStyle(.link)
+        // The padding sits inside the tint, so the text lines up with the groups above.
+        .padding(.leading, -10)
     }
 }

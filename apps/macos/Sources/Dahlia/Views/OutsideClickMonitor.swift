@@ -2,14 +2,14 @@ import AppKit
 import SwiftUI
 
 extension View {
-    func codexChatDismissOnOutsideClick(perform action: @escaping () -> Void) -> some View {
+    func dismissOnOutsideClick(perform action: @escaping () -> Void) -> some View {
         background {
-            CodexChatOutsideClickMonitor(onOutsideClick: action)
+            OutsideClickMonitor(onOutsideClick: action)
         }
     }
 }
 
-struct CodexChatOutsideClickMonitor: NSViewRepresentable {
+struct OutsideClickMonitor: NSViewRepresentable {
     let onOutsideClick: () -> Void
 
     func makeCoordinator() -> Coordinator {

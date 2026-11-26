@@ -132,7 +132,7 @@ struct CodexChatComposer: View {
                 .frame(width: CodexChatSlashCommandLayout.width(in: slashWindowBounds))
                 .fixedSize(horizontal: false, vertical: true)
                 .onGeometryChange(for: CGSize.self) { $0.size } action: { slashPanelSize = $0 }
-                .codexChatDismissOnOutsideClick { showsSlashCommands = false }
+                .dismissOnOutsideClick { showsSlashCommands = false }
                 .offset(CodexChatSlashCommandLayout.offset(panelSize: slashPanelSize, in: slashWindowBounds, composerHeight: composerSize.height))
                 .opacity(slashPanelSize == .zero ? 0 : 1)
             }
@@ -140,7 +140,7 @@ struct CodexChatComposer: View {
         .zIndex(showsAddPanel || showsSlashCommands ? 1 : 0)
         .background {
             if !showsAddPanel, !showsSlashCommands {
-                CodexChatOutsideClickMonitor(onOutsideClick: dismissComposerFocus)
+                OutsideClickMonitor(onOutsideClick: dismissComposerFocus)
             }
         }
         .onChange(of: session.id) { dismissPanels() }

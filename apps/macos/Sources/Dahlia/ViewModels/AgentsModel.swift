@@ -76,6 +76,15 @@ final class AgentsModel {
         }
     }
 
+    /// Saves a name or picture changed in place, in the agent's side panel.
+    func update(_ agent: AgentRecord, name: String, avatar: String, color: String) async {
+        do {
+            try await PiChatService.shared.updateAgent(agent.id, name: name, avatar: avatar, color: color)
+            error = nil
+        } catch { self.error = error.localizedDescription }
+        await refresh()
+    }
+
     func delete(_ agent: AgentRecord) async {
         guard !isBusy else { return }
         isBusy = true
