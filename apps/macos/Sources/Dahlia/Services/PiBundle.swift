@@ -71,8 +71,9 @@ enum DahliaMCPBundle {
     }
 }
 
-/// The app's one account keeps its agent's files in `agent` (`~/.dahlia/agent` in a released build): credentials,
-/// `models.json`, and chat sessions. The name names neither Pi nor an account, so another agent could use it.
+/// The app's one account keeps Pi's files in `pi` (`~/.dahlia/pi` in a released build): credentials, `models.json`,
+/// chat sessions, and the skills every agent shares, whose path never moves; another runtime would keep its own folder
+/// beside it and link to these skills. Each agent's home is in `agents` beside it.
 /// `accounts/<account id>/pi` is only read as the migration source and removed with its Dahlia account. Pi never
 /// reads `~/.pi`.
 struct PiAgentDirectoryLocator: Sendable {
@@ -89,10 +90,10 @@ struct PiAgentDirectoryLocator: Sendable {
 
     private var accountsURL: URL { rootURL.appending(path: "accounts", directoryHint: .isDirectory) }
 
-    /// The agent directory of the app's one account. A locator given a folder (tests) keeps it inside that folder.
-    var sharedAgentURL: URL {
-        guard applicationSupportURL == nil else { return rootURL.appending(path: "agent", directoryHint: .isDirectory) }
-        return DahliaApplicationSupport.agentDirectoryURL(profile: DahliaApplicationSupport.profile())
+    /// Pi's agent directory for the app's one account. A locator given a folder (tests) keeps it inside that folder.
+    var piDirectoryURL: URL {
+        guard applicationSupportURL == nil else { return rootURL.appending(path: "pi", directoryHint: .isDirectory) }
+        return DahliaApplicationSupport.piDirectoryURL(profile: DahliaApplicationSupport.profile())
     }
 
     /// An account's agent directory before the app had one account (`accounts/<local or account id>/pi`).
@@ -100,14 +101,18 @@ struct PiAgentDirectoryLocator: Sendable {
         accountsURL.appending(path: accountKey, directoryHint: .isDirectory).appending(path: "pi", directoryHint: .isDirectory)
     }
 
-    /// Super Agent's home (`~/.dahlia/bots/super-agent` in a released build), beside the agent directory and apart from
-    /// its credentials and settings.
-    var botHomeURL: URL {
-        sharedAgentURL.deletingLastPathComponent().appending(path: "bots/super-agent", directoryHint: .isDirectory)
+    /// Where the agents' homes are (`~/.dahlia/agents` in a released build), beside Pi's directory and apart from its
+    /// credentials and settings.
+    var agentsURL: URL {
+        piDirectoryURL.deletingLastPathComponent().appending(path: "agents", directoryHint: .isDirectory)
+    }
+
+    func agentHomeURL(_ directory: String) -> URL {
+        agentsURL.appending(path: directory, directoryHint: .isDirectory)
     }
 
     func agentURL() throws -> URL {
-        let url = sharedAgentURL
+        let url = piDirectoryURL
         try Self.createPrivateDirectory(url)
         try Self.createPrivateDirectory(url.appending(path: "skills", directoryHint: .isDirectory))
         return url

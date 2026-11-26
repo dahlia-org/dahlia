@@ -200,29 +200,37 @@ import Foundation
             return process.terminationStatus
         }
 
-        /// Super Agent writes only its home, never the files that steer it; ordinary chat cannot reach its home at all.
+        /// An agent writes only its home, never the files that steer it, and cannot read another agent's; ordinary chat
+        /// reaches no agent's home.
         @Test
-        func superAgentWritesOnlyItsHome() throws {
+        func anAgentWritesOnlyItsOwnHome() throws {
             let root = FileManager.default.temporaryDirectory.appending(path: "PiSandboxTests-\(UUID())")
             defer { try? FileManager.default.removeItem(at: root) }
-            let agent = root.appending(path: "agent"), bot = root.appending(path: "bots/dahlia-bot")
+            let pi = root.appending(path: "pi"), bot = root.appending(path: "agents/one"), other = root.appending(path: "agents/two")
             let work = root.appending(path: "work")
-            for folder in [agent, bot, work] {
+            for folder in [pi, bot, other, work] {
                 try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
             }
-            try DahliaBotHome.ensure(bot, instructions: "rules", defaults: #require(UserDefaults(suiteName: "PiSandboxTests.\(UUID())")))
+            for (home, name) in [(bot, "one"), (other, "two")] {
+                let agent = AgentRecord(
+                    id: UUID.v7().uuidString, name: name, directory: name, avatar: "mascot:E1", color: "#b3dbf4",
+                    createdAt: .now, updatedAt: .now
+                )
+                try AgentHome.ensure(home, agent: agent, instructions: "rules")
+            }
             try Data("material".utf8).write(to: work.appending(path: "material.txt"))
             func quoted(_ url: URL) -> String { "'\(url.path)'" }
 
-            #expect(try run("echo x > \(quoted(bot.appending(path: "notes.md")))", cwd: bot, agent: agent, profile: .bot) == 0)
-            #expect(try run("cat \(quoted(bot.appending(path: "SOUL.md")))", cwd: bot, agent: agent, profile: .bot) == 0)
-            for name in DahliaBotHome.protectedFiles {
-                #expect(try run("echo x > \(quoted(bot.appending(path: name)))", cwd: bot, agent: agent, profile: .bot) != 0)
+            #expect(try run("echo x > \(quoted(bot.appending(path: "notes.md")))", cwd: bot, agent: pi, profile: .bot) == 0)
+            #expect(try run("cat \(quoted(bot.appending(path: "SOUL.md")))", cwd: bot, agent: pi, profile: .bot) == 0)
+            for name in AgentHome.protectedFiles {
+                #expect(try run("echo x > \(quoted(bot.appending(path: name)))", cwd: bot, agent: pi, profile: .bot) != 0)
             }
-            #expect(try run("echo x > \(quoted(work.appending(path: "out.txt")))", cwd: bot, agent: agent, profile: .bot) != 0)
+            #expect(try run("echo x > \(quoted(work.appending(path: "out.txt")))", cwd: bot, agent: pi, profile: .bot) != 0)
+            #expect(try run("cat \(quoted(other.appending(path: "SOUL.md")))", cwd: bot, agent: pi, profile: .bot) != 0)
 
-            #expect(try run("cat \(quoted(bot.appending(path: "SOUL.md")))", cwd: work, agent: agent) != 0)
-            #expect(try run("echo x > \(quoted(bot.appending(path: "notes.md")))", cwd: work, agent: agent) != 0)
+            #expect(try run("cat \(quoted(bot.appending(path: "SOUL.md")))", cwd: work, agent: pi) != 0)
+            #expect(try run("echo x > \(quoted(bot.appending(path: "notes.md")))", cwd: work, agent: pi) != 0)
         }
 
         @Test

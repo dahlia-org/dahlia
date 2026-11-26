@@ -101,11 +101,11 @@ enum PiSandbox {
             "APP_SUPPORT": realPath(applicationSupportURL),
             // A development build must not reach a released user's data either.
             "RELEASED_APP_SUPPORT": realPath(DahliaApplicationSupport.directoryURL(profile: .production)),
-            "RELEASED_AGENT": realPath(DahliaApplicationSupport.agentDirectoryURL(profile: .production)),
-            // Dahlia Bot's home: its guidance must not change through chat's commands or files.
-            "BOTS": realPath(agentURL.deletingLastPathComponent().appending(path: "bots")),
-            "RELEASED_BOTS": realPath(DahliaApplicationSupport.agentDirectoryURL(profile: .production).deletingLastPathComponent()
-                .appending(path: "bots")),
+            "RELEASED_AGENT": realPath(DahliaApplicationSupport.piDirectoryURL(profile: .production)),
+            // Every agent's home: their guidance must not change through chat's commands or files, or another agent's.
+            "AGENTS": realPath(agentURL.deletingLastPathComponent().appending(path: "agents")),
+            "RELEASED_AGENTS": realPath(DahliaApplicationSupport.piDirectoryURL(profile: .production).deletingLastPathComponent()
+                .appending(path: "agents")),
         ]
         var arguments = parameters.flatMap { ["-D", "\($0)=\($1)"] }
         var rules: [String] = []
@@ -137,7 +137,7 @@ enum PiSandbox {
             (deny file-write*)
             (allow file-read* file-write* (subpath (param "WORK")))
             (allow file-write-data (literal "/dev/null") (literal "/dev/stdout") (literal "/dev/stderr") (regex #"^/dev/fd/"))
-            (deny file-write*\(DahliaBotHome.protectedFiles.map { " (literal (string-append (param \"WORK\") \"/\($0)\"))" }.joined()))
+            (deny file-write*\(AgentHome.protectedFiles.map { " (literal (string-append (param \"WORK\") \"/\($0)\"))" }.joined()))
 
             """
         default: profile += "\n(deny file-write*)\n"

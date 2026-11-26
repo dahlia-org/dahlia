@@ -24,9 +24,10 @@ actor PiChatService: CodexChatServicing {
     var activeIntake: ActiveIntake?
     /// When each Source was last tried, so a failing one waits its interval instead of retrying every minute.
     var intakeAttempts: [String: Date] = [:]
-    /// Super Agent is one thread; see `PiChatService+DahliaBot`. A failed or incomplete notice waits before it is told again.
-    var botRetryAt: Date?
-    /// The `SOUL.md` text each Super Agent process last received.
+    /// Each agent is one thread; see `PiChatService+DahliaBot`. A failed or incomplete notice waits before its agent, by
+    /// ID, is told again.
+    var botRetryAt: [String: Date] = [:]
+    /// The `SOUL.md` text each agent thread's process last received.
     var botSoulGiven: [String: String] = [:]
     /// Upstream measures Curator idleness from process start as well as from the latest chat activity.
     let launchedAt = Date()
@@ -40,7 +41,6 @@ actor PiChatService: CodexChatServicing {
         learningSkills = AgentSkillService(dbQueue: dbQueue)
         try store.recoverInterruptedThreads(continuing: AppSettings.continuesChatsAfterRestart())
         try await dbQueue.write { db in
-            try AgentInboxService.adoptLegacyBotThread(account: AppAccount.key, in: db)
             try db.execute(sql: "UPDATE chat_schedule_fires SET status='interrupted' WHERE status='running'")
             try db.execute(sql: "UPDATE agent_reviews SET status='interrupted' WHERE status='running'")
             try db.execute(sql: "UPDATE agent_system_runs SET status='interrupted',finishedAt=? WHERE status='running'", arguments: [Date()])
@@ -100,7 +100,7 @@ actor PiChatService: CodexChatServicing {
                     await self.closeIdleSession(threadID, processID: processID)
                 }
             } else if run.origin == "bot" {
-                settleBotNotice(status: status)
+                settleBotNotice(threadID: threadID, status: status)
             } else if run.origin == "user" {
                 enqueueLearningReview(run, account: accountID)
             }
@@ -361,20 +361,17 @@ actor PiChatService: CodexChatServicing {
 
     func listThreads(cursor: String?) async throws -> CodexChatThreadPage {
         try await runtime.requireConfigured()
-        // Dahlia Bot's thread opens from the Bots section.
-        return try history().listThreads(accountID: AppAccount.key, cursor: cursor, hiding: AgentBotSettings.botThread(for: AppAccount.key))
+        return try history().listThreads(accountID: AppAccount.key, cursor: cursor)
     }
 
     func listSettledThreads(cursor: String?) async throws -> CodexChatThreadPage {
         try await runtime.requireConfigured()
-        return try history().listThreads(
-            accountID: AppAccount.key, cursor: cursor, hiding: AgentBotSettings.botThread(for: AppAccount.key), settled: true
-        )
+        return try history().listThreads(accountID: AppAccount.key, cursor: cursor, settled: true)
     }
 
     func threadCounts() async throws -> (active: Int, settled: Int) {
         try await runtime.requireConfigured()
-        return try history().threadCounts(accountID: AppAccount.key, hiding: AgentBotSettings.botThread(for: AppAccount.key))
+        return try history().threadCounts(accountID: AppAccount.key)
     }
 
     func setThreadSettled(id: String, settled: Bool) async throws {
@@ -948,12 +945,12 @@ actor PiChatService: CodexChatServicing {
         return try await task.value
     }
 
-    /// A thread with no model chosen (a Dahlia Bot Task's, or the bot's before the user picks one) starts on the model of
-    /// the thread it came from (a child's parent, a Task's bot), or else on the one a new chat would get; Pi has no default
-    /// model of its own unless the user set one.
+    /// A thread with no model chosen (an agent's Task's, or the agent's before the user picks one) starts on the model of
+    /// the thread it came from (a child's parent, a Task's agent), or else on the one a new chat would get; Pi has no
+    /// default model of its own unless the user set one.
     private func startingModel(for record: ChatThreadRecord) async -> String {
-        let isTask = (try? inboxService().task(threadID: record.id)) != nil
-        if let origin = record.parentThreadID ?? (isTask ? AgentBotSettings.botThread(for: record.accountID) : nil),
+        let taskAgent = try? inboxService().task(threadID: record.id).map { try agent($0.agentID) }
+        if let origin = record.parentThreadID ?? taskAgent?.threadID,
            let model = try? history().thread(id: origin, accountID: record.accountID).model?.nilIfBlank {
             return model
         }
@@ -981,7 +978,7 @@ actor PiChatService: CodexChatServicing {
         // and the allowlist come from this same snapshot: a process that reads another thread's newer file stays limited to it.
         let mcp = mcpSettings()
         let mcpServers = mcp.piServers
-        let scope = try launchScope(profile, workRoot: workingDirectory.url())
+        let scope = try launchScope(profile, threadID: threadID, workRoot: workingDirectory.url())
         let workURL = scope.cwd
         let fileAccess = scope.fileAccess ?? fileAccessSettings()
         // Pi runs a thread in the folder its session file names, so an older thread moves to the folder set now.
@@ -1024,10 +1021,13 @@ actor PiChatService: CodexChatServicing {
             try scheduleService().allowedTools(runID: $0.id, account: AppAccount.key)
         } ?? []
         // Only chat calls MCP servers; Dahlia's extension registers the sign-ins mcp.json names.
+        let agentName = agent(ofThread: threadID)?.name ?? ""
         var arguments = sessionArguments + [
             "-e", "builtin:mcp",
             "--tools", tools.joined(separator: ","),
-            "--system-prompt", profile == .bot ? (isChild ? Self.botTaskSystemPrompt : Self.botSystemPrompt) : Self.systemPrompt + dataPaths,
+            "--system-prompt", profile == .bot
+                ? (isChild ? Self.botTaskSystemPrompt(name: agentName) : Self.botSystemPrompt(name: agentName))
+                : Self.systemPrompt + dataPaths,
         ]
         let instructions = Self.customInstructionsPrompt(customInstructions())
         if !instructions.isEmpty {

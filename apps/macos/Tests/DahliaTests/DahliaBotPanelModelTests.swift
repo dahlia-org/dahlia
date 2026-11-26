@@ -6,12 +6,13 @@
     @MainActor
     struct DahliaBotPanelModelTests {
         private func task(_ id: String) -> AgentTaskRecord {
-            AgentTaskRecord(id: id, title: id, instructions: "", threadID: nil, status: "done", createdAt: .now, updatedAt: .now)
+            AgentTaskRecord(id: id, agentID: "agent", title: id, instructions: "", threadID: nil, status: "done", createdAt: .now, updatedAt: .now)
         }
 
         private func model(_ loader: TaskPageLoader) throws -> DahliaBotPanelModel {
-            let defaults = try #require(UserDefaults(suiteName: "DahliaBotPanelModelTests.\(UUID())"))
-            return DahliaBotPanelModel(defaults: defaults, loadTasks: { try await loader.load(limit: $0) })
+            let model = DahliaBotPanelModel(loadTasks: { _, limit in try await loader.load(limit: limit) })
+            model.agentID = "agent"
+            return model
         }
 
         @Test func overlappingMoreRequestsExpandTheRangeOnce() async throws {
@@ -101,6 +102,58 @@
             await loader.releaseFirst([old])
             try await older.value
             #expect(model.finishedTasks.map(\.id) == [new.id])
+        }
+
+        @Test(arguments: [false, true], [false, true])
+        func soulSaveCannotPublishAfterSwitchingAgent(fails: Bool, returnsToOriginal: Bool) async throws {
+            let writer = PendingSoulSave()
+            let model = DahliaBotPanelModel(saveSoulFile: { _, _ in try await writer.save() })
+            model.agentID = "A"
+            model.soulDraft = "A saved guidance"
+            let pending = Task { await model.saveSoul() }
+            try #require(await pollUntil { await writer.isPending })
+            model.agentID = "B"
+            if returnsToOriginal { model.agentID = "A" }
+            model.soul = "Current guidance"
+            model.soulDraft = "Current unsaved draft"
+            await writer.complete(fails: fails)
+            await pending.value
+            #expect(model.soul == "Current guidance")
+            #expect(model.soulDraft == "Current unsaved draft")
+            #expect(model.error == nil)
+        }
+
+        @Test func oldPageFailureCannotRollBackAnotherAgentsPageDepth() async throws {
+            let first = task("first"), next = task("next")
+            let loader = TaskPageLoader(following: [first, next])
+            let model = try model(loader)
+            model.finishedTasks = [first]
+            let pending = Task { await model.loadMoreFinishedTasks() }
+            try #require(await pollUntil { await loader.requestCount == 1 })
+            model.agentID = "B"
+            #expect(!model.isLoadingFinishedTasks)
+            model.finishedTasks = [first]
+            await model.loadMoreFinishedTasks()
+            await loader.failFirst()
+            await pending.value
+            try await model.refreshTasks()
+            #expect(await loader.limits == [60, 60, 60])
+            #expect(model.error == nil)
+            #expect(model.finishedTasks.map(\.id) == [first.id, next.id])
+        }
+    }
+
+    private actor PendingSoulSave {
+        private var continuation: CheckedContinuation<Void, any Error>?
+        var isPending: Bool { continuation != nil }
+
+        func save() async throws {
+            try await withCheckedThrowingContinuation { continuation = $0 }
+        }
+
+        func complete(fails: Bool) {
+            if fails { continuation?.resume(throwing: CancellationError()) } else { continuation?.resume() }
+            continuation = nil
         }
     }
 

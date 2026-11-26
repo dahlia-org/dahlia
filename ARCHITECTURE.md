@@ -139,7 +139,7 @@ Desktopはemailと表示名だけを保存し、Serverは旧Desktopがattendees�
 任意の Dahlia Server runtime は内蔵 Pi の provider transport を所有し、macOS の録音・文字起こし critical path には入らない。
 macOS アプリのアカウントは 1 つで、Workspace はアカウントに属さない。外部への接続はプロバイダーアカウントとして `provider_accounts` に登録し、OAuth credential と remote identity は
 接続 UUID ごとに Keychain が所有し、token 利用側は接続を指定する。サインアウトは選択した接続の credential を削除し、アカウントの履歴と設定は残す。Pi の agent directory は
-`~/.dahlia/agent` の 1 つで、Pi のプロセスはアカウントに 1 組だけ持つ。モデルは
+`~/.dahlia/pi` の 1 つで、Pi のプロセスはアカウントに 1 組だけ持つ。モデルは
 OpenAI (ChatGPT subscription) と Anthropic (Claude Pro/Max) のサブスクリプション、Databricks の各接続の AI Gateway、Dahlia account の Server の Gateway から選ぶ。この境界は
 [内蔵 Pi runtime](docs/spec/desktop/pi-runtime.md#provider)を正本とする。
 Better Auth、Gateway 管理 metadata、meeting sync は単一の Drizzle application database を共有する。PostgreSQL は生成済み認証 table を
@@ -234,8 +234,8 @@ Hermes のふり返りと Curator の統合パスは utility の独立した1本
 無人実行の履歴は `agent_system_runs` に置き、chat_threads・検索索引・バックアップに入れず、30日で消す。
 予定ごとの結果 Thread は閲覧専用で、発火ごとに新規 Pi process を使う。
 [自己学習](docs/spec/desktop/pi-self-learning.md)・[定期実行](docs/spec/desktop/scheduled-agent-scope.md)を参照。
-always-on エージェントの取り込みも同じ `Housekeeping` が毎分判定し、選択中アカウントの Source を1本ずつ、`intake` プロファイルの Pi（その Source の読み取り専用 MCP と記録ツールだけ）で読む。
-記録先は `agent_event_inbox` で、状態の遷移は `AgentInboxService` だけが行う。会話と振り分けは Super Agent の1本のスレッドが `bot` プロファイルの Pi（home で動き、Dahlia の読み取りとスレッドの tool だけ）で行い、新しいイベントがあると件数だけの無人のターンがそのスレッドの待ち行列に積まれる。仕事は Super Agent が `thread_launch` で起動する通常のスレッドが行い、そのスレッドが `agent_tasks` のタスクになる。結果は既存のスレッド間の通知で Super Agent に戻る（`PiChatService+DahliaBot`）。取り込みも Super Agent の home で動く。録音中は通知のターンと Super Agent が依頼した run を開始せず、実行中の取り込みと通知のターンも閉じる。Server 同期・バックアップに含めない（[always-on](docs/spec/desktop/always-on-agent.md)）。
+always-on エージェントの取り込みも同じ `Housekeeping` が毎分判定し、全エージェントの Source を1本ずつ、`intake` プロファイルの Pi（その Source の読み取り専用 MCP と記録ツールだけ）で読む。
+エージェントの正本は `agents` の行で、Source・イベント・タスク・Item は `agentID` でそのエージェントに属する。記録先は `agent_event_inbox` で、状態の遷移は `AgentInboxService` だけが行い、エージェントを指定して読み書きする。会話と振り分けは各エージェントの1本の現行のスレッドが `bot` プロファイルの Pi（`~/.dahlia/agents/<フォルダ名>` の home で動き、Dahlia の読み取りとスレッドの tool だけ）で行い、新しいイベントがあると件数だけの無人のターンがそのエージェントのスレッドの待ち行列に積まれる。仕事はエージェントが `thread_launch` で起動する通常のスレッドが行い、そのスレッドが `agent_tasks` のタスクになる。結果は既存のスレッド間の通知でそのエージェントに戻る（`PiChatService+DahliaBot`、作成・変更・削除は `PiChatService+Agents`）。取り込みは Source のエージェントの home で動く。録音中は通知のターンとエージェントが依頼した run を開始せず、実行中の取り込みと通知のターンも閉じる。Server 同期・バックアップに含めない（[always-on](docs/spec/desktop/always-on-agent.md)）。
 
 ## Workload Classes
 

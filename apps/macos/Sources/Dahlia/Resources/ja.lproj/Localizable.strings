@@ -1935,7 +1935,7 @@
 "No provider selected" = "プロバイダー未選択";
 
 "Authorize Calendar and Drive" = "カレンダーと Drive の利用を許可";
-"settings.agents.alwaysOn.help" = "アプリが開いている間、オンのイベントソースを読み、新しいイベントを Super Agent に知らせます。録音中は読みません。返信などの外部への書き込みは、通常のチャットと同じ承認設定に従います。";
+"settings.agents.alwaysOn.help" = "アプリが開いている間、オンのイベントソースを読み、新しいイベントをこのエージェントに知らせます。録音中は読みません。返信などの外部への書き込みは、通常のチャットと同じ承認設定に従います。";
 "settings.agents.alwaysOn.sources" = "イベントソース";
 "settings.agents.alwaysOn.noServers" = "メールや Slack を追加するには、設定の「Dahlia AI」の「コネクタ」で MCP サーバーを登録してください。カレンダーはアプリのカレンダー設定を使います。";
 "settings.agents.alwaysOn.editSource" = "イベントソースを編集";
@@ -1943,7 +1943,7 @@
 "settings.agents.alwaysOn.chooseSource" = "どこから読みますか";
 "settings.agents.alwaysOn.suggestedMail" = "受信トレイの未読メール";
 "settings.agents.alwaysOn.suggestedSlack" = "自分宛てのメンションと DM";
-"settings.agents.alwaysOn.instructionsHelp" = "Super Agent は、ここに書いたものを決めた間隔で読みます。返信などの書き込みは、通常のチャットと同じ承認設定に従います。";
+"settings.agents.alwaysOn.instructionsHelp" = "ここに書いたものを決めた間隔で読み、このエージェントに知らせます。返信などの書き込みは、通常のチャットと同じ承認設定に従います。";
 "settings.agents.alwaysOn.advanced" = "詳細設定";
 "settings.agents.alwaysOn.deleteSource" = "このイベントソースを削除しますか？";
 "settings.agents.alwaysOn.deleteSourceMessage" = "取り込んだイベントも削除されます。タスクのスレッドは残ります。";
@@ -1989,18 +1989,17 @@
 "settings.agents.alwaysOn.botIntakeModel" = "取り込み";
 "settings.agents.alwaysOn.botIntakeModelHelp" = "イベントソースを読んで、イベントを記録するときに使うモデルです。";
 "settings.agents.alwaysOn.botUnattendedModel" = "自動で動くとき";
-"settings.agents.alwaysOn.botUnattendedModelHelp" = "イベントの通知やタスクの結果を受け取ったときなど、Super Agent がユーザーの入力なしで動くときのモデルです。会話でのモデルは変わりません。";
+"settings.agents.alwaysOn.botUnattendedModelHelp" = "イベントの通知やタスクの結果を受け取ったときなど、このエージェントがユーザーの入力なしで動くときのモデルです。会話でのモデルは変わりません。";
 "settings.agents.alwaysOn.botModelDefault" = "既定のモデル";
 "settings.agents.alwaysOn.botModelConversation" = "会話と同じ";
 "settings.agents.alwaysOn.botSoul" = "人格";
 "settings.agents.alwaysOn.openTask" = "タスクを開く";
 
-"bots.section" = "Agents";
-"bots.dahliaBot" = "Super Agent";
+"bots.section" = "エージェント";
 "bots.idle" = "話しかけると、用件を振り分けて進めます";
 "bots.needsAttention" = "要対応 %d 件";
 "bots.notice" = "新しいイベント %d 件を確認";
-"bots.retiredReadOnly" = "これは以前の Super Agent との会話です。続きは、サイドバーの Bots から Super Agent と話してください。";
+"bots.retiredReadOnly" = "これはこのエージェントとの以前の会話です。続きは、サイドバーのエージェントから話してください。";
 "bots.showPanel" = "パネルを表示";
 "bots.hidePanel" = "パネルを隠す";
 "bots.tasks" = "タスク";
@@ -2009,17 +2008,32 @@
 "bots.taskDone" = "完了";
 "bots.taskDismissed" = "取り下げ";
 "bots.taskActive" = "進行中";
-"bots.soulHelp" = "Super Agent への常設の指示です。Super Agent との会話で頼むと書き換えますが、書き換える前に必ず確認します。";
+"bots.soulHelp" = "このエージェントへの常設の指示で、何をするかはここで決まります。会話で頼むと書き換えますが、書き換える前に必ず確認します。";
 "bots.soulEmpty" = "まだ何も書かれていません。";
 "bots.showInFinder" = "Finder で表示";
 "bots.reset" = "会話をやり直す";
 "bots.resetMessage" = "今の会話は履歴に残り、読むだけになります。タスクとユーザーの確認待ちはそのまま引き継がれます。";
 "bots.settings" = "設定";
 "bots.conversation" = "会話";
-"bots.paused" = "Super Agent は止まっています。";
+"bots.paused" = "エージェントはすべて止まっています。";
 "bots.resume" = "再開する";
 "bots.inboxTab" = "受信箱";
 "bots.finishTask" = "完了にする";
+"bots.new" = "新しいエージェント";
+"bots.edit" = "名前とアイコンを編集";
+"bots.delete" = "エージェントを削除";
+"bots.deleteConfirmation" = "「%@」を削除しますか？";
+"bots.deleteMessage" = "イベントソース、受信箱、タスクの記録が消え、home のフォルダはゴミ箱に移ります。今の会話は履歴に残り、読むだけになります。起動したタスクのスレッドは、通常のチャットとして残ります。";
+"bots.emptyTitle" = "AI のチームメイト";
+"bots.name" = "名前";
+"bots.soulPlaceholder" = "誰で、何をするか";
+"bots.templates" = "テンプレート";
+"bots.create" = "作成";
+"bots.changeAvatar" = "アイコンを変更";
+"bots.avatarPrevious" = "前のアイコン";
+"bots.avatarNext" = "次のアイコン";
+"bots.identity" = "エージェント";
+"bots.nameInvalid" = "名前は1〜80文字で入力してください。";
 
 "settings.agents.alwaysOn.counts" = "%d件読んで%d件記録";
 

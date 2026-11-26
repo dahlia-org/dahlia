@@ -8,58 +8,46 @@
     struct AgentInboxServiceTests {
         private let account = UUID.v7().uuidString
 
-        @Test func botThreadIdentityIsScopedToItsDataDirectory() throws {
-            let suite = "AgentBotSettingsTests.\(UUID())"
-            let defaults = try #require(UserDefaults(suiteName: suite))
-            defer { defaults.removePersistentDomain(forName: suite) }
-            let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
-            let directories = [
-                DahliaApplicationSupport.directoryURL(profile: .production, applicationSupportDirectory: root),
-                DahliaApplicationSupport.directoryURL(profile: .development, developmentDirectory: root.appending(path: "worktree-a")),
-                DahliaApplicationSupport.directoryURL(profile: .development, developmentDirectory: root.appending(path: "worktree-b")),
-            ]
-            let keys = directories.map { AgentBotSettings.botThreadKey(for: account, dataDirectory: $0) }
-            #expect(Set(keys).count == 3)
-            for (index, key) in keys.enumerated() {
-                defaults.set("thread-\(index)", forKey: key)
-            }
-            defaults.set("foreign", forKey: AgentBotSettings.legacyBotThreadKey(for: account))
-            #expect(keys.enumerated().allSatisfy { defaults.string(forKey: $0.element) == "thread-\($0.offset)" })
-            #expect(AgentBotSettings.botThreadKey(for: account, dataDirectory: directories[1].appending(path: ".")) == keys[1])
-        }
-
-        @Test func legacyBotIdentityIsAdoptedOnlyByItsOwningDatabase() throws {
-            let own = try AppDatabaseManager(path: ":memory:").dbQueue
-            let foreign = try AppDatabaseManager(path: ":memory:").dbQueue
-            let key = AgentBotSettings.botThreadKey(for: account)
-            let legacy = AgentBotSettings.legacyBotThreadKey(for: account)
-            defer {
-                UserDefaults.standard.removeObject(forKey: key)
-                UserDefaults.standard.removeObject(forKey: legacy)
-            }
-            let thread = ChatThreadRecord(id: UUID.v7().uuidString, accountID: account, title: "Current", createdAt: .now, updatedAt: .now)
-            try own.write { try thread.insert($0) }
-            UserDefaults.standard.set(thread.id, forKey: legacy)
-            #expect(try foreign.write { try AgentInboxService.adoptLegacyBotThread(account: account, in: $0) } == nil)
-            #expect(UserDefaults.standard.string(forKey: key) == nil)
-            #expect(try own.write { try AgentInboxService.adoptLegacyBotThread(account: account, in: $0) } == thread.id)
-            #expect(AgentBotSettings.botThread(for: account) == thread.id)
-            // Another profile can still migrate the old setting, but can no longer change this profile's identity.
-            UserDefaults.standard.set("another-database-thread", forKey: legacy)
-            #expect(AgentBotSettings.botThread(for: account) == thread.id)
-        }
-
         private func inbox(allowedSenders: [String] = []) throws -> (AgentInboxService, String) {
             let queue = try AppDatabaseManager(path: ":memory:").dbQueue
             let source = UUID.v7().uuidString
-            try queue.write { db in
+            let agent = try queue.write { db in
+                let agent = try AgentRecord.insertForTest(in: db)
                 try AgentSourceRecord(
-                    id: source, name: "Mail", server: "gmail", instructions: "Unread mail", intervalMinutes: 15,
+                    id: source, agentID: agent.id, name: "Mail", server: "gmail", instructions: "Unread mail", intervalMinutes: 15,
                     allowedSenders: String(decoding: JSONEncoder().encode(allowedSenders), as: UTF8.self), cursor: nil,
                     enabled: true, lastIntakeAt: nil, createdAt: .now, updatedAt: .now, connectionID: "gmail"
                 ).insert(db)
+                return agent
             }
-            return (AgentInboxService(dbQueue: queue), source)
+            return (AgentInboxService(dbQueue: queue, agentID: agent.id), source)
+        }
+
+        /// One agent's inbox never shows or changes another's events, Tasks, or Items, even when given their IDs.
+        @Test func anAgentReachesOnlyItsOwnEventsTasksAndItems() throws {
+            let (mine, source) = try inbox()
+            let other = try AgentInboxService(
+                dbQueue: mine.dbQueue, agentID: mine.dbQueue.write { try AgentRecord.insertForTest(name: "Other", in: $0) }.id
+            )
+            try mine.record([item("a")], caller: .intake(sourceID: source))
+            let event = try #require(try mine.inbox().events.first)
+            let taskThread = try thread(mine)
+            let task = try mine.openTask(threadID: taskThread, title: "Mine", instructions: "", eventIDs: [])
+            try mine.createItem(kind: "report", title: "For me")
+
+            let theirs = try other.inbox()
+            #expect(theirs.events.isEmpty && theirs.tasks.isEmpty && theirs.items.isEmpty)
+            #expect(try !other.hasUndecidedEvents() && other.recentEvents().isEmpty && other.sources().isEmpty)
+            #expect(try other.tasks().active.isEmpty && other.items().isEmpty)
+            #expect(throws: AgentInboxService.Failure.self) { try other.undecidedEvents([event.id]) }
+            #expect(throws: AgentInboxService.Failure.self) { try other.finishTask(threadID: taskThread, status: "done") }
+            #expect(throws: AgentInboxService.Failure.self) { try other.createItem(kind: "report", title: "x", threadID: taskThread) }
+            try other.close(eventIDs: [event.id])
+            // Handing another agent's event to its own task changes nothing either.
+            try other.continueTask(threadID: taskThread, eventIDs: [event.id])
+            #expect(try mine.inbox().events.map(\.id) == [event.id])
+            #expect(try mine.task(task.id)?.status == "active")
+            #expect(try mine.agentsWithUndecidedEvents() == [mine.agentID])
         }
 
         @Test(arguments: [false, true])
@@ -319,6 +307,7 @@
             let now = Date.now
             let future = AgentEventRecord(
                 id: UUID.v7().uuidString,
+                agentID: service.agentID,
                 sourceID: nil,
                 key: nil,
                 topic: nil,

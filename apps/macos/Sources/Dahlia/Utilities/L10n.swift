@@ -215,7 +215,24 @@ enum L10n { // swiftlint:disable:this type_body_length
     static var agentBotOpenTask: String { String(localized: "settings.agents.alwaysOn.openTask", bundle: bundle) }
     static var agentBotFinishTask: String { String(localized: "bots.finishTask", bundle: bundle) }
     static var agentBots: String { String(localized: "bots.section", bundle: bundle) }
-    static var agentBotName: String { String(localized: "bots.dahliaBot", bundle: bundle) }
+    static var agentNew: String { String(localized: "bots.new", bundle: bundle) }
+    static var agentEdit: String { String(localized: "bots.edit", bundle: bundle) }
+    static var agentDelete: String { String(localized: "bots.delete", bundle: bundle) }
+    static func agentDeleteConfirmation(_ name: String) -> String {
+        String(format: String(localized: "bots.deleteConfirmation", bundle: bundle), locale: .current, name)
+    }
+
+    static var agentDeleteMessage: String { String(localized: "bots.deleteMessage", bundle: bundle) }
+    static var agentEmptyTitle: String { String(localized: "bots.emptyTitle", bundle: bundle) }
+    static var agentName: String { String(localized: "bots.name", bundle: bundle) }
+    static var agentSoulPlaceholder: String { String(localized: "bots.soulPlaceholder", bundle: bundle) }
+    static var agentTemplates: String { String(localized: "bots.templates", bundle: bundle) }
+    static var agentCreate: String { String(localized: "bots.create", bundle: bundle) }
+    static var agentChangeAvatar: String { String(localized: "bots.changeAvatar", bundle: bundle) }
+    static var agentAvatarPrevious: String { String(localized: "bots.avatarPrevious", bundle: bundle) }
+    static var agentAvatarNext: String { String(localized: "bots.avatarNext", bundle: bundle) }
+    static var agentIdentity: String { String(localized: "bots.identity", bundle: bundle) }
+    static var agentNameInvalid: String { String(localized: "bots.nameInvalid", bundle: bundle) }
     static var agentBotIdle: String { String(localized: "bots.idle", bundle: bundle) }
     static func agentBotNeedsAttention(_ count: Int) -> String {
         String(format: String(localized: "bots.needsAttention", bundle: bundle), locale: .current, count)

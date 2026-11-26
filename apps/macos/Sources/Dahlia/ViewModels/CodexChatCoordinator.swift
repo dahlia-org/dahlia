@@ -351,7 +351,7 @@ final class CodexChatCoordinator {
             settledCursor = page.nextCursor
             (activeCount, settledCount) = counts
         } catch {
-            if generation == historyGeneration { historyError = error.localizedDescription }
+            if generation == historyGeneration, !(error is CancellationError) { historyError = error.localizedDescription }
         }
     }
 
@@ -390,7 +390,8 @@ final class CodexChatCoordinator {
             history = CodexChatThreadSummary.treeOrder(history)
             historyCursor = page.nextCursor
         } catch {
-            guard generation == historyGeneration else { return }
+            // A refresh cancelled while Pi was still starting is not a failure; the next refresh loads the list.
+            guard generation == historyGeneration, !(error is CancellationError) else { return }
             historyError = error.localizedDescription
         }
     }

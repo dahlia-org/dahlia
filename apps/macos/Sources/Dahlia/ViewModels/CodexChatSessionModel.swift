@@ -292,6 +292,8 @@ final class CodexChatSessionModel: Identifiable {
             restoreSelectionGeneration = nil
             didRestoreThread = true
             Task { await self.synchronizeThread() }
+        } catch is CancellationError {
+            // The view went away while Pi was still starting; the thread is restored when it is shown again.
         } catch {
             errorMessage = error.localizedDescription
         }

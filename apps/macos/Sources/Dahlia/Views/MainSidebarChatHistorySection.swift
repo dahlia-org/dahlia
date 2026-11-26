@@ -17,8 +17,6 @@ struct MainSidebarChatHistorySection: View {
             isExpanded: isExpanded,
             onToggleExpansion: { isExpanded.toggle() },
             addButtonTitle: L10n.newChat,
-            // T3 Code's compose mark, shown in the count's place while hovered.
-            addButtonSystemImage: "square.and.pencil",
             onAdd: onNewChat,
             count: coordinator.activeCount
         )

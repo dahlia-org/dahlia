@@ -13,6 +13,8 @@ struct CodexChatHeader: View {
     var showsTitle = true
     var parentTitle: String?
     var onOpenParent: (() -> Void)?
+    /// An agent's thread reads `Agents / <its icon and name>` instead of `Dahlia AI / <title>`.
+    var agent: AgentRecord?
     @State private var isParentHovered = false
 
     var body: some View {
@@ -31,7 +33,21 @@ struct CodexChatHeader: View {
                 )
             }
 
-            if showsTitle {
+            if showsTitle, let agent {
+                HStack(spacing: 8) {
+                    Text(L10n.agentBots)
+                        .fixedSize()
+                    Text("/")
+                        .foregroundStyle(DahliaDesign.secondaryTextColor)
+                        .accessibilityHidden(true)
+                    AgentAvatarView(avatar: agent.avatar, color: agent.color, size: DahliaTypography.size(offset: 4))
+                    Text(agent.name)
+                        .lineLimit(1)
+                        .layoutPriority(-1)
+                }
+                .font(.dahliaBody)
+                .foregroundStyle(DahliaDesign.primaryTextColor)
+            } else if showsTitle {
                 HStack(spacing: 8) {
                     Image(systemName: "message")
                         .dahliaFixedSymbol()

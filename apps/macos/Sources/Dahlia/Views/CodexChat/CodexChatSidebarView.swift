@@ -9,8 +9,10 @@ struct CodexChatSidebarView: View {
     var headerLeadingInset: CGFloat = 0
     let onShowFullScreen: (() -> Void)?
     let onOpenDetachedSession: (CodexChatSessionID) -> Void
-    /// The full-screen chat leaves room for the window's side panel toggle while Super Agent's panel is hidden.
+    /// The full-screen chat leaves room for the window's side panel toggle while the agent's panel is hidden.
     var reservesPanelToggle = false
+    /// The agent whose thread this is.
+    var agent: AgentRecord?
 
     var body: some View {
         CodexChatView(
@@ -29,7 +31,8 @@ struct CodexChatSidebarView: View {
             reservesWindowControls: false,
             headerLeadingInset: headerLeadingInset,
             contentMaxWidth: isFullScreen ? DahliaDesign.mainContentMaxWidth : nil,
-            isSidePanel: !isFullScreen
+            isSidePanel: !isFullScreen,
+            agent: agent
         )
         .task(id: sidebarViewModel.currentWorkspace?.id) {
             sidebarViewModel.loadMeetingReferencesIfNeeded()

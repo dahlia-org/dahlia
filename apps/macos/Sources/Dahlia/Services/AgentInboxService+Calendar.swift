@@ -34,7 +34,7 @@ extension AgentInboxService {
                     let day = calendar.dateComponents([.year, .month, .day], from: now)
                     let date = String(format: "%04d-%02d-%02d", day.year!, day.month!, day.day!)
                     desired.append(AgentEventRecord(
-                        id: UUID.v7().uuidString, sourceID: source.id, key: "daily:" + date, topic: nil,
+                        id: UUID.v7().uuidString, agentID: source.agentID, sourceID: source.id, key: "daily:" + date, topic: nil,
                         note: L10n.agentCalendarDailyNote, ref: "{\"date\":\"\(date)\"}", occurredAt: at,
                         taskID: nil, handledAt: nil, createdAt: now
                     ))
@@ -51,7 +51,7 @@ extension AgentInboxService {
                         "event_id": .string(event.platformId), "start": .string(event.startDate.ISO8601Format()),
                     ])
                     try desired.append(AgentEventRecord(
-                        id: UUID.v7().uuidString, sourceID: source.id, key: key, topic: nil,
+                        id: UUID.v7().uuidString, agentID: source.agentID, sourceID: source.id, key: key, topic: nil,
                         note: L10n.agentCalendarMeetingNote, ref: String(decoding: JSONEncoder().encode(ref), as: UTF8.self),
                         occurredAt: event.startDate.addingTimeInterval(-lead * 3600), taskID: nil, handledAt: nil, createdAt: now
                     ))
@@ -100,7 +100,7 @@ extension AgentInboxService {
         return (hour, minute)
     }
 
-    /// The bot can also close this event by ID before its time if the user cancels the reminder.
+    /// The agent can also close this event by ID before its time if the user cancels the reminder.
     @discardableResult
     func remind(at: Date, note: String, now: Date = .now) throws -> String {
         let note = note.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -109,6 +109,7 @@ extension AgentInboxService {
         }
         let event = AgentEventRecord(
             id: UUID.v7().uuidString,
+            agentID: agentID,
             sourceID: nil,
             key: nil,
             topic: nil,

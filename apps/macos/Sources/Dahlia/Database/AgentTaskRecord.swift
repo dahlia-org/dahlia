@@ -6,6 +6,7 @@ import GRDB
 struct AgentTaskRecord: Codable, FetchableRecord, PersistableRecord, Identifiable, Sendable {
     static let databaseTableName = "agent_tasks"
     var id: String
+    var agentID: String
     var title: String
     /// The message the thread was launched with.
     var instructions: String

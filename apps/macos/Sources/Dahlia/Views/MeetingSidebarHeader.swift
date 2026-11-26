@@ -78,7 +78,7 @@ struct MeetingSidebarHeader: View {
             .buttonStyle(.plain)
             .focused($isAddButtonFocused)
             .disabled(!canAdd)
-            .help(title)
+            .modifier(SidebarHoverHelp(label: title))
     }
 
     private var plainBody: some View {
@@ -112,7 +112,7 @@ struct MeetingSidebarHeader: View {
                     .buttonStyle(.plain)
                     .focused($isAddButtonFocused)
                     .disabled(!canAdd)
-                    .help(addButtonTitle)
+                    .modifier(SidebarHoverHelp(label: addButtonTitle))
                     .opacity(isHovered || isAddButtonFocused ? 1 : 0)
             }
         }
@@ -120,5 +120,29 @@ struct MeetingSidebarHeader: View {
         .onHover { isHovered = $0 }
         .foregroundStyle(DahliaDesign.sidebarSecondaryTextColor)
         .padding(.vertical, DahliaDesign.sidebarRowVerticalPadding)
+    }
+}
+
+/// The sidebar's dark hover help. A `List` row clips an overlay of its own, so the sidebar's overlay
+/// (`mainSidebarHelpOverlay`) draws it, as for the upcoming-event row.
+private struct SidebarHoverHelp: ViewModifier {
+    let label: String
+
+    @Environment(DahliaWindowHeaderHelpController.self) private var helpController
+    @State private var helpID = UUID()
+    @State private var frame: CGRect = .zero
+
+    func body(content: Content) -> some View {
+        content
+            .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { frame = $0 }
+            .onHover { isHovering in
+                if isHovering {
+                    helpController.hoverBegan(for: helpID, label: label, shortcut: nil, buttonFrame: frame)
+                } else {
+                    helpController.hoverEnded(for: helpID)
+                }
+            }
+            .onDisappear { helpController.hoverEnded(for: helpID) }
+            .accessibilityHint(label)
     }
 }

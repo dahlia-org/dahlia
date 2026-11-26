@@ -33,7 +33,7 @@ struct DahliaButtonStyle: ButtonStyle {
     private var foregroundColor: Color {
         switch variant {
         case .primary:
-            .white
+            DahliaDesign.primaryButtonForegroundColor
         case .secondary:
             DahliaDesign.primaryTextColor
         case .destructive:
@@ -45,7 +45,9 @@ struct DahliaButtonStyle: ButtonStyle {
         switch variant {
         case .primary:
             DahliaDesign.primaryButtonBackgroundColor(for: interactionState(isPressed: isPressed))
-        case .secondary, .destructive:
+        case .secondary:
+            DahliaDesign.secondaryButtonBackgroundColor(for: interactionState(isPressed: isPressed))
+        case .destructive:
             Color.primary.opacity(isPressed ? 0.14 : isHovered ? 0.10 : 0.06)
         }
     }
@@ -61,7 +63,7 @@ struct DahliaButtonStyle: ButtonStyle {
         case .primary:
             .clear
         case .secondary:
-            Color.primary.opacity(0.10)
+            Color.primary.opacity(0.15)
         case .destructive:
             Color.red.opacity(0.18)
         }

@@ -97,7 +97,7 @@ extension PiChatService {
 
     /// The queue and its final post-preparation claim use the same current eligibility.
     func unattendedRunEligible(_ run: ChatRunRecord, account _: String) -> Bool {
-        // Super Agent's notices, and the work it hands to threads, are the always-on agent's: none starts while recording.
+        // An agent's notices, and the work it hands to threads, are always-on work: none starts while recording.
         let fromSuperAgent = (run.origin != "user" && run.profile == PiExecutionProfile.bot.rawValue)
             || (run.requestedByThreadID.map(isBotThread) ?? false)
         if run.origin == "schedule" || fromSuperAgent, AgentBackgroundActivity.isRecording { return false }
@@ -105,23 +105,23 @@ extension PiChatService {
         return true
     }
 
-    /// Any unattended turn in Super Agent, including task results and restart continuations.
+    /// Any unattended turn in an agent's current thread, including task results and restart continuations.
     func isBotNotice(_ run: ChatRunRecord) -> Bool {
         run.origin != "user" && isSuperAgentThread(run.threadID)
     }
 
-    /// Super Agent's current thread, the one whose thread tools also manage Tasks.
+    /// An agent's current thread, the one whose thread tools also manage its Tasks.
     func isSuperAgentThread(_ threadID: String) -> Bool {
-        threadID == AgentBotSettings.botThread(for: AppAccount.key)
+        agent(currentThread: threadID) != nil
     }
 
     func validateUnattendedStart(threadID: String, account: String) throws {
         guard let queued = scheduledRuns[threadID] else { return }
         guard unattendedRunEligible(queued, account: account) else { throw CancellationError() }
-        // A notice belongs to the bot's current thread; a thread replaced meanwhile gets none.
+        // A notice belongs to an agent's current thread; a thread replaced or left by a deleted agent meanwhile gets none.
         if queued.origin == "bot" {
             try validateBotActivity()
-            guard AgentBotSettings.botThread(for: account) == threadID else { throw CancellationError() }
+            guard isSuperAgentThread(threadID) else { throw CancellationError() }
         }
     }
 
@@ -177,12 +177,9 @@ extension PiChatService {
         }
     }
 
-    /// Super Agent's model and effort for turns that start without the user; other threads keep their own.
-    private func unattended(_ threadID: String, account: String) -> (model: String, effort: String?)? {
-        guard isSuperAgentThread(threadID) else { return nil }
-        return AgentBotSettings.choice(
-            model: AgentBotSettings.unattendedModelKey(for: account), effort: AgentBotSettings.unattendedEffortKey(for: account)
-        )
+    /// An agent's model and effort for turns that start without the user; other threads keep their own.
+    private func unattended(_ threadID: String, account _: String) -> (model: String, effort: String?)? {
+        agent(currentThread: threadID)?.unattendedChoice
     }
 
     func notificationText(_ runs: [ChatRunRecord], accountID: String) throws -> String {
@@ -234,15 +231,16 @@ extension PiChatService {
         guard readOnly || (caller.parentThreadID == nil && callerTurn.run.requestedByThreadID == nil) else {
             throw PiRuntimeError.rpcError(code: nil, message: "Work requested by another thread has read-only thread tools")
         }
-        // Events go to a thread only from Super Agent, which reads them in its inbox.
+        // Events go to a thread only from an agent's current thread, which reads its own in its inbox.
         guard args["event_ids"] == nil || isSuperAgentThread(threadID) else {
-            throw PiRuntimeError.rpcError(code: nil, message: "event_ids are for Super Agent's thread")
+            throw PiRuntimeError.rpcError(code: nil, message: "event_ids are for an agent's own thread")
         }
         if let result = try await untargetedThreadTool(
             method, args: args, caller: caller, callerSession: callerSession, callerTurn: callerTurn, processID: processID
         ) { return result }
         guard let targetID = args["thread_id"]?.stringValue else { throw PiRuntimeError.invalidProtocolResponse }
         let target = try store.thread(id: targetID, accountID: account)
+        guard Self.isVisible(target, to: caller) else { throw PiRuntimeError.invalidProtocolResponse }
         if method == "thread_read" { return try readThread(targetID, arguments: args, requesterID: threadID) }
         guard targetID != threadID else { throw PiRuntimeError.rpcError(code: nil, message: "Cannot manage your own thread") }
         switch method {
@@ -272,9 +270,9 @@ extension PiChatService {
         let threadID = caller.id
         switch method {
         case "thread_list":
-            return try store.toolThreadPage(accountID: account, arguments: args)
+            return try store.toolThreadPage(accountID: account, callerAgentID: caller.agentID, arguments: args)
         case "thread_search":
-            return try await searchThreads(args, account: account)
+            return try await searchThreads(args, caller: caller)
         case "thread_launch":
             return try await launchThread(arguments: args, caller: caller, callerSession: callerSession, callerTurn: callerTurn)
         case "delegate_task":
@@ -290,7 +288,9 @@ extension PiChatService {
                 : try await interruptThread(child.id, arguments: [:], account: account)
         case "thread_wait":
             guard let targetID = args["thread_id"]?.stringValue, targetID != threadID else { throw PiRuntimeError.invalidProtocolResponse }
-            _ = try store.thread(id: targetID, accountID: account)
+            guard try Self.isVisible(store.thread(id: targetID, accountID: account), to: caller) else {
+                throw PiRuntimeError.invalidProtocolResponse
+            }
             let seconds = min(max((args["timeout_ms"]?.intValue ?? 30000) / 1000, 1), 60)
             return try await waitForThread(
                 targetID, runID: args["run_id"]?.stringValue.flatMap(UUID.init(uuidString:)), seconds: seconds,
@@ -302,7 +302,8 @@ extension PiChatService {
     }
 
     /// Full-text search over threads, leaving out subagent (child) threads as T3's search does.
-    private func searchThreads(_ args: [String: JSONValue], account: String) async throws -> JSONValue {
+    private func searchThreads(_ args: [String: JSONValue], caller: ChatThreadRecord) async throws -> JSONValue {
+        let account = caller.accountID
         guard let query = args["query"]?.stringValue?.nilIfBlank else { throw PiRuntimeError.invalidProtocolResponse }
         let store = try history()
         let page = try await MeetingRepository.searchChatPage(
@@ -312,11 +313,20 @@ extension PiChatService {
             limit: min(max(args["limit"]?.intValue ?? 50, 1), 50),
             dbQueue: store.dbQueue
         )
-        let topLevel = try page.threads.filter { try store.thread(id: $0.id, accountID: account).parentThreadID == nil }
+        let topLevel = try page.threads.filter {
+            let thread = try store.thread(id: $0.id, accountID: account)
+            return thread.parentThreadID == nil && Self.isVisible(thread, to: caller)
+        }
         return .object([
             "threads": .array(topLevel.map { .object(["id": .string($0.id), "title": .string($0.title)]) }),
             "has_more": .bool(page.hasMore),
         ])
+    }
+
+    /// Agents' threads (their conversations and the tasks they delegate) are out of other agents' reach. Threads an agent
+    /// launched are ordinary chats, and other chats see agents' threads as before.
+    nonisolated static func isVisible(_ thread: ChatThreadRecord, to caller: ChatThreadRecord) -> Bool {
+        thread.agentID == nil || caller.agentID == nil || thread.agentID == caller.agentID
     }
 
     /// A delegated task's state: working while its latest run is queued or running, otherwise its result, which reading
@@ -365,7 +375,7 @@ extension PiChatService {
             }
             return runJSON(earlier, delivery: "duplicate")
         }
-        let (input, eventIDs) = try messageWithEvents(message, arguments: args)
+        let (input, eventIDs) = try messageWithEvents(message, arguments: args, caller: caller)
         // Only the requester may add input to a run: a turn the user or another thread started is never redirected.
         let ownedTurn = try sessions[targetID]?.turn.flatMap { turn in
             try history().run(id: turn.id)?.requestedByThreadID == caller.id ? turn : nil
@@ -385,12 +395,12 @@ extension PiChatService {
                 guard mode == "auto", sessions[targetID]?.turn?.id != turn.id else { throw error }
             }
         }
-        let isTaskSender = isSuperAgentThread(caller.id)
+        let sender = agent(currentThread: caller.id)?.id
         let run = try queueAgentRun(
             targetID: targetID, caller: caller, turn: callerTurn, input: input, requestID: requestID, arguments: args
         ) { db in
-            if isTaskSender {
-                try AgentInboxService.continueTask(threadID: targetID, eventIDs: eventIDs, in: db)
+            if let sender {
+                try AgentInboxService.continueTask(agentID: sender, threadID: targetID, eventIDs: eventIDs, in: db)
             }
         }
         // A retry returns its earlier run; the same key for another thread would silently drop this input.
@@ -401,11 +411,12 @@ extension PiChatService {
         return runJSON(run, delivery: "queued")
     }
 
-    /// Super Agent's message with the events it hands over appended, fenced as data, and their IDs.
-    private func messageWithEvents(_ message: String, arguments args: [String: JSONValue]) throws -> (String, [String]) {
+    /// An agent's message with the events it hands over appended, fenced as data, and their IDs. They must be its own.
+    private func messageWithEvents(_ message: String, arguments args: [String: JSONValue], caller: ChatThreadRecord) throws
+        -> (String, [String]) {
         let ids = args["event_ids"]?.arrayValue?.compactMap(\.stringValue) ?? []
-        guard !ids.isEmpty else { return (message, []) }
-        let inbox = try inboxService()
+        guard !ids.isEmpty, let agent = agent(currentThread: caller.id) else { return (message, []) }
+        let inbox = try inboxService(agent.id)
         do {
             let events = try inbox.undecidedEvents(ids)
             let sources = try Dictionary(uniqueKeysWithValues: inbox.sources().map { ($0.id, $0.name) })
@@ -415,10 +426,10 @@ extension PiChatService {
         }
     }
 
-    /// When Super Agent sends to a Task's thread, the Task is in progress again and the events it handed over are its.
+    /// When an agent sends to one of its Tasks' threads, the Task is in progress again and the events it handed over are its.
     private func continueTask(_ threadID: String, eventIDs: [String], caller: ChatThreadRecord) throws {
-        guard isSuperAgentThread(caller.id) else { return }
-        try inboxService().continueTask(threadID: threadID, eventIDs: eventIDs)
+        guard let agent = agent(currentThread: caller.id) else { return }
+        try inboxService(agent.id).continueTask(threadID: threadID, eventIDs: eventIDs)
     }
 
     func interruptThread(_ targetID: String, arguments args: [String: JSONValue], account: String) async throws -> JSONValue {
@@ -503,8 +514,9 @@ extension PiChatService {
     ) async throws -> JSONValue {
         let store = try history()
         guard let title = args["title"]?.stringValue?.nilIfBlank else { throw PiRuntimeError.invalidProtocolResponse }
-        // A thread Super Agent launches is a Task: its result comes back to Super Agent, and the events it hands over go to it.
-        let isTask = isSuperAgentThread(caller.id)
+        // A thread an agent launches is its Task: its result comes back to the agent, and the events it hands over go to it.
+        let launcher = agent(currentThread: caller.id)?.id
+        let isTask = launcher != nil
         let requestID = args["client_request_id"]?.stringValue?.nilIfBlank ?? UUID.v7().uuidString
         if let existing = try store.idleLaunch(requesterID: caller.id, rootRunID: callerTurn.run.rootRunID, clientRequestID: requestID) {
             return idleLaunchJSON(existing, isTask: isTask)
@@ -530,12 +542,13 @@ extension PiChatService {
             }
             guard sessions[caller.id]?.turn?.id == callerTurn.id,
                   sessions[caller.id]?.turn?.stopRequested == false else { throw CancellationError() }
-            let (message, eventIDs) = try args["message"]?.stringValue?.nilIfBlank.map { try messageWithEvents($0, arguments: args) } ?? (nil, [])
+            let (message, eventIDs) = try args["message"]?.stringValue?.nilIfBlank
+                .map { try messageWithEvents($0, arguments: args, caller: caller) } ?? (nil, [])
             try store.updateThread(id: thread.id, title: String(title.prefix(256)))
             let handoff: @Sendable (Database) throws -> Void = { db in
-                if isTask {
+                if let launcher {
                     try AgentInboxService.openTask(
-                        threadID: thread.id, title: title, instructions: args["message"]?.stringValue ?? "",
+                        agentID: launcher, threadID: thread.id, title: title, instructions: args["message"]?.stringValue ?? "",
                         eventIDs: eventIDs, in: db
                     )
                 }
@@ -628,7 +641,7 @@ extension PiChatService {
     ) throws -> ChatRunRecord {
         guard sessions[caller.id]?.turn?.id == turn.id,
               sessions[caller.id]?.turn?.stopRequested == false else { throw CancellationError() }
-        // Super Agent's own thread takes only the user's words and Dahlia's notices; the tasks it delegates may be sent more.
+        // An agent's own conversation takes only the user's words and Dahlia's notices; the tasks it delegates may be sent more.
         let target = try history().thread(id: targetID, accountID: caller.accountID)
         guard target.scheduleID == nil, target.parentThreadID != nil || !isBotThread(targetID) else {
             throw HermesLearning.failure(L10n.agentScheduleReadOnly)

@@ -65,6 +65,9 @@
                 #expect(try db.tableExists("agent_event_sources"))
                 #expect(try db.tableExists("chat_thread_launches"))
                 #expect(try db.tableExists("agent_tasks") && db.tableExists("agent_user_inbox"))
+                #expect(try db.tableExists("agents") && db.columns(in: "chat_threads").contains { $0.name == "agentID" })
+                #expect(try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM agents") == 0)
+                #expect(try ChatThreadRecord.fetchOne(db, key: thread.id)?.agentID == nil)
                 #expect(try Row.fetchAll(db, sql: "PRAGMA foreign_key_check").isEmpty)
             }
         }

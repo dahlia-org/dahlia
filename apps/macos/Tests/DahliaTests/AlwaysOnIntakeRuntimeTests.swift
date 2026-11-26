@@ -72,8 +72,9 @@
                 let db = try AppDatabaseManager(path: ":memory:").dbQueue
                 let source = UUID.v7().uuidString
                 try db.write {
+                    let agent = try AgentRecord.insertForTest(in: $0)
                     try AgentSourceRecord(
-                        id: source, name: "Mail", server: "gmail", instructions: "Unread mail",
+                        id: source, agentID: agent.id, name: "Mail", server: "gmail", instructions: "Unread mail",
                         intervalMinutes: 15, allowedSenders: "[]", cursor: nil, enabled: true,
                         lastIntakeAt: nil, createdAt: .now, updatedAt: .now, connectionID: settings.connectionID(for: "gmail")!
                     ).insert($0)
