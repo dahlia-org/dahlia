@@ -17,7 +17,7 @@ struct PiInstallError: LocalizedError, Equatable {
     }
 
     enum Reason: String, CaseIterable {
-        case http, rateLimited, invalidResponse, invalidRelease, missingAsset, missingDigest
+        case http, rateLimited, invalidResponse, invalidRelease, invalidRegistry, packageInstallFailed
         case checksumMismatch, extractionFailed, executableMissing
         case networkTimeout, networkOffline, networkTLS, networkOther, fileSystem
 
@@ -27,8 +27,8 @@ struct PiInstallError: LocalizedError, Equatable {
             case .rateLimited: L10n.piInstallRateLimited
             case .invalidResponse: L10n.piInstallInvalidResponse
             case .invalidRelease: L10n.piInstallInvalidRelease
-            case .missingAsset: L10n.piInstallMissingAsset
-            case .missingDigest: L10n.piInstallMissingDigest
+            case .invalidRegistry: L10n.piInstallInvalidRegistry
+            case .packageInstallFailed: L10n.piInstallPackageFailed
             case .checksumMismatch: L10n.piInstallChecksumMismatch
             case .extractionFailed: L10n.piInstallExtractionFailed
             case .executableMissing: L10n.piInstallExecutableMissing

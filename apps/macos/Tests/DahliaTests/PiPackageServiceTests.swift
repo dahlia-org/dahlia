@@ -6,21 +6,57 @@ import Foundation
 
     struct PiPackageServiceTests {
         @Test
-        func autoReviewAvailabilityFollowsInstalledFilesForAnyPackageRef() throws {
-            let agent = FileManager.default.temporaryDirectory.appending(path: "PiAutoReview-\(UUID())")
-            defer { try? FileManager.default.removeItem(at: agent) }
-            let entry = AgentAutoReviewSettings.entryURL(agentURL: agent)
-            try FileManager.default.createDirectory(at: entry.deletingLastPathComponent(), withIntermediateDirectories: true)
-            let settings = agent.appending(path: "settings.json")
-            try JSONSerialization.data(withJSONObject: ["packages": [AgentAutoReviewSettings.packageSource]]).write(to: settings)
-            #expect(!PiPackageService.isAutoReviewInstalled(agentURL: agent))
-            try Data().write(to: entry)
-            for source in ["https://github.com/mats16/pi-auto-review@b7822c1", AgentAutoReviewSettings.packageSource] {
-                try JSONSerialization.data(withJSONObject: ["packages": [source]]).write(to: settings)
-                #expect(PiPackageService.isAutoReviewInstalled(agentURL: agent))
+        func autoReviewIsBundled() throws {
+            #expect(FileManager.default.fileExists(atPath: try AgentAutoReviewSettings.entryURL().path))
+        }
+
+        @Test(arguments: [
+            "https://github.com/mats16/pi-auto-review-tools.git",
+            "https://github.com/mats16/pi-auto-reviewer@main",
+            "git@github.com:mats16/pi-auto-review-tools.git",
+            "git:github.com/mats16/pi-auto-review/tools",
+            "https://other-github.com/mats16/pi-auto-review",
+            "https://example.com/github.com/mats16/pi-auto-review",
+        ])
+        func unrelatedRepositoriesStayVisibleAndInstallable(_ source: String) throws {
+            #expect(!AgentAutoReviewSettings.isPackage(source))
+            #expect(try PiPackageService.source(source) == source)
+        }
+
+        @Test(arguments: [
+            "https://github.com/mats16/pi-auto-review",
+            "https://github.com/mats16/pi-auto-review@3a12a7d",
+            "git:github.com/mats16/pi-auto-review@main",
+            "git@github.com:mats16/pi-auto-review.git",
+            "ssh://git@github.com/mats16/pi-auto-review.git@feature/review",
+            "git:https://github.com/mats16/pi-auto-review.git@main",
+            "http://github.com/mats16/pi-auto-review.git",
+            "https://github.com/mats16/pi-auto-review.git#main",
+        ])
+        func rejectsHiddenReviewerInstallsAndPreservesExistingDeclarations(_ source: String) async throws {
+            let root = FileManager.default.temporaryDirectory.appending(path: "PiBuiltInPackage-\(UUID())")
+            defer { try? FileManager.default.removeItem(at: root) }
+            let locator = PiAgentDirectoryLocator(applicationSupportURL: root)
+            let service = PiPackageService(locator: locator)
+            let settings = try locator.agentURL().appending(path: "settings.json")
+            let original = try JSONSerialization.data(withJSONObject: ["packages": [source, "npm:tools"]])
+            try original.write(to: settings)
+            do {
+                try await service.change(" \(source)\n", installing: true)
+                Issue.record("Installing the built-in reviewer must be rejected")
+            } catch PiPackageService.PackageError.builtInPackage {
+                #expect(PiPackageService.PackageError.builtInPackage.errorDescription == L10n.agentPackageBuiltIn)
             }
-            try FileManager.default.removeItem(at: entry)
-            #expect(!PiPackageService.isAutoReviewInstalled(agentURL: agent))
+            #expect(try Data(contentsOf: settings) == original)
+            #expect(try await service.packages().contains(source))
+        }
+
+        @Test
+        func mcpElicitationIsBundled() throws {
+            let entry = try AgentMCPElicitationSettings.entryURL()
+            #expect(FileManager.default.fileExists(atPath: entry.path))
+            let package = try PiBundle.resourceURL(AgentMCPElicitationSettings.packageName)
+            #expect(FileManager.default.fileExists(atPath: package.appending(path: "package.json").path))
         }
 
         @Test

@@ -900,10 +900,11 @@ actor PiRuntimeService {
             "--no-extensions", "-e", PiBundle.resourceURL("dahlia.ts").path,
             "--no-skills", "--no-context-files", "--no-prompt-templates", "--no-themes", "--no-approve",
         ] + options.arguments
+        let command = PiBundle.processCommand(executableURL, arguments, environment: environment)
         return try CodexAppServerProcessTransport(
-            executableURL: executableURL,
-            arguments: arguments,
-            environment: environment,
+            executableURL: command.executable,
+            arguments: command.arguments,
+            environment: command.environment,
             currentDirectoryURL: options.cwd
         )
     }
@@ -914,7 +915,8 @@ actor PiRuntimeService {
         agentURL: URL,
         executableURL: URL,
         launch: PiLaunchSettings,
-        secret: (String) -> String? = { KeychainService.load(key: $0) }
+        secret: (String) -> String? = { KeychainService.load(key: $0) },
+        autoReviewEntryURL: () throws -> URL = AgentAutoReviewSettings.entryURL
     ) throws -> [String: String] {
         // Provider keys in Dahlia's own environment must not override the account's sign-in or reach model-run commands.
         var environment = ProcessInfo.processInfo.environment.filter { key, _ in
@@ -928,7 +930,7 @@ actor PiRuntimeService {
         environment["PI_SKIP_VERSION_CHECK"] = "1"
         environment["PI_TELEMETRY"] = "0"
         environment["DAHLIA_PI_MODE"] = options.mode.rawValue
-        environment["DAHLIA_PI_AUTO_REVIEW"] = AgentAutoReviewSettings.entryURL(agentURL: agentURL).path
+        environment["DAHLIA_PI_AUTO_REVIEW"] = try? autoReviewEntryURL().path
         environment["DAHLIA_PI_BRIDGED_PROVIDERS"] = PiProviderConfiguration.bridgedProviderIDs.joined(separator: ",")
         environment.merge(options.environment) { $1 }
         environment["DAHLIA_PI_PROFILE"] = options.profile.rawValue

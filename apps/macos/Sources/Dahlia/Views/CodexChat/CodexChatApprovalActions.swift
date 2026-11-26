@@ -25,7 +25,7 @@ struct CodexChatApprovalActions: View {
 
     private var denyButton: some View {
         CodexChatApprovalButton(
-            title: L10n.chatApprovalDeny,
+            title: request.kind == .confirmation ? L10n.cancel : L10n.chatApprovalDeny,
             prominence: .secondary,
             isEnabled: isDecisionEnabled,
             action: { onDecide(request.id, request.rejectionDecision) }
@@ -53,7 +53,7 @@ struct CodexChatApprovalActions: View {
 
     private func title(for action: CodexChatApprovalAction) -> String {
         switch action {
-        case .allowOnce: L10n.chatApprovalAllowOnce
+        case .allowOnce: request.kind == .confirmation ? L10n.chatApprovalContinue : L10n.chatApprovalAllowOnce
         case .allowSameFilesForSession: L10n.chatApprovalAllowSameFiles
         case .allowSimilarCommands: L10n.chatApprovalAllowSimilarCommands
         case .deny: L10n.chatApprovalDeny

@@ -22,25 +22,46 @@ nvm は `~/.nvm/versions/node/v*/bin`（`NVM_DIR` が設定されていればそ
 そのアカウントの「アプリ管理下の Pi を使う」をオンにする。後回しで続行でき、失敗・キャンセル時は選択を変えない。
 
 オンのとき、未インストールなら「Pi をインストール」、インストール済みなら「アップデートを確認」を出す。
-インストール・更新中にオフへ切り替えても、その選択は保持する。インストールも更新もボタンを押したときだけ GitHub の
-`earendil-works/pi` の latest release を取得し、`pi-darwin-arm64.tar.gz` を API の asset URL（`Accept: application/octet-stream`。github.com の `browser_download_url` は HTTP 504 を返したことがある）から取得し、GitHub が示す SHA-256 で確かめてから
-`Application Support/<profile>/Pi/releases/<version>` に展開する。Dahlia が入れるコマンドは `Application Support/<profile>/bin`
-に集め、入口の `bin/pi` は `../Pi/releases/<version>/pi` への symlink で、一時 link の rename で張り替える。Pi は symlink を解決した実体の位置から resource を実行中も読むため、
-張り替えたあとは、新しい版、直前の版、process table（`proc_pidpath`）で動いている process の実行ファイルを含む版だけを残す。
-直前の版は、古い link を解決して起動の途中にある process のため。Pi の入れ替えと掃除は `Pi/.lock` の flock で
-process をまたいで1つずつ行う。展開済みの版はダウンロードしない。
-失敗しても入口は前の版を指したまま。release の `pi` は ad-hoc 署名のまま実行でき、Dahlia は署名し直さない。
+インストール・更新中にオフへ切り替えても、その選択は保持する。インストールも更新もボタンを押したときだけ行う。
+入れ方は Pi 公式のインストーラー（`pi.dev/install.sh`）に倣い、Node.js と npm の代わりに Bun を使う（2026-11-26 ユーザー承認）。
+macOS には JavaScript runtime が標準で入っておらず、Pi の release バイナリも Bun で作られている。npm パッケージは Pi のモジュールを
+bundle せずに持つため、拡張（`pi-mcp-elicitation`）から Pi の MCP runtime を使える。単体バイナリはそれができない。
+
+- Bun（`PiInstaller.bunVersion`、Pi の release バイナリと同じ版）は GitHub API の asset URL（`Accept: application/octet-stream`。
+  github.com の `browser_download_url` は HTTP 504 を返したことがある）から取得し、コードに固定した SHA-256 で確かめて
+  `BUN_INSTALL`（`Application Support/<profile>/bun`）の `bin/bun` に置く。`~/.dahlia` は利用者が読み書きするデータ（Pi のホーム・エージェント）の置き場なので、入れ替えられる実行環境は置かない。利用者の Node.js・npm・nvm は使わない。
+- 版は取得先のレジストリの `dist-tags.latest` で決め、その版の `package.json`（overrides を含む）と `package-lock.json` を pi.dev の `api/installer/releases/<版>` から取る。
+  pi.dev の latest は、プロキシのレジストリがまだ通さない新しい版のことがある（公開翌日の版に HTTP 403 を返した）。
+  Bun はロックファイルの tarball URL をそのまま取りに行き、npm のように設定したレジストリへ読み替えないので、`resolved` だけを除き、
+  版と integrity はロックファイルのまま、設定したレジストリから取る。
+- レジストリは既定で `https://npm-proxy.cloud.databricks.com/` を使い、UI にはこの URL を表示しない（2026-11-26 ユーザー依頼）。
+  別のレジストリ（社内プロキシなど）は上級者向けの設定として、「Pi をインストール」「アップデートを確認」の横の「レジストリを設定」で開くアプリ内モーダルの「npm レジストリ」（`piNpmRegistry.local`）で指定し、
+  変えるまで保持する。http(s) の URL だけを受け付け、Bun の global folder の `.npmrc`（`registry=<URL>`）に書く。Bun はこれを
+  Dahlia のインストールでも `pi update` の `bun install -g` でも `~/.npmrc` より優先して読む。「アップデートを確認」は実行前に今の設定で `.npmrc` を書き直す。
+- Bun の global folder（`bun/install/global`）を作業用 folder で作り直し、`bun install --ignore-scripts --production` で入れる。
+  パッケージの `bin` の `pi` を Bun で `--version` 実行し、版と一致したら入れ替え、`bun install -g` と同じく `bun/bin/pi` からその entry point への
+  相対リンクを作る。失敗したら今の Pi を残す。Dahlia のインストールは `bun/.lock` の flock で1つずつ行う。
+- 配置は `bun install -g` のとおりで、独自の起動スクリプトは持たない。アプリ管理下の Pi は `bun/bin/pi`。entry point は
+  `#!/usr/bin/env node` で macOS には Node がないので、Dahlia は `bun/bin/bun bun/bin/pi …` で起動し、`BUN_INSTALL` を渡す
+  （`PATH` の先頭は実行ファイルの folder の `bun/bin`）。`bun/bin` に `node` は置かない（PATH に入れた利用者の Node を隠すため）。Pi は Bun の global install として自分を認識するので、`pi update` は標準どおり
+  `bun install -g --ignore-scripts` で global folder を更新する。ただし `pi update` は版を pi.dev の latest で決めるので、プロキシが
+  まだ通さない版では失敗する。そのため「アップデートを確認」は `pi update` を使わず、インストールと同じくレジストリの `dist-tags.latest` を読み、
+  入っている版より新しいときだけ `bun install -g --ignore-scripts --minimum-release-age=0 <package>@<版>` を `bun/.lock` の下で実行する。
+  レジストリの版が入っている版以下なら何もしない（下げない）。Dahlia は版を管理しない。
+  更新は global folder をその場で書き換えるので、動いている Pi は次の起動から新しい版になる。
+- `bun` folder は Application Support の中なので、チャットの sandbox からは読み書きできない。
+- 以前の Dahlia が `Application Support/<profile>/bin/pi` に入れた単体バイナリは、`bun/bin/pi` が入るまでアプリ管理下の Pi として使い、削除しない。
+
 PATH 上の `pi`（npm・Homebrew など）は利用者のものとして更新しない。
 
-インストール失敗は release 取得、download、検証、展開、保存・切替の段階と理由を日英で表示し、HTTP エラーには status code を添える。
+インストール失敗は release 取得、download（npm パッケージの取得を含む）、検証、展開、保存・切替の段階と理由を日英で表示し、HTTP エラーには status code を添える。
 GitHub の 429、または rate limit header を持つ 403 はアクセス制限として案内する。Settings・セットアップ・CLI は同じ installer で
 失敗を一度だけ匿名診断へ渡す。Sentry へ渡す固定カテゴリと tag は [Telemetry policy](../../telemetry.md) に従い、キャンセルは記録しない。
 
-`Dahlia --install-pi [version]` は app を開かずに同じ手順で版を入れる（版を省くと latest）。`bin/pi-update` は
-これを呼ぶ shell script で、版を入れるたびに書き直すので app の場所に追従する。GitHub の release の `pi` は自分では
-更新できないため、`bin` を PATH に入れてターミナルで使う人は、Pi 1.5.0 以降の `PI_SELF_UPDATE_COMMAND` に
-`pi-update {version}` を設定する。Pi はこの変数を空白で区切るので、空白を含む `Application Support` の
-フルパスは書けない。Pi はこの変数をどの入れ方の `pi` にも使うので、別の `pi` が PATH の先にあるときは設定しない。Dahlia は利用者の shell 設定や `~/.pi` には書かない。版は固定しないため、`dahlia.ts` が使う RPC と extension API の互換は
+`Dahlia --install-pi [version]` は app を開かずに同じ手順で版を入れる（版を省くと latest）。ターミナルで使う人は、Bun の
+公式インストーラーが `~/.bun` で求めるのと同じく、shell 設定で `BUN_INSTALL` を `bun` folder にして `bun/bin` を `PATH` に入れる。
+`pi` の直接実行には Node（22.19 以上）が要り、なければ `bun "$BUN_INSTALL/bin/pi"` で動かす。更新は `pi update` で行う。
+Dahlia は利用者の shell 設定や `~/.pi` には書かない。版は固定しないため、`dahlia.ts` が使う RPC と extension API の互換は
 Pi の更新時に `test-pi-extension.py` で確かめる。ユーザーの `~/.pi` は使わない。
 
 利用者は「エージェント」>「一般」の「環境変数」で、アカウントのすべての Pi process（要約・チャット・control）に環境変数を足せる
@@ -63,12 +84,21 @@ extension・context file・theme・project trust の自動読込を無効化し�
 
 「Dahlia AI」>「プラグイン」から npm source または Git URL を Pi の `install`・`remove` で管理し、同じアカウントの `settings.json` を一覧の正本にする。変更は次に開始するチャット process から適用する。
 パッケージ操作はアカウントの Pi 選択と環境変数を使い、`PI_CODING_AGENT_DIR` は Dahlia のアカウント directory に固定する。`~/.pi` や project の設定には追加しない。拡張コードは無効のままとし、インストール元は利用者が信頼できるものを指定する。
-プラグインは「コネクタ」と同じカードで一覧し、カードのスイッチでインストール・アンインストールする。おすすめの `pi-auto-review` は未インストールでもオフのカードとして一覧に表示し、ユーザーの操作でインストールする（2026-11-19 ユーザー承認）。インストール元は審査済みコミットに固定した Git URL（`AgentAutoReviewSettings.packageSource`）で、npm レジストリには依存しない。Pi の Git パッケージと同じく `npm` が PATH に必要。
-インストール後はそのカードの設定ボタンから、審査モデルとトリアージの設定をアプリ内モーダルで開く。
+プラグインは「コネクタ」と同じカードで一覧し、カードのスイッチでインストール・アンインストールする。新規追加は「プラグインを追加」カードから専用のアプリ内モーダルを開き、npm source または Git URL を入力する。モーダルにはカタログへのリンクを表示し、インストール成功時に閉じる。Dahlia に同梱した `pi-auto-review` は、スイッチをオンに固定したカードとして先頭に表示し、オフにできない（2026-11-27 ユーザー承認）。そのカードの設定ボタンから、審査モデルとトリアージの設定をアプリ内モーダルで開く。以前のリリースでインストールした `pi-auto-review` の登録は一覧に出さず、使わない。同じ旧 source の新規インストールは、内蔵済みであることを案内して拒否する。
 おすすめの `pi-web-access` も同じくオフのカードとして表示する（2026-11-19 ユーザー依頼）。インストール元はバージョンを固定した npm source（`AgentWebAccessSettings.packageSource`）で、依存パッケージを npm レジストリから取得する。
 インストール済みなら、Dahlia は対話チャットにだけ upstream の standalone MCP worker（`<アカウントの pi>/npm/node_modules/pi-web-access/dist/mcp-cli.js`）を `dahlia_web_access` server として登録し、`mcp__dahlia_web_access__web_search`・`source_check`・`fetch_content`・`get_search_content` を利用可能にする。Pi 本体へプラグインの extension は読み込まず、予定実行とバックグラウンドレビューでは worker を登録しない。
 worker は専用の `web-access.sb` で実行し、子プロセスの作成は許可しない（GitHub clone・gh API・動画の外部 CLI などは使えない）。読み取りは OS・実行用コード・同じアカウントの npm package と `web-search.json`、書き込みはアカウント内の `web-access-runtime` に限る。チャットの作業フォルダ・追加のファイル許可は渡さず、ホストの CLI 設定・ブラウザの Cookie・Keychain は許可しない。環境は空から PATH・専用 HOME/TMPDIR・アカウントの agent directory だけを渡し、API キーはそのアカウントの設定ファイルから読む。worker の Node.js は Pi とは別に PATH から解決し、version manager の shim からも実際の interpreter を確認する（管理版 Pi も同じ経路）。Node.js がなければインストールを案内するエラーにする。worker は Pi の MCP lifecycle に従って停止・キャンセルされる。
 Dahlia の extension は builtin MCP 由来のこの server の tool を通し、http・https 以外の URL と `auth` を拒否する。URL の検査とは独立に、各ファイルの open と子プロセスには kernel の sandbox 境界が適用される。ネットワークはチャットのコマンドと同じく到達できる。
+`pi-mcp-elicitation` は Dahlia が `PiExtension/pi-mcp-elicitation` に同梱する独立した Pi package で、既定で導入済みとし、
+カードはスイッチをオンのまま固定して表示する（オフにはできない。2026-11-26 ユーザー依頼）。Pi の `settings.json` には登録しない。
+対話チャットは常に `builtin:mcp` の代わりに Dahlia の確認 adapter を渡す `dahlia-mcp.ts` を `-e` で読み込み、`DAHLIA_PI_MCP_EXTENSION` で Dahlia の extension に MCP tool の出所として伝える。独立 package の既定 UI は Pi の `confirm` とし、host は factory へ確認 UI を注入できる。
+プラグインは Pi の `createMcpExtension` に transport を包んで渡し、`initialize` で `elicitation.url` を宣言する（MCP 2025-11-25 の URL mode elicitation。form mode は宣言しない）。
+`elicitation/create` と、URLElicitationRequiredError（`-32042`）で失敗した request の両方で、ページの host と URL 全体を Pi の `confirm` で見せ、同意したときだけブラウザーで開く。
+自動では開かない。ブラウザーの起動に失敗した場合は `elicitation/create` を cancel し、`-32042` は元の error を返す。
+https（loopback は http も可）以外の URL は確認せずに断る。`-32042` の request は、ページを終えたかを2回目の `confirm` で確かめてから新しい request ID で送り直し、
+利用者が続けなければ元のエラーを返す。待つあいだは progress 通知で Pi の request timeout を延ばす。UI のない process では常に断る。
+Pi の MCP runtime（npm パッケージの `dist/extensions/mcp/runtime.js`）が見つからない Pi（単体バイナリ）では、Pi の MCP をそのまま使い、elicitation が無効だと通知する。
+Dahlia の adapter は確認ごとの ID で開始と取り消しを対応付け、取り消した確認だけを承認カードから除く。承認カード（「続行」「キャンセル」）には承認方式（Auto review・フルアクセス）にかかわらず利用者が答える。予定実行・バックグラウンド処理・ターン外の確認は断る。
 設定は upstream の `web-search.json`（アカウントの agent directory。チャットのコマンドからは読めない）を正本にし、カードの設定ボタンのモーダルで Web 検索の有効化と主要な検索プロバイダーの API キーを編集する。保存時は `tools.webSearch.enabled`・`tools.sourceCheck.enabled` の個別指定を解除して両方を Web 検索のスイッチに揃え、それ以外の項目は保持する。
 upstream は `webSearch.enabled` がないと Web 検索をオンにするが Dahlia の既定はオフで、読み込む前に未設定なら `false` を書く。変更は新しいチャットから効く。
 
@@ -268,12 +298,10 @@ MCP の tool は Dahlia がその chat に登録した server（Dahlia MCP と�
 それ以外はどの選択でも拒否する。Dahlia MCP の `get`・`query`・`list`・`search` と、gateway MCP の `readOnlyHint` が true の tool は確認・審査なし。
 MCP の読み取り結果も untrusted data として扱う。
 
-`pi-auto-review` は同梱せず、利用者が「プラグイン」からアカウントにインストールする（2026-11-19 ユーザー承認）。Pi は `--no-extensions` で起動するため
-その既定 extension は読み込まれず、Dahlia の MCP gate が Pi の clone 先（`<アカウントの pi>/git/github.com/mats16/pi-auto-review/index.ts`、`DAHLIA_PI_AUTO_REVIEW`）から
-公開された `review` 関数だけを import し、審査モデル・推論強度・トリアージを呼び出しごとの設定で渡す。clone 先はチャットのファイル道具から読み取り専用で、審査コードは書き換えられない。
-Auto review の利用可否は import 先のファイルの存在で判定する。旧版の API は設定を無視するため審査せず、手動確認へ戻す。カードのスイッチはインストール登録の有無を示し、ファイルが欠けた登録も削除できる。
-未インストールのアカウントでは、チャットの「AIにより確認する」を選べず（選択済みの thread は「常に確認する」と表示）、MCP gate も Auto review も「常に確認する」と同じ確認として扱う。
-インストール・アンインストールは起動済みのチャットでも次の MCP 変更操作から効く。既に読み込んだ旧版を置き換えた場合は、新しいチャットで固定版を読み直す。
+`pi-auto-review` は審査済みコミットの `index.ts` をアプリに同梱する（`PiExtension/pi-auto-review`、固定コミットは同じフォルダーの `UPSTREAM.md`。2026-11-27 ユーザー承認）。
+Pi は `--no-extensions` で起動するためその既定 extension は読み込まれず、Dahlia の MCP gate が同梱ファイル（`DAHLIA_PI_AUTO_REVIEW`）から
+公開された `review` 関数だけを import し、審査モデル・推論強度・トリアージを呼び出しごとの設定で渡す。同梱ファイルはアプリの bundle にあり、チャットから書き換えられない。
+import できない、または設定を受け取らない API の場合は審査せず、手動確認へ戻す。チャットの「AIにより確認する」はどのアカウントでもいつも選べる。
 審査モデルは「Dahlia AI」>「プラグイン」> pi-auto-review のカードの設定で指定し、`autoReviewModel.local` に保存する。
 空の選択（既定）は審査時点のチャットモデルを使う。変更は起動済みのチャットでも次の審査から効き、`PI_AUTO_REVIEW_MODEL` や Pi 側の `autoReview` 設定より優先する。
 reasoning effort は審査モデルの価格情報から自動設定する。Pi の100万トークン当たりの入力価格が2 USD以上、または出力価格が10 USD以上なら low、それ未満なら high。
@@ -293,7 +321,7 @@ Jev は upstream の32,000文字上限を維持し、それを超える予定操
 審査の期限・再試行・取消は upstream に従う。否認・失敗の理由を承認画面で表示する。
 
 承認方式は Dahlia が保持し、extension は MCP の変更操作ごとに bridge で問い合わせる（turn 中の変更も次の呼び出しから効く。不明なら「常に確認する」）。
-Pi の session file に承認方式を保存しない。全アカウントで、新しい thread も開き直した thread も「AIにより確認する（Auto review）」を初期選択する（pi-auto-review が未インストールなら「常に確認する」として扱う）。開いているチャットで明示的に選んだ承認方式は保持する。
+Pi の session file に承認方式を保存しない。全アカウントで、新しい thread も開き直した thread も「AIにより確認する（Auto review）」を初期選択する。開いているチャットで明示的に選んだ承認方式は保持する。
 承認対象の UTF-8 合計は command／file change／MCP 共通で、既存の process transport の受信保護上限と同じ4MiBまで保持する。
 MCP は server・tool・整形済み引数全文・reason を含めて検査する。4MiBを超えて表示を切り詰めた呼び出しは、承認方式によらず許可しない。
 AI 審査の入力容量とアプリの受信保護上限は分けて扱う（参考: [公開実装の入力予算](https://github.com/openai/codex/blob/ca21fe65d18a9b6326759fb4263c65dfbb645aa5/codex-rs/guardian-context/src/budget.rs)）。4MiB は Dahlia の保護上限である。

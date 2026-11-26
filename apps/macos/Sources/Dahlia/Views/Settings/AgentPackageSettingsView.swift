@@ -8,18 +8,6 @@ struct AgentPackageSettingsView: View {
     var body: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 12) {
-                HStack {
-                    TextField(L10n.agentPackageSource, text: $model.source, prompt: Text("npm:package / https://github.com/owner/repo"))
-                        .textFieldStyle(.roundedBorder)
-                        .disabled(model.isBusy)
-                        .onSubmit { if model.canInstall { model.install() } }
-                    Button(L10n.agentPackageInstall, action: model.install)
-                        .disabled(!model.canInstall)
-                    Link(destination: URL(string: "https://pi.dev/packages")!) {
-                        Label(L10n.agentPackageCatalog, systemImage: "arrow.up.right.square")
-                    }
-                }
-                Text(L10n.agentPackageHelp).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 if let message = model.errorMessage {
                     Label(message, systemImage: "exclamationmark.triangle.fill")
                         .foregroundStyle(.orange)
@@ -39,6 +27,7 @@ struct AgentPackageSettingsView: View {
                 LazyVGrid(columns: columns, alignment: .leading, spacing: 12) {
                     autoReviewCard
                     webAccessCard
+                    mcpElicitationCard
                     ForEach(otherPackages, id: \.self) { source in
                         AgentMCPServiceCard(
                             name: PiPackageService.displayName(source),
@@ -50,6 +39,7 @@ struct AgentPackageSettingsView: View {
                         }
                         .help(source)
                     }
+                    addCard
                 }
                 .disabled(model.isBusy)
                 .padding(.top, 12)
@@ -62,28 +52,54 @@ struct AgentPackageSettingsView: View {
         .task { await model.refresh() }
     }
 
+    private var addCard: some View {
+        Button {
+            navigation.presentSettingsModal(AgentPackageInstallView(model: model, onClose: navigation.dismissSettingsModal))
+        } label: {
+            VStack(alignment: .leading, spacing: 12) {
+                Label(L10n.agentPackageAdd, systemImage: "plus").font(.dahliaHeadline)
+                Text(L10n.agentPackageAddHelp).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Spacer(minLength: 0)
+            }
+            .padding(16)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .contentShape(.rect)
+        }
+        .buttonStyle(.dahlia(cornerRadius: DahliaDesign.Card.regularCornerRadius))
+    }
+
     private var columns: [GridItem] {
         [GridItem(.flexible(), alignment: .top), GridItem(.flexible(), alignment: .top)]
     }
 
     private var otherPackages: [String] {
-        model.packages.filter { !AgentAutoReviewSettings.isPackage($0) && !AgentWebAccessSettings.isPackage($0) }
+        model.packages.filter {
+            !AgentAutoReviewSettings.isPackage($0) && !AgentWebAccessSettings.isPackage($0)
+        }
     }
 
+    /// Bundled with Dahlia, so its switch stays on.
     private var autoReviewCard: some View {
-        recommendedCard(
-            name: "pi-auto-review", comment: L10n.autoReviewPackageDescription, systemImage: "checkmark.shield",
-            packageSource: AgentAutoReviewSettings.packageSource, isPackage: AgentAutoReviewSettings.isPackage,
-            isInstalled: model.isAutoReviewInstalled, install: model.installAutoReview, settingsTitle: L10n.autoReviewSettings
+        AgentMCPServiceCard(
+            name: "pi-auto-review", comment: L10n.autoReviewPackageDescription, icon: Image(systemName: "checkmark.shield"),
+            isEnabled: .constant(true), isLocked: true
         ) {
-            AgentPluginSettingsModal(height: 360, onClose: navigation.dismissSettingsModal) {
-                Form { AgentAutoReviewSettingsSection() }
-                    .formStyle(.grouped)
-            } actions: {
-                Button(L10n.close, action: navigation.dismissSettingsModal)
-                    .buttonStyle(.dahlia())
-                    .keyboardShortcut(.cancelAction)
+            Button(L10n.autoReviewSettings, systemImage: "gearshape") {
+                navigation.presentSettingsModal(
+                    AgentPluginSettingsModal(height: 360, onClose: navigation.dismissSettingsModal) {
+                        Form { AgentAutoReviewSettingsSection() }
+                            .formStyle(.grouped)
+                    } actions: {
+                        Button(L10n.close, action: navigation.dismissSettingsModal)
+                            .buttonStyle(.dahlia())
+                            .keyboardShortcut(.cancelAction)
+                    }
+                )
             }
+            .labelStyle(.iconOnly)
+            .help(L10n.autoReviewSettings)
+            .buttonStyle(AgentMCPIconButtonStyle())
         }
     }
 
@@ -95,6 +111,18 @@ struct AgentPackageSettingsView: View {
         ) {
             AgentWebAccessSettingsModal(onClose: navigation.dismissSettingsModal)
         }
+    }
+
+    /// Bundled with Dahlia and always loaded, so it shows switched on and cannot be turned off.
+    private var mcpElicitationCard: some View {
+        AgentMCPServiceCard(
+            name: AgentMCPElicitationSettings.packageName,
+            comment: L10n.mcpElicitationPackageDescription,
+            icon: Image(systemName: "person.badge.key"),
+            isEnabled: .constant(true),
+            isLocked: true
+        ) {}
+            .help(L10n.mcpElicitationBuiltIn)
     }
 
     /// Recommended, so it shows switched off until installed; its settings open once its files are in place.
@@ -133,8 +161,93 @@ struct AgentPackageSettingsView: View {
     }
 }
 
+/// Installs a plugin by its source, as the Connectors tab adds an MCP service; it closes once the install succeeds.
+private struct AgentPackageInstallView: View {
+    @Bindable var model: PiPackageSettingsModel
+    let onClose: () -> Void
+    @State private var isInstalling = false
+    @FocusState private var isFocused: Bool
+
+    var body: some View {
+        GeometryReader { geometry in
+            ZStack {
+                Button(action: onClose) {
+                    Color.black.opacity(0.16).ignoresSafeArea()
+                }
+                .buttonStyle(.plain)
+                .focusable(false)
+                .accessibilityHidden(true)
+
+                VStack(alignment: .leading, spacing: 16) {
+                    Text(L10n.agentPackageAdd)
+                        .font(.dahliaTitle2)
+                        .accessibilityAddTraits(.isHeader)
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 16) {
+                            TextField(L10n.agentPackageSource, text: $model.source, prompt: Text("npm:package / https://github.com/owner/repo"))
+                                .textFieldStyle(.roundedBorder)
+                                .focused($isFocused)
+                                .disabled(model.isBusy)
+                                .onSubmit(install)
+                            Text(L10n.agentPackageHelp).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                            Link(destination: URL(string: "https://pi.dev/packages")!) {
+                                Label(L10n.agentPackageCatalog, systemImage: "arrow.up.right.square")
+                            }
+                            if isInstalling, let message = model.errorMessage {
+                                Label(message, systemImage: "exclamationmark.triangle.fill")
+                                    .foregroundStyle(.orange)
+                                    .textSelection(.enabled)
+                                if let details = model.errorDetails {
+                                    DisclosureGroup(L10n.agentPackageErrorDetails) {
+                                        Text(details)
+                                            .font(.dahliaSecondary)
+                                            .foregroundStyle(.secondary)
+                                            .textSelection(.enabled)
+                                            .fixedSize(horizontal: false, vertical: true)
+                                            .frame(maxWidth: .infinity, alignment: .leading)
+                                    }
+                                }
+                            }
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    .scrollBounceBehavior(.basedOnSize)
+                    HStack {
+                        if model.isBusy { ProgressView().controlSize(.small) }
+                        Spacer()
+                        Button(L10n.cancel, action: onClose)
+                            .buttonStyle(.dahlia())
+                            .keyboardShortcut(.cancelAction)
+                        Button(L10n.agentPackageInstall, action: install)
+                            .buttonStyle(.dahlia(.primary))
+                            .keyboardShortcut(.defaultAction)
+                            .disabled(!model.canInstall)
+                    }
+                }
+                .padding(24)
+                .frame(width: 480)
+                .frame(maxHeight: min(560, max(0, geometry.size.height - 48)))
+                .dahliaModalSurface()
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+        .font(.dahliaBody)
+        .transition(.identity)
+        .onAppear { isFocused = true }
+        .onChange(of: model.isBusy) { _, isBusy in
+            if !isBusy, isInstalling, model.changeSucceeded { onClose() }
+        }
+    }
+
+    private func install() {
+        guard model.canInstall else { return }
+        isInstalling = true
+        model.install()
+    }
+}
+
 /// A plugin's settings belong to it, so its card opens them; the backdrop does what the first action cancels.
-private struct AgentPluginSettingsModal<Content: View, Actions: View>: View {
+struct AgentPluginSettingsModal<Content: View, Actions: View>: View {
     let height: CGFloat
     var isSaving = false
     let onClose: () -> Void

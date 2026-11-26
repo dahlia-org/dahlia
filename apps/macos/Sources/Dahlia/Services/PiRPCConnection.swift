@@ -18,6 +18,8 @@ actor PiRPCConnection {
     private var readerTask: Task<Void, Never>?
     /// Answers in progress, cancelled when the process goes away so a token login or approval does not outlive it.
     private var bridgeTasks: [String: Task<Void, Never>] = [:]
+    /// Adapter-owned IDs correlate open/cancel before either bridge Task gets executor time.
+    private var confirmationRequests: [String: String] = [:]
 
     init(transport: any CodexAppServerTransport, bridge: @escaping Bridge) {
         self.transport = transport
@@ -121,17 +123,59 @@ actor PiRPCConnection {
             let method = String(title.dropFirst("dahlia:".count))
             let payload = record["placeholder"]?.stringValue
                 .flatMap { try? JSONDecoder().decode(JSONValue.self, from: Data($0.utf8)) } ?? .null
+            if method == "cancelConfirmation" {
+                guard let key = payload.objectValue?["requestID"]?.stringValue,
+                      let requestID = confirmationRequests[key], let task = bridgeTasks[requestID]
+                else { return respond(id: id, value: .bool(false)) }
+                task.cancel()
+                bridgeTasks[id] = Task {
+                    defer { self.bridgeTasks[id] = nil }
+                    await task.value
+                    self.respond(id: id, value: .bool(true))
+                }
+                return
+            }
+            let correlation = method == "confirmation" ? payload.objectValue?["requestID"]?.stringValue : nil
+            if method == "confirmation" {
+                guard let correlation, UUID(uuidString: correlation) != nil, confirmationRequests[correlation] == nil
+                else { return respond(id: id, value: nil) }
+                confirmationRequests[correlation] = id
+            }
+            let bridgeMethod = method == "confirmation" ? "approval" : method
+            let bridgePayload: JSONValue = method == "confirmation" ? .object([
+                "kind": .string("confirmation"), "title": payload.objectValue?["title"] ?? .null,
+                "message": payload.objectValue?["message"] ?? .null,
+            ]) : payload
             let bridge = bridge
             bridgeTasks[id] = Task {
-                defer { self.bridgeTasks[id] = nil }
+                defer {
+                    self.bridgeTasks[id] = nil
+                    if let correlation, self.confirmationRequests[correlation] == id {
+                        self.confirmationRequests[correlation] = nil
+                    }
+                }
                 do {
-                    try await self.respond(id: id, value: bridge(method, payload))
+                    try await self.respond(id: id, value: bridge(bridgeMethod, bridgePayload))
                 } catch {
                     self.bridgeError = error
                     self.respond(id: id, value: nil)
                 }
             }
-        case "select", "confirm", "editor":
+        case "confirm":
+            // Pi extensions ask yes or no, for example pi-mcp-elicitation before it opens a page. Dahlia asks the user
+            // as it asks for an approval; any other answer, or none, is no.
+            let payload: JSONValue = .object([
+                "kind": .string("confirmation"),
+                "title": record["title"] ?? .null,
+                "message": record["message"] ?? .null,
+            ])
+            let bridge = bridge
+            bridgeTasks[id] = Task {
+                defer { self.bridgeTasks[id] = nil }
+                let decision = try? await bridge("approval", payload)
+                self.write(response: ["type": .string("extension_ui_response"), "id": .string(id), "confirmed": .bool(decision == .string("accept"))])
+            }
+        case "select", "editor":
             respond(id: id, value: nil)
         default:
             return
@@ -145,6 +189,10 @@ actor PiRPCConnection {
         } else {
             response["cancelled"] = .bool(true)
         }
+        write(response: response)
+    }
+
+    private func write(response: [String: JSONValue]) {
         Task { try? await self.write(.object(response)) }
     }
 
@@ -157,6 +205,7 @@ actor PiRPCConnection {
         pending.removeAll()
         bridgeTasks.values.forEach { $0.cancel() }
         bridgeTasks.removeAll()
+        confirmationRequests.removeAll()
         eventContinuation.finish(throwing: error)
     }
 

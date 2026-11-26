@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Check Dahlia's Pi extension against an installed Pi, a loopback model gateway, and loopback MCPs.
 
-Usage: DAHLIA_PI_AUTO_REVIEW=/path/to/pi-auto-review/index.ts python3 apps/macos/scripts/test-pi-extension.py [--pi /path/to/pi]
-(default: pi on PATH; use a checkout of the commit pinned in AgentAutoReviewSettings.packageSource)
+Usage: python3 apps/macos/scripts/test-pi-extension.py [--pi /path/to/pi]
+(default: pi on PATH; uses the bundled pi-auto-review)
 Uses an isolated agent directory and synthetic tokens; nothing leaves 127.0.0.1.
 Optional: --web-access-package /path/to/npm/node_modules/pi-web-access also checks the real MCP worker.
 """
@@ -27,8 +27,9 @@ from datetime import datetime, timedelta, timezone
 
 ROOT = Path(__file__).resolve().parents[3]
 EXTENSION = ROOT / "apps/macos/Sources/Dahlia/PiExtension/dahlia.ts"
-# dahlia.ts registers the Unity AI Gateway sign-ins in every process, so chat adds only Pi's MCP extension, as Dahlia does.
-CHAT_EXTENSIONS = ["-e", "builtin:mcp"]
+# Chat replaces Pi's MCP extension with the same host wrapper as PiChatService.
+MCP_EXTENSION = EXTENSION.with_name("dahlia-mcp.ts")
+CHAT_EXTENSIONS = ["-e", str(MCP_EXTENSION)]
 CHAT_ARGUMENTS = ["--no-session", *CHAT_EXTENSIONS, "--tools", "read,ls,write,edit,bash,mcp__dahlia__*"]
 SANDBOX = EXTENSION.with_name("pi.sb")
 # Standalone MCP fixture: verifies transport, the worker environment, and the direct URL/auth gate.
@@ -433,7 +434,7 @@ def run(pi, mode, script, arguments, environment, approval="accept", approval_mo
                    PI_TELEMETRY="0", DAHLIA_PI_MODE=mode, DAHLIA_PI_BRIDGED_PROVIDERS="databricks",
                    DAHLIA_PI_SANDBOX=json.dumps(sandbox(root)), DAHLIA_PI_SANDBOX_HIDDEN_ENV=json.dumps(["USER_SECRET"]),
                    DAHLIA_PI_SANDBOX_TMPDIR=str(root / "tmp"), TMPDIR=str(root / "pi-tmp"),
-                   USER_SECRET="ENV_SECRET_MARKER", **environment)
+                   USER_SECRET="ENV_SECRET_MARKER", DAHLIA_PI_MCP_EXTENSION=str(MCP_EXTENSION), **environment)
         if web_access:
             package = Path(web_access)
             if package.is_dir():
@@ -746,7 +747,7 @@ def main():
     args = parser.parse_args()
     pi = args.pi
     web_access_package = args.web_access_package
-    assert Path(os.environ.get("DAHLIA_PI_AUTO_REVIEW", "")).is_file(), "Set DAHLIA_PI_AUTO_REVIEW to pi-auto-review's index.ts"
+    os.environ.setdefault("DAHLIA_PI_AUTO_REVIEW", str(ROOT / "apps/macos/Sources/Dahlia/PiExtension/pi-auto-review/index.ts"))
     if args.only_web_access:
         web_access_regression(pi, web_access_package)
         return
@@ -819,8 +820,6 @@ def main():
             names = options.pop("tool_names", CHAT_ARGUMENTS[-1])
             isolated = dict(environment, DAHLIA_PI_PROFILE=profile, DAHLIA_PI_MEMORY_ENABLED="1",
                             DAHLIA_PI_ALLOWED_TOOLS=json.dumps(["mcp__dahlia__get_meeting"]))
-            if options.pop("missing_reviewer", False):
-                isolated["DAHLIA_PI_AUTO_REVIEW"] = "/nonexistent/pi-auto-review/index.ts"
             web_access = options.pop("web_access", None)
             return run(pi, "chat", [*steps, {"text": "done"}], [*CHAT_ARGUMENTS[:-2], "--tools", names], isolated,
                        web_access=web_access, **options)
@@ -953,11 +952,6 @@ def main():
                                     {"text": json.dumps({"risk_level": "high", "user_authorization": "low", "outcome": "deny", "rationale": "Ask the user"})},
                                     approval_mode="autoReview", approval="accept")
         assert results == ["MCP_OK"] and any(method == "approval" for method, _ in bridge), (results, bridge)
-        # Without the pi-auto-review plugin, Auto review asks as Always ask does, with no review request.
-        requests, results, bridge, _ = chat({"tool": "mcp__dahlia__update_meeting"}, approval_mode="autoReview",
-                                            approval="decline", missing_reviewer=True)
-        assert "declined" in results[0] and len(requests) == 2, (results, requests)
-        assert any(method == "approval" for method, _ in bridge) and not any(method == "reviewModel" for method, _ in bridge), bridge
 
     # Every model API Dahlia configures for a bridged provider gets the account's token.
     # The Databricks templates' APIs, plus the Dahlia Server's (OpenAI Responses).
@@ -1089,6 +1083,14 @@ def main():
     assert authorizations and set(authorizations) == {"Bearer mcp-access-1"}, authorizations
     assert foreign and set(foreign) == {None}, foreign
     assert results == ["GATEWAY_OK"] and not any(method == "approval" for method, _ in bridge), (results, bridge)
+    # The native schedule service freezes these discovered tools into approved_read_only_tools after approval.
+    for action in ("create", "update", "resume"):
+        _, _, schedule_bridge, _ = gateway_chat(
+            {"tool": "cronjob", "args": {"action": action}},
+            arguments=["--no-session", *CHAT_EXTENSIONS, "--tools", "cronjob,mcp__gmail__*"],
+            bridge_answers={"cronjob": {}})
+        payloads = [payload for method, payload in schedule_bridge if method == "cronjob"]
+        assert len(payloads) == 1 and payloads[0]["_readOnlyTools"] == ["mcp__gmail__search_messages"], schedule_bridge
     _, results, bridge, _ = gateway_chat({"tool": "mcp__gmail__send_message"}, approval="decline")
     approvals = [payload for method, payload in bridge if method == "approval"]
     assert [(p["server"], p["tool"]) for p in approvals] == [("gmail", "send_message")], bridge

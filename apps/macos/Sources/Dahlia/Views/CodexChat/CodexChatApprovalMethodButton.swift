@@ -6,11 +6,10 @@ struct CodexChatApprovalMethodButton: View {
     @State private var isHovering = false
     @State private var isPresented = false
     @State private var windowBounds: CGRect = .zero
-    @State private var isAutoReviewInstalled = false
 
     var body: some View {
         Button(action: togglePanel) {
-            Label(shownMethod.title, systemImage: shownMethod.systemImage)
+            Label(session.selectedApprovalMethod.title, systemImage: session.selectedApprovalMethod.systemImage)
                 .padding(.horizontal, 10)
                 .frame(height: CodexChatDesign.controlSize)
                 .contentShape(Capsule())
@@ -29,8 +28,7 @@ struct CodexChatApprovalMethodButton: View {
             if isPresented {
                 CodexChatApprovalMethodPanel(
                     session: session,
-                    selectedMethod: shownMethod,
-                    isAutoReviewInstalled: isAutoReviewInstalled,
+                    selectedMethod: session.selectedApprovalMethod,
                     width: panelWidth,
                     onDismiss: dismissPanel
                 )
@@ -52,20 +50,7 @@ struct CodexChatApprovalMethodButton: View {
             windowBounds = bounds
         }
         .onExitCommand(perform: dismissPanel)
-        .task(id: session.accountID) { await refreshAutoReview() }
-        .onReceive(NotificationCenter.default.publisher(for: PiPackageService.packagesDidChange)) { _ in
-            Task { await refreshAutoReview() }
-        }
         .zIndex(isPresented ? 1 : 0)
-    }
-
-    /// Without the pi-auto-review plugin, Auto review asks as Always ask does, so it shows that.
-    private var shownMethod: CodexChatApprovalMethod {
-        session.selectedApprovalMethod == .autoReview && !isAutoReviewInstalled ? .ask : session.selectedApprovalMethod
-    }
-
-    private func refreshAutoReview() async {
-        isAutoReviewInstalled = await PiPackageService.shared.isAutoReviewInstalled()
     }
 
     private var panelWidth: CGFloat {
@@ -77,7 +62,6 @@ struct CodexChatApprovalMethodButton: View {
             dismissPanel()
         } else {
             isPresented = true
-            Task { await refreshAutoReview() }
         }
     }
 

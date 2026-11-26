@@ -6,6 +6,20 @@ import Foundation
 
     @MainActor
     struct PiFileAccessSettingsTests {
+        @Test(arguments: [PiRuntimeService.LaunchOptions.Mode.chat, .control, .summary, .skills])
+        func missingReviewerDoesNotPreventPiLaunch(_ mode: PiRuntimeService.LaunchOptions.Mode) throws {
+            let root = FileManager.default.temporaryDirectory.appending(path: "PiMissingReviewer-\(UUID())")
+            defer { try? FileManager.default.removeItem(at: root) }
+            let launch = PiLaunchSettings(variables: [.init(id: UUID(), name: "PATH", value: "/usr/bin:/bin")])
+            let environment = try PiRuntimeService.launchEnvironment(
+                .init(mode: mode, cwd: root.appending(path: "work")), agentURL: root.appending(path: "agent"),
+                executableURL: URL(fileURLWithPath: "/usr/bin/true"), launch: launch, secret: { _ in nil },
+                autoReviewEntryURL: { throw PiRuntimeError.helperNotBundled }
+            )
+            #expect(environment["DAHLIA_PI_AUTO_REVIEW"] == nil)
+            #expect(environment["DAHLIA_PI_MODE"] == mode.rawValue)
+        }
+
         @Test
         func webWorkerResolvesNodeIndependentlyOfCompiledPi() throws {
             let root = FileManager.default.temporaryDirectory.appending(path: "PiWebNode-\(UUID())")
