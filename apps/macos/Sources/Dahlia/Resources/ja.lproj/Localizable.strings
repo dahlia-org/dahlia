@@ -1050,6 +1050,7 @@
 "Stop generating" = "生成を停止";
 "Thinking" = "考えています";
 "Compacting context" = "コンテキストを圧縮しています";
+"There is no new conversation to compact" = "圧縮できる新しい会話はありません";
 "Summarize the conversation and reduce context usage" = "会話を要約してコンテキストの使用量を減らします";
 "Context compacted %@ → %@ tokens" = "コンテキストを圧縮しました %@ → %@ トークン";
 "Message Dahlia AI" = "Dahlia AI にメッセージ";

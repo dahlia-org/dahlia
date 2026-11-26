@@ -1050,6 +1050,7 @@
 "Stop generating" = "Stop generating";
 "Thinking" = "Thinking";
 "Compacting context" = "Compacting context";
+"There is no new conversation to compact" = "There is no new conversation to compact";
 "Summarize the conversation and reduce context usage" = "Summarize the conversation and reduce context usage";
 "Context compacted %@ → %@ tokens" = "Context compacted %@ → %@ tokens";
 "Message Dahlia AI" = "Message Dahlia AI";
