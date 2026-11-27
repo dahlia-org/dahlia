@@ -96,7 +96,9 @@ enum ChatHistoryCodec {
                 let content = data["content"]?.stringValue ?? ""
                 let notification = notification(content, notifiedAt: item.createdAt)
                 messages.append(CodexChatMessage(
-                    id: item.id, role: .notice(.info), text: notification.text, threadResults: notification.results, runID: item.runID
+                    id: item.id, role: .notice(.info), text: notification.text, threadResults: notification.results, runID: item.runID,
+                    // Opens its run: the collapsed steps measure from here.
+                    timestamp: item.createdAt
                 ))
             case "message":
                 // Canonical items retain their response boundaries, IDs, and completion timestamps.
