@@ -17,7 +17,7 @@ struct BatchTranscriptionFailureBanner: View {
             HStack {
                 if canRetry {
                     Button(L10n.retryBatchTranscription, systemImage: "arrow.clockwise", action: onRetry)
-                        .buttonStyle(.borderedProminent)
+                        .buttonStyle(.dahlia(.primary))
                 }
 
                 Spacer()

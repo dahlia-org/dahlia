@@ -92,7 +92,7 @@ struct MeetingSearchDateRangeView: View {
                 Spacer()
                 Button(L10n.cancel, action: onCancel)
                 Button(L10n.apply, action: onApply)
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(.dahlia(.primary))
                     .disabled(!isValid)
             }
         }

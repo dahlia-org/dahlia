@@ -34,7 +34,7 @@ struct WorkspaceAppearanceButton: View {
                             isSaving = false
                         }
                     }
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(.dahlia(.primary))
                 }
                 .disabled(isSaving)
                 .padding([.horizontal, .bottom], 12)

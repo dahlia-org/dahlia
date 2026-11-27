@@ -46,6 +46,6 @@ struct ScreenshotManagementToolbar: View {
             }
             .disabled(!isSelecting && isDeletionDisabled)
         }
-        .buttonStyle(.bordered)
+        .buttonStyle(.dahlia())
     }
 }

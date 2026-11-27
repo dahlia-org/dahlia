@@ -36,7 +36,7 @@ struct WorkspaceDetailView: View {
 
                 Section {
                     Button(L10n.openWorkspace, systemImage: "folder", action: onOpen)
-                        .buttonStyle(.borderedProminent)
+                        .buttonStyle(.dahlia(.primary))
                         .disabled(isCurrentWorkspace || !canSwitchWorkspace)
                 } footer: {
                     Text(L10n.openWorkspaceDescription)
@@ -56,7 +56,7 @@ struct WorkspaceDetailView: View {
                 Text(L10n.noWorkspacesDescription)
             } actions: {
                 Button(L10n.openFolderAsWorkspace, systemImage: "folder.badge.plus", action: onAdd)
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(.dahlia(.primary))
             }
         }
     }

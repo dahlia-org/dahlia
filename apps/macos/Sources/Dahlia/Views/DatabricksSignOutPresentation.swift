@@ -34,14 +34,13 @@ struct DatabricksSignOutPresentation: ViewModifier {
                             Spacer()
 
                             Button(L10n.cancel, role: .cancel, action: settings.cancelDatabricksSignOut)
-                                .buttonStyle(.bordered)
+                                .buttonStyle(.dahlia())
                                 .keyboardShortcut(.cancelAction)
 
                             Button(L10n.signOut, role: .destructive) {
                                 Task { await settings.confirmDatabricksSignOut() }
                             }
-                            .buttonStyle(.borderedProminent)
-                            .tint(.red)
+                            .buttonStyle(.dahlia(.destructive))
                         }
                         .controlSize(.extraLarge)
                     }

@@ -61,7 +61,7 @@ for continuous progress and latest-wins for replaceable projections. Never drop 
   scales or font-size settings without product approval.
 - Apply `.font(.dahliaBody)` directly to picker option text as well as its container; native menu pickers can otherwise render the selected title at the system default size.
 - Add UI strings as computed properties in `Utilities/L10n.swift`, then add the same key to both `Resources/ja.lproj` and `Resources/en.lproj`. Japanese is the primary localization.
-- Settings screens use `Form` with `.formStyle(.grouped)`, `Section`, `LabeledContent`, and standard controls. Do not add custom cards, custom rows, or fixed-width control frames. Use `.toggleStyle(.dahliaSwitch)` for toggles (the app-accent switch with a round knob) and `.checkbox` for multiple selection.
+- Settings screens use `Form` with `.formStyle(.grouped)`, `Section`, `LabeledContent`, and standard controls. Do not add custom cards, custom rows, or fixed-width control frames. Use `.toggleStyle(.dahliaSwitch)` for toggles (the app-accent switch with a round knob) and `.toggleStyle(.dahliaCheckbox)` for multiple selection. Buttons without their own style get `.dahlia()` from `.dahliaAppearance()`; give default actions `.dahlia(.primary)`. Do not use `.bordered` or `.borderedProminent`.
 
 ### Interaction Conventions
 

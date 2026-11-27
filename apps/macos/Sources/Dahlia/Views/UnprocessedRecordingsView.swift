@@ -101,7 +101,7 @@ struct UnprocessedRecordingsView: View {
                 Button(item.state == .interrupted ? L10n.resumeBatchTranscription : L10n.transcribe) {
                     beginTranscription(item)
                 }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(.dahlia(.primary))
             } else if item.isWorkInProgress {
                 ProgressView()
                     .controlSize(.small)

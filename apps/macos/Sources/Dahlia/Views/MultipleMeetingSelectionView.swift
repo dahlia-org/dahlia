@@ -21,7 +21,7 @@ struct MultipleMeetingSelectionView: View {
                     systemImage: "sparkles",
                     action: onPresentSummaryGeneration
                 )
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(.dahlia(.primary))
                 .disabled(
                     !sidebarViewModel.canEditCurrentWorkspace
                         || !viewModel.canRegenerateSummaries(meetingIds: sidebarViewModel.selectedMeetingIds)
@@ -61,7 +61,7 @@ struct MultipleMeetingSelectionView: View {
                     sidebarViewModel.clearMeetingSelection()
                 }
             }
-            .buttonStyle(.bordered)
+            .buttonStyle(.dahlia())
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .padding()

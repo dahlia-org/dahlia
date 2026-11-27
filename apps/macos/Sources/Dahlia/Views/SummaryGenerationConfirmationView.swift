@@ -137,6 +137,7 @@ struct SummaryGenerationConfirmationView: View {
                 Button(L10n.cancel, role: .cancel, action: onCancel)
                     .keyboardShortcut(.cancelAction)
                 Button(actionTitle, action: generateSummary)
+                    .buttonStyle(.dahlia(.primary))
                     .keyboardShortcut(.defaultAction)
                     .disabled(!isModelAvailable || hasIncompatibleEffort ||
                         isLoadingSources || sourceErrorMessage != nil ||

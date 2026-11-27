@@ -131,7 +131,7 @@ struct ProjectDeletionDialog: View {
                         Text(L10n.cancel)
                             .frame(minWidth: 72)
                     }
-                    .buttonStyle(.bordered)
+                    .buttonStyle(.dahlia())
                     .controlSize(.extraLarge)
                     .keyboardShortcut(.cancelAction)
                     .disabled(isDeleting)
@@ -146,8 +146,7 @@ struct ProjectDeletionDialog: View {
                         }
                         .frame(minWidth: 160)
                     }
-                    .buttonStyle(.borderedProminent)
-                    .tint(.red)
+                    .buttonStyle(.dahlia(.destructive))
                     .controlSize(.extraLarge)
                     .disabled(!canConfirmDeletion)
                 }

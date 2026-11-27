@@ -9,37 +9,37 @@ struct CalendarEventFilterSettingsView: View {
                 Text(L10n.calendarFilterAllDayEvents)
                 Text(L10n.calendarIncludeAllDayEventsDescription)
             }
-            .toggleStyle(.checkbox)
+            .toggleStyle(.dahliaCheckbox)
 
             Toggle(isOn: $settings.includesCalendarEventsWithoutOtherAttendees) {
                 Text(L10n.calendarFilterUserOnlyEvents)
                 Text(L10n.calendarIncludeUserOnlyEventsDescription)
             }
-            .toggleStyle(.checkbox)
+            .toggleStyle(.dahliaCheckbox)
 
             Toggle(isOn: $settings.includesCalendarEventsWithoutConferenceURI) {
                 Text(L10n.calendarFilterEventsWithoutMeetingURL)
                 Text(L10n.calendarIncludeEventsWithoutMeetingURLDescription)
             }
-            .toggleStyle(.checkbox)
+            .toggleStyle(.dahliaCheckbox)
 
             Toggle(isOn: $settings.includesUnconfirmedCalendarEvents) {
                 Text(L10n.calendarFilterUnconfirmedEvents)
                 Text(L10n.calendarIncludeUnconfirmedEventsDescription)
             }
-            .toggleStyle(.checkbox)
+            .toggleStyle(.dahliaCheckbox)
 
             Toggle(isOn: $settings.includesDeclinedCalendarEvents) {
                 Text(L10n.calendarFilterDeclinedEvents)
                 Text(L10n.calendarIncludeDeclinedEventsDescription)
             }
-            .toggleStyle(.checkbox)
+            .toggleStyle(.dahliaCheckbox)
 
             Toggle(isOn: $settings.includesOutOfOfficeCalendarEvents) {
                 Text(L10n.calendarFilterOutOfOfficeEvents)
                 Text(L10n.calendarIncludeOutOfOfficeEventsDescription)
             }
-            .toggleStyle(.checkbox)
+            .toggleStyle(.dahliaCheckbox)
         } header: {
             Text(L10n.calendarEventsToInclude)
                 .font(.dahliaSectionHeader)

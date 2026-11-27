@@ -60,7 +60,7 @@ struct WorkspaceDeletionDialog: View {
                 HStack {
                     Spacer()
                     Button(L10n.cancel, role: .cancel, action: cancel)
-                        .buttonStyle(.bordered)
+                        .buttonStyle(.dahlia())
                         .keyboardShortcut(.cancelAction)
                         .disabled(isDeleting)
                     Button(role: .destructive, action: confirm) {
@@ -69,8 +69,7 @@ struct WorkspaceDeletionDialog: View {
                             Text(isDeleting ? L10n.removingWorkspace : transfersContent ? L10n.transferAndDeleteWorkspace : L10n.removeWorkspace)
                         }
                     }
-                    .buttonStyle(.borderedProminent)
-                    .tint(.red)
+                    .buttonStyle(.dahlia(.destructive))
                     .disabled(isDeleting || transfersContent && !destinations.contains(where: { $0.id == destinationID }))
                 }
             }

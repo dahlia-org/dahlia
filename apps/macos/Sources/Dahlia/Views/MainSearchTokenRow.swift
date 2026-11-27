@@ -20,7 +20,7 @@ struct MainSearchTokenRow: View {
                         }
                     }
                     .font(.dahliaSecondary)
-                    .buttonStyle(.bordered)
+                    .buttonStyle(.dahlia())
                     .controlSize(.small)
                     .help(L10n.removeSearchFilter)
                 }

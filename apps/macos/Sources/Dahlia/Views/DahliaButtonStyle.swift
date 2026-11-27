@@ -14,17 +14,19 @@ struct DahliaButtonStyle: ButtonStyle {
     let cornerRadius: CGFloat
 
     func makeBody(configuration: Configuration) -> some View {
+        // A destructive role on the default style reads as destructive, as it does on native buttons.
+        let variant = variant == .secondary && configuration.role == .destructive ? .destructive : variant
         configuration.label
             .padding(.horizontal, 10)
             .padding(.vertical, 6)
-            .foregroundStyle(foregroundColor)
+            .foregroundStyle(foregroundColor(variant))
             .background(
-                backgroundColor(isPressed: configuration.isPressed),
+                backgroundColor(variant, isPressed: configuration.isPressed),
                 in: .rect(cornerRadius: cornerRadius)
             )
             .overlay {
                 RoundedRectangle(cornerRadius: cornerRadius)
-                    .strokeBorder(borderColor, lineWidth: 1)
+                    .strokeBorder(borderColor(variant), lineWidth: 1)
             }
             .contentShape(.rect(cornerRadius: cornerRadius))
             .opacity(isEnabled ? 1 : 0.45)
@@ -35,7 +37,7 @@ struct DahliaButtonStyle: ButtonStyle {
             }
     }
 
-    private var foregroundColor: Color {
+    private func foregroundColor(_ variant: DahliaButtonVariant) -> Color {
         switch variant {
         case .primary:
             DahliaDesign.primaryButtonForegroundColor
@@ -46,7 +48,7 @@ struct DahliaButtonStyle: ButtonStyle {
         }
     }
 
-    private func backgroundColor(isPressed: Bool) -> Color {
+    private func backgroundColor(_ variant: DahliaButtonVariant, isPressed: Bool) -> Color {
         switch variant {
         case .primary:
             DahliaDesign.primaryButtonBackgroundColor(for: interactionState(isPressed: isPressed))
@@ -63,7 +65,7 @@ struct DahliaButtonStyle: ButtonStyle {
         return .normal
     }
 
-    private var borderColor: Color {
+    private func borderColor(_ variant: DahliaButtonVariant) -> Color {
         switch variant {
         case .primary:
             .clear

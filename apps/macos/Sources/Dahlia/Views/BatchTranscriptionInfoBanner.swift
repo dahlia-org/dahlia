@@ -18,7 +18,7 @@ struct BatchTranscriptionInfoBanner: View {
             Spacer()
             if let actionTitle {
                 Button(actionTitle, action: onAction)
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(.dahlia(.primary))
                     .disabled(!isActionEnabled)
             }
         }

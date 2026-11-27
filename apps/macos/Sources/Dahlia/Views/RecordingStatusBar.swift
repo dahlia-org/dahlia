@@ -68,8 +68,7 @@ struct RecordingStatusBar: View {
                 Button(recordingLabels.stop, systemImage: "stop.fill", action: recordingCoordinator.stopRecording)
                     .labelStyle(.iconOnly)
                     .dahliaFixedSymbol()
-                    .buttonStyle(.borderedProminent)
-                    .tint(.red)
+                    .buttonStyle(.dahlia(.destructive))
                     .controlSize(.small)
                     .help(recordingLabels.stop)
             }

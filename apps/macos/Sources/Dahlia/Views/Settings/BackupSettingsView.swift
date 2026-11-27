@@ -64,7 +64,7 @@ struct BackupSettingsView: View {
                         Text(workspace.name)
                         Text(TypeID.encode(workspace.id, as: .workspace)).font(.dahliaSecondary).foregroundStyle(.secondary)
                     }
-                    .toggleStyle(.checkbox)
+                    .toggleStyle(.dahliaCheckbox)
                     .disabled(model.isBusy)
                 }
                 HStack {

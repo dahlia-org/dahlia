@@ -32,7 +32,7 @@ struct WorkspaceSettingsDetailsView: View {
                 HStack {
                     Spacer()
                     Button(L10n.close, action: onClose)
-                        .buttonStyle(.bordered)
+                        .buttonStyle(.dahlia())
                         .keyboardShortcut(.cancelAction)
                 }
             }

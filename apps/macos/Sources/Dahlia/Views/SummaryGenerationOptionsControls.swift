@@ -22,7 +22,7 @@ struct SummaryGenerationOptionsControls: View {
             Text(L10n.exportBatchSummaryToWorkspace)
             Text(L10n.exportBatchSummaryToWorkspaceDescription)
         }
-        .toggleStyle(.checkbox)
+        .toggleStyle(.dahliaCheckbox)
         .disabled(!isEnabled)
     }
 }
