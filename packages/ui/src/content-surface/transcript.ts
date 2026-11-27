@@ -119,6 +119,7 @@ export function install(root: HTMLElement): void {
   let sequence = 0;
   let scrollScheduled = false;
   let reportedScrollTop = 0;
+  let readingAnchor: HTMLElement | undefined;
 
   const distanceFromBottom = () => scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight;
 
@@ -131,6 +132,24 @@ export function install(root: HTMLElement): void {
       }
     }
     return undefined;
+  };
+
+  const releaseReadingAnchor = () => {
+    readingAnchor?.style.removeProperty("content-visibility");
+    readingAnchor = undefined;
+  };
+
+  const restoreAnchor = (element: HTMLElement, offset: number) => {
+    if (readingAnchor !== element) {
+      releaseReadingAnchor();
+      readingAnchor = element;
+      // Keep just the reading row measured, including while restoring an offscreen page.
+      element.style.contentVisibility = "visible";
+    }
+    const bounds = element.getBoundingClientRect();
+    // A shorter row may no longer contain the saved offset; keep that segment on screen.
+    const top = offset > -bounds.height ? offset : 0;
+    scroller.scrollTop += bounds.top - top;
   };
 
   const reportViewport = () => {
@@ -172,6 +191,7 @@ export function install(root: HTMLElement): void {
     const anchor = !update.reset && update.scrollTo === undefined && !wasAtBottom
       ? visibleAnchor(new Set(update.order)) : undefined;
     if (update.reset) {
+      releaseReadingAnchor();
       root.replaceChildren();
       nodes.clear();
     }
@@ -191,14 +211,15 @@ export function install(root: HTMLElement): void {
     hasEarlier = update.hasEarlier;
     hasLater = update.hasLater;
     requested = null;
+    if (!anchor) releaseReadingAnchor();
     if (update.scrollTo === "top") scroller.scrollTop = 0;
     else if (update.scrollTo === "bottom" || update.restoreViewport?.following) scroller.scrollTop = scroller.scrollHeight;
     else if (update.restoreViewport) {
       const row = nodes.get(update.restoreViewport.anchorID ?? "");
-      if (row) scroller.scrollTop += row.getBoundingClientRect().top - update.restoreViewport.offset;
+      if (row) restoreAnchor(row, update.restoreViewport.offset);
     }
     else if (wasAtBottom && !hasLater) scroller.scrollTop = scroller.scrollHeight;
-    else if (anchor) scroller.scrollTop += anchor.element.getBoundingClientRect().top - anchor.top;
+    else if (anchor) restoreAnchor(anchor.element, anchor.top);
     reportViewport();
     if (movedBeforeUpdate && !replacesViewport) scheduleScrollCheck();
     // Report after the frame that shows this update. A hidden page draws no frames, so report right away.

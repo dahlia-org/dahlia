@@ -191,7 +191,7 @@
 
         @Test(arguments: [false, true])
         func widthChangesPreserveReadingOrLiveFollowing(following: Bool) async throws {
-            let harness = Harness()
+            let harness = Harness(rendersAllRows: true)
             defer { harness.stop() }
             harness.window.setContentSize(NSSize(width: 1400, height: 400))
             var segments = (0 ..< 40).map { index in
@@ -254,6 +254,59 @@
                 #expect(await harness.waitForRow(segments[20].text, at: y))
             }
             #expect(state.following == following)
+        }
+
+        @Test(arguments: [false, true], [false, true])
+        func wideningKeepsADeepReadingAnchorVisible(recovering: Bool, nearEnd: Bool) async throws {
+            let harness = Harness()
+            defer { harness.stop() }
+            harness.window.setContentSize(NSSize(width: 1400, height: 400))
+            let segments = (0 ..< 40).map { index in
+                TranscriptSegment(
+                    startTime: Date(timeIntervalSince1970: Double(index)),
+                    text: "row \(index) " + String(repeating: "long wrapped segment ", count: index == 20 ? 300 : 4),
+                    isConfirmed: true
+                )
+            }
+            harness.show(segments, maxWidth: ContentWidth.comfortable.maxWidth, scrollRequest: (1, .top))
+            #expect(await harness.waitForRows(40, firstText: segments[0].text))
+            let oldOffset = try #require(try await harness.webView.callAsyncJavaScript("""
+            window.requestAnimationFrame = callback => { setTimeout(callback, 0); return 0; };
+            const row = document.querySelectorAll('.row')[20];
+            // Offscreen WebKit may retain the intrinsic placeholder; model a fully rendered reading row.
+            row.style.contentVisibility = 'visible';
+            row.scrollIntoView({ block: 'start' });
+            document.scrollingElement.scrollTop += nearEnd ? row.getBoundingClientRect().height - 80 : 100;
+            window.dispatchEvent(new Event('scroll'));
+            await new Promise(requestAnimationFrame);
+            window.beforeDeepRecovery = true;
+            return row.getBoundingClientRect().top;
+            """, arguments: ["nearEnd": nearEnd], in: nil, contentWorld: .page) as? Double)
+            #expect(oldOffset < -80)
+            if recovering {
+                _ = try await harness.webView.evaluateJavaScript("window.dahliaTranscript.apply = () => {}; true")
+            }
+            harness.show(segments, maxWidth: .infinity, scrollRequest: (1, .top))
+            if recovering {
+                harness.coordinator.webViewWebContentProcessDidTerminate(harness.webView)
+            }
+            #expect(await pollUntil {
+                await (try? harness.webView.evaluateJavaScript("""
+                document.getElementById('rows').getBoundingClientRect().width === 1400 &&
+                (typeof window.beforeDeepRecovery === 'undefined' || !\(recovering))
+                """) as? Bool) == true
+            })
+            let bounds = try #require(try await harness.webView.evaluateJavaScript("""
+            (() => {
+              const row = document.querySelectorAll('.row')[20];
+              const bounds = row.getBoundingClientRect();
+              return [bounds.top, bounds.bottom, bounds.height];
+            })()
+            """) as? [Double])
+            try #require(bounds.count == 3)
+            #expect((-oldOffset >= bounds[2]) == nearEnd)
+            #expect(bounds[0] < 400 && bounds[1] > 0)
+            if !nearEnd { #expect(abs(bounds[0] - oldOffset) < 2) }
         }
 
         @Test
@@ -374,7 +427,7 @@
             let webView: WKWebView
             let coordinator: TranscriptWebSurface.Coordinator
 
-            init() {
+            init(rendersAllRows: Bool = false) {
                 let surface = Self.surface([], showsTranslatedText: false)
                 coordinator = surface.makeCoordinator()
                 // Frame-controlled tests must not trigger the visible-page watchdog.
@@ -382,6 +435,18 @@
                 window.isReleasedWhenClosed = false
                 let configuration = WKWebViewConfiguration()
                 configuration.userContentController.add(coordinator, name: "transcript")
+                // Offscreen WebKit can report visible without drawing frames; drive presentation acknowledgements.
+                configuration.userContentController.addUserScript(WKUserScript(source: """
+                window.requestAnimationFrame = callback => { setTimeout(callback, 0); return 0; };
+                """, injectionTime: .atDocumentStart, forMainFrameOnly: true))
+                if rendersAllRows {
+                    // Width geometry checks need real row heights even when offscreen WebKit skips rendering frames.
+                    configuration.userContentController.addUserScript(WKUserScript(source: """
+                    const style = document.createElement('style');
+                    style.textContent = '.row { content-visibility: visible; }';
+                    document.head.append(style);
+                    """, injectionTime: .atDocumentEnd, forMainFrameOnly: true))
+                }
                 webView = WKWebView(frame: window.contentLayoutRect, configuration: configuration)
                 window.contentView = webView
                 coordinator.view = webView
