@@ -136,6 +136,11 @@ def http_mcp(authorizations):
                         items, next_cursor = messages, ""
                 text = json.dumps({"items": items, "nextCursor": next_cursor,
                                    "has_more": bool(next_cursor)}) if items is not None else "GATEWAY_OK"
+                if args.get("probe_case") == "slack_csv":
+                    text = "MsgID,Text,Permalink,Cursor\r\n"
+                    if not args.get("cursor"):
+                        text += ('1700000000.123456,"Text, ""quoted""\nhttps://unrelated.example",'
+                                 'https://team.slack.com/archives/C123/p1700000000123456,csv-next\r\n')
                 result = {"content": [{"type": "text", "text": text}]}
                 if msg["params"].get("arguments", {}).get("probe_error"):
                     result = {"isError": True, "content": [{"type": "text", "text": "Source page failed"}]}
@@ -1247,6 +1252,20 @@ def main():
         mcp_servers=mcp_servers, auth=auth, bridge_answers={"intakeSeen": True})
     observed = [payload for method, payload in bridge if method == "intakeSeen"]
     assert len(observed) == 1 and observed[0]["links"] == {"19abc": "https://mail.google.com/mail/u/0/#all/19abc"}, bridge
+
+    # Slack CSV preserves same-row message IDs/permalinks and the continuation until an empty final page.
+    csv_query = {"probe_case": "slack_csv", "query": "new messages"}
+    _, _, bridge, _ = run(
+        pi, "chat", [{"tool": "mcp__gmail__search_messages", "args": csv_query},
+                     {"tool": "mcp__gmail__search_messages", "args": dict(csv_query, cursor="csv-next")}, {"text": "done"}],
+        ["--no-session", *CHAT_EXTENSIONS, "--tools", "event_record,mcp__gmail__*"],
+        {"DAHLIA_PI_MCP_SERVERS": json.dumps(["gmail"]), "DAHLIA_PI_PROFILE": "intake", "DAHLIA_PI_INTAKE_SERVICE": "slack"},
+        mcp_servers=mcp_servers, auth=auth, bridge_answers={"intakeSeen": True})
+    observed = [payload for method, payload in bridge if method == "intakeSeen"]
+    assert len(observed) == 2 and observed[0]["ids"] == ["1700000000.123456"] and observed[1]["ids"] == [], bridge
+    assert observed[0]["links"] == {"1700000000.123456": "https://team.slack.com/archives/C123/p1700000000123456"}, bridge
+    assert observed[0]["pages"][0]["nextRequestKey"] == observed[1]["pages"][0]["requestKey"], bridge
+    assert observed[1]["pages"][0]["nextRequestKey"] == "" and not observed[1]["pages"][0]["hasMore"], bridge
 
     # An MCP error followed by a normal assistant ending must still reach the native cursor gate. A later success
     # does not erase the earlier failure: the native run retries the whole range.

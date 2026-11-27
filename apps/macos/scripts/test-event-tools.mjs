@@ -2,6 +2,11 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { botTools, listedItemIDs, listedSourceURLs, registerEventTools } from '../Sources/Dahlia/PiExtension/event-tools.ts';
 
+// korotovsky/slack-mcp-server Message columns; Text contains CSV quoting and an unrelated Slack URL.
+const slackCSVHeader = 'MsgID,UserID,UserName,RealName,Channel,ThreadTs,Text,Time,Permalink,Reactions,BotName,FileCount,AttachmentIDs,HasMedia,Cursor';
+const slackURL = 'https://team.slack.com/archives/C123/p1700000000123456';
+const slackCSV = (permalink = slackURL, cursor = '') => `${slackCSVHeader}\r\n1700000000.123456,U1,alice,Alice,C123 (#general),,"Hello, ""quoted""\nhttps://team.slack.com/archives/C999/p1700000000999999",2026-11-28T00:00:00Z,${permalink},,,0,,false,${cursor}\r\n`;
+
 test('selection tool requires a stable key and a reason, and bridges the new shape', async () => {
   const registered = [];
   const calls = [];
@@ -22,6 +27,39 @@ test('read accounting recognizes Gmail messages and Slack messages', () => {
   assert.deepEqual(listedItemIDs([{ text: JSON.stringify({ items: [{ id: 'm1', threadId: 't1' }] }) }]), ['m1']);
   assert.deepEqual(listedItemIDs([{ text: JSON.stringify({ messages: { matches: [{ ts: '1.2' }] } }) }]), ['1.2']);
   assert.equal(botTools.bot.some(tool => tool.name === 'inbox_read'), true);
+});
+
+test('Slack CSV preserves the matching message ID and permalink across quoted multiline text', () => {
+  const content = [{ text: slackCSV() }];
+  assert.deepEqual(listedItemIDs(content), ['1700000000.123456']);
+  assert.deepEqual(listedSourceURLs(content, 'slack'), { '1700000000.123456': slackURL });
+  assert.deepEqual(listedSourceURLs(content, 'mail'), {});
+  for (const permalink of ['', 'https://unrelated.example', 'https://team.slack.com/archives/C123/p1700000000999999']) {
+    const content = [{ text: slackCSV(permalink) }];
+    assert.deepEqual(listedItemIDs(content), ['1700000000.123456']);
+    assert.deepEqual(listedSourceURLs(content, 'slack'), {});
+  }
+  for (const text of [`${slackCSVHeader}\n"unterminated`, `${slackCSVHeader}\nmissing,columns`, 'Text,URL\ntext,https://unrelated.example']) {
+    assert.deepEqual(listedItemIDs([{ text }]), []);
+    assert.deepEqual(listedSourceURLs([{ text }], 'slack'), {});
+  }
+});
+
+test('Slack CSV observations keep IDs, source links and last-row continuation metadata together', async () => {
+  let observe;
+  const calls = [];
+  registerEventTools({ on(_name, handler) { observe = handler; }, registerTool() {} }, async (_ctx, name, args) => calls.push({ name, args }), 'slack');
+  const first = { toolName: 'mcp__slack__conversations_search_messages', input: { query: 'new messages', count: 10 }, content: [{ text: slackCSV(slackURL, 'c2') }] };
+  await observe(first, {});
+  const page = calls[0].args;
+  assert.deepEqual(page.ids, ['1700000000.123456']);
+  assert.deepEqual(page.links, { '1700000000.123456': slackURL });
+  assert.deepEqual(JSON.parse(page.pages[0].nextRequestKey), [first.toolName, { count: 10, cursor: 'c2', query: 'new messages' }]);
+  assert.equal(page.pages[0].hasMore, true);
+  await observe({ ...first, input: { ...first.input, cursor: 'c2' }, content: [{ text: `${slackCSVHeader}\r\n` }] }, {});
+  assert.deepEqual(calls[1].args.ids, []);
+  assert.equal(calls[1].args.links, undefined);
+  assert.deepEqual(calls[1].args.pages, [{ requestKey: page.pages[0].nextRequestKey, nextRequestKey: '', root: false, hasMore: false }]);
 });
 
 test('source links use structured item metadata and ignore message body links', () => {

@@ -13,11 +13,42 @@ const item = {
   additionalProperties: false,
 };
 
+// Slack MCP can return RFC 4180 CSV with MsgID, Permalink and a last-row Cursor instead of JSON.
+function listing(text: string): any {
+  try { return JSON.parse(text); } catch { /* Try the connector's CSV table. */ }
+  const rows: string[][] = [];
+  let row: string[] = [], field = "", quoted = false, closed = false;
+  for (let i = 0; i < text.length; i++) {
+    const char = text[i];
+    if (quoted) {
+      if (char === '"' && text[i + 1] === '"') { field += '"'; i++; }
+      else if (char === '"') { quoted = false; closed = true; }
+      else field += char;
+    } else if (char === "," || char === "\n" || char === "\r") {
+      row.push(field); field = ""; closed = false;
+      if (char !== ",") {
+        rows.push(row); row = [];
+        if (char === "\r" && text[i + 1] === "\n") i++;
+      }
+    } else if (char === '"' && field === "" && !closed) quoted = true;
+    else if (closed || char === '"') return undefined;
+    else field += char;
+  }
+  if (quoted) return undefined;
+  if (field !== "" || row.length || closed) { row.push(field); rows.push(row); }
+  const header = rows.shift() ?? [];
+  const id = header.indexOf("MsgID"), permalink = header.indexOf("Permalink"), cursor = header.indexOf("Cursor");
+  if (id < 0 || permalink < 0 || rows.some(row => row.length !== header.length)) return undefined;
+  const messages = rows.map(row => ({ ts: row[id], permalink: row[permalink] }));
+  const next = cursor >= 0 ? rows.at(-1)?.[cursor] ?? "" : undefined;
+  return { messages, ...(next !== undefined ? { nextCursor: next, has_more: next !== "" } : {}) };
+}
+
 // Count observed message IDs independently from which messages intake selects. Conversation-only listings do not count.
 export function listedItemIDs(content: any[]): string[] {
   return content.flatMap((part: any) => {
     try {
-      const result = JSON.parse(part?.text ?? "");
+      const result = listing(part?.text ?? "");
       const gmail = Array.isArray(result?.items) ? result.items.filter((item: any) => typeof item?.id === "string" && typeof item?.threadId === "string").map((item: any) => item.id) : [];
       const messages = Array.isArray(result?.messages) ? result.messages : result?.messages?.matches ?? result?.matches;
       const slack = Array.isArray(messages) ? messages.filter((item: any) => typeof item?.ts === "string").map((item: any) => item.ts) : [];
@@ -32,8 +63,7 @@ export function listedItemIDs(content: any[]): string[] {
 export function listedSourceURLs(content: any[], service: string): Record<string, string> {
   const links: Record<string, string> = {};
   for (const part of content) {
-    let result: any;
-    try { result = JSON.parse(part?.text ?? ""); } catch { continue; }
+    const result = listing(part?.text ?? "");
     if (service === "mail" && Array.isArray(result?.items)) {
       for (const item of result.items) {
         if (typeof item?.id === "string" && /^[a-f0-9]+$/i.test(item.id) && typeof item?.threadId === "string") {
@@ -73,7 +103,7 @@ function requestKey(tool: string, input: Record<string, unknown>): string {
 function listedPages(event: any): any[] {
   return (event.content ?? []).flatMap((part: any) => {
     try {
-      const result = JSON.parse(part?.text ?? "");
+      const result = listing(part?.text ?? "");
       if (!Array.isArray(result?.items) && result?.has_more === undefined && result?.nextCursor === undefined) return [];
       const input = event.input ?? {};
       const next = typeof result.nextCursor === "string" ? result.nextCursor : "";
