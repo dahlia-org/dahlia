@@ -1984,8 +1984,6 @@
 "settings.agents.alwaysOn.editSource" = "イベントソースを編集";
 "settings.agents.alwaysOn.addSource" = "イベントソースを追加";
 "settings.agents.alwaysOn.chooseSource" = "どこから読みますか";
-"settings.agents.alwaysOn.suggestedMail" = "受信トレイの未読メール";
-"settings.agents.alwaysOn.suggestedSlack" = "自分宛てのメンションと DM";
 "settings.agents.alwaysOn.instructionsHelp" = "ここに書いたものを決めた間隔で読み、このエージェントに知らせます。返信などの書き込みは、通常のチャットと同じ承認設定に従います。";
 "settings.agents.alwaysOn.advanced" = "詳細設定";
 "settings.agents.alwaysOn.deleteSource" = "このイベントソースを削除しますか？";
@@ -2085,9 +2083,33 @@
 "settings.agents.calendar.beforeMeeting" = "会議の前に知らせる";
 "settings.agents.calendar.leadHours" = "何時間前に知らせるか";
 "settings.agents.calendar.scheduleHelp" = "アプリで有効なカレンダーを使います。会議の前は168時間未満で指定してください。";
-"settings.agents.calendar.invalidSchedule" = "毎日の時刻か会議の前を選び、会議の前は0より大きく168時間未満で指定してください。";
+"settings.agents.calendar.invalidSchedule" = "毎日・週の初め・会議の前のどれかを選び、会議の前は0より大きく168時間未満で指定してください。";
 "settings.agents.calendar.dailyNote" = "今日の予定を calendar_read で確認し、必要な準備や未回答の招待を判断してください。";
 "settings.agents.calendar.meetingNote" = "会議が近づいています。参照先の最新の予定を calendar_read で読み、準備が必要か判断してください。";
+"settings.agents.alwaysOn.notes" = "補足";
+"settings.agents.alwaysOn.notesPlaceholder" = "任意。例: 請求書と契約の話を優先する";
+"settings.agents.mail.addressedOnly" = "自分宛てのものだけ";
+"settings.agents.mail.addressedOnlyHelp" = "To か Cc に自分のアドレスがあるメールだけを読み、メーリングリストやグループ宛てで届いたものは読みません。";
+"settings.agents.mail.allowedDomains" = "送信者のドメインを限る";
+"settings.agents.mail.allowedDomainsPlaceholder" = "カンマ区切り。例: example.com";
+"settings.agents.mail.sendersHelp" = "送信者か送信者のドメインのどちらかに当てはまるメールだけを取り込みます。ドメインにはサブドメインも含みます。両方とも空なら、すべての送信者から取り込みます。";
+"settings.agents.slack.scope" = "読む範囲";
+"settings.agents.slack.scopeMentions" = "メンションと DM だけ";
+"settings.agents.slack.scopeJoined" = "参加しているチャンネルも";
+"settings.agents.slack.scopeAll" = "参加していないチャンネルも";
+"settings.agents.slack.includeChannels" = "含めるチャンネル";
+"settings.agents.slack.excludeChannels" = "除外するチャンネル";
+"settings.agents.slack.channelsPlaceholder" = "カンマ区切り。例: general, team-dev";
+"settings.agents.slack.channelsHelp" = "含めるチャンネルを指定すると、チャンネルのメッセージはそこだけを読みます。メンションと DM は読む範囲に従います。除外したチャンネルは、メンションがあっても読みません。";
+"settings.agents.slack.allNeedsChannels" = "参加していないチャンネルも読むときは、含めるチャンネルか補足を入力してください。";
+"settings.agents.calendar.weekly" = "週の初めに今週の予定を知らせる";
+"settings.agents.calendar.weekday" = "曜日";
+"settings.agents.calendar.weeklyNote" = "この合図から7日間の予定を calendar_read で確認し、必要な準備や未回答の招待を判断してください。";
+"settings.agents.calendar.acceptedOnly" = "承諾した予定だけ";
+"settings.agents.calendar.acceptedOnlyHelp" = "会議の前の通知を、承諾した予定・自分が主催する予定・出席者のいない予定だけにします。仮承諾と未回答の予定は除きます。";
+"settings.agents.calendar.acceptedOnlyNote" = "承諾した予定だけを対象にしてください。";
+"settings.agents.alwaysOn.promptPreview" = "プロンプトを見る";
+"settings.agents.alwaysOn.promptSince" = "<前回の取得位置>";
 
 "Remove attached images before compacting context" = "コンテキストを圧縮する前に添付画像を削除してください";
 

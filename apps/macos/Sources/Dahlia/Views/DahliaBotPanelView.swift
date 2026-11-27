@@ -343,7 +343,7 @@ struct DahliaBotPanelView: View {
                     .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(source.name).font(.dahliaHeadline)
-                    Text(source.kind == "calendar" ? L10n.agentCalendarScheduleHelp : source.instructions).foregroundStyle(.secondary).lineLimit(2)
+                    Text(DahliaBotPanelModel.summary(source)).foregroundStyle(.secondary).lineLimit(2)
                 }
                 Spacer(minLength: 8)
                 Toggle(source.name, isOn: Binding(get: { source.enabled }, set: { on in Task { await model.setEnabled(source, enabled: on) } }))

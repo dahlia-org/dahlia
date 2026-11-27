@@ -140,8 +140,6 @@ enum L10n { // swiftlint:disable:this type_body_length
     static var agentAlwaysOnEditSource: String { String(localized: "settings.agents.alwaysOn.editSource", bundle: bundle) }
     static var agentAlwaysOnAddSource: String { String(localized: "settings.agents.alwaysOn.addSource", bundle: bundle) }
     static var agentAlwaysOnChooseSource: String { String(localized: "settings.agents.alwaysOn.chooseSource", bundle: bundle) }
-    static var agentAlwaysOnSuggestedMail: String { String(localized: "settings.agents.alwaysOn.suggestedMail", bundle: bundle) }
-    static var agentAlwaysOnSuggestedSlack: String { String(localized: "settings.agents.alwaysOn.suggestedSlack", bundle: bundle) }
     static var agentAlwaysOnInstructionsHelp: String { String(localized: "settings.agents.alwaysOn.instructionsHelp", bundle: bundle) }
     static var agentAlwaysOnAdvanced: String { String(localized: "settings.agents.alwaysOn.advanced", bundle: bundle) }
     static var agentAlwaysOnDeleteSource: String { String(localized: "settings.agents.alwaysOn.deleteSource", bundle: bundle) }
@@ -165,6 +163,33 @@ enum L10n { // swiftlint:disable:this type_body_length
     static var agentCalendarInvalidSchedule: String { String(localized: "settings.agents.calendar.invalidSchedule", bundle: bundle) }
     static var agentCalendarDailyNote: String { String(localized: "settings.agents.calendar.dailyNote", bundle: bundle) }
     static var agentCalendarMeetingNote: String { String(localized: "settings.agents.calendar.meetingNote", bundle: bundle) }
+    static var agentAlwaysOnNotes: String { String(localized: "settings.agents.alwaysOn.notes", bundle: bundle) }
+    static var agentAlwaysOnNotesPlaceholder: String { String(localized: "settings.agents.alwaysOn.notesPlaceholder", bundle: bundle) }
+    static var agentMailAddressedOnly: String { String(localized: "settings.agents.mail.addressedOnly", bundle: bundle) }
+    static var agentMailAddressedOnlyHelp: String { String(localized: "settings.agents.mail.addressedOnlyHelp", bundle: bundle) }
+    static var agentMailAllowedDomains: String { String(localized: "settings.agents.mail.allowedDomains", bundle: bundle) }
+    static var agentMailAllowedDomainsPlaceholder: String {
+        String(localized: "settings.agents.mail.allowedDomainsPlaceholder", bundle: bundle)
+    }
+
+    static var agentMailSendersHelp: String { String(localized: "settings.agents.mail.sendersHelp", bundle: bundle) }
+    static var agentSlackScope: String { String(localized: "settings.agents.slack.scope", bundle: bundle) }
+    static var agentSlackScopeMentions: String { String(localized: "settings.agents.slack.scopeMentions", bundle: bundle) }
+    static var agentSlackScopeJoined: String { String(localized: "settings.agents.slack.scopeJoined", bundle: bundle) }
+    static var agentSlackScopeAll: String { String(localized: "settings.agents.slack.scopeAll", bundle: bundle) }
+    static var agentSlackIncludeChannels: String { String(localized: "settings.agents.slack.includeChannels", bundle: bundle) }
+    static var agentSlackExcludeChannels: String { String(localized: "settings.agents.slack.excludeChannels", bundle: bundle) }
+    static var agentSlackChannelsPlaceholder: String { String(localized: "settings.agents.slack.channelsPlaceholder", bundle: bundle) }
+    static var agentSlackChannelsHelp: String { String(localized: "settings.agents.slack.channelsHelp", bundle: bundle) }
+    static var agentSlackAllNeedsChannels: String { String(localized: "settings.agents.slack.allNeedsChannels", bundle: bundle) }
+    static var agentCalendarWeekly: String { String(localized: "settings.agents.calendar.weekly", bundle: bundle) }
+    static var agentCalendarWeekday: String { String(localized: "settings.agents.calendar.weekday", bundle: bundle) }
+    static var agentCalendarWeeklyNote: String { String(localized: "settings.agents.calendar.weeklyNote", bundle: bundle) }
+    static var agentCalendarAcceptedOnly: String { String(localized: "settings.agents.calendar.acceptedOnly", bundle: bundle) }
+    static var agentCalendarAcceptedOnlyHelp: String { String(localized: "settings.agents.calendar.acceptedOnlyHelp", bundle: bundle) }
+    static var agentCalendarAcceptedOnlyNote: String { String(localized: "settings.agents.calendar.acceptedOnlyNote", bundle: bundle) }
+    static var agentSourcePromptPreview: String { String(localized: "settings.agents.alwaysOn.promptPreview", bundle: bundle) }
+    static var agentSourcePromptSince: String { String(localized: "settings.agents.alwaysOn.promptSince", bundle: bundle) }
 
     static func agentAlwaysOnCounts(read: Int, recorded: Int) -> String {
         String(format: String(localized: "settings.agents.alwaysOn.counts", bundle: bundle), read, recorded)

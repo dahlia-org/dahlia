@@ -11,10 +11,10 @@ extension AgentInboxService {
             if let selected = snapshot.selectedProviders {
                 let pending = try AgentEventRecord.fetchAll(db, sql: """
                 SELECT e.* FROM agent_event_inbox e JOIN agent_event_sources s ON s.id=e.sourceID
-                WHERE s.kind='calendar' AND e.handledAt IS NULL AND (e.key LIKE 'meeting:%' OR e.key LIKE 'daily:%')
+                WHERE s.kind='calendar' AND e.handledAt IS NULL AND (e.key LIKE 'meeting:%' OR e.key LIKE 'daily:%' OR e.key LIKE 'weekly:%')
                 """)
                 for event in pending {
-                    if event.key?.hasPrefix("daily:") == true {
+                    if event.key?.hasPrefix("meeting:") == false {
                         if selected.isEmpty { try event.delete(db) }
                     } else {
                         let ref = event.ref.flatMap { try? JSONDecoder().decode(JSONValue.self, from: Data($0.utf8)) }
@@ -27,6 +27,7 @@ extension AgentInboxService {
             // Only enabled sources generate or refresh signals from fetched events.
             let sources = try AgentSourceRecord.fetchAll(db, sql: "SELECT * FROM agent_event_sources WHERE enabled=1 AND kind='calendar'")
             for var source in sources {
+                let options = source.sourceOptions
                 var desired: [AgentEventRecord] = []
                 if !successful.isEmpty, let daily = source.dailyAt,
                    let components = Self.dailyComponents(daily),
@@ -35,13 +36,27 @@ extension AgentInboxService {
                     let date = String(format: "%04d-%02d-%02d", day.year!, day.month!, day.day!)
                     desired.append(AgentEventRecord(
                         id: UUID.v7().uuidString, agentID: source.agentID, sourceID: source.id, key: "daily:" + date, topic: nil,
-                        note: L10n.agentCalendarDailyNote, ref: "{\"date\":\"\(date)\"}", occurredAt: at,
+                        note: AgentSourcePrompt.dailyNote(source), ref: "{\"date\":\"\(date)\"}", occurredAt: at,
+                        taskID: nil, handledAt: nil, createdAt: now
+                    ))
+                }
+                // Only on its weekday, so a week whose day passed while the app was closed gets no late signal.
+                if !successful.isEmpty, let weekly = options.weeklyAt, calendar.component(.weekday, from: now) == options.weekday,
+                   let components = Self.dailyComponents(weekly),
+                   let at = calendar.date(bySettingHour: components.hour, minute: components.minute, second: 0, of: now) {
+                    var iso = Calendar(identifier: .iso8601)
+                    iso.timeZone = calendar.timeZone
+                    let week = iso.dateComponents([.yearForWeekOfYear, .weekOfYear], from: now)
+                    let key = String(format: "%04d-W%02d", week.yearForWeekOfYear!, week.weekOfYear!)
+                    desired.append(AgentEventRecord(
+                        id: UUID.v7().uuidString, agentID: source.agentID, sourceID: source.id, key: "weekly:" + key, topic: nil,
+                        note: AgentSourcePrompt.weeklyNote(source), ref: "{\"week\":\"\(key)\"}", occurredAt: at,
                         taskID: nil, handledAt: nil, createdAt: now
                     ))
                 }
                 var meetingKeys: Set<String> = []
                 for event in snapshot.events where successful.contains(AgentCalendarSnapshot.provider(for: event))
-                    && event.startDate > now && !event.isAllDay && !event.isDeclined {
+                    && event.startDate > now && !event.isAllDay && !event.isDeclined && (options.acceptedOnly != true || event.isAttending) {
                     let key = "meeting:\(event.displayID):\(event.startDate.ISO8601Format())"
                     meetingKeys.insert(key)
                     // Turning off notifications preserves arrived signals for meetings that are still valid.
@@ -76,6 +91,7 @@ extension AgentInboxService {
                         if existing.handledAt == nil {
                             existing.occurredAt = event.occurredAt
                             existing.ref = event.ref
+                            existing.note = event.note
                             try existing.update(db)
                         }
                     } else {

@@ -33,7 +33,7 @@
             return (service, source.id)
         }
 
-        private func event(_ id: String = "event", provider: String = "provider-a", start: Date? = nil) -> CalendarEvent {
+        private func event(_ id: String = "event", provider: String = "provider-a", start: Date? = nil, accepted: Bool = false) -> CalendarEvent {
             let start = start ?? now.addingTimeInterval(3600)
             return CalendarEvent(
                 id: id,
@@ -47,7 +47,8 @@
                 startDate: start,
                 endDate: start.addingTimeInterval(1800),
                 isAllDay: false,
-                responseStatus: .tentative,
+                isAttending: accepted,
+                responseStatus: accepted ? .accepted : .tentative,
                 conferenceURI: nil
             ).scoped(to: provider)
         }
@@ -161,6 +162,179 @@
             #expect(try service.recentEvents().first?.handledAt != nil)
         }
 
+        /// A weekly check alone is a valid schedule. It signals once, only on its weekday, and turning it off cancels it.
+        @Test func weeklyAgendaAloneSignalsOnceOnItsWeekday() throws {
+            let (service, _) = try service()
+            var calendar = Calendar(identifier: .gregorian)
+            calendar.timeZone = try #require(TimeZone(secondsFromGMT: 0))
+            var source = try #require(try service.sources().first)
+            source.leadHours = nil
+            source.sourceOptions.weeklyAt = "09:00"
+            source.sourceOptions.weekday = calendar.component(.weekday, from: now) % 7 + 1
+            try service.saveSource(source, now: now)
+            let snapshot = AgentCalendarSnapshot(successfulProviders: ["provider-a"])
+            try service.reconcileCalendar(snapshot, now: now, calendar: calendar)
+            #expect(try service.recentEvents().isEmpty)
+
+            source = try #require(try service.sources().first)
+            source.sourceOptions.weekday = calendar.component(.weekday, from: now)
+            try service.saveSource(source, now: now)
+            try service.reconcileCalendar(snapshot, now: now, calendar: calendar)
+            try service.reconcileCalendar(snapshot, now: now.addingTimeInterval(60), calendar: calendar)
+            let weekly = try #require(try service.recentEvents().first)
+            #expect(try service.recentEvents().count == 1)
+            #expect(weekly.key == "weekly:2027-W02" && calendar.component(.hour, from: weekly.occurredAt) == 9)
+            #expect(weekly.note == AgentSourcePrompt.weeklyNote(source))
+
+            source = try #require(try service.sources().first)
+            source.sourceOptions.weeklyAt = nil
+            source.dailyAt = "08:00"
+            try service.saveSource(source, now: now)
+            #expect(try !service.recentEvents().contains { $0.key?.hasPrefix("weekly:") == true })
+            source.dailyAt = nil
+            #expect(throws: AgentInboxService.Failure.self) { try service.saveSource(source, now: now) }
+            source.sourceOptions.weeklyAt = "09:00"
+            source.sourceOptions.weekday = 8
+            #expect(throws: AgentInboxService.Failure.self) { try service.saveSource(source, now: now) }
+        }
+
+        @Test(arguments: [false, true])
+        func unrelatedEditsKeepFutureWeeklySignalsAcrossFetchFailures(changeFilter: Bool) throws {
+            let (service, _) = try service()
+            var calendar = Calendar(identifier: .gregorian)
+            calendar.timeZone = try #require(TimeZone(secondsFromGMT: 0))
+            var source = try #require(try service.sources().first)
+            source.leadHours = nil
+            source.sourceOptions = .init(weeklyAt: "09:00", weekday: calendar.component(.weekday, from: now))
+            try service.saveSource(source, now: now)
+            try service.reconcileCalendar(.init(successfulProviders: ["provider-a"]), now: now, calendar: calendar)
+            let original = try #require(try service.recentEvents().first)
+            #expect(original.occurredAt > now)
+
+            if changeFilter { source.sourceOptions.acceptedOnly = true } else { source.name = "Renamed" }
+            try service.saveSource(source, now: now.addingTimeInterval(60))
+            let failed = AgentCalendarSnapshot(selectedProviders: ["provider-a"])
+            for at in [now.addingTimeInterval(120), now.addingTimeInterval(86400)] {
+                try service.reconcileCalendar(failed, now: at, calendar: calendar)
+                let retained = try #require(try service.recentEvents().first)
+                #expect(retained.id == original.id && retained.occurredAt == original.occurredAt && retained.ref == original.ref)
+                #expect(retained.note == AgentSourcePrompt.weeklyNote(source))
+            }
+        }
+
+        @Test(arguments: [false, true])
+        func changingWeeklyScheduleCancelsItsFutureSignal(changeWeekday: Bool) throws {
+            let (service, _) = try service()
+            var calendar = Calendar(identifier: .gregorian)
+            calendar.timeZone = try #require(TimeZone(secondsFromGMT: 0))
+            var source = try #require(try service.sources().first)
+            source.leadHours = nil
+            source.sourceOptions = .init(weeklyAt: "09:00", weekday: calendar.component(.weekday, from: now))
+            try service.saveSource(source, now: now)
+            try service.reconcileCalendar(.init(successfulProviders: ["provider-a"]), now: now, calendar: calendar)
+            #expect(try service.recentEvents().count == 1)
+            if changeWeekday {
+                source.sourceOptions.weekday = calendar.component(.weekday, from: now) % 7 + 1
+            } else {
+                source.sourceOptions.weeklyAt = "10:00"
+            }
+            try service.saveSource(source, now: now)
+            #expect(try service.recentEvents().isEmpty)
+        }
+
+        /// Turning on accepted-only rewrites waiting agenda notes and drops waiting signals for meetings not accepted.
+        @Test func acceptedOnlyRewritesWaitingSignalsAndKeepsDecidedOnes() throws {
+            let (service, _) = try service()
+            var source = try #require(try service.sources().first)
+            source.dailyAt = "00:00"
+            try service.saveSource(source, now: now)
+            let accepted = event("accepted", accepted: true), tentative = event("tentative")
+            let decided = event("decided", start: now.addingTimeInterval(7200))
+            let snapshot = AgentCalendarSnapshot(events: [accepted, tentative, decided], successfulProviders: ["provider-a"])
+            try service.reconcileCalendar(snapshot, now: now)
+            let decidedSignal = try #require(try service.recentEvents().first { $0.key?.contains("decided") == true })
+            try service.close(eventIDs: [decidedSignal.id])
+            #expect(try service.recentEvents().count == 4)
+
+            source = try #require(try service.sources().first)
+            source.sourceOptions.acceptedOnly = true
+            try service.saveSource(source, now: now)
+            try service.reconcileCalendar(snapshot, now: now)
+            let events = try service.recentEvents()
+            #expect(events.count == 3)
+            #expect(events.contains { $0.key?.contains("accepted") == true } && !events.contains { $0.key?.contains("tentative") == true })
+            let daily = try #require(events.first { $0.key?.hasPrefix("daily:") == true })
+            #expect(daily.note == AgentSourcePrompt.dailyNote(source) && daily.note.hasSuffix(L10n.agentCalendarAcceptedOnlyNote))
+            #expect(events.first { $0.id == decidedSignal.id }?.handledAt != nil)
+        }
+
+        @Test(arguments: [false, true])
+        func savingOptionsUpdatesOlderPendingAgendasWithoutAProviderRefresh(paused: Bool) throws {
+            let (service, _) = try service()
+            var calendar = Calendar(identifier: .gregorian)
+            calendar.timeZone = try #require(TimeZone(secondsFromGMT: 0))
+            let previousDay = now.addingTimeInterval(-86400)
+            var source = try #require(try service.sources().first)
+            source.dailyAt = "00:00"
+            source.leadHours = nil
+            source.sourceOptions = .init(weeklyAt: "00:00", weekday: calendar.component(.weekday, from: previousDay))
+            try service.saveSource(source, now: previousDay)
+            let snapshot = AgentCalendarSnapshot(successfulProviders: ["provider-a"])
+            try service.reconcileCalendar(snapshot, now: previousDay, calendar: calendar)
+            #expect(try service.recentEvents().count == 2)
+            try service.reconcileCalendar(snapshot, now: now, calendar: calendar)
+            let decided = try #require(try service.recentEvents().first { $0.createdAt == now })
+            try service.close(eventIDs: [decided.id])
+            let original = try service.recentEvents()
+            #expect(original.count == 3)
+
+            for acceptedOnly in [true, false] {
+                source.sourceOptions.acceptedOnly = acceptedOnly
+                source.enabled = !paused
+                try service.saveSource(source, now: now)
+                try service.reconcileCalendar(.init(selectedProviders: ["provider-a"]), now: now, calendar: calendar)
+                let updated = try service.recentEvents()
+                #expect(updated.count == original.count)
+                for before in original {
+                    let after = try #require(updated.first { $0.id == before.id })
+                    let note = before.key?.hasPrefix("weekly:") == true
+                        ? AgentSourcePrompt.weeklyNote(source) : AgentSourcePrompt.dailyNote(source)
+                    #expect(after.note == (before.handledAt == nil ? note : before.note))
+                    #expect(after.occurredAt == before.occurredAt && after.ref == before.ref && after.handledAt == before.handledAt)
+                }
+            }
+        }
+
+        @Test(arguments: ["", ", \"attendees\": []"])
+        func acceptedOnlyKeepsEventsWithoutAttendees(_ attendeesJSON: String) async throws {
+            let (service, _) = try service()
+            var source = try #require(try service.sources().first)
+            source.sourceOptions.acceptedOnly = true
+            try service.saveSource(source, now: now)
+            let data = Data("""
+            {
+              "items": [{
+                "id": "solo",
+                "start": { "dateTime": "\(now.addingTimeInterval(3600).ISO8601Format())" },
+                "end": { "dateTime": "\(now.addingTimeInterval(7200).ISO8601Format())" }
+                \(attendeesJSON)
+              }]
+            }
+            """.utf8)
+            let response = try JSONDecoder().decode(GoogleCalendarAPIClient.EventListResponse.self, from: data)
+            let payload = try #require(response.items.first)
+            let event = try await MainActor.run {
+                try #require(try GoogleCalendarAPIClient.makeEvent(
+                    from: payload, calendarItem: CalendarListItem(id: "primary", title: "Primary", colorHex: nil, isPrimary: true)
+                )).scoped(to: "provider-a")
+            }
+            let snapshot = AgentCalendarSnapshot(events: [event], successfulProviders: ["provider-a"])
+            try service.reconcileCalendar(snapshot, now: now)
+            try service.reconcileCalendar(snapshot, now: now)
+            #expect(try service.recentEvents().count == 1)
+            #expect(try service.inbox(now: now).events.first?.key?.hasPrefix("meeting:") == true)
+        }
+
         @Test func calendarLeadMustFitInsideTheFetchedHorizon() throws {
             let (service, _) = try service()
             var source = try #require(try service.sources().first)
@@ -232,6 +406,7 @@
             model.servers = ["calendar"]
             model.services = ["calendar": "system.ai.gmail"]
             model.edit(nil)
+            model.choose(server: "calendar")
             #expect(model.draft?.kind == "mcp" && model.draft?.server == "calendar")
             model.chooseCalendar()
             #expect(model.draft?.kind == "calendar" && model.draft?.server.isEmpty == true)

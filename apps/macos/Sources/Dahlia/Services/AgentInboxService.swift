@@ -96,15 +96,19 @@ struct AgentInboxService: Sendable {
             throw Failure(message: "A source reads at most every 5 minutes.")
         }
         if source.kind == "calendar" {
-            guard source.dailyAt != nil || source.leadHours != nil,
+            let options = source.sourceOptions
+            guard source.dailyAt != nil || source.leadHours != nil || options.weeklyAt != nil,
                   source.dailyAt.map({ Self.dailyComponents($0) != nil }) ?? true,
+                  options.weeklyAt.map({ Self.dailyComponents($0) != nil && (1 ... 7).contains(options.weekday ?? 0) }) ?? true,
                   source.leadHours.map({ $0.isFinite && $0 > 0 && $0 < 168 }) ?? true else {
                 throw Failure(message: L10n.agentCalendarInvalidSchedule)
             }
         }
+        guard !source.lacksSlackChannels else { throw Failure(message: L10n.agentSlackAllNeedsChannels) }
         try dbQueue.write { db in
             var source = source
-            if let previous = try AgentSourceRecord.fetchOne(db, key: source.id) {
+            let previous = try AgentSourceRecord.fetchOne(db, key: source.id)
+            if let previous {
                 guard previous.agentID == source.agentID, previous.kind == source.kind, previous.server == source.server,
                       previous.connectionID == source.connectionID else {
                     throw Failure(message: "Create a new Source to use another server.")
@@ -120,6 +124,11 @@ struct AgentInboxService: Sendable {
             }
             try source.save(db)
             if source.kind == "calendar" {
+                // Retained agendas can predate today and must reflect settings even without a provider refresh.
+                try db.execute(sql: """
+                UPDATE agent_event_inbox SET note = CASE WHEN key LIKE 'daily:%' THEN ? ELSE ? END
+                WHERE sourceID=? AND handledAt IS NULL AND (key LIKE 'daily:%' OR key LIKE 'weekly:%')
+                """, arguments: [AgentSourcePrompt.dailyNote(source), AgentSourcePrompt.weeklyNote(source), source.id])
                 // Turning off a schedule cancels signals that have not happened yet; arrived events remain decisions.
                 if !source.enabled {
                     try db.execute(
@@ -130,6 +139,15 @@ struct AgentInboxService: Sendable {
                     if source.dailyAt == nil {
                         try db.execute(
                             sql: "DELETE FROM agent_event_inbox WHERE sourceID=? AND handledAt IS NULL AND key LIKE 'daily:%' AND occurredAt>?",
+                            arguments: [source.id, now]
+                        )
+                    }
+                    let options = source.sourceOptions
+                    let previousOptions = previous?.sourceOptions
+                    // Only schedule changes invalidate a weekly signal; other edits survive a failed refresh.
+                    if options.weeklyAt != previousOptions?.weeklyAt || options.weekday != previousOptions?.weekday {
+                        try db.execute(
+                            sql: "DELETE FROM agent_event_inbox WHERE sourceID=? AND handledAt IS NULL AND key LIKE 'weekly:%' AND occurredAt>?",
                             arguments: [source.id, now]
                         )
                     }
@@ -166,6 +184,16 @@ struct AgentInboxService: Sendable {
         try dbQueue.read { try Self.isPaused(in: $0) }
     }
 
+    /// Whether a sender passes the Source's senders and domains; with neither, every sender does.
+    nonisolated static func allows(_ sender: String?, senders: Set<String>, domains: [String]) -> Bool {
+        let sender = sender?.lowercased() ?? ""
+        if senders.isEmpty, domains.isEmpty { return true }
+        if senders.contains(sender) { return true }
+        guard let at = sender.lastIndex(of: "@") else { return false }
+        let domain = sender[sender.index(after: at)...].trimmingCharacters(in: CharacterSet(charactersIn: "> "))
+        return domains.contains { domain == $0 || domain.hasSuffix("." + $0) }
+    }
+
     /// Records selected signals. Duplicates keep their first row; blocked senders leave no row.
     @discardableResult
     func record(_ items: [IntakeItem], caller: Caller, remaining: Int = 20, now: Date = .now) throws -> [String: String] {
@@ -173,6 +201,7 @@ struct AgentInboxService: Sendable {
         return try dbQueue.write { db in
             let source = try Self.currentSource(sourceID, revision: revision, in: db)
             let allowed = try Set(JSONDecoder().decode([String].self, from: Data(source.allowedSenders.utf8)).map { $0.lowercased() })
+            let domains = source.sourceOptions.allowedDomains ?? []
             var statuses: [String: String] = [:]
             var inserted = 0
             for item in items {
@@ -185,7 +214,7 @@ struct AgentInboxService: Sendable {
                     statuses[item.key] = "duplicate"
                     continue
                 }
-                guard allowed.isEmpty || allowed.contains(item.sender?.lowercased() ?? "") else {
+                guard Self.allows(item.sender, senders: allowed, domains: domains) else {
                     statuses[item.key] = "blocked"
                     continue
                 }

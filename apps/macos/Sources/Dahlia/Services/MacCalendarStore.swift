@@ -444,10 +444,10 @@ actor EventKitMacCalendarEventStore: MacCalendarEventStoreProviding {
             isAllDay: event.isAllDay,
             hasOtherAttendees: event.attendees?.contains { !$0.isCurrentUser } == true,
             isDeclined: event.attendees?.first(where: \.isCurrentUser)?.participantStatus == .declined,
-            isAttending: event.attendees == nil
+            isAttending: event.attendees?.isEmpty != false
                 || event.organizer?.isCurrentUser == true
                 || event.attendees?.first(where: \.isCurrentUser)?.participantStatus == .accepted,
-            responseStatus: event.organizer?.isCurrentUser == true || event.attendees == nil
+            responseStatus: event.organizer?.isCurrentUser == true || event.attendees?.isEmpty != false
                 ? .accepted : Self.responseStatus(event.attendees?.first(where: \.isCurrentUser)?.participantStatus),
             isOutOfOffice: event.availability == .unavailable,
             participants: calendarParticipants(from: event),
