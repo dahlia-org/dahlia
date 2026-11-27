@@ -232,7 +232,8 @@ actor PiChatService: CodexChatServicing {
         var profile: PiExecutionProfile = .interactive
         var memoryEnabled = true
         var allowedTools: Set<String> = []
-        var directConnections: [String: String] = [:]
+        var mcpConnections: [String: String] = [:]
+        var omnigentConnectionID: UUID?
         var mcpServers: Set<String> = []
         var mcpServersNeedingSignIn: [String] = []
     }
@@ -910,7 +911,8 @@ actor PiChatService: CodexChatServicing {
                     // The bot's process has no user file grants, so only the profile decides whether it is current.
                     (session.providerGeneration == providerGeneration && session.profile != .scheduled
                         && (session.profile == .bot || session.fileAccess == fileAccessSettings()) && session.profile == launchProfile(threadID)
-                        && session.memoryEnabled == AgentLearningSettings.memoryEnabled(AppAccount.key)) { return session.connection }
+                        && session.memoryEnabled == AgentLearningSettings.memoryEnabled(AppAccount.key)
+                        && session.omnigentConnectionID == omnigentConnection()) { return session.connection }
                 // Process configuration is fixed at startup. Reopen idle threads before the next turn, including revocations.
                 await closeSession(threadID)
                 return try await connection(threadID: threadID)
@@ -1022,8 +1024,12 @@ actor PiChatService: CodexChatServicing {
         let serverConfiguration = try HermesLearning.json(mcpServers.filter { scopedServers.contains($0.key) })
         // `--no-extensions` also drops Pi's MCP extension; explicitly enable it and the tools chat may call.
         let isChild = (try? history().thread(id: threadID, accountID: AppAccount.key).parentThreadID) != nil
+        let omnigentConnectionID = omnigentConnection()
+        let omnigentWorkspace = omnigentConnectionID.flatMap { id in
+            ProviderAccountDirectory.databricksConnections().first { $0.id == id }?.workspaceURL.absoluteString
+        }
         let threadTools = Self.readThreadTools + (isChild ? [] : Self.manageThreadTools)
-            + (omnigentConnection() == nil ? [] : Self.readOmnigentTools + (isChild ? [] : ["omni_create_session"]))
+            + (omnigentConnectionID == nil ? [] : Self.readOmnigentTools + (isChild ? [] : ["omni_create_session"]))
         let memorySetting = AgentLearningSettings.memoryEnabled(AppAccount.key)
         // Super Agent reads external text, so it sees the saved memory but has no tool that writes it.
         let memoryEnabled = profile != .bot && memorySetting
@@ -1078,6 +1084,7 @@ actor PiChatService: CodexChatServicing {
                     // The only MCP servers whose tools chat may call; the extension blocks every other server.
                     "DAHLIA_PI_MCP_SERVERS": String(decoding: JSONEncoder().encode(serverNames), as: UTF8.self),
                     "DAHLIA_PI_MCP_CONFIG": serverConfiguration,
+                    "DAHLIA_PI_OMNIGENT_WORKSPACE": omnigentWorkspace ?? omnigentConnectionID?.uuidString ?? "",
                     // Dahlia starts this standalone MCP worker under its dedicated Seatbelt profile.
                     "DAHLIA_PI_WEB_ACCESS": webAccess ? webAccessURL.path : "",
                     "DAHLIA_PI_MCP_EXTENSION": mcpExtension,
@@ -1132,7 +1139,8 @@ actor PiChatService: CodexChatServicing {
                 "DAHLIA_PI_MCP_COMMAND": HermesLearning.json(mcpCommand),
                 "DAHLIA_PI_MCP_SERVERS": HermesLearning.json(serverNames),
             ],
-            profile: profile, memoryEnabled: memorySetting, allowedTools: Set(allowedTools), directConnections: mcp.directConnectionIDs,
+            profile: profile, memoryEnabled: memorySetting, allowedTools: Set(allowedTools), mcpConnections: mcp.mcpConnectionIDs,
+            omnigentConnectionID: omnigentConnectionID,
             // `omnigent` names the approvals of `omni_create_session`.
             mcpServers: Set(serverNames + (threadTools.contains("omni_create_session") ? ["omnigent"] : []))
         )

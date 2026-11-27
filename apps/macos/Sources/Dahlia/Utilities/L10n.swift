@@ -3180,6 +3180,7 @@ enum L10n { // swiftlint:disable:this type_body_length
     static var chatNoticeExpanded: String { String(localized: "Chat notice expanded", bundle: bundle) }
     static var chatNoticeCollapsed: String { String(localized: "Chat notice collapsed", bundle: bundle) }
     static var omnigent: String { String(localized: "Omnigent", bundle: bundle) }
+    static var omnigentConnectionChanged: String { String(localized: "settings.agents.omnigent.connectionChanged", bundle: bundle) }
     static var omnigentEnabledHelp: String { String(localized: "settings.agents.omnigent.enabledHelp", bundle: bundle) }
     static var omnigentRefresh: String { String(localized: "sidebar.omnigent.refresh", bundle: bundle) }
     static var omnigentNoSessions: String { String(localized: "sidebar.omnigent.noSessions", bundle: bundle) }

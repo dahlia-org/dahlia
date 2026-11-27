@@ -1499,7 +1499,7 @@
 "settings.agents.mcpNameConflictReplace" = "Replace";
 "settings.agents.mcpNameConflictChoice" = "Register as";
 "settings.agents.mcpNameConflictAlias" = "Add under another name";
-"settings.agents.mcpNameConflictMessage %@ %@" = "A connector in %2$@ uses “%1$@”. Replacing turns that one off, and the new one inherits its name. Schedules using a directly configured connector need their tool permissions reviewed again.";
+"settings.agents.mcpNameConflictMessage %@ %@" = "A connector in %2$@ uses “%1$@”. Replacing turns that one off, and the new one inherits its name. Schedules using this connector need their tool permissions reviewed again.";
 "settings.agents.omnigent.conflictMessage %@" = "Omnigent is on for %@. Omnigent can be on for only one connection, so replacing turns it off there.";
 "settings.agents.unityGatewayHost %@" = "Databricks (%@)";
 "settings.agents.workspaceURL" = "Workspace URL";
@@ -1951,6 +1951,7 @@
 "chat.workedFor" = "Worked for %@";
 "chat.toolUseCount" = "%lld tool uses";
 "Omnigent" = "Omnigent";
+"settings.agents.omnigent.connectionChanged" = "The Omnigent connection changed. Send a new message to use the selected workspace.";
 "settings.agents.omnigent.enabledHelp" = "Beta. Chat can list and start this workspace's Omnigent sessions, and the Chat sidebar lists them. Starting one follows chat's approval mode.";
 "sidebar.omnigent.refresh" = "Refresh Omnigent sessions";
 "sidebar.omnigent.noSessions" = "No Omnigent sessions";

@@ -313,8 +313,8 @@
                 .object(["action": .string("create"), "schedule": .string("30m"), "prompt": .string("Read only")]),
                 account: "local",
                 approved: true,
-                tools: AgentMCPSettings.scheduledToolGrants(["mcp__approved__read"], connections: connectors.directConnectionIDs, servers: connectors.scheduledServers)
-                    + ["mcp__mail__work__read"] + ["mail", "mail__work"].compactMap { connectors.directConnectionIDs[$0].map { "connection|mcp__mail__work__read|\($0)" } },
+                tools: AgentMCPSettings.scheduledToolGrants(["mcp__approved__read"], connections: connectors.mcpConnectionIDs, servers: connectors.scheduledServers)
+                    + ["mcp__mail__work__read"] + ["mail", "mail__work"].compactMap { connectors.mcpConnectionIDs[$0].map { "connection|mcp__mail__work__read|\($0)" } },
                 now: now
             )
             try schedules.tick(account: "local", now: now.addingTimeInterval(1801))

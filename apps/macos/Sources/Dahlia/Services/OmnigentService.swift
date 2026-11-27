@@ -274,12 +274,20 @@ enum OmnigentService {
 extension PiChatService {
     nonisolated static let readOmnigentTools = ["omni_list_agents", "omni_list_sessions", "omni_get_session"]
 
-    func omnigentTool(_ method: String, payload: JSONValue, threadID: String, processID: UUID) async throws -> JSONValue {
+    func omnigentTool(
+        _ method: String,
+        payload: JSONValue,
+        threadID: String,
+        processID: UUID,
+        execute: @Sendable (String, [String: JSONValue], UUID) async throws -> JSONValue = {
+            try await OmnigentService.tool($0, arguments: $1, connectionID: $2)
+        }
+    ) async throws -> JSONValue {
         guard let session = sessions[threadID], session.processID == processID, let turn = session.turn,
-              session.profile == .interactive else { throw CancellationError() }
-        // Read at each call: turning Omnigent off in Settings stops a process that still lists the tools.
-        guard let connectionID = omnigentConnection() else {
-            throw PiRuntimeError.rpcError(code: nil, message: "Omnigent is turned off for this account")
+              !turn.stopRequested, session.profile == .interactive else { throw CancellationError() }
+        // The process and its approval prompt use one destination; a settings change cannot redirect a pending call.
+        guard let connectionID = session.omnigentConnectionID, connectionID == omnigentConnection() else {
+            throw PiRuntimeError.rpcError(code: nil, message: L10n.omnigentConnectionChanged)
         }
         if method == "omni_create_session" {
             if let input = payload.objectValue?["input"]?.stringValue, input.count > 32000 {
@@ -291,6 +299,6 @@ extension PiChatService {
                 throw PiRuntimeError.rpcError(code: nil, message: "Work requested by another thread cannot start Omnigent sessions")
             }
         }
-        return try await OmnigentService.tool(method, arguments: payload.objectValue ?? [:], connectionID: connectionID)
+        return try await execute(method, payload.objectValue ?? [:], connectionID)
     }
 }

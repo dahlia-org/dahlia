@@ -223,9 +223,9 @@ struct AgentMCPSettings: Codable, Equatable, Sendable {
         servers.first { self.connectionID(for: $0.name) == connectionID }?.name
     }
 
-    var directConnectionIDs: [String: String] {
+    var mcpConnectionIDs: [String: String] {
         servers.reduce(into: [:]) { result, server in
-            if server.direct != nil { result[server.name] = connectionID(for: server.name) }
+            result[server.name] = connectionID(for: server.name)
         }
     }
 
@@ -250,7 +250,7 @@ struct AgentMCPSettings: Codable, Equatable, Sendable {
         guard grants.contains(tool), Self.scheduledServer(for: tool, servers: scheduledServers) != nil else { return false }
         let prefix = "connection|\(tool)|"
         let approved = Set(grants.filter { $0.hasPrefix(prefix) })
-        let expected = Set(Self.scheduledToolGrants([tool], connections: directConnectionIDs, servers: scheduledServers)
+        let expected = Set(Self.scheduledToolGrants([tool], connections: mcpConnectionIDs, servers: scheduledServers)
             .filter { $0.hasPrefix(prefix) })
         return approved == expected
     }

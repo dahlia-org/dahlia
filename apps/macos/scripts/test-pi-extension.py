@@ -699,6 +699,24 @@ def thread_tools(pi):
     print("Pi thread tools and headless steer passed (11 tools, isolated loopback gateway)")
 
 
+def omnigent_approval_regression(pi):
+    destination = "https://selected.example.com"
+    arguments = {"agent_id": "shared-agent", "input": "private task"}
+    for mode, decision in [("ask", "accept"), ("ask", "decline"), ("fullAccess", "accept")]:
+        _, results, bridge, _ = run(pi, "chat", [{"tool": "omni_create_session", "args": arguments}, {"text": "done"}],
+            ["--no-session", "--tools", "omni_create_session"], {"DAHLIA_PI_OMNIGENT_WORKSPACE": destination},
+            approval_mode=mode, approval=decision, bridge_answers={"omni_create_session": {"id": "created"}})
+        preflight = [payload for method, payload in bridge if method == "approvalCheck"]
+        assert len(preflight) == 1 and preflight[0]["arguments"] == {**arguments, "workspace": destination}, bridge
+        approvals = [payload for method, payload in bridge if method == "approval"]
+        assert len(approvals) == (1 if mode == "ask" else 0), bridge
+        if approvals:
+            assert approvals[0]["arguments"]["workspace"] == destination, approvals
+        executions = [payload for method, payload in bridge if method == "omni_create_session"]
+        assert executions == ([arguments] if decision == "accept" else []), bridge
+    print("PASS: Omnigent approval names the immutable workspace; declining never dispatches the task")
+
+
 def schedule_approval_regression(pi):
     """Real Pi must review Dahlia's effective schedule before committing it."""
     effective = {"action": "create", "prompt": "Read saved meetings", "schedule": "30m",
@@ -789,6 +807,7 @@ def main():
     if args.only_schedules:
         return
     thread_tools(pi)
+    omnigent_approval_regression(pi)
     triage_denial_regression(pi)
     package_resources(pi)
     curator_store_snapshots(pi)
