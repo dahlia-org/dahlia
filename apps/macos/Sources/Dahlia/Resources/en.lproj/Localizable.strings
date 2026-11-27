@@ -1973,6 +1973,9 @@
 "settings.agents.alwaysOn.advanced" = "Advanced";
 "settings.agents.alwaysOn.deleteSource" = "Delete this event source?";
 "settings.agents.alwaysOn.deleteSourceMessage" = "Its recorded events are deleted too. Task threads stay.";
+"settings.agents.alwaysOn.server" = "Connector";
+"settings.agents.alwaysOn.mail" = "Mail";
+"settings.agents.alwaysOn.connectionUnavailable" = "Connection unavailable";
 "settings.agents.alwaysOn.instructions" = "What to Read";
 "settings.agents.alwaysOn.instructionsPlaceholder" = "For example: unread mail in the inbox";
 "settings.agents.alwaysOn.interval" = "Interval";
