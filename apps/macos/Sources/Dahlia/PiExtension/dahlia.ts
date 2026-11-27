@@ -226,7 +226,7 @@ export default async function (pi: any) {
     });
     registerThreadTools(pi, bridge);
     registerThreadTools(pi, bridge, omnigentTools);
-    if ((env.DAHLIA_PI_PROFILE ?? "interactive") === "intake") registerEventTools(pi, bridge);
+    if ((env.DAHLIA_PI_PROFILE ?? "interactive") === "intake") registerEventTools(pi, bridge, env.DAHLIA_PI_INTAKE_SERVICE ?? "");
     registerBotTools(pi, bridge, env.DAHLIA_PI_PROFILE ?? "interactive");
     let blockedThisRun = false;
     pi.on("agent_start", () => { blockedThisRun = false; });

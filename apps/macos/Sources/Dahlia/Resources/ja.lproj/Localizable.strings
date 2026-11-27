@@ -2176,8 +2176,8 @@
 "settings.agents.calendar.leadHours" = "何時間前に知らせるか";
 "settings.agents.calendar.scheduleHelp" = "アプリで有効なカレンダーを使います。会議の前は168時間未満で指定してください。";
 "settings.agents.calendar.invalidSchedule" = "毎日・週の初め・会議の前のどれかを選び、会議の前は0より大きく168時間未満で指定してください。";
-"settings.agents.calendar.dailyNote" = "今日の予定を calendar_read で確認し、必要な準備や未回答の招待を判断してください。";
-"settings.agents.calendar.meetingNote" = "会議が近づいています。参照先の最新の予定を calendar_read で読み、準備が必要か判断してください。";
+"settings.agents.calendar.dailyNote" = "今日のカレンダーを確認し、必要な準備や未回答の招待を判断してください。";
+"settings.agents.calendar.meetingNote" = "「%@」が近づいています。カレンダーで最新の予定を確認し、準備が必要か判断してください。";
 "settings.agents.alwaysOn.notes" = "補足";
 "settings.agents.alwaysOn.notesPlaceholder" = "任意。例: 請求書と契約の話を優先する";
 "settings.agents.mail.addressedOnly" = "自分宛てのものだけ";
@@ -2196,7 +2196,7 @@
 "settings.agents.slack.allNeedsChannels" = "参加していないチャンネルも読むときは、含めるチャンネルか補足を入力してください。";
 "settings.agents.calendar.weekly" = "週の初めに今週の予定を知らせる";
 "settings.agents.calendar.weekday" = "曜日";
-"settings.agents.calendar.weeklyNote" = "この合図から7日間の予定を calendar_read で確認し、必要な準備や未回答の招待を判断してください。";
+"settings.agents.calendar.weeklyNote" = "この合図から7日間のカレンダーを確認し、必要な準備や未回答の招待を判断してください。";
 "settings.agents.calendar.acceptedOnly" = "承諾した予定だけ";
 "settings.agents.calendar.acceptedOnlyHelp" = "会議の前の通知を、承諾した予定・自分が主催する予定・出席者のいない予定だけにします。仮承諾と未回答の予定は除きます。";
 "settings.agents.calendar.acceptedOnlyNote" = "承諾した予定だけを対象にしてください。";

@@ -162,7 +162,10 @@ enum L10n { // swiftlint:disable:this type_body_length
     static var agentCalendarScheduleHelp: String { String(localized: "settings.agents.calendar.scheduleHelp", bundle: bundle) }
     static var agentCalendarInvalidSchedule: String { String(localized: "settings.agents.calendar.invalidSchedule", bundle: bundle) }
     static var agentCalendarDailyNote: String { String(localized: "settings.agents.calendar.dailyNote", bundle: bundle) }
-    static var agentCalendarMeetingNote: String { String(localized: "settings.agents.calendar.meetingNote", bundle: bundle) }
+    static func agentCalendarMeetingNote(_ title: String) -> String {
+        String(format: String(localized: "settings.agents.calendar.meetingNote", bundle: bundle), title)
+    }
+
     static var agentAlwaysOnNotes: String { String(localized: "settings.agents.alwaysOn.notes", bundle: bundle) }
     static var agentAlwaysOnNotesPlaceholder: String { String(localized: "settings.agents.alwaysOn.notesPlaceholder", bundle: bundle) }
     static var agentMailAddressedOnly: String { String(localized: "settings.agents.mail.addressedOnly", bundle: bundle) }
