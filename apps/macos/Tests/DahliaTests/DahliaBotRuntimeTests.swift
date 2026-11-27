@@ -1221,7 +1221,8 @@
                 #expect(run.approvalMethod == (method == "thread_launch" ? "ask" : "fullAccess"))
             }
 
-            @Test func existingTasksUseCurrentWorkerApprovalForNewRuns() async throws {
+            @Test(arguments: [false, true], [false, true])
+            func existingTasksUseCurrentWorkerApprovalForNewRuns(keepsProcess: Bool, explicitOverride: Bool) async throws {
                 let db = try AppDatabaseManager(path: ":memory:").dbQueue
                 let store = ChatThreadStore(dbQueue: db)
                 let target = UUID.v7().uuidString
@@ -1232,9 +1233,15 @@
                         "thread_id": .string(target), "message": .string("Do it"),
                         "client_request_id": .string("send"), "mode": .string("queue"),
                     ]),
-                ]], replies: replies)
+                ]], replies: replies, holdsLaunched: false)
                 defer { cleanUp(fixture) }
+                try fixture.inbox.setPaused(true)
                 try fixture.inbox.openTask(threadID: target, title: "Task", instructions: "Work", eventIDs: [])
+                if explicitOverride {
+                    _ = try await fixture.service.updateApprovalMethod(threadID: target, approvalMethod: .autoReview)
+                }
+                let lease = await fixture.service.acquireThreadLease(threadID: target)
+                var processID: UUID?
                 let bot = try await fixture.service.botThread(fixture.agentID)
                 for method in [CodexChatApprovalMethod.ask, .fullAccess] {
                     try await fixture.service.setAgentWorkerApprovalMethod(fixture.agentID, method)
@@ -1245,10 +1252,15 @@
                     let rawRunID = try #require(answers(replies).last?.objectValue?["run_id"]?.stringValue)
                     let runID = try #require(UUID(uuidString: rawRunID))
                     #expect(try store.run(id: runID)?.approvalMethod == method.rawValue)
-                    try #require(await pollUntil { (try? store.run(id: runID)?.status) == "running" })
-                    #expect(await fixture.service.effectiveApprovalMethod(target) == method)
-                    await fixture.service.closeSession(target)
+                    try #require(await pollUntil { (try? store.run(id: runID)?.status) == "completed" })
+                    let current = try #require(await fixture.service.sessions[target]?.processID)
+                    if keepsProcess, let processID { #expect(current == processID) }
+                    processID = current
+                    let expected = explicitOverride ? PiChatService.stricterApproval(method, .autoReview) : method
+                    #expect(await fixture.service.effectiveApprovalMethod(target) == expected)
+                    if !keepsProcess { await fixture.service.closeSession(target) }
                 }
+                await fixture.service.releaseThreadLease(threadID: target, leaseID: lease)
             }
 
             @Test func untrustedTextCannotCloseItsFenceOrPassForDahliasLines() {
