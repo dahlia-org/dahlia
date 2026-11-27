@@ -62,13 +62,16 @@ extension AgentInboxService {
                     meetingKeys.insert(key)
                     // Turning off notifications preserves arrived signals for meetings that are still valid.
                     guard source.enabled, let lead = source.leadHours else { continue }
-                    let ref = JSONValue.object([
+                    var fields: [String: JSONValue] = [
                         "provider": .string(AgentCalendarSnapshot.provider(for: event)), "calendar_id": .string(event.calendarID),
                         "event_id": .string(event.platformId), "start": .string(event.startDate.ISO8601Format()),
-                    ])
+                    ]
+                    // Google gives the event's web page; Apple Calendar events have none to open.
+                    if let url = event.url { fields["url"] = .string(url.absoluteString) }
+                    let ref = JSONValue.object(fields)
                     try meetings.append(AgentEventRecord(
                         id: UUID.v7().uuidString, agentID: source.agentID, sourceID: source.id, key: key, topic: nil,
-                        note: L10n.agentCalendarMeetingNote, ref: String(decoding: JSONEncoder().encode(ref), as: UTF8.self),
+                        note: L10n.agentCalendarMeetingNote(event.title), ref: String(decoding: JSONEncoder().encode(ref), as: UTF8.self),
                         occurredAt: event.startDate.addingTimeInterval(-lead * 3600), taskID: nil, handledAt: nil, createdAt: now
                     ))
                 }

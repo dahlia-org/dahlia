@@ -49,8 +49,18 @@
                 isAllDay: false,
                 isAttending: accepted,
                 responseStatus: accepted ? .accepted : .tentative,
-                conferenceURI: nil
+                conferenceURI: nil,
+                url: URL(string: "https://www.google.com/calendar/event?eid=\(id)")
             ).scoped(to: provider)
+        }
+
+        @Test func meetingSignalNamesTheMeetingAndKeepsItsWebLink() throws {
+            let (service, _) = try service()
+            try service.reconcileCalendar(.init(events: [event()], successfulProviders: ["provider-a"]), now: now)
+            let signal = try #require(try service.recentEvents().first)
+            #expect(signal.note == L10n.agentCalendarMeetingNote("Meeting") && signal.note.contains("Meeting"))
+            let ref = try JSONDecoder().decode(JSONValue.self, from: Data(try #require(signal.ref).utf8))
+            #expect(ref.objectValue?["url"]?.stringValue == "https://www.google.com/calendar/event?eid=event")
         }
 
         @Test func duplicateMovedDeletedAndStartedMeetingsReconcileEvenAfterTheSignalIsDue() throws {

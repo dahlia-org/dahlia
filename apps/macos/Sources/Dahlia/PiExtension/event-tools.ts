@@ -6,7 +6,7 @@ const item = {
     topic: { type: "string", description: "The ID of the item's conversation, such as a mail thread or a Slack thread." },
     sender: { type: "string" },
     note: { type: "string", description: "What happened and why it is worth attention, at most 500 characters." },
-    ref: { type: "object", description: "The IDs you would pass to the source's tools to read the item again." },
+    ref: { type: "object", description: "The IDs you would pass to the source's tools to read the item again, and url: the item's https web link, such as a Slack permalink or the mail in Gmail, when the source gives one or its IDs build one." },
     occurred_at: { type: "string", description: "When the item arrived, in ISO 8601." },
   },
   required: ["key", "note"],

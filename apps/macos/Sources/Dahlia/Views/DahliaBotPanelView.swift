@@ -1,3 +1,4 @@
+import DahliaRuntimeSupport
 import SwiftUI
 
 /// An agent's side panel, beside its thread. Its inbox (what waits for the user, its Tasks, the events intake recorded)
@@ -55,6 +56,8 @@ struct DahliaBotPanelView: View {
                 }
             }
             .formStyle(.grouped).toggleStyle(.dahliaSwitch).buttonStyle(.dahlia()).font(.dahliaBody).disabled(model.isBusy)
+            // The header's background is clear, so rows scrolled past the Form's top would show through the tabs.
+            .clipped()
         }
         .task(id: model.agentID) {
             while !Task.isCancelled {
@@ -387,13 +390,33 @@ struct DahliaBotPanelView: View {
 }
 
 /// One recorded event: its source's icon, time, and note. Clicking it shows the whole note, and clicking again folds it.
+/// An event whose `ref` has an https `url` (a Google Calendar event, a Slack permalink, a mail) gets a button that opens it.
 private struct DahliaBotEventRow: View {
     let event: AgentEventRecord
     let icon: Image
     @State private var isExpanded = false
     @State private var isHovered = false
+    @Environment(\.openURL) private var openURL
+
+    /// Intake writes `ref` from other people's messages, so only an https link opens.
+    private var url: URL? {
+        guard let ref = event.ref,
+              let value = (try? JSONDecoder().decode(JSONValue.self, from: Data(ref.utf8)))?.objectValue?["url"]?.stringValue,
+              let url = URL(string: value), url.scheme?.lowercased() == "https", url.host() != nil else { return nil }
+        return url
+    }
 
     var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 4) {
+            note
+            if let url {
+                CodexChatIconButton(label: L10n.openInBrowser, systemImage: "arrow.up.right.square", size: 24) { openURL(url) }
+                    .alignmentGuide(.firstTextBaseline) { $0[.bottom] - 7 }
+            }
+        }
+    }
+
+    private var note: some View {
         Button { isExpanded.toggle() } label: {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 icon
