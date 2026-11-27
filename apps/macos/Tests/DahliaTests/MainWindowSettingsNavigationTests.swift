@@ -7,10 +7,13 @@
     struct MainWindowSettingsNavigationTests {
         @Test(arguments: [PiRuntimeError.piCommandNotFound(nil), .piCommandNotFound("/missing/pi")])
         func missingPiRecoveryOpensInstallationControls(error: PiRuntimeError) throws {
+            let suite = "MainWindowSettingsNavigationTests.\(UUID())"
+            let defaults = try #require(UserDefaults(suiteName: suite))
+            defer { defaults.removePersistentDomain(forName: suite) }
             let message = try #require(error.errorDescription)
             let view = CodexChatErrorView(message: message, onRetry: {})
             #expect(view.recoverySettingsCategory == .agents)
-            let navigation = MainWindowNavigation(openMainWindow: {}, initialSettingsCategory: .general)
+            let navigation = MainWindowNavigation(openMainWindow: {}, initialSettingsCategory: .general, settingsDefaults: defaults)
             for previousTab in AgentSettingsView.Tab.allCases {
                 navigation.agentSettingsTab = previousTab
                 navigation.openSettings(category: view.recoverySettingsCategory)
