@@ -143,22 +143,24 @@
             var source = try #require(try service.sources().first)
             source.dailyAt = "08:00"
             source.leadHours = nil
-            try service.saveSource(source)
+            try service.saveSource(source, now: now.addingTimeInterval(-3600))
             var calendar = Calendar(identifier: .gregorian)
             calendar.timeZone = try #require(TimeZone(secondsFromGMT: 0))
+            let beforeDue = now.addingTimeInterval(-3600)
             let snapshot = AgentCalendarSnapshot(successfulProviders: ["provider-a"])
-            try service.reconcileCalendar(snapshot, now: now, calendar: calendar)
-            try service.reconcileCalendar(snapshot, now: now, calendar: calendar)
+            try service.reconcileCalendar(snapshot, now: beforeDue, calendar: calendar)
+            try service.reconcileCalendar(snapshot, now: beforeDue, calendar: calendar)
             let first = try #require(try service.recentEvents().first)
             #expect(calendar.component(.hour, from: first.occurredAt) == 8)
             source = try #require(try service.sources().first)
             source.dailyAt = "09:00"
-            try service.saveSource(source)
-            try service.reconcileCalendar(snapshot, now: now, calendar: calendar)
+            try service.saveSource(source, now: now.addingTimeInterval(-3600))
+            try service.reconcileCalendar(snapshot, now: beforeDue, calendar: calendar)
             #expect(try service.recentEvents().count == 1)
-            #expect(try service.recentEvents().first.map { calendar.component(.hour, from: $0.occurredAt) } == 9)
-            try service.close(eventIDs: [first.id])
-            try service.reconcileCalendar(snapshot, now: now, calendar: calendar)
+            let rescheduled = try #require(try service.recentEvents().first)
+            #expect(calendar.component(.hour, from: rescheduled.occurredAt) == 9 && rescheduled.id != first.id)
+            try service.close(eventIDs: [rescheduled.id])
+            try service.reconcileCalendar(snapshot, now: beforeDue, calendar: calendar)
             #expect(try service.recentEvents().first?.handledAt != nil)
         }
 
@@ -198,14 +200,18 @@
             #expect(throws: AgentInboxService.Failure.self) { try service.saveSource(source, now: now) }
         }
 
-        @Test(arguments: [false, true])
-        func unrelatedEditsKeepFutureWeeklySignalsAcrossFetchFailures(changeFilter: Bool) throws {
+        @Test(arguments: [false, true], [false, true])
+        func unrelatedEditsKeepFutureAgendasAcrossFetchFailures(changeFilter: Bool, weekly: Bool) throws {
             let (service, _) = try service()
             var calendar = Calendar(identifier: .gregorian)
             calendar.timeZone = try #require(TimeZone(secondsFromGMT: 0))
             var source = try #require(try service.sources().first)
             source.leadHours = nil
-            source.sourceOptions = .init(weeklyAt: "09:00", weekday: calendar.component(.weekday, from: now))
+            if weekly {
+                source.sourceOptions = .init(weeklyAt: "09:00", weekday: calendar.component(.weekday, from: now))
+            } else {
+                source.dailyAt = "09:00"
+            }
             try service.saveSource(source, now: now)
             try service.reconcileCalendar(.init(successfulProviders: ["provider-a"]), now: now, calendar: calendar)
             let original = try #require(try service.recentEvents().first)
@@ -218,7 +224,7 @@
                 try service.reconcileCalendar(failed, now: at, calendar: calendar)
                 let retained = try #require(try service.recentEvents().first)
                 #expect(retained.id == original.id && retained.occurredAt == original.occurredAt && retained.ref == original.ref)
-                #expect(retained.note == AgentSourcePrompt.weeklyNote(source))
+                #expect(retained.note == (weekly ? AgentSourcePrompt.weeklyNote(source) : AgentSourcePrompt.dailyNote(source)))
             }
         }
 
@@ -240,6 +246,78 @@
             }
             try service.saveSource(source, now: now)
             #expect(try service.recentEvents().isEmpty)
+        }
+
+        @Test(arguments: [false, true])
+        func arrivedAgendasKeepTheirOccurrenceWhenRescheduled(weekly: Bool) throws {
+            let (service, _) = try service()
+            var calendar = Calendar(identifier: .gregorian)
+            calendar.timeZone = try #require(TimeZone(secondsFromGMT: 0))
+            // Monday08:00 and Wednesday07:00 are in the same ISO week.
+            let monday = now.addingTimeInterval(-4 * 86400)
+            let beforeNewTime = weekly ? monday.addingTimeInterval(2 * 86400 - 3600) : monday.addingTimeInterval(1800)
+            var source = try #require(try service.sources().first)
+            source.leadHours = nil
+            if weekly {
+                source.sourceOptions = .init(weeklyAt: "08:00", weekday: 2)
+            } else {
+                source.dailyAt = "08:00"
+            }
+            try service.saveSource(source, now: monday)
+            let snapshot = AgentCalendarSnapshot(successfulProviders: ["provider-a"])
+            try service.reconcileCalendar(snapshot, now: monday, calendar: calendar)
+            let arrived = try #require(try service.inbox(now: monday).events.first)
+            if weekly {
+                source.sourceOptions.weekday = 4
+            } else {
+                source.dailyAt = "09:00"
+            }
+            source.sourceOptions.acceptedOnly = true
+            try service.saveSource(source, now: monday.addingTimeInterval(60))
+            try service.reconcileCalendar(snapshot, now: beforeNewTime, calendar: calendar)
+            let retained = try #require(try service.inbox(now: beforeNewTime).events.first)
+            #expect(try service.recentEvents().count == 1)
+            #expect(retained.id == arrived.id && retained.key == arrived.key)
+            #expect(retained.occurredAt == arrived.occurredAt && retained.ref == arrived.ref)
+            #expect(retained.note.hasSuffix(L10n.agentCalendarAcceptedOnlyNote))
+            try service.close(eventIDs: [retained.id])
+            try service.reconcileCalendar(snapshot, now: beforeNewTime.addingTimeInterval(7200), calendar: calendar)
+            let handled = try #require(try service.recentEvents().first)
+            #expect(handled.handledAt != nil && handled.occurredAt == arrived.occurredAt)
+        }
+
+        @Test func pausedSourceReconcilesEligibilityWithoutIssuingSignals() throws {
+            let (service, _) = try service()
+            let accepted = event("accepted", accepted: true), tentative = event("tentative")
+            let decided = event("decided"), failedProvider = event("failed-provider", provider: "provider-b")
+            try service.reconcileCalendar(.init(
+                events: [accepted, tentative, decided, failedProvider], successfulProviders: ["provider-a", "provider-b"]
+            ), now: now)
+            let original = try service.recentEvents()
+            let handled = try #require(original.first { $0.key?.contains("decided") == true })
+            try service.close(eventIDs: [handled.id])
+            let history = try #require(try service.recentEvents().first { $0.id == handled.id })
+            var source = try #require(try service.sources().first)
+            source.enabled = false
+            try service.saveSource(source, now: now)
+            source.sourceOptions.acceptedOnly = true
+            try service.saveSource(source, now: now)
+            let paused = try #require(try service.source(source.id))
+            try service.reconcileCalendar(.init(selectedProviders: ["provider-a", "provider-b"]), now: now)
+            #expect(try service.recentEvents().count == 4)
+            try service.reconcileCalendar(.init(
+                events: [accepted, tentative, decided, event("new", accepted: true)],
+                successfulProviders: ["provider-a"], selectedProviders: ["provider-a", "provider-b"]
+            ), now: now)
+            let remaining = try service.recentEvents()
+            #expect(Set(remaining.map(\.id)) == Set(original.filter { $0.key?.contains("tentative") != true }.map(\.id)))
+            let after = try #require(remaining.first { $0.id == history.id })
+            #expect(after.handledAt == history.handledAt && after.note == history.note && after.occurredAt == history.occurredAt)
+            #expect(try service.source(source.id)?.lastIntakeAt == paused.lastIntakeAt)
+            #expect(try !service.inbox(now: now).events.contains { $0.key?.contains("tentative") == true })
+            // A later successful refresh may invalidate retained signals from the other provider too.
+            try service.reconcileCalendar(.init(successfulProviders: ["provider-b"]), now: now)
+            #expect(try !service.recentEvents().contains { $0.key?.contains("failed-provider") == true })
         }
 
         /// Turning on accepted-only rewrites waiting agenda notes and drops waiting signals for meetings not accepted.

@@ -129,14 +129,14 @@ struct AgentInboxService: Sendable {
                 UPDATE agent_event_inbox SET note = CASE WHEN key LIKE 'daily:%' THEN ? ELSE ? END
                 WHERE sourceID=? AND handledAt IS NULL AND (key LIKE 'daily:%' OR key LIKE 'weekly:%')
                 """, arguments: [AgentSourcePrompt.dailyNote(source), AgentSourcePrompt.weeklyNote(source), source.id])
-                // Turning off a schedule cancels signals that have not happened yet; arrived events remain decisions.
+                // Schedule changes cancel future reservations; arrived agendas remain decisions with their original time.
                 if !source.enabled {
                     try db.execute(
                         sql: "DELETE FROM agent_event_inbox WHERE sourceID=? AND handledAt IS NULL AND occurredAt>?",
                         arguments: [source.id, now]
                     )
                 } else {
-                    if source.dailyAt == nil {
+                    if source.dailyAt != previous?.dailyAt {
                         try db.execute(
                             sql: "DELETE FROM agent_event_inbox WHERE sourceID=? AND handledAt IS NULL AND key LIKE 'daily:%' AND occurredAt>?",
                             arguments: [source.id, now]

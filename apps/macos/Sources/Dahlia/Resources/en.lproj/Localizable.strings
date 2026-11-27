@@ -2106,7 +2106,7 @@
 "settings.agents.slack.allNeedsChannels" = "To read channels you have not joined, enter channels to read or notes.";
 "settings.agents.calendar.weekly" = "Weekly agenda";
 "settings.agents.calendar.weekday" = "Day";
-"settings.agents.calendar.weeklyNote" = "Read the schedule for the seven days from now with calendar_read and consider preparation and unanswered invitations.";
+"settings.agents.calendar.weeklyNote" = "Read the schedule for the seven days starting at this signal's occurredAt timestamp with calendar_read and consider preparation and unanswered invitations.";
 "settings.agents.calendar.acceptedOnly" = "Only events I accepted";
 "settings.agents.calendar.acceptedOnlyHelp" = "Notifies before meetings only for events you accepted, organize, or have no attendees. Tentative and unanswered events are left out.";
 "settings.agents.calendar.acceptedOnlyNote" = "Consider only events the user accepted.";
