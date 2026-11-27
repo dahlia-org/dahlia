@@ -4,15 +4,11 @@ import SwiftUI
 struct MainSidebarFooterView: View {
     @Environment(MainWindowNavigation.self) private var mainWindowNavigation
 
-    let workspaces: [WorkspaceRecord]
-    let currentWorkspace: WorkspaceRecord?
     var updateController: AppUpdateController
     let unprocessedRecordingCount: Int
     let onShowUnprocessedRecordings: () -> Void
 
     @State private var isSettingsHovered = false
-    @State private var isHelpHovered = false
-    @State private var isMCPPresented = false
 
     var body: some View {
         HStack(spacing: 4) {
@@ -34,8 +30,11 @@ struct MainSidebarFooterView: View {
                 MainSidebarUpdateBadge(updateController: updateController)
             }
 
-            MainSidebarHelpMenuButton(onOpenMCP: { isMCPPresented = true })
-                .footerMenuButtonStyle(isHovered: $isHelpHovered, help: L10n.help)
+            MainSidebarFooterIconButton(
+                title: L10n.help,
+                systemImage: "questionmark.circle",
+                action: mainWindowNavigation.presentHelp
+            )
         }
         .padding(.horizontal, 10)
         .frame(height: MainSidebarLayout.footerHeight)
@@ -43,12 +42,6 @@ struct MainSidebarFooterView: View {
             Rectangle()
                 .fill(Color(nsColor: .separatorColor))
                 .frame(height: 0.5)
-        }
-        .sheet(isPresented: $isMCPPresented) {
-            MCPModalView(
-                workspaces: workspaces,
-                currentWorkspace: currentWorkspace
-            )
         }
     }
 }
