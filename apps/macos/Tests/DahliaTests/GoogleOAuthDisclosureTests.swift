@@ -31,7 +31,7 @@ import Foundation
         }
 
         @Test
-        func driveDisclosesReadOnlyAccessAndSeparateMCPUploads() {
+        func driveDisclosesAppCreatedFileAccess() {
             let disclosure = GoogleOAuthDisclosure.drive
             #expect(!disclosure.title.isEmpty)
             #expect(!disclosure.overview.isEmpty)

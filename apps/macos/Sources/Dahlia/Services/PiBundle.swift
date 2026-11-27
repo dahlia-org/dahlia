@@ -60,7 +60,7 @@ enum PiBundle {
     }
 
     /// Dahlia's bundled skills. Like upstream's `.bundled_manifest`, the Curator never archives or consolidates them.
-    nonisolated static let presetSkillNames = ["projects-optimizer", "meeting-reviewer", "workspace-backup", "skill-creator"]
+    nonisolated static let presetSkillNames = ["projects-optimizer", "meeting-reviewer", "skill-creator"]
 
     /// Intake's own procedure. It is not a chat preset: only intake runs load it, and only through `/skill:intake`.
     nonisolated static func intakeSkillURL() -> URL? {

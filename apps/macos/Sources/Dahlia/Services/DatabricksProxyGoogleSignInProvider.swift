@@ -2,26 +2,20 @@ import AppKit
 import Combine
 import Foundation
 
-/// Routes Google Calendar and Drive reads through the provider the user chose for Google (`GoogleCalendarProvider`):
+/// Routes Google Calendar reads through the provider the user chose for Google (`GoogleCalendarProvider`):
 /// a Databricks connection's Unity Catalog proxy, or the direct Google OAuth adapter. The Google grant lives in Databricks and is the source of
 /// truth: Dahlia restores
 /// whenever the proxy answers, unless the user disconnected.
 @MainActor
 final class DatabricksProxyGoogleSignInProvider: GoogleSignInProviding {
     static let connectionName = "system_ai_agent_google_calendar"
-    static let driveConnectionName = "system_ai_agent_google_drive"
-    private let sessionKind: GoogleAuthSessionKind
     private let configuredProvider: GoogleCalendarProvider?
     private var selectedProvider: GoogleCalendarProvider { configuredProvider ?? GoogleCalendarProvider.current(defaults: userDefaults) }
 
-    private static func connectionName(for kind: GoogleAuthSessionKind) -> String {
-        kind == .drive ? driveConnectionName : connectionName
-    }
-
     /// Set per connection by Disconnect and cleared by Connect. The grant is shared with other Databricks agents,
     /// so Disconnect stops Dahlia's use without revoking it; a re-added workspace (new id) restores again.
-    static func disconnectedKey(for connection: DatabricksConnection, sessionKind: GoogleAuthSessionKind = .calendar) -> String {
-        "\(sessionKind == .drive ? "googleDrive" : "googleCalendar")DatabricksProxyDisconnected.\(connection.id.uuidString)"
+    static func disconnectedKey(for connection: DatabricksConnection) -> String {
+        "googleCalendarDatabricksProxyDisconnected.\(connection.id.uuidString)"
     }
 
     private let directOverride: (any GoogleSignInProviding)?
@@ -40,7 +34,6 @@ final class DatabricksProxyGoogleSignInProvider: GoogleSignInProviding {
     private var connectTasks: [UUID: Task<GoogleSession, Error>] = [:]
     private let oauth: DatabricksOAuthService
     private let storage: DatabricksOAuthStorage
-    private let driveClient: GoogleDriveBackupClient
     private let apiClient: any GoogleCalendarAPIClientProviding
     private let userDefaults: UserDefaults
     private var connectionObserver: GoogleAuthSessionObserver?
@@ -48,27 +41,23 @@ final class DatabricksProxyGoogleSignInProvider: GoogleSignInProviding {
     let sessionDidChangeNotification = Notification.Name("RoutedGoogleSession.\(UUID())")
 
     init(
-        sessionKind: GoogleAuthSessionKind = .calendar,
         provider: GoogleCalendarProvider? = nil,
         direct: (any GoogleSignInProviding)? = nil,
         directProviderFactory: (@MainActor (GoogleProviderAccount) -> any GoogleSignInProviding)? = nil,
         oauth: DatabricksOAuthService = .shared,
         storage: DatabricksOAuthStorage = .local(),
         apiClient: any GoogleCalendarAPIClientProviding = GoogleCalendarAPIClient(),
-        driveClient: GoogleDriveBackupClient = GoogleDriveBackupClient(),
         userDefaults: UserDefaults = .standard,
         connectionChangeNotification: Notification.Name = .databricksConnectionDidChange
     ) {
-        self.sessionKind = sessionKind
         self.configuredProvider = provider
         self.directOverride = direct
         self.directProviderFactory = directProviderFactory ?? {
-            GoogleSignInAdapter(accountID: $0.id, expectedAccountID: $0.account.id, sessionKind: sessionKind)
+            GoogleSignInAdapter(accountID: $0.id, expectedAccountID: $0.account.id)
         }
         self.oauth = oauth
         self.storage = storage
         self.apiClient = apiClient
-        self.driveClient = driveClient
         self.userDefaults = userDefaults
         observedRoute = userDefaults.string(forKey: GoogleCalendarProvider.userDefaultsKey)
         routeChangeObserver = NotificationCenter.default.publisher(for: GoogleCalendarProvider.didChange)
@@ -102,12 +91,12 @@ final class DatabricksProxyGoogleSignInProvider: GoogleSignInProviding {
     }
 
     /// Only the /api/2.0 proxy route exists; /api/2.1 returns ENDPOINT_NOT_FOUND (verified 2026-11-05).
-    static func proxyBaseURL(for connection: DatabricksConnection, sessionKind: GoogleAuthSessionKind = .calendar) -> URL {
-        URL(string: connection.host + "/api/2.0/unity-catalog/connections/\(connectionName(for: sessionKind))/proxy/")!
+    static func proxyBaseURL(for connection: DatabricksConnection) -> URL {
+        URL(string: connection.host + "/api/2.0/unity-catalog/connections/\(connectionName)/proxy/")!
     }
 
-    static func signInPageURL(for connection: DatabricksConnection, sessionKind: GoogleAuthSessionKind = .calendar) -> URL {
-        URL(string: connection.host + "/explore/connections/\(connectionName(for: sessionKind))")!
+    static func signInPageURL(for connection: DatabricksConnection) -> URL {
+        URL(string: connection.host + "/explore/connections/\(connectionName)")!
     }
 
     private var connection: DatabricksConnection? {
@@ -119,12 +108,12 @@ final class DatabricksProxyGoogleSignInProvider: GoogleSignInProviding {
     var isProxyActive: Bool { connection != nil }
 
     /// Where the user grants or fixes Google access for the active Databricks connection.
-    var connectionPageURL: URL? { connection.map { Self.signInPageURL(for: $0, sessionKind: sessionKind) } }
+    var connectionPageURL: URL? { connection.map { Self.signInPageURL(for: $0) } }
 
     var isConfigured: Bool { isProxyActive || direct?.isConfigured == true }
 
     private func isDisconnected(_ connection: DatabricksConnection) -> Bool {
-        userDefaults.bool(forKey: Self.disconnectedKey(for: connection, sessionKind: sessionKind))
+        userDefaults.bool(forKey: Self.disconnectedKey(for: connection))
     }
 
     /// True while Dahlia restores through the proxy on every launch, whether or not that currently succeeds.
@@ -133,7 +122,7 @@ final class DatabricksProxyGoogleSignInProvider: GoogleSignInProviding {
     }
 
     private func directDisconnectedKey(for provider: GoogleCalendarProvider) -> String {
-        "googleCapabilityDisconnected.\(provider.storageKey).\(sessionKind == .drive ? "drive" : "calendar")"
+        "googleCapabilityDisconnected.\(provider.storageKey).calendar"
     }
 
     private var isDirectDisconnected: Bool {
@@ -193,11 +182,7 @@ final class DatabricksProxyGoogleSignInProvider: GoogleSignInProviding {
             }
             if let session = restored, session.hasScopes(requestedScopes) {
                 do {
-                    if sessionKind == .drive {
-                        _ = try await driveClient.fetchAccount(session: session)
-                    } else {
-                        _ = try await apiClient.fetchCalendarList(session: session)
-                    }
+                    _ = try await apiClient.fetchCalendarList(session: session)
                 } catch GoogleCalendarAPIError.httpError(statusCode: 401, detail: _) {
                     restored = nil
                 }
@@ -226,7 +211,7 @@ final class DatabricksProxyGoogleSignInProvider: GoogleSignInProviding {
 
         try checkCurrentRoute(selected, revision: revision)
         window.orderFrontRegardless()
-        guard NSWorkspace.shared.open(Self.signInPageURL(for: connection, sessionKind: sessionKind)) else {
+        guard NSWorkspace.shared.open(Self.signInPageURL(for: connection)) else {
             throw DahliaCloudError.browserCouldNotOpen
         }
         // The proxy has no callback, so poll for up to 3 minutes while Databricks reports no Google credential.
@@ -266,12 +251,12 @@ final class DatabricksProxyGoogleSignInProvider: GoogleSignInProviding {
             return
         }
         // The Google grant stays in Databricks; revoke it on the connection page.
-        userDefaults.set(true, forKey: Self.disconnectedKey(for: connection, sessionKind: sessionKind))
+        userDefaults.set(true, forKey: Self.disconnectedKey(for: connection))
         NotificationCenter.default.post(name: sessionDidChangeNotification, object: nil)
     }
 
     private func markConnected(_ session: GoogleSession, for connection: DatabricksConnection) -> GoogleSession {
-        userDefaults.removeObject(forKey: Self.disconnectedKey(for: connection, sessionKind: sessionKind))
+        userDefaults.removeObject(forKey: Self.disconnectedKey(for: connection))
         NotificationCenter.default.post(name: sessionDidChangeNotification, object: nil)
         return session
     }
@@ -298,15 +283,11 @@ final class DatabricksProxyGoogleSignInProvider: GoogleSignInProviding {
             GoogleSession(
                 account: account,
                 accessToken: token,
-                grantedScopes: sessionKind.serviceScopes,
-                apiBaseURL: Self.proxyBaseURL(for: connection, sessionKind: sessionKind)
+                grantedScopes: GoogleOAuthScope.calendar,
+                apiBaseURL: Self.proxyBaseURL(for: connection)
             )
         }
         let placeholder = GoogleCalendarAccount(id: connection.host, displayName: L10n.googleCalendarUnknownAccount, email: "")
-        if sessionKind == .drive {
-            let resolved = try await driveClient.fetchAccount(session: session(placeholder))
-            return session(resolved)
-        }
         let calendars = try await apiClient.fetchCalendarList(session: session(placeholder))
         let primary = calendars.first(where: \.isPrimary)
         let displayed = primary ?? calendars.first

@@ -1,6 +1,6 @@
 # Workspace archive backup / restore
 
-対象: Desktop。採択: 2026-07-18。Workspace 単位の保存・復元: 2026-09-06 に採択。
+対象: Desktop。採択: 2026-07-18。Workspace 単位の保存・復元: 2026-09-06 に採択。保存先（プロバイダーアカウントの storage）: 2026-11-27 に採択。
 
 ## 世代と対象
 
@@ -16,16 +16,21 @@
 音声本体・参照、Workspace Markdown / 添付、端末の出力先、UserDefaults、アカウント接続、Keychain / token、同期キュー・カーソル、検索索引は含めない。対象 Workspace に未文字起こし segmented audio があれば、文字起こしか明示破棄まで作成を拒否する。
 チャットの Thread 台帳・Item 履歴とチャットの検索索引、Pi の実行再開用 session file は含めない。上書き復元は対象 Workspace の Thread を保持し、復元後も存在する Project との紐づけを残す。
 
-## Google Drive と内蔵 Pi
+## 保存先
 
-設定のバックアップ一覧はマイドライブ直下の `Dahlia/Backup` から取得する。同名フォルダが複数ある場合は曖昧な宛先を選ばずエラーにする。
-バックアップ一覧の取得経路と、app が Drive の OAuth token を持つかは未確定（[要約](summary.md#訂正と-export) は app が Drive の OAuth token を持たないとする）。Databricks アカウントでは Calendar と同じ Unity Gateway connection proxy を使い、接続名は `system_ai_agent_google_drive` とする。接続解除は Dahlia の読み取り利用を止め、Drive のファイルや別の MCP 接続は削除しない。
+ローカルの世代は必ず作る。そのうえで、storage capability を持つプロバイダーアカウントを1つ保存先に選べる（設定の `backupStorageAccount`、既定は「この Mac のみ」）。
+「バックアップを作成」はローカルに世代を作った後でアップロードし、アップロードの失敗はローカルの作成と分けて示す。ローカルの世代からもアップロードできる。
+保存先の `backup` フォルダに世代のファイル名のまま置く。同じ名前のファイルがあればアップロードしない（ファイル名は世代 UUID を含み、世代は変わらない）。
+一覧・ダウンロード・削除は保存先が返すファイル ID で対象を決め、名前では決めない。ダウンロードしたファイルは通常の import 検証を通してローカルの世代へ追加する。
+保存先の切り替えと中止は実行中の操作の結果を捨てる。チャットと skill からバックアップを作る経路は持たない。
 
-アップロード・フォルダ作成・Drive 上の削除をアプリの Drive client に持たせない。内蔵 Pi の `workspace-backup` skill は `dah_create_backup` tool を呼び（対象の `workspace_id` を必須引数とし、実行アカウントへの所属を検証する）、GUI と同じ `BackupService` の snapshot・原本収集・検証で作成する。Pi の作業フォルダに書き出したファイルを設定済み Google Drive MCP のローカルファイルアップロード機能で `My Drive/Dahlia/Backup` に配置する。外部書き込みは既存のチャット承認方針に従う。
-必要な MCP 機能がなければローカル作成とアップロード失敗を区別して報告する。Unity Gateway connection で書き込まない。
+| 保存先 | 場所 | 規則 |
+| --- | --- | --- |
+| Google ドライブ | `マイドライブ/Dahlia/backup` | scope は `drive.file`（Dahlia が作ったフォルダとファイルだけ）。フォルダがなければ作り、同名のフォルダが複数あれば選ばずにエラーにする。削除は Drive のゴミ箱へ移す。再同意では以前の `drive.readonly` を引き継がない |
+| Databricks の volume | `/Volumes/<catalog>/<schema>/dahlia_storage_<利用者 ID>/backup` | `catalog.schema` は接続ごとに「プロバイダー」で設定する（`providerStorageSchema.<接続 UUID>`、接続の削除で消す）。利用者 ID は SCIM `Me` の `id` の数字部分（`@` の前）で、数字でなければ使わない。volume は最初のアップロードで managed volume として作り、既存の volume は所有者が自分で managed のときだけ使う。Files API 2.0 の1回のアップロード（5000 MiB まで）で送り、超える世代は断る |
 
-Drive のファイルは選択時にダウンロードし、通常の import 検証を通してからローカルの復元用コピーへ追加する。
-ローカルで作成・import した世代と上書き前の安全バックアップは引き続き保持し、ネットワークなしでも復元できる。
+Databricks 経由の Google Drive の proxy（`system_ai_agent_google_drive`）は使わない。
+ローカルで作成・import した世代と上書き前の安全バックアップは保存先にかかわらず保持し、ネットワークなしでも復元できる。
 旧 Apple Archive（`.dahliabackup`）は一覧・import・復元の対象外とする。既存ファイル自体の削除・変換は行わない。
 
 ## Import と復元
@@ -70,4 +75,6 @@ Server canonical data は [同期契約](../shared/sync.md) の境界で扱い�
 
 ## 未適合・未検証
 
-- 未確定: バックアップ一覧の取得経路と、app が Drive の OAuth token を持つかどうか。[要約](summary.md#訂正と-export) の 2026-11-11 規則は app が Drive の OAuth token を持たないとする。
+- 未検証: 実際の Google アカウントと Databricks workspace でのアップロード・ダウンロード・復元。SCIM `Me` の `id` の形式、volume の `owner` が `userName` と同じ形で返ること、`all-apis` の token で volume の作成と Files API が通ることは実 workspace で確かめていない。
+- 未検証: 別の Mac や再インストール後に、同じ Google アカウントで以前の `Dahlia/backup` が `drive.file` で見えること。
+- 既知の制約: 所有者をグループや service principal に移した volume は使えない。世代は毎回すべての画像を含むので、5000 MiB を超えると Databricks には置けない。

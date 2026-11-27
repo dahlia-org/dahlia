@@ -66,12 +66,16 @@ final class BackupSettingsViewModel {
         }
     }
 
-    func createBackup() async {
-        guard !selectedWorkspaceIds.isEmpty else { return }
+    /// The new generation, for the caller to upload to the selected destination.
+    @discardableResult
+    func createBackup() async -> BackupGeneration? {
+        guard !selectedWorkspaceIds.isEmpty else { return nil }
+        var created: BackupGeneration?
         await perform {
-            _ = try await requireService().createGeneration(workspaceIds: selectedWorkspaceIds)
+            created = try await requireService().createGeneration(workspaceIds: selectedWorkspaceIds)
             statusMessage = L10n.backupCreated
         }
+        return created
     }
 
     func importBackup(from url: URL) async {
@@ -81,12 +85,8 @@ final class BackupSettingsViewModel {
         }
     }
 
-    func importDriveBackup(_ file: GoogleDriveBackupFile, drive: GoogleDriveBackupModel) async {
-        await perform {
-            _ = try await drive.importBackup(file, using: requireService())
-            statusMessage = L10n.backupImported
-        }
-    }
+    /// The service the destination imports downloaded backups through.
+    var backupService: BackupService? { service }
 
     func exportBackup(_ generation: BackupGeneration, to url: URL) async {
         await perform(refreshAfterward: false) {

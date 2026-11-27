@@ -11,9 +11,8 @@ enum BackupFileFormat {
 
 struct BackupSettingsView: View {
     @Environment(MainWindowNavigation.self) private var navigation
-    @State private var drive = GoogleDriveBackupModel()
-    @ObservedObject private var providers = CalendarProviderCollection.shared
-    @State private var driveProvider = GoogleCalendarProvider.current()
+    @State private var storage = BackupStorageModel()
+    @State private var pendingDeleteStorageFile: ProviderStorageFile?
     @State private var googleConsent = GoogleOAuthConsentState()
     @State private var model: BackupSettingsViewModel
     @State private var pendingDeleteGeneration: BackupGeneration?
@@ -37,7 +36,7 @@ struct BackupSettingsView: View {
 
     var body: some View {
         Form {
-            driveSection
+            storageSection
             if !model.preflightItems.isEmpty {
                 unresolvedAudioSection
             }
@@ -69,10 +68,10 @@ struct BackupSettingsView: View {
                 }
                 HStack {
                     Button(L10n.createBackup) {
-                        Task { await model.createBackup() }
+                        Task { await storage.createBackup { await model.createBackup() } }
                     }
                     .buttonStyle(.dahlia(.primary))
-                    .disabled(dbQueue == nil || model.selectedWorkspaceIds.isEmpty || model.isBusy || !model.preflightItems.isEmpty)
+                    .disabled(dbQueue == nil || model.selectedWorkspaceIds.isEmpty || model.isBusy || storage.isBusy || !model.preflightItems.isEmpty)
 
                     Button(L10n.importBackup) {
                         importBackup()
@@ -119,7 +118,8 @@ struct BackupSettingsView: View {
         .formStyle(.grouped)
         .font(.dahliaBody)
         .task {
-            await drive.refresh()
+            await storage.reloadOptions()
+            await storage.refresh()
         }
         .overlay {
             if let disclosure = googleConsent.pendingDisclosure {
@@ -157,6 +157,23 @@ struct BackupSettingsView: View {
         } message: {
             Text(L10n.deleteBackupDescription)
         }
+        .confirmationDialog(
+            L10n.backupStorageDeleteConfirmation,
+            isPresented: Binding(
+                get: { pendingDeleteStorageFile != nil },
+                set: { if !$0 { pendingDeleteStorageFile = nil } }
+            ),
+            titleVisibility: .visible
+        ) {
+            Button(L10n.deleteBackup, role: .destructive) {
+                guard let file = pendingDeleteStorageFile else { return }
+                pendingDeleteStorageFile = nil
+                Task { await storage.delete(file) }
+            }
+            Button(L10n.cancel, role: .cancel) { pendingDeleteStorageFile = nil }
+        } message: {
+            Text(storage.destination?.databricksConnectionID == nil ? L10n.backupStorageDeleteGoogleDescription : L10n.backupStorageDeleteDescription)
+        }
         .overlay {
             if let generation = pendingRestoreGeneration {
                 restoreDialog(generation)
@@ -167,88 +184,77 @@ struct BackupSettingsView: View {
     private func closeGoogleConsent() {
         googleConsent.pendingDisclosure = nil
         guard googleConsent.consumeConsent() else { return }
-        Task { await drive.refresh(connect: true) }
+        Task { await storage.authorize() }
     }
 
-    private var driveSection: some View {
+    private var storageSection: some View {
         Section {
-            Picker(L10n.providerAccounts, selection: Binding(
-                get: { driveProvider },
-                set: { route in
-                    googleConsent.pendingDisclosure = nil
-                    driveProvider = route
-                    drive.reset()
-                    GoogleCalendarProvider.save(route)
-                }
+            Picker(L10n.backupStorageDestination, selection: Binding(
+                get: { storage.destination?.connectionID },
+                set: { id in storage.select(storage.options.first { $0.id == id }?.account) }
             )) {
-                Text(L10n.calendarProviderUnassigned).font(.dahliaBody).tag(GoogleCalendarProvider.unassigned)
-                ForEach(providers.connections) { connection in
-                    if let route = connection.googleRoute {
-                        Text(connection.displayName).font(.dahliaBody).tag(route)
+                Text(L10n.backupStorageThisMacOnly).font(.dahliaBody).tag(UUID?.none)
+                ForEach(storage.options) { option in
+                    Text(option.name).font(.dahliaBody).tag(Optional(option.id))
+                }
+            }
+            if storage.options.isEmpty || storage.destination?.databricksConnectionID != nil && storage.errorMessage != nil {
+                Button(L10n.manageProviders) { navigation.openSettings(category: .providers) }.buttonStyle(.dahlia())
+            }
+            if storage.destination != nil {
+                HStack {
+                    Button(L10n.backupDriveRefresh) { Task { await storage.refresh() } }
+                        .buttonStyle(.dahlia())
+                        .disabled(storage.isBusy)
+                    if storage.needsAuthorization {
+                        Button(L10n.googleCalendarConnect) { googleConsent.request(.drive) }
+                            .buttonStyle(.dahlia())
+                            .disabled(storage.isBusy)
+                    }
+                    if storage.isBusy {
+                        ProgressView().controlSize(.small)
+                        Button(L10n.cancel) { storage.cancel() }.buttonStyle(.dahlia())
                     }
                 }
             }
-            .task { await providers.reloadConnections() }
-            .onReceive(NotificationCenter.default.publisher(for: GoogleCalendarProvider.didChange)) { _ in
-                driveProvider = GoogleCalendarProvider.current()
+            if let status = storage.statusMessage {
+                SettingsStatusMessage(text: status, systemImage: "checkmark.circle", tint: .green)
             }
-            LabeledContent("Google Drive") {
-                HStack {
-                    if let account = drive.account { Text(account.displayName) }
-                    if drive.isBusy { ProgressView().controlSize(.small) }
-                    if drive.isAuthorized {
-                        Button(L10n.backupDriveRefresh) { Task { await drive.refresh() } }
-                            .buttonStyle(.dahlia())
-                    }
-                    if !drive.isAuthorized {
-                        Button(L10n.googleCalendarConnect) {
-                            if drive.usesDatabricksProxy {
-                                Task { await drive.refresh(connect: true) }
-                            } else {
-                                googleConsent.request(.drive)
-                            }
+            if let error = storage.errorMessage {
+                SettingsStatusMessage(text: error, systemImage: "exclamationmark.triangle", tint: .orange)
+            }
+            if storage.destination != nil, storage.files.isEmpty, !storage.isBusy, storage.errorMessage == nil {
+                Text(L10n.noBackups).foregroundStyle(.secondary)
+            }
+            ForEach(storage.files) { file in
+                LabeledContent {
+                    HStack {
+                        Button(L10n.backupDriveDownload) {
+                            guard let service = model.backupService else { return }
+                            Task { await storage.download(file, into: service) }
                         }
                         .buttonStyle(.dahlia())
-                        .disabled(!drive.isConfigured || drive.isBusy)
+                        Button(L10n.delete, role: .destructive) { pendingDeleteStorageFile = file }
+                            .buttonStyle(.dahlia(.destructive))
                     }
-                    if drive.hasConnection {
-                        Button(L10n.googleCalendarDisconnect) { Task { await drive.disconnect() } }
-                            .buttonStyle(.dahlia())
-                            .disabled(drive.isBusy)
-                    }
-                }
-            }
-            if driveProvider == .unassigned {
-                Text(L10n.googleDriveChooseProvider).foregroundStyle(.secondary)
-                Button(L10n.manageProviders) { navigation.openSettings(category: .providers) }.buttonStyle(.dahlia())
-            } else if !drive.isConfigured {
-                Text(L10n.googleAccountClientIDMissingMessage).foregroundStyle(.secondary)
-            }
-            if let error = drive.errorMessage {
-                SettingsStatusMessage(text: error, systemImage: "exclamationmark.triangle", tint: .orange)
-                if let url = drive.connectionPageURL {
-                    Link(L10n.googleCalendarOpenDatabricksConnectionPage, destination: url)
-                }
-            }
-            if drive.isAuthorized, drive.files.isEmpty { Text(L10n.noBackups).foregroundStyle(.secondary) }
-            ForEach(drive.files) { file in
-                LabeledContent {
-                    Button(L10n.backupDriveDownload) {
-                        Task { await model.importDriveBackup(file, drive: drive) }
-                    }
-                    .buttonStyle(.dahlia())
-                    .disabled(drive.isBusy || model.isBusy)
+                    .disabled(storage.isBusy || model.isBusy)
                 } label: {
                     Text(file.name)
-                    if let size = file.size.flatMap(Int64.init) {
-                        Text(ByteCountFormatter.string(fromByteCount: size, countStyle: .file)).foregroundStyle(.secondary)
-                    }
+                    Text([
+                        file.modifiedAt?.formatted(date: .abbreviated, time: .standard),
+                        file.size.map { ByteCountFormatter.string(fromByteCount: $0, countStyle: .file) },
+                    ].compactMap(\.self).joined(separator: " · "))
+                        .foregroundStyle(.secondary)
                 }
             }
         } header: {
-            Text(L10n.backupDriveTitle).font(.dahliaSectionHeader)
+            Text(L10n.backupStorageTitle).font(.dahliaSectionHeader)
         } footer: {
-            Text(L10n.backupDriveDescription)
+            switch storage.destination {
+            case .google: Text(L10n.backupStorageGoogleDescription)
+            case .databricks: Text(L10n.backupStorageDatabricksDescription)
+            case .dahlia, nil: Text(L10n.backupStorageThisMacOnlyDescription)
+            }
         }
     }
 
@@ -373,6 +379,11 @@ struct BackupSettingsView: View {
     private func generationRow(_ generation: BackupGeneration) -> some View {
         LabeledContent {
             HStack {
+                if storage.destination != nil {
+                    Button(L10n.backupStorageUpload) { Task { await storage.upload(generation) } }
+                        .buttonStyle(.dahlia())
+                        .disabled(!generation.isValid || storage.isBusy || model.isBusy)
+                }
                 Button(L10n.exportBackup) { exportBackup(generation) }
                     .buttonStyle(.dahlia())
                     .disabled(!generation.isValid || model.isBusy)

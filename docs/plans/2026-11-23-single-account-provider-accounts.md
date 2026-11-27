@@ -66,7 +66,7 @@ Server Account による同期は未リリースで、見直しの対象であ�
 | ChatGPT サブスクリプション | ○ | | | | | Pi（`auth.json`）。行は持たない |
 | Anthropic サブスクリプション | ○ | | | | | Pi（`auth.json`）。行は持たない |
 | Databricks workspace（複数可） | ○ Gateway | ○ Unity Gateway | ○ Google Calendar の proxy | 対応予定（未実装） | 対応予定（未実装） | Desktop（Keychain、`provider_accounts` 行） |
-| Google（複数可） | | | ○ | ○ Google Drive。現在はバックアップの読み取りだけ | | Desktop（Keychain、`provider_accounts` 行） |
+| Google（複数可） | | | ○ | ○ Google Drive。バックアップの保存先（[保存先](../spec/desktop/database-backup.md#保存先)） | | Desktop（Keychain、`provider_accounts` 行） |
 | Dahlia Server（未リリース、見直し対象） | Gateway | | | Workspace の同期、音声アーカイブ | 同左 | Desktop（Keychain、既存の行） |
 
 - プロバイダーアカウントの台帳は、既存の `accounts` テーブルを `provider_accounts` に改名して使う（新しい migration で改名する）。

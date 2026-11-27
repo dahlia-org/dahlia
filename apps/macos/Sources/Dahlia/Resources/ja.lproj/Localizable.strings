@@ -1654,29 +1654,86 @@
 "appearance.light" = "ライトモード";
 "appearance.dark" = "ダークモード";
 
-"Google Drive Backups" = "Google Drive のバックアップ";
 
 "Local Recovery Copies" = "ローカルの復元用コピー";
 
 "Download for Restore" = "復元用にダウンロード";
 
-"Lists backups in My Drive/Dahlia/Backup. Ask Dahlia AI to create and upload a backup using Google Drive MCP. Drive access here is read-only; downloaded backups are verified before they appear in Local Recovery Copies." = "マイドライブの Dahlia/Backup のバックアップを表示します。作成とアップロードは Dahlia AI に依頼してください。書き込みには Google Drive MCP を使います。この画面は読み取り専用です。ダウンロードしたバックアップは検証後にローカルの復元用コピーに追加します。";
+"backup.storage.driveAmbiguousFolder" = "マイドライブに Dahlia が作った Dahlia/backup フォルダが複数あります。Google ドライブでバックアップを1つのフォルダにまとめ、残りを削除してください。";
 
-"Multiple Dahlia/Backup folders were found in My Drive. Resolve duplicate folder names before loading backups." = "マイドライブに同名の Dahlia/Backup フォルダが複数あります。重複を解消してから再度読み込んでください。";
+"backup.storage.title" = "バックアップの保存先";
 
-"Could not download the Google Drive backup. Check the connection and try again." = "Google Drive のバックアップをダウンロードできませんでした。接続を確認して再試行してください。";
+"backup.storage.destination" = "保存先";
+
+"backup.storage.thisMacOnly" = "この Mac のみ";
+
+"backup.storage.thisMacOnlyDescription" = "バックアップはこの Mac のローカルの復元用コピーにだけ保存します。Google または Databricks のプロバイダーアカウントを選ぶと、そちらにも保存します。";
+
+"backup.storage.googleDescription" = "「バックアップを作成」でマイドライブの Dahlia/backup にもアップロードします。Dahlia が Drive で見られるのは、自分で作ったフォルダとファイルだけです。ダウンロードしたバックアップは検証してからローカルの復元用コピーに追加します。";
+
+"backup.storage.databricksDescription" = "「バックアップを作成」で、プロバイダーで設定した catalog.schema にある自分の volume（dahlia_storage_<利用者 ID>）の backup フォルダにもアップロードします。schema や catalog の所有者と metastore の管理者も読めます。初回は USE CATALOG・USE SCHEMA・CREATE VOLUME、2回目からは USE CATALOG と USE SCHEMA の権限が要ります。1つのバックアップは 5000 MiB までです。";
+
+"backup.storage.upload" = "アップロード";
+
+"backup.storage.uploaded" = "バックアップをアップロードしました。";
+
+"backup.storage.alreadyUploaded" = "このバックアップはすでに保存先にあります。";
+
+"backup.storage.deleted" = "保存先からバックアップを削除しました。";
+
+"backup.storage.deleteConfirmation" = "保存先からこのバックアップを削除しますか？";
+
+"backup.storage.deleteDescription" = "Databricks の volume からファイルを削除します。元に戻せません。この Mac のローカルの復元用コピーは残ります。";
+
+"backup.storage.deleteGoogleDescription" = "ファイルを Google ドライブのゴミ箱に移します。この Mac のローカルの復元用コピーは残ります。";
+
+"backup.storage.authorizationRequired" = "このアカウントをバックアップに使うには、Google ドライブを接続してください。";
+
+"backup.storage.fileTooLarge" = "このバックアップは 5000 MiB を超えるため、Databricks の volume にアップロードできません。この Mac には残ります。";
+
+"backup.storage.schemaNotConfigured" = "プロバイダーで、この Databricks 接続のストレージの場所（catalog.schema）を設定してください。";
+
+"backup.storage.unsupportedUserID" = "Databricks から返った利用者 ID を volume 名に使えません。";
+
+"backup.storage.volumeNotOwned" = "volume %1$@ はすでにあり、あなたが所有する managed volume ではありません（所有者: %2$@）。Dahlia はこの volume を使いません。所有者か workspace の管理者に削除を依頼してください。";
+
+"backup.storage.requestFailed" = "要求が失敗しました（HTTP %1$d）: %2$@";
+
+"backup.storage.invalidResponse" = "保存先から想定外の応答が返りました。";
+
+"google.driveDisclosure.overview" = "Dahlia はマイドライブの Dahlia/backup にバックアップを置きます。フォルダを作り、作成したバックアップをアップロードし、一覧・ダウンロード・削除を行います。";
+
+"google.driveDisclosure.access" = "Google が許可するのは、Dahlia が作ったフォルダとファイルだけです。Drive のほかのファイルは Dahlia から見えません。";
+
+"google.driveDisclosure.useAndStorage" = "バックアップはこの Mac からアップロードし、ダウンロードしたものは復元前に検証します。Calendar と Drive は、登録した Google アカウントのキーチェーン認証情報を共有します。";
+
+"google.driveDisclosure.externalSharing" = "バックアップには、選んだ Workspace の会議・文字起こし・要約・スクリーンショットが入ります。あなたの Google ドライブに保存し、Drive の共有設定の範囲でだけ共有されます。";
+
+"google.driveDisclosure.deletion" = "ここでバックアップを削除すると Drive のゴミ箱に移します。プロバイダーでサインアウトすると Dahlia の利用を止めます。権限の取り消しは Google アカウントで行ってください。サインアウトではローカルや Drive のバックアップを削除しません。";
+
+"settings.providers.storageLocation" = "ストレージの場所";
+
+"settings.providers.storageLocationEdit" = "ストレージの場所…";
+
+"settings.providers.storageLocationPlaceholder" = "catalog.schema";
+
+"settings.providers.storageLocationDescription" = "この catalog と schema に自分の managed volume（dahlia_storage_<利用者 ID>）を作り、バックアップを置きます。空にすると、この接続をストレージに使いません。";
+
+"settings.providers.storageLocationValue" = "ストレージ: %@";
+
+"settings.providers.storageLocationUnset" = "ストレージ: 未設定";
+
+"settings.providers.storageLocationInvalid" = "ストレージの場所は catalog.schema の形で入力してください。";
+
+
+
 
 "Connect Google Drive for Backups" = "バックアップ用に Google Drive を接続";
 
-"Dahlia reads backups from My Drive/Dahlia/Backup. This connection does not upload or delete files." = "Dahlia はマイドライブの Dahlia/Backup からバックアップを読み取ります。この接続ではアップロードや削除を行いません。";
 
-"Google grants read-only access to all Drive files. Dahlia uses metadata to find Dahlia/Backup and downloads only the backups you select." = "Google Drive 内のすべてのファイルへの読み取り専用権限を取得します。ファイル情報で Dahlia/Backup を検索し、選択したバックアップだけをダウンロードします。";
 
-"Downloaded backups are stored on this Mac and validated before restore. Calendar and Drive share the registered Google account’s Keychain credential." = "ダウンロードしたバックアップはこの Mac に保存し、復元前に検証します。Calendar と Drive は、登録した Google アカウントのキーチェーン認証情報を共有します。";
 
-"Listing and downloading send requests to Google Drive. Uploads are a separate action by Dahlia AI through your configured MCP server and follow chat approval settings." = "一覧取得とダウンロードで Google Drive にリクエストを送信します。アップロードは Dahlia AI が設定済みの MCP サーバーを使う別の操作で、チャットの承認設定に従います。";
 
-"Disconnect stops this read connection. Remove access in your Google Account to revoke the grant. Disconnecting does not delete local or Drive backups, or disconnect the separate MCP server." = "接続を解除すると、この読み取り接続の利用を停止します。権限の取り消しは Google アカウントで行ってください。接続解除ではローカルや Drive のバックアップを削除せず、別途設定した MCP サーバーも切断しません。";
 
 "Refresh Backups" = "バックアップを再読み込み";
 
@@ -1968,14 +2025,12 @@
 
 "settings.agents.optimization.agentLegacyReviewRuns" = "以前の共通履歴";
 
-"Allow read-only access to Calendar and all Drive files. Dahlia reads selected Dahlia/Backup backups. Enable each feature in Settings. Drive access is optional." = "Calendar と Drive の読み取り権限を要求します。Drive の権限は全ファイルが対象ですが、Dahlia は選択した Dahlia/Backup のバックアップを読み取ります。機能の有効化は各設定で行います。Drive を許可しなくてもカレンダーを利用できます。";
+"Allow read-only Calendar access and manage Drive files Dahlia creates for backups. Enable each feature in Settings. Drive access is optional." = "Calendar の読み取り権限と、Dahlia が作成する Drive ファイルへのアクセス権限を要求します。Dahlia/backup 内のバックアップをアップロード・一覧・ダウンロード・ゴミ箱へ移動します。機能の有効化は各設定で行います。Drive を許可しなくてもカレンダーを利用できます。";
 
 "Disconnect this Google account from Calendar and Drive in Dahlia? Databricks connections are not affected." = "この Google アカウントを Dahlia のカレンダーと Drive から切断しますか？ Databricks の接続には影響しません。";
 
 "Sign-out incomplete. Retry to remove the saved credential." = "サインアウトが完了していません。保存済みの認証を削除するには再試行してください。";
 "Sign in with the same Google account. To use another account, add a provider." = "同じ Google アカウントでサインインしてください。別のアカウントを使うにはプロバイダーを追加してください。";
-"Choose a registered provider here to read Google Drive backups. This choice is independent of Calendar." = "Google Drive のバックアップを読み取るプロバイダーを選択します。カレンダーの設定とは独立しています。";
-"No provider selected" = "プロバイダー未選択";
 
 "Authorize Calendar and Drive" = "カレンダーと Drive の利用を許可";
 "settings.agents.alwaysOn.help" = "アプリが開いている間、オンのイベントソースを読み、新しいイベントをこのエージェントに知らせます。録音中は読みません。返信などの外部への書き込みは、通常のチャットと同じ承認設定に従います。";

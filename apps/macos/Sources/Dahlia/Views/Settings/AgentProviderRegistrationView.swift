@@ -15,7 +15,7 @@ struct AgentProviderRegistrationView: View {
         var capabilities: [AgentProviderCapability] {
             switch self {
             case .subscription: [.models]
-            case .databricks: [.models, .mcp, .calendar]
+            case .databricks: [.models, .mcp, .calendar, .storage]
             case .google: [.calendar, .storage]
             }
         }

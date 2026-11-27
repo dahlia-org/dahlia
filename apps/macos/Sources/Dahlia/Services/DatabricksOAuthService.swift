@@ -170,6 +170,7 @@ actor DatabricksOAuthService {
         try storage.saveConnections(connections().filter { $0.id != connectionID })
         accessTokens[connectionID] = nil
         try storage.deleteCredential(connectionID)
+        DatabricksStorageLocation.save(nil, connectionID: connectionID)
         NotificationCenter.default.post(name: .databricksConnectionDidChange, object: nil)
     }
 

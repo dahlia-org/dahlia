@@ -38,7 +38,7 @@
         <header class="legal-heading">
           <p class="section-index">PRIVACY</p>
           <h1>Privacy Policy</h1>
-          <p class="legal-effective-date">Effective November 24, 2026</p>
+          <p class="legal-effective-date">Effective November 27, 2026</p>
           <p>
             Dahlia is a macOS meeting transcription and note-taking application. This policy explains what data Dahlia
             accesses, how it is used and stored, when it leaves your Mac, and how you can manage or delete it.
@@ -72,11 +72,12 @@
           </p>
           <h3>Google Drive data</h3>
           <p>
-            The Google Drive permission (drive.readonly) allows reading all files in your Drive, including files unrelated
-            to Dahlia. Dahlia uses folder and file metadata to find <q>My Drive/Dahlia/Backup</q> and downloads only the
-            backups you select for restore. This connection does not create, upload, edit, or delete Drive files.
-            Backup uploads and Google Docs exports through Dahlia AI use a separately configured MCP connection and
-            its permissions, subject to the approval settings for that AI connection.
+            The Google Drive permission (drive.file) gives Dahlia access only to the folders and files Dahlia creates;
+            it cannot see your other Drive files. When you choose a Google account as the backup destination, Dahlia
+            creates <q>My Drive/Dahlia/backup</q>, uploads the backups you create, and lists, downloads, and deletes them
+            there. Deleting a backup in Dahlia moves it to the Drive trash. A backup contains the selected workspaces'
+            meetings, transcripts, summaries, and screenshots. Google Docs exports through Dahlia AI use a separately
+            configured MCP connection and its permissions, subject to the approval settings for that AI connection.
           </p>
           <h3>Diagnostics</h3>
           <p>
@@ -118,7 +119,7 @@
             <li>recording, transcribing, organizing, searching, and displaying your meetings;</li>
             <li>showing your selected upcoming calendars and preparing a meeting from an event;</li>
             <li>associating an event with a meeting and using that context in a summary or AI chat you initiate; and</li>
-            <li>finding and downloading selected Google Drive backups for restore. Google Docs exports through AI use your separately configured MCP connection.</li>
+            <li>uploading the backups you create to Google Drive, and listing, downloading, and deleting them for restore. Google Docs exports through AI use your separately configured MCP connection.</li>
           </ul>
           <p>
             Dahlia also uses the anonymous usage analytics and sanitized technical diagnostics described above to measure
@@ -172,9 +173,8 @@
             not send Google Calendar data to an AI service merely because you connected your account or viewed your schedule.
           </p>
           <p>
-            Drive backup reads are sent to Google, directly or through the Databricks connection you select. If you ask
-            Dahlia AI to upload a backup or export to Google Docs, the configured MCP connection sends the requested
-            content to Google under its own permissions. Outside the user-facing features described in this policy, Dahlia does not disclose Google
+            Backups and Drive requests are sent directly to Google from your Mac. If you ask Dahlia AI to export to Google
+            Docs, the configured MCP connection sends the requested content to Google under its own permissions. Outside the user-facing features described in this policy, Dahlia does not disclose Google
             user data except as necessary for security purposes or to comply with applicable law.
           </p>
         </section>
@@ -196,8 +196,9 @@
               not remove backups you exported elsewhere.
             </li>
             <li>
-              <strong>Delete Drive files and backups:</strong> Disconnecting does not delete files or backups in
-              Google Drive. Delete them in Google Drive, and delete imported meetings and local backups separately.
+              <strong>Delete Drive files and backups:</strong> Delete a backup in Dahlia to move it to the Drive trash, or
+              delete it in Google Drive. Signing out does not delete files or backups in Google Drive. Delete imported
+              meetings and local backups separately.
             </li>
             <li>
               <strong>Review Google access:</strong> You can also remove Dahlia from your Google Account's third-party

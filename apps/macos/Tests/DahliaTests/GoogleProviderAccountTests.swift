@@ -81,10 +81,7 @@
             let first = UUID.v7()
             let second = UUID.v7()
             let firstCalendar = GoogleAuthSessionKind.calendar.forAccount(first)
-            let firstDrive = GoogleAuthSessionKind.drive.forAccount(first)
             let secondCalendar = GoogleAuthSessionKind.calendar.forAccount(second)
-            #expect(firstCalendar.keychainKey == firstDrive.keychainKey)
-            #expect(firstCalendar.sessionDidChangeNotification == firstDrive.sessionDidChangeNotification)
             #expect(firstCalendar.keychainKey != secondCalendar.keychainKey)
             #expect(firstCalendar.sessionDidChangeNotification != secondCalendar.sessionDidChangeNotification)
             #expect(GoogleSignInAdapter.disconnectPendingUserDefaultsKey(for: firstCalendar)
@@ -93,7 +90,7 @@
             let (_, firstGeneration) = await worker.snapshot(for: firstCalendar) {}
             let (_, secondGeneration) = await worker.snapshot(for: secondCalendar) {}
             await worker.beginDisconnect(for: firstCalendar)
-            #expect(await worker.performIfCurrent(for: firstDrive, generation: firstGeneration) {} == false)
+            #expect(await worker.performIfCurrent(for: firstCalendar, generation: firstGeneration) {} == false)
             #expect(await worker.performIfCurrent(for: secondCalendar, generation: secondGeneration) {})
             await worker.finishDisconnect(for: firstCalendar)
         }
@@ -121,11 +118,6 @@
                 try await calendar.disconnect()
                 #expect(await calendar.hasPreviousSignIn == false)
                 #expect(secondSignIn.disconnectCount == 0)
-                let drive = DatabricksProxyGoogleSignInProvider(
-                    sessionKind: .drive, directProviderFactory: { $0.id == first.id ? firstSignIn : secondSignIn }, userDefaults: defaults,
-                    connectionChangeNotification: Notification.Name("UnusedGoogleDriveConnection.\(UUID())")
-                )
-                #expect(await drive.hasPreviousSignIn)
                 GoogleCalendarProvider.save(.google(accountID: first.id), defaults: defaults)
                 #expect(try await calendar.restorePreviousSignIn().account == first.account)
                 #expect(secondSignIn.disconnectCount == 0)

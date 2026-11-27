@@ -1,7 +1,7 @@
 import Foundation
 import Synchronization
 
-/// A service offered by a provider account. Storage currently covers Google Drive backup reads; database is reserved.
+/// A service offered by a provider account. Storage holds backups (Google Drive, a Databricks volume); database is reserved.
 enum ProviderCapability: String, CaseIterable, Sendable {
     case model
     case mcp
@@ -30,7 +30,7 @@ enum ProviderAccount: Hashable, Sendable {
 
     var capabilities: Set<ProviderCapability> {
         switch self {
-        case .databricks: [.model, .mcp, .calendar]
+        case .databricks: [.model, .mcp, .calendar, .storage]
         case .dahlia: [.model]
         case .google: [.calendar, .storage]
         }

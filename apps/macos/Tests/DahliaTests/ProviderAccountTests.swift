@@ -95,13 +95,11 @@
             #expect(ProviderAccountDirectory.$connections.withValue([]) { ProviderAccountDirectory.accounts.isEmpty })
             ProviderAccountDirectory.$connections.withValue([connection]) {
                 #expect(ProviderAccountDirectory.accounts == [.databricks(connectionID: databricksID)])
-                for capability in [ProviderCapability.model, .mcp, .calendar] {
+                for capability in [ProviderCapability.model, .mcp, .calendar, .storage] {
                     #expect(ProviderAccountDirectory.account(offering: capability) == .databricks(connectionID: databricksID))
                 }
-                // Storage and database are defined for later; nothing offers them yet.
-                for capability in [ProviderCapability.storage, .database] {
-                    #expect(ProviderAccountDirectory.account(offering: capability) == nil)
-                }
+                // Database is defined for later; nothing offers it yet.
+                #expect(ProviderAccountDirectory.account(offering: .database) == nil)
             }
             // The signed-in Dahlia account's Gateway is a provider account of the app's account, after Databricks.
             ProviderAccountDirectory.$connections.withValue([connection]) {

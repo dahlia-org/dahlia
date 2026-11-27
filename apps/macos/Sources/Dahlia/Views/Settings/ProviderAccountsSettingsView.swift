@@ -19,6 +19,9 @@ struct ProviderAccountsSettingsView: View {
     @State private var pendingRemoval: AgentMCPProvider?
     @State private var proposedName = ""
     @State private var pendingGoogleSignOut: GoogleProviderAccountController?
+    @State private var pendingStorageLocation: DatabricksConnection?
+    @State private var proposedStorageLocation = ""
+    @State private var storageLocationError: String?
 
     private var signedInSubscriptions: [PiSubscriptionController] {
         subscriptions.filter { $0.accountStatus?.isAuthenticated == true }
@@ -50,6 +53,20 @@ struct ProviderAccountsSettingsView: View {
                 Button(L10n.cancel, role: .cancel) { pendingRename = nil }
             } message: {
                 Text(L10n.renameProviderAccountDescription)
+            }
+            .alert(
+                L10n.providerStorageLocation,
+                isPresented: Binding(get: { pendingStorageLocation != nil }, set: { if !$0 { pendingStorageLocation = nil } })
+            ) {
+                TextField(L10n.providerStorageLocationPlaceholder, text: $proposedStorageLocation)
+                Button(L10n.save) {
+                    guard let connection = pendingStorageLocation else { return }
+                    pendingStorageLocation = nil
+                    saveStorageLocation(proposedStorageLocation, for: connection)
+                }
+                Button(L10n.cancel, role: .cancel) { pendingStorageLocation = nil }
+            } message: {
+                Text(L10n.providerStorageLocationDescription)
             }
             .confirmationDialog(
                 pendingRemoval.map { L10n.mcpRemoveWorkspace($0.host) } ?? "",
@@ -132,7 +149,7 @@ struct ProviderAccountsSettingsView: View {
 
     private var errors: [String] {
         subscriptions.compactMap(\.errorMessage)
-            + [mcp.errorMessage, databricks.errorMessage, workspaceSettings.errorMessage, googleAccounts.errorMessage]
+            + [mcp.errorMessage, databricks.errorMessage, workspaceSettings.errorMessage, googleAccounts.errorMessage, storageLocationError]
             .compactMap(\.self) + googleAccounts.controllers.compactMap(\.errorMessage)
     }
 
@@ -156,13 +173,20 @@ struct ProviderAccountsSettingsView: View {
         AgentProviderRow(
             title: connection.displayName,
             icon: .databricksLogo,
-            uses: [L10n.agentProviderModels, L10n.mcp, L10n.calendar]
+            uses: [L10n.agentProviderModels, L10n.mcp, L10n.calendar, L10n.agentProviderStorage]
         ) {
             Text(connection.hostName).foregroundStyle(.secondary)
+            Text(DatabricksStorageLocation.load(connectionID: connection.id).map { L10n.providerStorageLocationValue($0.description) }
+                ?? L10n.providerStorageLocationUnset)
+                .foregroundStyle(.secondary)
             AgentProviderActions {
                 Button(L10n.rename) {
                     proposedName = connection.name ?? ""
                     pendingRename = .databricks(connection)
+                }
+                Button(L10n.providerStorageLocationEdit) {
+                    proposedStorageLocation = DatabricksStorageLocation.load(connectionID: connection.id)?.description ?? ""
+                    pendingStorageLocation = connection
                 }
                 Button(L10n.signInAgain) {
                     Task { _ = await databricks.signIn(workspaceURL: connection.host) }
@@ -206,6 +230,18 @@ struct ProviderAccountsSettingsView: View {
     }
 
     // MARK: Actions
+
+    /// Blank clears the location; anything else must name a catalog and a schema.
+    private func saveStorageLocation(_ value: String, for connection: DatabricksConnection) {
+        storageLocationError = nil
+        if value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            DatabricksStorageLocation.save(nil, connectionID: connection.id)
+        } else if let location = DatabricksStorageLocation(value) {
+            DatabricksStorageLocation.save(location, connectionID: connection.id)
+        } else {
+            storageLocationError = L10n.providerStorageLocationInvalid
+        }
+    }
 
     private func presentRegistration() {
         navigation.presentSettingsModal(

@@ -719,46 +719,6 @@ import Synchronization
             #expect(fixture.pi.launches.all.isEmpty)
         }
 
-        @Test
-        func backupBridgeUsesAnExplicitWorkspaceFromTheChatAccount() async throws {
-            let database = try AppDatabaseManager(path: ":memory:")
-            defer { try? database.close() }
-            let workspace = WorkspaceRecord(id: .v7(), path: nil, name: "Chat", createdAt: .now, lastOpenedAt: .now)
-            let other = WorkspaceRecord(id: .v7(), path: nil, name: "Other", createdAt: .now, lastOpenedAt: .now)
-            try await database.dbQueue.write { db in
-                try workspace.insert(db)
-                try other.insert(db)
-            }
-            let result = Mutex<String?>(nil)
-            let fixture = try Self.fixture { transport in
-                await transport.emit(TestPiTransport.bridgeRequest(
-                    id: "backup",
-                    method: "createBackup",
-                    payload: .object(["workspace_id": .string(TypeID.encode(workspace.id, as: .workspace))])
-                ))
-                let response = await transport.command { $0["id"]?.stringValue == "backup" }
-                result.withLock { $0 = response["value"]?.stringValue }
-                await transport.emit(TestPiTransport.assistantEnd("Created"))
-                await transport.emit(TestPiTransport.settled())
-            }
-            defer { try? FileManager.default.removeItem(at: fixture.pi.rootURL) }
-            await fixture.chat.configureBackup(dbQueue: database.dbQueue, applicationSupportURL: fixture.pi.rootURL)
-            let thread = try await fixture.chat.startThread(model: nil, effort: "medium")
-            let handle = try await fixture.chat.beginTurn(
-                threadID: thread.id, inputs: [.text("Back up this workspace")], model: nil, effort: "medium",
-                approvalMethod: .ask
-            )
-            for try await _ in handle.events {}
-            let response = try #require(result.withLock { $0 })
-            let value = try JSONDecoder().decode(JSONValue.self, from: Data(response.utf8))
-            let path = try #require(value.objectValue?["path"]?.stringValue)
-            #expect(path.hasSuffix(".tar.gz"))
-            #expect(URL(fileURLWithPath: path).deletingLastPathComponent().path == fixture.pi.rootURL.appending(path: "work").path)
-            let manifest = try BackupArchive.readManifest(at: URL(fileURLWithPath: path))
-            #expect(manifest.metadata.workspaces.map(\.id) == [workspace.id])
-            #expect(try await BackupService(dbQueue: database.dbQueue, applicationSupportURL: fixture.pi.rootURL).listGenerations().count == 1)
-        }
-
         @Test(arguments: ["", " \n\t", "日本語で簡潔に回答してください。\nUse bullet points when helpful.", "existing-file"])
         func customInstructionsUseAppendSystemPromptWithoutChangingTheUserMessage(input: String) async throws {
             let fileURL = URL.temporaryDirectory.appending(path: "dahlia-instructions-\(UUID.v7()).txt")
@@ -1155,7 +1115,7 @@ import Synchronization
             #expect(launch.arguments.contains("--session-id"))
             #expect(launch.arguments
                 .contains(
-                    "read,ls,write,edit,bash,skills_list,skill_view,skill_manage,cronjob,skill_optimize,memory,dah_create_backup,thread_list,thread_search,thread_read,"
+                    "read,ls,write,edit,bash,skills_list,skill_view,skill_manage,cronjob,skill_optimize,memory,thread_list,thread_search,thread_read,"
                         + "thread_launch,delegate_task,task_status,task_cancel,thread_send,thread_wait,thread_interrupt,thread_update,mcp__dahlia__*"
                 ))
             let work = fixture.pi.rootURL.appending(path: "work")
@@ -1569,7 +1529,7 @@ import Synchronization
             let withGmail = try #require(pi.launches.all.last { $0.mode == .chat })
             #expect(withGmail.arguments
                 .contains(
-                    "read,ls,write,edit,bash,skills_list,skill_view,skill_manage,cronjob,skill_optimize,memory,dah_create_backup,thread_list,thread_search,thread_read,"
+                    "read,ls,write,edit,bash,skills_list,skill_view,skill_manage,cronjob,skill_optimize,memory,thread_list,thread_search,thread_read,"
                         + "thread_launch,delegate_task,task_status,task_cancel,thread_send,thread_wait,thread_interrupt,thread_update,mcp__dahlia__*,mcp__gmail__*,mcp__notion__*"
                 ))
             // Dahlia's extension registers the sign-ins mcp.json names in every process; none loads the provider file on its own.
