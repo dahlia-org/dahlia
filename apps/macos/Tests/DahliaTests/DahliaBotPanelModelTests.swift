@@ -15,6 +15,44 @@
             return model
         }
 
+        @Test func connectorSnapshotLoadsOffMainActorAndKeepsAccountProviderOrder() async throws {
+            let account = try ProviderAccountDirectory.Connection(id: .v7(), workspaceURL: #require(URL(string: "https://account.example.com")))
+            let remote = try AgentMCPProvider(workspaceURL: #require(URL(string: "https://remote.example.com")))
+            let accountProvider = AgentMCPProvider(workspaceURL: account.workspaceURL)
+            let settings = AgentMCPSettings(providers: [remote, accountProvider], servers: [
+                AgentMCPServer(id: .v7(), name: "slack", providerID: accountProvider.id, service: "system.ai.slack"),
+            ])
+            let service = PiChatService(mcpSettings: {
+                #expect(!Thread.isMainThread)
+                return settings
+            })
+            let snapshot = await ProviderAccountDirectory.$connections.withValue([account]) {
+                await service.loadBotConnectors()
+            }
+            #expect(snapshot.providers.map(\.id) == [accountProvider.id, remote.id])
+            let model = DahliaBotPanelModel(loadConnectorSettings: { snapshot })
+            await model.refreshConnectors()
+            #expect(model.servers == ["slack"])
+            #expect(model.choiceName("slack") == "slack (account.example.com)")
+        }
+
+        @Test(arguments: [false, true])
+        func connectorSnapshotsCannotPublishAfterSwitchingAgents(returnToOriginal: Bool) async throws {
+            let loader = PendingConnectorSettings()
+            let model = DahliaBotPanelModel(loadConnectorSettings: { await loader.load() })
+            model.agentID = "A"
+            let loading = Task { await model.refreshConnectors() }
+            try #require(await pollUntil { await loader.isPending })
+            model.agentID = "B"
+            if returnToOriginal { model.agentID = "A" }
+            let settings = AgentMCPSettings(servers: [
+                AgentMCPServer(id: .v7(), name: "slack", providerID: nil, service: "slack", direct: .init(command: "slack-mcp")),
+            ])
+            await loader.release(settings)
+            await loading.value
+            #expect(model.servers.isEmpty && model.providers.isEmpty && model.connections.isEmpty)
+        }
+
         @Test func switchingAgentsWaitsForSavedModelChoicesAndSavesOnlyTheEditedPair() async throws {
             let choices = ModelChoiceFixture()
             let model = DahliaBotPanelModel(
@@ -270,6 +308,20 @@
             }
             records[id] = agent
             writeCount += 1
+        }
+    }
+
+    private actor PendingConnectorSettings {
+        private var pending: CheckedContinuation<(settings: AgentMCPSettings, providers: [AgentMCPProvider]), Never>?
+        var isPending: Bool { pending != nil }
+
+        func load() async -> (settings: AgentMCPSettings, providers: [AgentMCPProvider]) {
+            await withCheckedContinuation { pending = $0 }
+        }
+
+        func release(_ settings: AgentMCPSettings) {
+            pending?.resume(returning: (settings, []))
+            pending = nil
         }
     }
 

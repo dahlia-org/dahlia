@@ -30,7 +30,7 @@ struct DahliaBotSourceEditor: View {
                             ForEach(model.serverGroups, id: \.self) { group in
                                 let selected = draft.wrappedValue.kind == "mcp" && group.contains(draft.wrappedValue.server)
                                 Button { if !selected, let first = group.first { model.choose(server: first) } } label: {
-                                    serverLabel(group[0]).frame(maxWidth: .infinity, alignment: .leading)
+                                    groupLabel(group[0]).frame(maxWidth: .infinity, alignment: .leading)
                                 }
                                 .buttonStyle(.dahlia(selected ? .primary : .secondary))
                                 .accessibilityAddTraits(selected ? .isSelected : [])
@@ -142,6 +142,16 @@ struct DahliaBotSourceEditor: View {
             Button(L10n.delete, role: .destructive) { Task { await model.deleteDraft() } }
         } message: {
             Text(L10n.agentAlwaysOnDeleteSourceMessage)
+        }
+    }
+
+    private func groupLabel(_ server: String) -> some View {
+        let group = model.group(server)
+        let image = group == "mail" ? Image(systemName: "envelope") : AgentMCPServiceLogo
+            .image(for: group == "slack" ? "slack" : model.services[server] ?? server)
+        return HStack(spacing: 8) {
+            image.resizable().scaledToFit().frame(width: 20, height: 20).accessibilityHidden(true)
+            Text(model.groupDisplayName(server)).lineLimit(1)
         }
     }
 

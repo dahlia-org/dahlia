@@ -82,6 +82,14 @@ extension PiChatService {
         try AgentInboxService(dbQueue: history().dbQueue, agentID: agentID)
     }
 
+    /// Account-directory cache misses may read SQLite, so build the panel's connector snapshot on this actor.
+    func loadBotConnectors() -> (settings: AgentMCPSettings, providers: [AgentMCPProvider]) {
+        let settings = mcpSettings()
+        let accountProviders = ProviderAccountDirectory.databricksConnections().map { AgentMCPProvider(workspaceURL: $0.workspaceURL) }
+        let accountIDs = Set(accountProviders.map(\.id))
+        return (settings, accountProviders + settings.providers.filter { !accountIDs.contains($0.id) })
+    }
+
     func loadAlwaysOnSettings(_ agentID: String) throws -> ([AgentSourceRecord], [AgentEventRecord], Bool) {
         let inbox = try inboxService(agentID)
         return try (inbox.sources(), inbox.recentEvents(), inbox.isPaused())

@@ -17,16 +17,26 @@
         }
 
         @Test func eventSourceDefaultsFollowSettingsSectionsAndServiceOrder() throws {
-            let first = AgentMCPProvider(workspaceURL: try #require(URL(string: "https://first.example.com")))
-            let second = AgentMCPProvider(workspaceURL: try #require(URL(string: "https://second.example.com")))
+            let first = try AgentMCPProvider(workspaceURL: #require(URL(string: "https://first.example.com")))
+            let second = try AgentMCPProvider(workspaceURL: #require(URL(string: "https://second.example.com")))
             let settings = AgentMCPSettings(providers: [second, first], servers: [
                 AgentMCPServer(id: .v7(), name: "second_slack", providerID: second.id, service: "system.ai.slack"),
                 AgentMCPServer(id: .v7(), name: "custom_slack", providerID: first.id, service: "main.team.slack"),
                 AgentMCPServer(id: .v7(), name: "first_slack", providerID: first.id, service: "system.ai.slack"),
-                AgentMCPServer(id: .v7(), name: "local_slack", providerID: nil, service: "local_slack",
-                               direct: AgentMCPDirectConfiguration(command: "slack-mcp")),
-                AgentMCPServer(id: .v7(), name: "disabled_slack", providerID: nil, service: "disabled_slack",
-                               direct: AgentMCPDirectConfiguration(isEnabled: false, command: "slack-mcp")),
+                AgentMCPServer(
+                    id: .v7(),
+                    name: "local_slack",
+                    providerID: nil,
+                    service: "local_slack",
+                    direct: AgentMCPDirectConfiguration(command: "slack-mcp")
+                ),
+                AgentMCPServer(
+                    id: .v7(),
+                    name: "disabled_slack",
+                    providerID: nil,
+                    service: "disabled_slack",
+                    direct: AgentMCPDirectConfiguration(isEnabled: false, command: "slack-mcp")
+                ),
             ])
             let model = DahliaBotPanelModel()
             model.servers = DahliaBotPanelModel.sourceServers(in: settings, providers: [first, second])
@@ -37,14 +47,14 @@
 
         @Test(arguments: ["system.ai.google_drive", "system.ai.google_calendar", "system.ai.web_search"])
         func existingExcludedSourceKeepsItsRegisteredConnectionLabel(service: String) throws {
-            let provider = AgentMCPProvider(workspaceURL: try #require(URL(string: "https://workspace.example.com")))
+            let provider = try AgentMCPProvider(workspaceURL: #require(URL(string: "https://workspace.example.com")))
             let settings = AgentMCPSettings(providers: [provider], servers: [
                 AgentMCPServer(id: .v7(), name: "existing", providerID: provider.id, service: service),
             ])
-            let source = AgentSourceRecord(
+            let source = try AgentSourceRecord(
                 id: "source", agentID: "agent", name: "Existing", server: "existing", instructions: "Read updates",
                 intervalMinutes: 15, allowedSenders: "[]", enabled: true, createdAt: .now, updatedAt: .now,
-                connectionID: try #require(settings.connectionID(for: "existing"))
+                connectionID: #require(settings.connectionID(for: "existing"))
             )
             let model = DahliaBotPanelModel()
             model.sources = [source]
@@ -70,6 +80,17 @@
             #expect(model.choiceName("slack") == "slack (replacement.example.com)")
             model.connections = [:]
             #expect(model.sourceChoiceName(source.id) == "slack (\(L10n.agentAlwaysOnConnectionUnavailable))")
+        }
+
+        @Test func sourceGroupLabelsDoNotDependOnTheFirstConnector() {
+            let model = DahliaBotPanelModel()
+            model.servers = ["work_gmail", "work_outlook", "custom_slack"]
+            model.services = ["work_gmail": "system.ai.gmail", "work_outlook": "team.outlook", "custom_slack": "team.slack"]
+            #expect(model.serverGroups == [["work_gmail", "work_outlook"], ["custom_slack"]])
+            #expect(model.groupDisplayName("work_gmail") == L10n.agentAlwaysOnMail)
+            #expect(model.groupDisplayName("work_outlook") == L10n.agentAlwaysOnMail)
+            #expect(model.groupDisplayName("custom_slack") == L10n.slack)
+            #expect(model.choiceName("work_gmail") == "work_gmail")
         }
 
         @Test func eventSourceGroupsSlackServersAndStartsFromTheTopOne() {

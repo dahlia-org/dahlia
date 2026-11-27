@@ -77,12 +77,16 @@ final class DahliaBotPanelModel {
         },
         loadTasks: @escaping @Sendable (String, Int) async throws -> TaskPage = {
             try await PiChatService.shared.loadBotTasks($0, limit: $1)
+        },
+        loadConnectorSettings: @escaping @Sendable () async -> (settings: AgentMCPSettings, providers: [AgentMCPProvider]) = {
+            await PiChatService.shared.loadBotConnectors()
         }
     ) {
         self.loadAgent = loadAgent
         self.saveAgentModel = saveAgentModel
         self.saveSoulFile = saveSoulFile
         self.loadTasks = loadTasks
+        self.loadConnectorSettings = loadConnectorSettings
     }
 
     private let loadAgent: @Sendable (String) async throws -> AgentRecord
@@ -94,6 +98,7 @@ final class DahliaBotPanelModel {
     private var agentGeneration = 0
     private var finishedTaskLimit = taskPage
     private let loadTasks: @Sendable (String, Int) async throws -> TaskPage
+    private let loadConnectorSettings: @Sendable () async -> (settings: AgentMCPSettings, providers: [AgentMCPProvider])
     private let saveSoulFile: @Sendable (String, String) async throws -> Void
 
     private func reset(for _: String?) {
@@ -273,14 +278,18 @@ final class DahliaBotPanelModel {
             let models = await (try? PiRuntimeService.shared.models(forceRefresh: false))?.filter { !$0.hidden } ?? []
             guard generation == agentGeneration else { return }
             self.models = models
-            // Only servers with a sign-in reach mcp.json, so only they can be read.
-            let connectors = AgentMCPSettingsModel()
-            connectors.loadAccountProviders()
-            loadConnectors(connectors.settings, providers: connectors.selectableProviders)
+            await refreshConnectors()
         } catch {
             guard generation == agentGeneration else { return }
             self.error = error.localizedDescription
         }
+    }
+
+    func refreshConnectors() async {
+        let generation = agentGeneration
+        let snapshot = await loadConnectorSettings()
+        guard generation == agentGeneration, !Task.isCancelled else { return }
+        loadConnectors(snapshot.settings, providers: snapshot.providers)
     }
 
     func loadConnectors(_ settings: AgentMCPSettings, providers: [AgentMCPProvider]) {
@@ -319,6 +328,14 @@ final class DahliaBotPanelModel {
 
     func group(_ server: String) -> String {
         Self.group(of: server, service: services[server] ?? server)
+    }
+
+    func groupDisplayName(_ server: String) -> String {
+        switch group(server) {
+        case "slack": L10n.slack
+        case "mail": L10n.agentAlwaysOnMail
+        default: displayName(server)
+        }
     }
 
     /// `servers` by group, in the order of each group's first server.
