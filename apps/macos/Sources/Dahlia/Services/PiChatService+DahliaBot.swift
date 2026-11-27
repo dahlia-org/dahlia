@@ -170,11 +170,13 @@ extension PiChatService {
     /// The approval method the user chose for an agent's workers, when `threadID` is a Task of the agent whose current
     /// thread is `requester`. It stands in for the agent thread's own method, which a notice turn sets to ask.
     func workerApprovalMethod(requester: String, thread threadID: String) -> CodexChatApprovalMethod? {
-        let raw = try? history().dbQueue.read { db in
-            try String.fetchOne(db, sql: """
-            SELECT a.workerApprovalMethod FROM agents a JOIN agent_tasks t ON t.agentID=a.id WHERE a.threadID=? AND t.threadID=?
-            """, arguments: [requester, threadID])
-        }
+        try? history().dbQueue.read { try Self.workerApprovalMethod(requester: requester, thread: threadID, in: $0) }
+    }
+
+    nonisolated static func workerApprovalMethod(requester: String, thread threadID: String, in db: Database) throws -> CodexChatApprovalMethod? {
+        let raw = try String.fetchOne(db, sql: """
+        SELECT a.workerApprovalMethod FROM agents a JOIN agent_tasks t ON t.agentID=a.id WHERE a.threadID=? AND t.threadID=?
+        """, arguments: [requester, threadID])
         return raw.flatMap(CodexChatApprovalMethod.init(rawValue:))
     }
 

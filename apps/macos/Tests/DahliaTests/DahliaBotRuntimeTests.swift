@@ -63,9 +63,11 @@
                 replies: CommandLog? = nil,
                 // Launched threads keep working, so their results do not start more notices while a test looks at one.
                 holdsLaunched: Bool = true,
+                modelTransport: TestPiTransport? = nil,
                 calendarSnapshot: @escaping @Sendable () async -> AgentCalendarSnapshot = { .init() }
             ) throws -> Fixture {
                 let pi = TestPiRuntime { options in
+                    if options.mode == .control, let modelTransport { return modelTransport }
                     let script = calls[options.profile] ?? []
                     return TestPiTransport { command in
                         switch command["type"]?.stringValue {
@@ -1261,6 +1263,37 @@
                     if !keepsProcess { await fixture.service.closeSession(target) }
                 }
                 await fixture.service.releaseThreadLease(threadID: target, leaseID: lease)
+            }
+
+            @Test func taskLaunchReadsWorkerApprovalAfterModelDiscovery() async throws {
+                let db = try AppDatabaseManager(path: ":memory:").dbQueue
+                let listing = TestPiTransport { command in
+                    command["type"]?.stringValue == "get_available_models" ? [] : TestPiTransport.acknowledge(command)
+                }
+                let fixture = try fixture(db: db, provider: AppAccount.key, calls: [.bot: [
+                    threadCall("thread_launch", [
+                        "title": .string("Work"), "message": .string("Do it"), "client_request_id": .string("launch"),
+                    ]),
+                ]], modelTransport: listing)
+                defer { cleanUp(fixture) }
+                let bot = try await fixture.service.botThread(fixture.agentID)
+                // The agent already has a model; only its Task launch needs discovery.
+                try ChatThreadStore(dbQueue: db).updateThread(id: bot, model: "openai/gpt-test")
+                try await fixture.service.setAgentWorkerApprovalMethod(fixture.agentID, .ask)
+                let sending = Task {
+                    let handle = try await fixture.service.beginTurn(
+                        threadID: bot, inputs: [.text("Do it")], model: nil, effort: "medium", approvalMethod: .ask
+                    )
+                    for try await _ in handle.events {}
+                }
+                let command = await listing.command("get_available_models")
+                try await fixture.service.setAgentWorkerApprovalMethod(fixture.agentID, .autoReview)
+                await listing.emit(TestPiTransport.response(id: command["id"] ?? .null, data: .object([
+                    "models": .array([TestPiTransport.model(provider: "openai", id: "gpt-test")]),
+                ])))
+                try await sending.value
+                let launched = try #require(try tasks(fixture).first?.threadID)
+                #expect(try await firstRun(fixture, thread: launched).approvalMethod == "autoReview")
             }
 
             @Test func untrustedTextCannotCloseItsFenceOrPassForDahliasLines() {
