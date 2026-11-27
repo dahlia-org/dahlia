@@ -58,7 +58,8 @@
             let model = DahliaBotPanelModel(
                 loadAgent: { try await choices.load($0) },
                 saveAgentModel: { try await choices.save($0, use: $1, model: $2, effort: $3) },
-                saveSmartRouting: { try await choices.save($0, smartRouting: $1) }
+                saveSmartRouting: { try await choices.save($0, smartRouting: $1) },
+                saveWorkerApprovalMethod: { try await choices.save($0, workerApprovalMethod: $1) }
             )
             model.agentID = "A"
             try await model.refreshModelSettings()
@@ -72,8 +73,9 @@
             model.setIntakeEffort("high")
             model.setUnattendedEffort("high")
             model.setSmartRouting(true)
+            model.setWorkerApprovalMethod(.fullAccess)
             #expect(!model.areModelSettingsLoaded && model.intakeModel.isEmpty && model.unattendedModel.isEmpty)
-            #expect(!model.smartRouting)
+            #expect(!model.smartRouting && model.workerApprovalMethod == .autoReview)
             #expect(await choices.writeCount == 0)
             await choices.release()
             try await loading.value
@@ -90,12 +92,16 @@
             try #require(await pollUntil { await choices.writeCount == 3 })
             #expect(try await choices.record("B").smartRouting)
             #expect(try await !choices.record("A").smartRouting)
+            model.setWorkerApprovalMethod(.ask)
+            try #require(await pollUntil { await choices.writeCount == 4 })
+            #expect(try await choices.record("B").workerApprovalMethod == .ask)
+            #expect(try await choices.record("A").workerApprovalMethod == .autoReview)
 
             await choices.holdNextLoad()
             let refreshing = Task { try await model.refreshModelSettings() }
             try #require(await pollUntil { await choices.isPending })
             model.setIntakeEffort("high")
-            try #require(await pollUntil { await choices.writeCount == 4 })
+            try #require(await pollUntil { await choices.writeCount == 5 })
             await choices.release()
             try await refreshing.value
             #expect(model.intakeEffort == "high")
@@ -320,6 +326,13 @@
         func save(_ id: String, smartRouting: Bool) throws {
             var agent = try record(id)
             agent.smartRouting = smartRouting
+            records[id] = agent
+            writeCount += 1
+        }
+
+        func save(_ id: String, workerApprovalMethod: CodexChatApprovalMethod) throws {
+            var agent = try record(id)
+            agent.workerApprovalMethod = workerApprovalMethod
             records[id] = agent
             writeCount += 1
         }

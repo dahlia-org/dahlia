@@ -149,6 +149,20 @@ struct DahliaBotPanelView: View {
                 }
             }
             .toggleStyle(.dahliaSwitch)
+            LabeledContent {
+                Picker(L10n.agentBotWorkerApproval, selection: Binding(
+                    get: { model.workerApprovalMethod }, set: { model.setWorkerApprovalMethod($0) }
+                )) {
+                    ForEach(CodexChatApprovalMethod.allCases) { Label($0.title, systemImage: $0.systemImage).font(.dahliaBody).tag($0) }
+                }
+                .labelsHidden()
+                .fixedSize()
+            } label: {
+                HStack {
+                    Text(L10n.agentBotWorkerApproval)
+                    SettingsInfoButton(help: L10n.agentBotWorkerApprovalHelp)
+                }
+            }
         } header: {
             AgentSectionHeader(title: L10n.agentBotWorkers) { EmptyView() }
         }
