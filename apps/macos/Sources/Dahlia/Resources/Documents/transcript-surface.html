@@ -7,7 +7,7 @@
 /* --base, --inset, and --max-width come from the app so the text matches DahliaTypography and the other tabs. */
 :root { color-scheme: light dark; --base: 14px; --inset: 24px; --max-width: 880px; font: -apple-system-body; font-size: var(--base); }
 body { overflow-anchor: none; margin: 0; background: transparent; color: -apple-system-label; -webkit-font-smoothing: antialiased; }
-#rows { max-width: var(--max-width); margin: 0 auto; padding: var(--inset) var(--inset) calc(var(--inset) - 2px); }
+#rows { box-sizing: border-box; max-width: var(--max-width); margin: 0 auto; padding: var(--inset) var(--inset) calc(var(--inset) - 2px); }
 /* Off-screen rows skip layout and paint; the browser keeps their last measured height for the scroll bar. */
 .row { display: flex; gap: 10px; align-items: flex-start; padding: 4px 0; margin-bottom: 2px; content-visibility: auto; contain-intrinsic-size: auto 28px; }
 .time { flex: none; font: calc(var(--base) - 2px) ui-monospace, SFMono-Regular, Menlo, monospace; line-height: calc(var(--base) * 1.43); color: -apple-system-tertiary-label; user-select: none; }

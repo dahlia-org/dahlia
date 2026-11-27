@@ -164,18 +164,7 @@ struct TranscriptWebSurface: NSViewRepresentable {
 
         func contentDidChange() {
             if changedAt == nil { changedAt = .now }
-            applyMaxWidth()
             send()
-        }
-
-        private func applyMaxWidth() {
-            guard isReady, let view, sentMaxWidth != parent.maxWidth else { return }
-            sentMaxWidth = parent.maxWidth
-            let value = parent.maxWidth.isFinite ? "\(parent.maxWidth)px" : "none"
-            view.callAsyncJavaScript(
-                "document.documentElement.style.setProperty('--max-width', value)",
-                arguments: ["value": value], in: nil, in: .page
-            )
         }
 
         private func send() {
@@ -204,7 +193,7 @@ struct TranscriptWebSurface: NSViewRepresentable {
             let edges = (hasEarlier: parent.hasEarlier, hasLater: parent.hasLater)
             let scroll = parent.scrollRequest.flatMap { $0.token == sentScrollToken ? nil : $0 }
             guard reset || !changed.isEmpty || order != sentOrder || sentEdges.map({ $0 != edges }) ?? true || scroll != nil || sentBaseSize != parent
-                .baseSize else {
+                .baseSize || sentMaxWidth != parent.maxWidth else {
                 changedAt = nil
                 return
             }
@@ -218,6 +207,7 @@ struct TranscriptWebSurface: NSViewRepresentable {
                 "hasEarlier": edges.hasEarlier,
                 "hasLater": edges.hasLater,
                 "baseSize": parent.baseSize,
+                "maxWidth": parent.maxWidth.isFinite ? "\(parent.maxWidth)px" : "none",
             ]
             update["scrollTo"] = scroll?.edge.rawValue
             if reset, scroll == nil { update["restoreViewport"] = viewport?.message }
@@ -232,6 +222,7 @@ struct TranscriptWebSurface: NSViewRepresentable {
             sentContentID = parent.contentID
             sentEdges = edges
             sentBaseSize = parent.baseSize
+            sentMaxWidth = parent.maxWidth
             needsReset = false
             inFlight = (sequence, changedAt ?? .now, scroll?.token)
             changedAt = nil
@@ -275,7 +266,6 @@ struct TranscriptWebSurface: NSViewRepresentable {
             case "ready":
                 isReady = true
                 needsReset = true
-                applyMaxWidth()
                 send()
             case "presented":
                 guard let sequence = body["seq"] as? Int, let inFlight, inFlight.sequence == sequence else { return }

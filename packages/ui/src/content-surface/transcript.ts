@@ -25,6 +25,7 @@ export type TranscriptUpdate = {
   scrollTo?: "top" | "bottom";
   restoreViewport?: Viewport;
   baseSize: number;
+  maxWidth: string;
 };
 
 type Message =
@@ -175,6 +176,7 @@ export function install(root: HTMLElement): void {
       nodes.clear();
     }
     document.documentElement.style.setProperty("--base", `${update.baseSize}px`);
+    document.documentElement.style.setProperty("--max-width", update.maxWidth);
     sequence = update.seq;
     for (const row of update.rows) {
       let element = nodes.get(row.id);
