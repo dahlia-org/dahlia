@@ -112,6 +112,7 @@ struct BatchTranscriptionConfirmationView: View {
             }
             .padding(20)
         }
+        .dahliaAppearance()
         .frame(
             minWidth: 500,
             idealWidth: 520,

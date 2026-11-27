@@ -91,7 +91,10 @@ private struct DahliaCheckbox: View {
                                 .padding(size * 0.22)
                         } else {
                             RoundedRectangle(cornerRadius: 4)
-                                .strokeBorder(Color.primary.opacity(isHovered && isEnabled ? 0.35 : 0.25), lineWidth: 1)
+                                .strokeBorder(
+                                    isHovered && isEnabled ? DahliaDesign.primaryTextColor : DahliaDesign.secondaryTextColor,
+                                    lineWidth: 1
+                                )
                         }
                     }
                     .frame(width: size, height: size)
