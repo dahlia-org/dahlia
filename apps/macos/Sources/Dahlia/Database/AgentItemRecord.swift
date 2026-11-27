@@ -3,7 +3,7 @@ import GRDB
 
 /// One row of the user's inbox: a question, a report, or a suggestion from Super Agent. `revision` is
 /// the version the user answers; an answer to an older one changes nothing.
-struct AgentItemRecord: Codable, FetchableRecord, PersistableRecord, Identifiable, Sendable {
+struct AgentItemRecord: Codable, FetchableRecord, PersistableRecord, Identifiable, Equatable, Sendable {
     static let databaseTableName = "agent_user_inbox"
     var id: String
     var agentID: String

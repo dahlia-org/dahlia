@@ -461,13 +461,44 @@ struct AgentInboxService: Sendable {
 
     // MARK: - Items
 
+    /// What the side panel shows of one agent's inbox, read in one snapshot so the panel can observe it.
+    struct PanelSnapshot: Equatable, Sendable {
+        var items: [AgentItemRecord]
+        /// Each Task's Thread, by Task, for the Items that belong to one.
+        var taskThreads: [String: String]
+    }
+
     func items() throws -> [AgentItemRecord] {
-        try dbQueue.read {
-            try AgentItemRecord.fetchAll(
-                $0, sql: "SELECT * FROM agent_user_inbox WHERE agentID=? AND status='open' ORDER BY createdAt DESC, id DESC",
-                arguments: [agentID]
-            )
-        }
+        let agentID = agentID
+        return try dbQueue.read { try Self.openItems(agentID: agentID, in: $0) }
+    }
+
+    static func openItems(agentID: String, limit: Int = -1, in db: Database) throws -> [AgentItemRecord] {
+        try AgentItemRecord.fetchAll(
+            db, sql: "SELECT * FROM agent_user_inbox WHERE agentID=? AND status='open' ORDER BY createdAt DESC, id DESC LIMIT ?",
+            arguments: [agentID, limit]
+        )
+    }
+
+    /// Indexed and bounded reads only: with the single-connection fallback, an observation fetches on the writer.
+    static func panelSnapshot(agentID: String, limit: Int, in db: Database) throws -> PanelSnapshot {
+        let items = try openItems(agentID: agentID, limit: limit, in: db)
+        let threads = try Dictionary(uniqueKeysWithValues: Row.fetchAll(db, sql: """
+        SELECT id, threadID FROM agent_tasks WHERE threadID IS NOT NULL AND id IN (
+            SELECT taskID FROM agent_user_inbox WHERE agentID=? AND status='open'
+            ORDER BY createdAt DESC, id DESC LIMIT ?
+        )
+        """, arguments: [agentID, limit]).map { ($0["id"] as String, $0["threadID"] as String) })
+        return PanelSnapshot(items: items, taskThreads: threads)
+    }
+
+    /// Each agent's open Item count, for the sidebar's rows.
+    static func openItemCounts(in db: Database) throws -> [String: Int] {
+        try Dictionary(uniqueKeysWithValues: Row.fetchAll(
+            db, sql: """
+            SELECT id, (SELECT COUNT(*) FROM agent_user_inbox WHERE agentID=agents.id AND status='open') AS count FROM agents
+            """
+        ).map { ($0["id"], $0["count"]) })
     }
 
     /// Shows the user a question, a report, or a suggestion. A suggestion the user dismissed in the last 30 days is not

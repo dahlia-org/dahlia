@@ -305,7 +305,6 @@ extension PiChatService {
         var agent: AgentRecord
         var updatedAt: Date?
         var preview: String?
-        var openItems = 0
         var id: String { agent.id }
     }
 
@@ -313,12 +312,7 @@ extension PiChatService {
     func agentSummaries() throws -> [AgentSummary] {
         try history().dbQueue.read { db in
             try AgentRecord.fetchAll(db, sql: "SELECT * FROM agents ORDER BY createdAt, id").map { agent in
-                var summary = try AgentSummary(
-                    agent: agent,
-                    openItems: Int.fetchOne(
-                        db, sql: "SELECT COUNT(*) FROM agent_user_inbox WHERE agentID=? AND status='open'", arguments: [agent.id]
-                    ) ?? 0
-                )
+                var summary = AgentSummary(agent: agent)
                 guard let threadID = agent.threadID, let thread = try ChatThreadRecord.fetchOne(db, key: threadID) else { return summary }
                 summary.updatedAt = thread.updatedAt
                 summary.preview = try String.fetchOne(db, sql: """

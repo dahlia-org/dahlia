@@ -1,5 +1,7 @@
 #if canImport(Testing)
     import Foundation
+    import GRDB
+    import os
     import Testing
     @testable import Dahlia
 
@@ -13,6 +15,173 @@
             let model = DahliaBotPanelModel(loadTasks: { _, limit in try await loader.load(limit: limit) })
             model.agentID = "agent"
             return model
+        }
+
+        /// An Item an agent saves shows without waiting for the periodic refresh, and a new Task reloads the Task pages.
+        @Test(arguments: [false, true])
+        func observedInboxShowsSavedItemsAndTasksAtOnce(usesPool: Bool) async throws {
+            let directory = FileManager.default.temporaryDirectory.appending(path: "dahlia-inbox-\(UUID.v7())")
+            defer { try? FileManager.default.removeItem(at: directory) }
+            let reads = OSAllocatedUnfairLock(initialState: [(reader: Bool, main: Bool, panel: Bool)]())
+            let (queue, inbox) = try await Task.detached {
+                var configuration = AppDatabaseManager.configuration()
+                configuration.prepareDatabase { db in
+                    let reader = db.configuration.readonly
+                    db.trace { event in
+                        guard case let .statement(statement) = event,
+                              statement.sql.hasPrefix("SELECT"), statement.sql.contains("FROM agent_user_inbox"),
+                              statement.sql.contains("status='open'") else { return }
+                        let panel = statement.sql.contains("ORDER BY")
+                        reads.withLock { $0.append((reader, Thread.isMainThread, panel)) }
+                    }
+                }
+                let queue: any DatabaseWriter
+                if usesPool {
+                    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+                    queue = try DatabasePool(path: directory.appending(path: "inbox.sqlite").path, configuration: configuration)
+                } else {
+                    queue = try DatabaseQueue(configuration: configuration)
+                }
+                try AppDatabaseManager(path: ":memory:").dbQueue.backup(to: queue)
+                let agent = try queue.write { try AgentRecord.insertForTest(in: $0) }
+                return (queue, AgentInboxService(dbQueue: queue, agentID: agent.id))
+            }.value
+            let releaseWriter = DispatchSemaphore(value: 0)
+            defer { releaseWriter.signal() }
+            let writerStarted = OSAllocatedUnfairLock(initialState: false)
+            let registrationItem = try await Task.detached {
+                let item = try inbox.createItem(kind: "report", title: "During registration")
+                try inbox.dismiss(itemID: item.id, revision: item.revision)
+                return item
+            }.value
+            let registrationWrite: Task<Void, any Error>?
+            if usesPool {
+                registrationWrite = Task.detached {
+                    try queue.write { db in
+                        try db.execute(sql: "UPDATE agent_user_inbox SET status='open' WHERE id=?", arguments: [registrationItem.id])
+                        writerStarted.withLock { $0 = true }
+                        releaseWriter.wait()
+                    }
+                }
+                try #require(await pollUntil { writerStarted.withLock { $0 } })
+            } else {
+                registrationWrite = nil
+            }
+            let model = DahliaBotPanelModel(loadTasks: { _, limit in try inbox.tasks(limit: limit) })
+            model.agentID = inbox.agentID
+            let agents = AgentsModel()
+            let observing = Task { await model.observeInbox(in: queue) }
+            let observingCounts = Task { await agents.observeOpenItems(in: queue) }
+            defer {
+                observing.cancel()
+                observingCounts.cancel()
+            }
+            try #require(await pollUntil { agents.openItems[inbox.agentID] == 0 })
+            if let registrationWrite {
+                // Both initial reader snapshots precede this commit; writer-side registration is still queued.
+                try #require(await pollUntil { reads.withLock { $0.contains(where: \.panel) } })
+                releaseWriter.signal()
+                try await registrationWrite.value
+                #expect(await pollUntil { model.items.map(\.id) == [registrationItem.id] })
+                #expect(await pollUntil { agents.openItems[inbox.agentID] == 1 })
+                _ = try await Task.detached { try inbox.dismiss(itemID: registrationItem.id, revision: registrationItem.revision) }.value
+                #expect(await pollUntil { model.items.isEmpty && agents.openItems[inbox.agentID] == 0 })
+            }
+            let observingTasks = Task { await model.observeTasks(in: queue) }
+            defer { observingTasks.cancel() }
+
+            let item = try await Task.detached { try inbox.createItem(kind: "report", title: "Saved") }.value
+            #expect(await pollUntil { model.items.map(\.id) == [item.id] })
+            #expect(await pollUntil { agents.openItems[inbox.agentID] == 1 })
+            let task = try await Task.detached {
+                let thread = UUID.v7().uuidString
+                try ChatThreadStore(dbQueue: queue).createThread(ChatThreadRecord(
+                    id: thread, accountID: AppAccount.key, title: "Task", createdAt: .now, updatedAt: .now
+                ))
+                return try inbox.openTask(threadID: thread, title: "Task", instructions: "", eventIDs: [])
+            }.value
+            #expect(await pollUntil { model.activeTasks.map(\.id) == [task.id] })
+            let linkedItem = try await Task.detached {
+                try inbox.createItem(kind: "report", title: "Task result", threadID: task.threadID)
+            }.value
+            #expect(await pollUntil { model.taskThreads[task.id] == task.threadID })
+            try await Task.detached {
+                try queue.write { try $0.execute(sql: "UPDATE agent_tasks SET threadID=NULL WHERE id=?", arguments: [task.id]) }
+            }.value
+            #expect(await pollUntil { model.taskThreads[task.id] == nil })
+            _ = try await Task.detached { try inbox.dismiss(itemID: item.id, revision: item.revision) }.value
+            _ = try await Task.detached { try inbox.dismiss(itemID: linkedItem.id, revision: linkedItem.revision) }.value
+            #expect(await pollUntil { model.items.isEmpty })
+            #expect(await pollUntil { agents.openItems[inbox.agentID] == 0 })
+            let projectionReads = reads.withLock { $0 }
+            #expect(!projectionReads.isEmpty)
+            #expect(projectionReads.allSatisfy { $0.reader == usesPool && !$0.main })
+        }
+
+        @Test(arguments: SelectionChange.allCases)
+        func itemsArriveWhileTaskReloadIsSuspended(change: SelectionChange) async throws {
+            let (queue, inbox) = try await Task.detached {
+                let queue = try AppDatabaseManager(path: ":memory:").dbQueue
+                let agent = try queue.write { try AgentRecord.insertForTest(in: $0) }
+                return (queue, AgentInboxService(dbQueue: queue, agentID: agent.id))
+            }.value
+            let loader = TaskPageLoader(following: [])
+            let model = DahliaBotPanelModel(loadTasks: { _, limit in try await loader.load(limit: limit) })
+            model.agentID = inbox.agentID
+            let observing = Task { await model.observeInbox(in: queue) }
+            let observingTasks = Task { await model.observeTasks(in: queue) }
+            defer { observing.cancel()
+                observingTasks.cancel()
+            }
+            try #require(await pollUntil { await loader.requestCount == 1 })
+            let item = try await Task.detached { try inbox.createItem(kind: "question", title: "Answer now") }.value
+            #expect(await pollUntil { model.items.map(\.id) == [item.id] })
+            observingTasks.cancel()
+            model.agentID = change == .detachAndReturn ? nil : "another-agent"
+            if change != .anotherAgent { model.agentID = inbox.agentID }
+            await loader.releaseFirst([task("old")])
+            await observingTasks.value
+            #expect(model.activeTasks.isEmpty && model.finishedTasks.isEmpty)
+            #expect(model.items.isEmpty)
+        }
+
+        @Test func cancelledTaskObservationDiscardsPendingPageWithoutSelectionChange() async throws {
+            let queue = try await Task.detached { try AppDatabaseManager(path: ":memory:").dbQueue }.value
+            let loader = TaskPageLoader(following: [])
+            let model = try model(loader)
+            let observing = Task { await model.observeTasks(in: queue) }
+            try #require(await pollUntil { await loader.requestCount == 1 })
+            observing.cancel()
+            await loader.releaseFirst([task("cancelled")])
+            await observing.value
+            #expect(model.finishedTasks.isEmpty)
+        }
+
+        @Test func inboxPagesStayBoundedAndResetOnSelectionChange() async throws {
+            let count = DahliaBotPanelModel.inboxPage + 1
+            let (queue, inbox) = try await Task.detached {
+                let queue = try AppDatabaseManager(path: ":memory:").dbQueue
+                let agent = try queue.write { try AgentRecord.insertForTest(in: $0) }
+                let inbox = AgentInboxService(dbQueue: queue, agentID: agent.id)
+                for index in 0 ..< count {
+                    try inbox.createItem(kind: "report", title: "Item \(index)")
+                }
+                return (queue, inbox)
+            }.value
+            let model = DahliaBotPanelModel()
+            model.agentID = inbox.agentID
+            let first = Task { await model.observeInbox(in: queue) }
+            try #require(await pollUntil { model.items.count == DahliaBotPanelModel.inboxPage && model.hasMoreItems })
+            let initialID = model.inboxObservationID
+            model.loadMoreItems()
+            #expect(model.inboxObservationID != initialID)
+            first.cancel()
+            await first.value
+            let next = Task { await model.observeInbox(in: queue) }
+            defer { next.cancel() }
+            #expect(await pollUntil { model.items.count == DahliaBotPanelModel.inboxPage + 1 && !model.hasMoreItems })
+            model.agentID = nil
+            #expect(model.itemLimit == DahliaBotPanelModel.inboxPage && !model.hasMoreItems && model.items.isEmpty)
         }
 
         @Test func connectorSnapshotLoadsOffMainActorAndKeepsAccountProviderOrder() async throws {

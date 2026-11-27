@@ -88,16 +88,6 @@ extension PiChatService {
         return try (inbox.sources(), inbox.recentEvents(), inbox.isPaused())
     }
 
-    /// The agent's open Items, and the Thread of each Task they belong to, so the inbox can open a Task's work.
-    func loadBotInbox(_ agentID: String) throws -> ([AgentItemRecord], [String: String]) {
-        let inbox = try inboxService(agentID)
-        let items = try inbox.items()
-        let threads = try Dictionary(uniqueKeysWithValues: Set(items.compactMap(\.taskID)).compactMap { id in
-            try inbox.task(id)?.threadID.map { (id, $0) }
-        })
-        return (items, threads)
-    }
-
     func updateAlwaysOnSettings(_ agentID: String, change: @Sendable (AgentInboxService) throws -> Void) throws {
         try change(inboxService(agentID))
     }
