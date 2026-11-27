@@ -804,7 +804,7 @@
 "help.howItWorks.summary.resultCaption" = "Saved with its versions, and written as Markdown when the Workspace has a folder";
 "help.howItWorks.summary.selectionTitle" = "Choosing among many screenshots";
 "help.howItWorks.summary.selectionCapture" = "While recording: a screenshot is saved only when the screen changes noticeably, and a screen already saved is not saved again.";
-"help.howItWorks.summary.selectionFallback" = "If selection fails or times out, all screenshots from the meeting go into the summary, including images outside the capped candidate pool and images that selection would otherwise exclude.";
+"help.howItWorks.summary.selectionFallback" = "If selection fails or times out, the summary uses all screenshots eligible for summarization before the candidate cap. Screenshots already excluded from summarization stay excluded.";
 "help.howItWorks.providers.lead" = "Provider accounts are the sign-ins Dahlia uses to borrow capabilities from other services. They supply not only AI models but also MCP servers, calendars, and storage.";
 "help.howItWorks.providers.model" = "Models";
 "help.howItWorks.providers.calendar" = "Calendar";

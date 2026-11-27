@@ -804,7 +804,7 @@
 "help.howItWorks.summary.resultCaption" = "版を残して保存。フォルダーがあれば Markdown にも書き出し";
 "help.howItWorks.summary.selectionTitle" = "スクリーンショットが多いときの選別";
 "help.howItWorks.summary.selectionCapture" = "録画中: 画面が大きく変わったときだけ保存します。一度保存した画面に戻っても、もう一度は保存しません。";
-"help.howItWorks.summary.selectionFallback" = "選別に失敗したときや時間切れになったときは、候補の枚数制限前の、会議のすべてのスクリーンショットを要約に使います。候補から外れた画像や、選別なら除く画像も含みます。";
+"help.howItWorks.summary.selectionFallback" = "選別に失敗したときや時間切れになったときは、候補の枚数制限前の要約対象画像をすべて使います。事前に要約対象外と判定された画像は、除外したままです。";
 "help.howItWorks.providers.lead" = "プロバイダーアカウントは、Dahlia が外部サービスの機能を使うためのサインインです。AI のモデルだけでなく、MCP サーバー、カレンダー、ストレージもここから取り込みます。";
 "help.howItWorks.providers.model" = "モデル";
 "help.howItWorks.providers.calendar" = "カレンダー";
