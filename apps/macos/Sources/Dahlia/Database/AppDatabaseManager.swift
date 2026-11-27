@@ -50,9 +50,7 @@ final class AppDatabaseManager: Sendable {
         } else {
             try DatabaseQueue(path: path, configuration: configuration)
         }
-        // An empty database has nothing to migrate, so it takes the migrated schema as a copy instead of replaying every migration.
-        let copiesMigratedSchema = try onMigration == nil
-            && dbQueue.read { try Int.fetchOne($0, sql: "SELECT COUNT(*) FROM sqlite_master") == 0 }
+        let copiesMigratedSchema = path == ":memory:" && onMigration == nil
         if copiesMigratedSchema {
             try Self.migratedInMemoryDatabase.get().backup(to: dbQueue)
         } else {

@@ -10,7 +10,7 @@ import os
 
     struct EmptyFileDatabaseTests {
         @Test(arguments: [false, true])
-        func copiedSchemaPreservesWALDataAndMigrationCallbacks(usesPool: Bool) throws {
+        func fileInitializationPreservesDataAndMigrationCallbacks(usesPool: Bool) throws {
             let directory = FileManager.default.temporaryDirectory.appending(path: "dahlia-empty-database-\(UUID.v7())")
             defer { try? FileManager.default.removeItem(at: directory) }
             let path = directory.appending(path: "database.sqlite").path
@@ -24,6 +24,9 @@ import os
             try database.dbQueue.write { db in try workspace.insert(db) }
             let saved = try database.dbQueue.read { db in try WorkspaceRecord.fetchOne(db, key: workspace.id) }
             try database.close()
+            let withoutCallback = try AppDatabaseManager(path: path, usesDatabasePool: usesPool)
+            #expect(try withoutCallback.dbQueue.read { db in try WorkspaceRecord.fetchOne(db, key: workspace.id) } == saved)
+            try withoutCallback.close()
             let calls = OSAllocatedUnfairLock(initialState: 0)
             let reopened = try AppDatabaseManager(path: path, usesDatabasePool: usesPool, onMigration: { calls.withLock { $0 += 1 } })
             #expect(calls.withLock { $0 } == 0)
