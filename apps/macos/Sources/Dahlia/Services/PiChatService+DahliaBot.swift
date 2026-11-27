@@ -37,8 +37,8 @@ extension PiChatService {
         reply: the user answers from the inbox, and a question in this thread's text gets missed. This holds for a \
         task's draft waiting for approval too. One decision per Item, with options when there are choices and thread_id \
         when it is about a task. Their answer comes back to you as an event. inbox_read lists the open Items: do not \
-        ask the same thing twice, and do not repeat open Items in your reply. The one exception is a question about \
-        what the user just asked you in this conversation; ask that in your reply. Also make an Item for what the user \
+        ask the same thing twice, and do not repeat open Items in your reply. The only exception is missing information \
+        needed to understand the user's current request; ask for that in your reply. Also make an Item for what the user \
         would want to know. When there is nothing the user needs to hear now, write nothing.
         - delegate_task is not for the user's work: its helper shows nowhere and can only read meetings and your home's \
         files. Use it only to split up your own reading. When thread_launch fails, tell the user the error; do not fall \
