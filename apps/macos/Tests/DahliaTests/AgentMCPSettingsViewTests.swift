@@ -42,7 +42,9 @@
             model.servers = DahliaBotPanelModel.sourceServers(in: settings, providers: [first, second])
             #expect(model.servers == ["local_slack", "first_slack", "custom_slack", "second_slack"])
             model.edit(nil)
-            #expect(model.draft?.server == "local_slack")
+            #expect(model.draft?.kind == "calendar" && model.draft?.name == DahliaBotPanelModel.calendarName)
+            model.choose(server: model.serverGroups[0][0])
+            #expect(model.draft?.server == "local_slack" && model.draft?.name == model.displayName("local_slack"))
         }
 
         @Test(arguments: ["system.ai.google_drive", "system.ai.google_calendar", "system.ai.web_search"])
@@ -93,6 +95,12 @@
             #expect(model.choiceName("work_gmail") == "work_gmail")
         }
 
+        @Test func sourceGroupsPutMailBeforeSlack() {
+            let model = DahliaBotPanelModel()
+            model.servers = ["custom_slack", "jira", "work_gmail"]
+            #expect(model.serverGroups == [["work_gmail"], ["custom_slack"], ["jira"]])
+        }
+
         @Test func eventSourceGroupsSlackServersAndStartsFromTheTopOne() {
             let model = DahliaBotPanelModel()
             model.servers = ["gmail", "work-slack", "jira", "connector_9"]
@@ -100,11 +108,13 @@
             #expect(model.serverGroups == [["gmail"], ["work-slack", "connector_9"], ["jira"]])
             model.edit(nil)
             model.choose(server: "work-slack")
-            #expect(model.draft?.instructions == L10n.agentAlwaysOnSuggestedSlack)
+            #expect(model.draft?.service == "slack")
             model.choose(server: "connector_9")
-            #expect(model.draft?.server == "connector_9" && model.draft?.instructions == L10n.agentAlwaysOnSuggestedSlack)
+            #expect(model.draft?.server == "connector_9" && model.draft?.service == "slack")
+            model.choose(server: "gmail")
+            #expect(model.draft?.service == "mail")
             model.choose(server: "jira")
-            #expect(model.draft?.instructions.isEmpty == true)
+            #expect(model.draft?.service.isEmpty == true)
             model.providers = ["gmail": "workspace.example.com", "jira": ""]
             #expect(model.choiceName("gmail") == "gmail (workspace.example.com)" && model.choiceName("jira") == "jira")
         }

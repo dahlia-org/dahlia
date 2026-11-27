@@ -16,6 +16,10 @@ import Foundation
                 #expect(url.deletingLastPathComponent().lastPathComponent == "AgentSkills")
                 #expect(FileManager.default.fileExists(atPath: url.appending(path: "SKILL.md").path))
             }
+            // Intake's skill is bundled beside them but is not a chat preset.
+            let intake = PiBundle.intakeSkillURL()
+            #expect(intake.map { FileManager.default.fileExists(atPath: $0.appending(path: "SKILL.md").path) } == true)
+            #expect(!urls.contains { $0.lastPathComponent == "intake" })
         }
 
         @Test

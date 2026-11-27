@@ -131,6 +131,14 @@
 
                 let launch = try #require(fixture.pi.launches.all.first { $0.profile == .intake })
                 #expect(launch.profile == .intake && launch.arguments.contains("event_record,mcp__gmail__*"))
+                // The procedure comes from the bundled skill, which the request names first.
+                let skill = try #require(launch.arguments.firstIndex(of: "--skill").map { launch.arguments[$0 + 1] })
+                #expect(skill == PiBundle.intakeSkillURL()?.path && FileManager.default.fileExists(atPath: skill + "/SKILL.md"))
+                var prompts: [String] = []
+                for transport in fixture.transports.all {
+                    prompts += await transport.commands.filter { $0["type"]?.stringValue == "prompt" }.compactMap { $0["message"]?.stringValue }
+                }
+                #expect(prompts.first?.hasPrefix("/skill:intake Source: Mail\nWhat to read: Unread mail\n") == true)
                 #expect(launch.environment["DAHLIA_PI_MCP_SERVERS"] == #"["gmail"]"#)
                 let configuration = try #require(launch.environment["DAHLIA_PI_MCP_CONFIG"])
                 #expect(configuration.contains("gmail") && !configuration.contains("unrelated"))

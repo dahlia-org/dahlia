@@ -1984,8 +1984,6 @@
 "settings.agents.alwaysOn.editSource" = "Edit Event Source";
 "settings.agents.alwaysOn.addSource" = "Add Event Source";
 "settings.agents.alwaysOn.chooseSource" = "Where to Read From";
-"settings.agents.alwaysOn.suggestedMail" = "Unread mail in the inbox";
-"settings.agents.alwaysOn.suggestedSlack" = "Mentions of me and direct messages";
 "settings.agents.alwaysOn.instructionsHelp" = "Dahlia reads what you describe here at the interval you choose and tells this agent. Replies and other writes follow the same approval settings as your chats.";
 "settings.agents.alwaysOn.advanced" = "Advanced";
 "settings.agents.alwaysOn.deleteSource" = "Delete this event source?";
@@ -2087,9 +2085,33 @@
 "settings.agents.calendar.beforeMeeting" = "Before meetings";
 "settings.agents.calendar.leadHours" = "Hours before";
 "settings.agents.calendar.scheduleHelp" = "Uses calendars enabled in the app. Choose less than 168 hours before meetings.";
-"settings.agents.calendar.invalidSchedule" = "Enable daily or before meetings. Hours before must be greater than 0 and less than 168.";
+"settings.agents.calendar.invalidSchedule" = "Enable the daily agenda, the weekly agenda, or before meetings. Hours before must be greater than 0 and less than 168.";
 "settings.agents.calendar.dailyNote" = "Read today's schedule with calendar_read and consider preparation and unanswered invitations.";
 "settings.agents.calendar.meetingNote" = "A meeting is approaching. Read its current details with calendar_read and decide whether preparation is needed.";
+"settings.agents.alwaysOn.notes" = "Notes";
+"settings.agents.alwaysOn.notesPlaceholder" = "Optional. For example: invoices and contracts first";
+"settings.agents.mail.addressedOnly" = "Only mail addressed to me";
+"settings.agents.mail.addressedOnlyHelp" = "Reads only mail with your address in To or Cc, not mail that came through a mailing list or group address.";
+"settings.agents.mail.allowedDomains" = "Allowed Sender Domains";
+"settings.agents.mail.allowedDomainsPlaceholder" = "Comma-separated. e.g. example.com";
+"settings.agents.mail.sendersHelp" = "Takes in only mail whose sender or sender domain is listed. A domain includes its subdomains. When both are empty, mail from every sender is taken in.";
+"settings.agents.slack.scope" = "What to Read";
+"settings.agents.slack.scopeMentions" = "Mentions and DMs only";
+"settings.agents.slack.scopeJoined" = "Also channels I joined";
+"settings.agents.slack.scopeAll" = "Also channels I have not joined";
+"settings.agents.slack.includeChannels" = "Channels to Read";
+"settings.agents.slack.excludeChannels" = "Channels to Skip";
+"settings.agents.slack.channelsPlaceholder" = "Comma-separated. For example: general, team-dev";
+"settings.agents.slack.channelsHelp" = "With channels to read, only those channels' messages are read; mentions and DMs follow What to Read. Skipped channels are not read even when you are mentioned.";
+"settings.agents.slack.allNeedsChannels" = "To read channels you have not joined, enter channels to read or notes.";
+"settings.agents.calendar.weekly" = "Weekly agenda";
+"settings.agents.calendar.weekday" = "Day";
+"settings.agents.calendar.weeklyNote" = "Read the schedule for the seven days starting at this signal's occurredAt timestamp with calendar_read and consider preparation and unanswered invitations.";
+"settings.agents.calendar.acceptedOnly" = "Only events I accepted";
+"settings.agents.calendar.acceptedOnlyHelp" = "Notifies before meetings only for events you accepted, organize, or have no attendees. Tentative and unanswered events are left out.";
+"settings.agents.calendar.acceptedOnlyNote" = "Consider only events the user accepted.";
+"settings.agents.alwaysOn.promptPreview" = "Show Prompt";
+"settings.agents.alwaysOn.promptSince" = "<last read position>";
 
 "Remove attached images before compacting context" = "Remove attached images before compacting context";
 

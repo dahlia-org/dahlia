@@ -566,7 +566,7 @@ extension GoogleCalendarAPIClient {
         }
 
         var isCurrentUserAttending: Bool {
-            attendees == nil
+            attendees?.isEmpty != false
                 || organizer?.isCurrentUser == true
                 || attendees?.first(where: \.isCurrentUser)?.responseStatus == "accepted"
         }

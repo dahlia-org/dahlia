@@ -50,6 +50,22 @@
             #expect(try mine.agentsWithUndecidedEvents() == [mine.agentID])
         }
 
+        /// Reading unjoined channels is refused without channels or notes; a valid change keeps the read position.
+        @Test func slackSettingsAreValidatedAndSavingKeepsTheReadPosition() throws {
+            let (service, id) = try inbox()
+            _ = try service.intakeLowerBound(sourceID: id, revision: 1, now: .now)
+            var source = try #require(try service.sources().first)
+            let cursor = try #require(source.cursor)
+            source.service = "slack"
+            source.instructions = ""
+            source.sourceOptions = .init(slackScope: .all)
+            #expect(throws: AgentInboxService.Failure.self) { try service.saveSource(source) }
+            source.sourceOptions.includeChannels = ["general"]
+            try service.saveSource(source)
+            let saved = try #require(try service.sources().first)
+            #expect(saved.cursor == cursor && saved.revision == 2 && saved.sourceOptions.includeChannels == ["general"])
+        }
+
         @Test(arguments: [false, true])
         func aCappedIntakeKeepsTheOriginalLowerBound(hasCursor: Bool) throws {
             let (service, source) = try inbox()
@@ -212,6 +228,16 @@
             let saved = try #require(try service.sources().first)
             #expect(saved.name == "Updated" && saved.enabled == !toggle && saved.revision == 2)
             #expect(saved.cursor == "latest" && saved.lastIntakeAt == now && saved.createdAt == createdAt)
+        }
+
+        @Test func sendersPassByAddressOrByDomainAndItsSubdomains() {
+            let senders: Set<String> = ["boss@other.com"]
+            let domains = ["example.com"]
+            #expect(AgentInboxService.allows("Boss@Other.com", senders: senders, domains: domains))
+            #expect(AgentInboxService.allows("Ann <ann@mail.example.com>", senders: senders, domains: domains))
+            #expect(!AgentInboxService.allows("eve@badexample.com", senders: senders, domains: domains))
+            #expect(!AgentInboxService.allows("U123", senders: senders, domains: domains))
+            #expect(AgentInboxService.allows(nil, senders: [], domains: []))
         }
 
         /// Work the user asked for opens with their words as its first event, saved with the task; a task needs one or the other.

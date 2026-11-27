@@ -32,7 +32,7 @@ enum AlwaysOnAgentMigration {
             kind TEXT NOT NULL DEFAULT 'mcp' CHECK(kind IN ('mcp','calendar')),
             allowedSenders TEXT NOT NULL DEFAULT '[]', cursor TEXT, enabled BOOLEAN NOT NULL DEFAULT 1, revision INTEGER NOT NULL DEFAULT 1,
             lastReadCount INTEGER NOT NULL DEFAULT 0, lastRecordedCount INTEGER NOT NULL DEFAULT 0,
-            dailyAt TEXT, leadHours DOUBLE,
+            dailyAt TEXT, leadHours DOUBLE, service TEXT NOT NULL DEFAULT '', options TEXT NOT NULL DEFAULT '{}',
             lastIntakeAt DATETIME, createdAt DATETIME NOT NULL, updatedAt DATETIME NOT NULL
         );
         CREATE INDEX agent_event_sources_created ON agent_event_sources(agentID, createdAt);

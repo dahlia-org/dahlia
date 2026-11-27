@@ -27,6 +27,11 @@ struct DahliaBotSourceEditor: View {
                     Text(L10n.agentAlwaysOnChooseSource).font(.dahliaSectionHeader).foregroundStyle(.secondary)
                     if isNew {
                         LazyVGrid(columns: [GridItem(.adaptive(minimum: 140), spacing: 8)], alignment: .leading, spacing: 8) {
+                            Button { model.chooseCalendar() } label: {
+                                Label(L10n.agentCalendarSource, systemImage: "calendar").frame(maxWidth: .infinity, alignment: .leading)
+                            }
+                            .buttonStyle(.dahlia(draft.wrappedValue.kind == "calendar" ? .primary : .secondary))
+                            .accessibilityAddTraits(draft.wrappedValue.kind == "calendar" ? .isSelected : [])
                             ForEach(model.serverGroups, id: \.self) { group in
                                 let selected = draft.wrappedValue.kind == "mcp" && group.contains(draft.wrappedValue.server)
                                 Button { if !selected, let first = group.first { model.choose(server: first) } } label: {
@@ -35,11 +40,6 @@ struct DahliaBotSourceEditor: View {
                                 .buttonStyle(.dahlia(selected ? .primary : .secondary))
                                 .accessibilityAddTraits(selected ? .isSelected : [])
                             }
-                            Button { model.chooseCalendar() } label: {
-                                Label(L10n.agentCalendarSource, systemImage: "calendar").frame(maxWidth: .infinity, alignment: .leading)
-                            }
-                            .buttonStyle(.dahlia(draft.wrappedValue.kind == "calendar" ? .primary : .secondary))
-                            .accessibilityAddTraits(draft.wrappedValue.kind == "calendar" ? .isSelected : [])
                         }
                     } else if draft.wrappedValue.kind == "calendar" {
                         Label(L10n.agentCalendarSource, systemImage: "calendar")
@@ -49,17 +49,10 @@ struct DahliaBotSourceEditor: View {
                     }
                 }
                 Form {
-                    Section {
-                        if draft.wrappedValue.kind == "calendar" {
-                            Toggle(L10n.agentCalendarDaily, isOn: draft.dailyEnabled)
-                            if draft.wrappedValue.dailyEnabled {
-                                DatePicker(L10n.agentCalendarDailyTime, selection: draft.dailyTime, displayedComponents: .hourAndMinute)
-                            }
-                            Toggle(L10n.agentCalendarBeforeMeeting, isOn: draft.leadEnabled)
-                            if draft.wrappedValue.leadEnabled {
-                                TextField(L10n.agentCalendarLeadHours, value: draft.leadHours, format: .number)
-                            }
-                        } else {
+                    if draft.wrappedValue.kind == "calendar" {
+                        calendarSections(draft)
+                    } else {
+                        Section {
                             if let sourceID = draft.wrappedValue.id {
                                 LabeledContent(L10n.agentAlwaysOnServer, value: model.sourceChoiceName(sourceID))
                             } else if let group = model.serverGroups.first(where: { $0.contains(draft.wrappedValue.server) }) {
@@ -70,32 +63,23 @@ struct DahliaBotSourceEditor: View {
                                     ForEach(group, id: \.self) { Text(model.choiceName($0)).font(.dahliaBody).tag($0) }
                                 }
                             }
-                            TextField(
-                                L10n.agentAlwaysOnInstructions,
-                                text: draft.instructions,
-                                prompt: Text(L10n.agentAlwaysOnInstructionsPlaceholder),
-                                axis: .vertical
-                            )
-                            .lineLimit(2 ... 5)
+                            serviceRows(draft)
                             Picker(L10n.agentAlwaysOnInterval, selection: draft.intervalMinutes) {
                                 ForEach(Set(DahliaBotPanelModel.intervals + [draft.wrappedValue.intervalMinutes]).sorted(), id: \.self) {
                                     Text(L10n.agentAlwaysOnIntervalMinutes($0)).font(.dahliaBody).tag($0)
                                 }
                             }
                         }
-                    } footer: {
-                        Text(draft.wrappedValue.kind == "calendar" ? L10n.agentCalendarScheduleHelp : L10n.agentAlwaysOnInstructionsHelp)
-                            .font(.dahliaSecondary).foregroundStyle(.secondary)
                     }
                     Section {
                         DisclosureGroup(L10n.agentAlwaysOnAdvanced) {
                             TextField(
                                 L10n.name,
                                 text: draft.name,
-                                prompt: Text(draft.wrappedValue.kind == "calendar" ? L10n.agentCalendarSource : model
+                                prompt: Text(draft.wrappedValue.kind == "calendar" ? DahliaBotPanelModel.calendarName : model
                                     .displayName(draft.wrappedValue.server))
                             )
-                            if draft.wrappedValue.kind != "calendar" {
+                            if draft.wrappedValue.kind != "calendar", draft.wrappedValue.service.isEmpty {
                                 TextField(
                                     L10n.agentAlwaysOnAllowedSenders,
                                     text: draft.allowedSenders,
@@ -103,7 +87,18 @@ struct DahliaBotSourceEditor: View {
                                 )
                             }
                         }
+                        // The same text intake sends, so a choice's effect can be checked before saving. The calendar
+                        // runs no intake; the app writes its signals.
+                        if draft.wrappedValue.kind != "calendar" {
+                            DisclosureGroup(L10n.agentSourcePromptPreview) {
+                                Text(model.draftPrompt)
+                                    .font(.dahliaSecondary)
+                                    .textSelection(.enabled)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                            }
+                        }
                     }
+                    .disclosureGroupStyle(MCPDisclosureGroupStyle())
                 }
                 .formStyle(.grouped)
                 .toggleStyle(.dahliaSwitch)
@@ -130,7 +125,10 @@ struct DahliaBotSourceEditor: View {
                     }
                     .buttonStyle(.dahlia(.primary))
                     .keyboardShortcut(.defaultAction)
-                    .disabled(model.isBusy || (draft.wrappedValue.kind == "mcp" && draft.wrappedValue.server.isEmpty))
+                    .disabled(
+                        model.isBusy || (draft.wrappedValue.kind == "mcp" && draft.wrappedValue.server.isEmpty)
+                            || model.draftSource(draft.wrappedValue).lacksSlackChannels
+                    )
                 }
             }
             .padding(24)
@@ -142,6 +140,97 @@ struct DahliaBotSourceEditor: View {
             Button(L10n.delete, role: .destructive) { Task { await model.deleteDraft() } }
         } message: {
             Text(L10n.agentAlwaysOnDeleteSourceMessage)
+        }
+    }
+
+    @ViewBuilder
+    private func serviceRows(_ draft: Binding<DahliaBotPanelModel.Draft>) -> some View {
+        switch draft.wrappedValue.service {
+        case "mail":
+            SettingsInfoToggle(title: L10n.agentMailAddressedOnly, help: L10n.agentMailAddressedOnlyHelp, isOn: draft.addressedOnly)
+            LabeledContent {
+                TextField(L10n.agentAlwaysOnAllowedSenders, text: draft.allowedSenders, prompt: Text(L10n.agentAlwaysOnAllowedSendersPlaceholder))
+                    .labelsHidden()
+            } label: {
+                infoLabel(L10n.agentAlwaysOnAllowedSenders, help: L10n.agentMailSendersHelp)
+            }
+            TextField(L10n.agentMailAllowedDomains, text: draft.allowedDomains, prompt: Text(L10n.agentMailAllowedDomainsPlaceholder))
+            notesField(draft)
+        case "slack":
+            Picker(L10n.agentSlackScope, selection: draft.slackScope) {
+                Text(L10n.agentSlackScopeMentions).font(.dahliaBody).tag(AgentSourceOptions.SlackScope.mentions)
+                Text(L10n.agentSlackScopeJoined).font(.dahliaBody).tag(AgentSourceOptions.SlackScope.joined)
+                Text(L10n.agentSlackScopeAll).font(.dahliaBody).tag(AgentSourceOptions.SlackScope.all)
+            }
+            LabeledContent {
+                TextField(L10n.agentSlackIncludeChannels, text: draft.includeChannels, prompt: Text(L10n.agentSlackChannelsPlaceholder))
+                    .labelsHidden()
+            } label: {
+                infoLabel(L10n.agentSlackIncludeChannels, help: L10n.agentSlackChannelsHelp)
+            }
+            TextField(L10n.agentSlackExcludeChannels, text: draft.excludeChannels, prompt: Text(L10n.agentSlackChannelsPlaceholder))
+            notesField(draft)
+            if model.draftSource(draft.wrappedValue).lacksSlackChannels {
+                Text(L10n.agentSlackAllNeedsChannels).font(.dahliaSecondary).foregroundStyle(.red)
+            }
+        default:
+            LabeledContent {
+                TextField(
+                    L10n.agentAlwaysOnInstructions,
+                    text: draft.instructions,
+                    prompt: Text(L10n.agentAlwaysOnInstructionsPlaceholder),
+                    axis: .vertical
+                )
+                .lineLimit(2 ... 5)
+                .labelsHidden()
+            } label: {
+                infoLabel(L10n.agentAlwaysOnInstructions, help: L10n.agentAlwaysOnInstructionsHelp)
+            }
+        }
+    }
+
+    private func notesField(_ draft: Binding<DahliaBotPanelModel.Draft>) -> some View {
+        TextField(L10n.agentAlwaysOnNotes, text: draft.instructions, prompt: Text(L10n.agentAlwaysOnNotesPlaceholder), axis: .vertical)
+            .lineLimit(1 ... 4)
+    }
+
+    /// One section per notice, so each one's toggle heads its own settings; the filter applies to all of them.
+    @ViewBuilder
+    private func calendarSections(_ draft: Binding<DahliaBotPanelModel.Draft>) -> some View {
+        Section {
+            Toggle(L10n.agentCalendarDaily, isOn: draft.dailyEnabled)
+            if draft.wrappedValue.dailyEnabled {
+                DatePicker(L10n.agentCalendarDailyTime, selection: draft.dailyTime, displayedComponents: .hourAndMinute)
+            }
+        }
+        Section {
+            Toggle(L10n.agentCalendarWeekly, isOn: draft.weeklyEnabled)
+            if draft.wrappedValue.weeklyEnabled {
+                let calendar = Calendar.current
+                Picker(L10n.agentCalendarWeekday, selection: draft.weekday) {
+                    // In the locale's week order; the tag is `Calendar`'s weekday, 1 for Sunday.
+                    ForEach((0 ..< 7).map { (calendar.firstWeekday - 1 + $0) % 7 + 1 }, id: \.self) {
+                        Text(calendar.weekdaySymbols[$0 - 1]).font(.dahliaBody).tag($0)
+                    }
+                }
+                DatePicker(L10n.agentCalendarDailyTime, selection: draft.weeklyTime, displayedComponents: .hourAndMinute)
+            }
+        }
+        Section {
+            SettingsInfoToggle(title: L10n.agentCalendarBeforeMeeting, help: L10n.agentCalendarScheduleHelp, isOn: draft.leadEnabled)
+            if draft.wrappedValue.leadEnabled {
+                TextField(L10n.agentCalendarLeadHours, value: draft.leadHours, format: .number)
+            }
+        }
+        Section {
+            SettingsInfoToggle(title: L10n.agentCalendarAcceptedOnly, help: L10n.agentCalendarAcceptedOnlyHelp, isOn: draft.acceptedOnly)
+        }
+    }
+
+    private func infoLabel(_ title: String, help: String) -> some View {
+        HStack {
+            Text(title)
+            SettingsInfoButton(help: help)
         }
     }
 

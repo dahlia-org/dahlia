@@ -16,14 +16,27 @@ final class DahliaBotPanelModel {
         var instructions = ""
         var intervalMinutes = 15
         var allowedSenders = ""
+        var allowedDomains = ""
         var dailyEnabled = true
         var dailyTime = Calendar.current.date(bySettingHour: 8, minute: 0, second: 0, of: .now) ?? .now
         var leadEnabled = true
         var leadHours = 24.0
         var kind = "mcp"
+        /// `mail`, `slack`, or empty, as `AgentSourceRecord.service`.
+        var service = ""
+        var addressedOnly = true
+        var slackScope = AgentSourceOptions.SlackScope.mentions
+        var includeChannels = ""
+        var excludeChannels = ""
+        var weeklyEnabled = false
+        var weekday = 2
+        var weeklyTime = Calendar.current.date(bySettingHour: 8, minute: 0, second: 0, of: .now) ?? .now
+        var acceptedOnly = false
     }
 
     static let intervals = [5, 15, 30, 60]
+    /// The calendar Source's default name, in English like a connector's.
+    static let calendarName = "Calendar"
     static let taskPage = 30
 
     var sources: [AgentSourceRecord] = []
@@ -368,7 +381,9 @@ final class DahliaBotPanelModel {
                 groups.append([server])
             }
         }
-        return groups
+        // Mail before Slack, then other servers in their order, after the calendar the editor puts first.
+        return groups.filter { group($0[0]) == "mail" } + groups.filter { group($0[0]) == "slack" }
+            + groups.filter { !["mail", "slack"].contains(group($0[0])) }
     }
 
     func setEnabled(_ enabled: Bool) async {
@@ -379,41 +394,49 @@ final class DahliaBotPanelModel {
         error = nil
         guard let source else {
             draft = Draft()
-            if let first = servers.first { choose(server: first) } else { chooseCalendar() }
+            chooseCalendar()
             return
         }
         let senders = (try? JSONDecoder().decode([String].self, from: Data(source.allowedSenders.utf8))) ?? []
         var edited = Draft(
             id: source.id, name: source.name, server: source.server, instructions: source.instructions,
-            intervalMinutes: source.intervalMinutes, allowedSenders: senders.joined(separator: ", "), kind: source.kind
+            intervalMinutes: source.intervalMinutes, allowedSenders: senders.joined(separator: ", "), kind: source.kind,
+            service: source.service
         )
+        let options = source.sourceOptions
         edited.dailyEnabled = source.dailyAt != nil
         edited.leadEnabled = source.leadHours != nil
         edited.leadHours = source.leadHours ?? 24
-        if let at = source.dailyAt, let components = AgentInboxService.dailyComponents(at) {
-            edited.dailyTime = Calendar.current.date(bySettingHour: components.hour, minute: components.minute, second: 0, of: .now) ?? .now
-        }
+        if let time = Self.time(source.dailyAt) { edited.dailyTime = time }
+        edited.addressedOnly = options.addressedOnly == true
+        edited.allowedDomains = (options.allowedDomains ?? []).joined(separator: ", ")
+        edited.slackScope = options.slackScope ?? .mentions
+        edited.includeChannels = (options.includeChannels ?? []).joined(separator: ", ")
+        edited.excludeChannels = (options.excludeChannels ?? []).joined(separator: ", ")
+        edited.weeklyEnabled = options.weeklyAt != nil
+        edited.weekday = options.weekday ?? 2
+        if let time = Self.time(options.weeklyAt) { edited.weeklyTime = time }
+        edited.acceptedOnly = options.acceptedOnly == true
         draft = edited
     }
 
-    /// A new source's server; the name and what to read follow it until the user changes them.
+    /// A new source's server; the name and the kind of settings follow it until the user changes the name.
     func choose(server: String) {
         guard var changed = draft, changed.id == nil else { return }
-        let previousName = changed.kind == "calendar" ? L10n.agentCalendarSource : displayName(changed.server)
+        let previousName = changed.kind == "calendar" ? Self.calendarName : displayName(changed.server)
         if changed.name.isEmpty || changed.name == previousName { changed.name = displayName(server) }
-        if changed.instructions.isEmpty || changed.instructions == Self.suggestedInstructions(forGroup: group(changed.server)) {
-            changed.instructions = Self.suggestedInstructions(forGroup: group(server))
-        }
         changed.server = server
         changed.kind = "mcp"
+        changed.service = ["mail", "slack"].contains(group(server)) ? group(server) : ""
         draft = changed
     }
 
     func chooseCalendar() {
         guard var changed = draft, changed.id == nil else { return }
-        if changed.name.isEmpty || changed.name == displayName(changed.server) { changed.name = L10n.agentCalendarSource }
+        if changed.name.isEmpty || changed.name == displayName(changed.server) { changed.name = Self.calendarName }
         changed.kind = "calendar"
         changed.server = ""
+        changed.service = ""
         draft = changed
     }
 
@@ -434,36 +457,19 @@ final class DahliaBotPanelModel {
         server.isEmpty ? "" : AgentMCPServer.displayName(for: services[server] ?? server)
     }
 
-    /// What most people want read from a mail or Slack server, so adding one takes a click.
-    static func suggestedInstructions(forGroup group: String) -> String {
-        switch group {
-        case "slack": L10n.agentAlwaysOnSuggestedSlack
-        case "mail": L10n.agentAlwaysOnSuggestedMail
-        default: ""
-        }
-    }
-
-    func saveDraft() async {
-        guard let draft, let agentID else { return }
-        let generation = agentGeneration
+    /// The Source the draft saves. The preview shows this Source's prompt, so it is what intake will send.
+    func draftSource(_ draft: Draft, now: Date = .now) -> AgentSourceRecord {
         let isCalendar = draft.kind == "calendar"
-        let name = draft.name.trimmingCharacters(in: .whitespacesAndNewlines).nilIfBlank
-            ?? (isCalendar ? L10n.agentCalendarSource : displayName(draft.server))
-        let instructions = draft.instructions.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !name.isEmpty, isCalendar || (!draft.server.isEmpty && !instructions.isEmpty) else {
-            error = L10n.agentAlwaysOnRequired
-            return
-        }
-        let senders = draft.allowedSenders.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
         let existing = sources.first { $0.id == draft.id }
-        let now = Date.now
-        guard let connectionID = isCalendar ? "" : existing?.connectionID ?? connections[draft.server] else {
-            error = L10n.agentAlwaysOnRequired
-            return
-        }
+        // Slack and the calendar have no sender limit.
+        let senders = draft.kind == "calendar" || draft.service == "slack" ? [] : draft.allowedSenders.split(separator: ",")
+            .map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
         var source = AgentSourceRecord(
-            id: existing?.id ?? UUID.v7().uuidString, agentID: agentID, name: name, server: draft.server,
-            instructions: instructions, intervalMinutes: draft.intervalMinutes, allowedSenders: String(
+            id: existing?.id ?? draft.id ?? "", agentID: agentID ?? "",
+            name: draft.name.trimmingCharacters(in: .whitespacesAndNewlines).nilIfBlank
+                ?? (isCalendar ? Self.calendarName : displayName(draft.server)),
+            server: draft.server, instructions: draft.instructions.trimmingCharacters(in: .whitespacesAndNewlines),
+            intervalMinutes: draft.intervalMinutes, allowedSenders: String(
                 decoding: (try? JSONEncoder().encode(senders)) ?? Data("[]".utf8),
                 as: UTF8.self
             ),
@@ -471,13 +477,93 @@ final class DahliaBotPanelModel {
             lastIntakeAt: existing?.lastIntakeAt,
             createdAt: existing?.createdAt ?? now, updatedAt: now
         )
-        source.connectionID = connectionID
+        source.connectionID = isCalendar ? "" : existing?.connectionID ?? connections[draft.server] ?? ""
         source.kind = isCalendar ? "calendar" : "mcp"
-        if isCalendar {
-            let time = Calendar.current.dateComponents([.hour, .minute], from: draft.dailyTime)
-            source.dailyAt = draft.dailyEnabled ? String(format: "%02d:%02d", time.hour ?? 8, time.minute ?? 0) : nil
-            source.leadHours = draft.leadEnabled ? draft.leadHours : nil
+        source.service = existing?.service ?? draft.service
+        var options = AgentSourceOptions()
+        switch source.service {
+        case "mail":
+            options.addressedOnly = draft.addressedOnly
+            options.allowedDomains = Self.domains(draft.allowedDomains)
+        case "slack":
+            options.slackScope = draft.slackScope
+            options.includeChannels = Self.channels(draft.includeChannels)
+            options.excludeChannels = Self.channels(draft.excludeChannels)
+        default: break
         }
+        if isCalendar {
+            source.dailyAt = draft.dailyEnabled ? Self.clock(draft.dailyTime) : nil
+            source.leadHours = draft.leadEnabled ? draft.leadHours : nil
+            if draft.weeklyEnabled {
+                options.weeklyAt = Self.clock(draft.weeklyTime)
+                options.weekday = draft.weekday
+            }
+            options.acceptedOnly = draft.acceptedOnly
+        }
+        source.sourceOptions = options
+        return source
+    }
+
+    /// The draft's intake prompt, as intake will send it.
+    var draftPrompt: String {
+        guard let draft else { return "" }
+        return AgentSourcePrompt.intake(draftSource(draft), since: L10n.agentSourcePromptSince)
+    }
+
+    /// A Source's settings in a line, for its card.
+    static func summary(_ source: AgentSourceRecord) -> String {
+        let options = source.sourceOptions
+        let choice: String? = switch source.service {
+        case "mail": options.addressedOnly == true ? L10n.agentMailAddressedOnly : nil
+        case "slack": options.slackScope.map(scopeName)
+        default: nil
+        }
+        if source.kind == "calendar" { return L10n.agentCalendarScheduleHelp }
+        return [choice, source.instructions.nilIfBlank].compactMap(\.self).joined(separator: " · ")
+    }
+
+    static func scopeName(_ scope: AgentSourceOptions.SlackScope) -> String {
+        switch scope {
+        case .mentions: L10n.agentSlackScopeMentions
+        case .joined: L10n.agentSlackScopeJoined
+        case .all: L10n.agentSlackScopeAll
+        }
+    }
+
+    /// Channel names as the user typed them, without `#`, spaces, or empty entries.
+    nonisolated static func channels(_ text: String) -> [String] {
+        text.split(separator: ",").map {
+            String($0.trimmingCharacters(in: .whitespaces).drop { $0 == "#" }).trimmingCharacters(in: .whitespaces)
+        }.filter { !$0.isEmpty }
+    }
+
+    nonisolated static func domains(_ text: String) -> [String] {
+        text.split(separator: ",").map {
+            String($0.trimmingCharacters(in: .whitespaces).drop { $0 == "@" }).trimmingCharacters(in: .whitespaces).lowercased()
+        }.filter { !$0.isEmpty }
+    }
+
+    private static func clock(_ date: Date) -> String {
+        let time = Calendar.current.dateComponents([.hour, .minute], from: date)
+        return String(format: "%02d:%02d", time.hour ?? 8, time.minute ?? 0)
+    }
+
+    private static func time(_ clock: String?) -> Date? {
+        guard let clock, let components = AgentInboxService.dailyComponents(clock) else { return nil }
+        return Calendar.current.date(bySettingHour: components.hour, minute: components.minute, second: 0, of: .now)
+    }
+
+    func saveDraft() async {
+        guard let draft, agentID != nil else { return }
+        let generation = agentGeneration
+        var source = draftSource(draft)
+        // Another MCP server has no settings of its own, so what to read is the whole request.
+        guard !source.name.isEmpty, source.kind == "calendar" || (!source.server.isEmpty && !source.connectionID.isEmpty
+            && (!source.service.isEmpty || !source.instructions.isEmpty)) else {
+            error = L10n.agentAlwaysOnRequired
+            return
+        }
+        if source.id.isEmpty { source.id = UUID.v7().uuidString }
         let saved = source
         await perform { inbox in try inbox.saveSource(saved) }
         guard generation == agentGeneration else { return }

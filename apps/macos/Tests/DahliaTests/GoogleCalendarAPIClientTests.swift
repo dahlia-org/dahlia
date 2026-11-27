@@ -441,6 +441,7 @@ import Synchronization
 
         @Test(arguments: [
             ", \"organizer\": { \"self\": true }",
+            ", \"attendees\": []",
             "",
         ])
         func eventPayloadTreatsOrganizerOrMissingAttendeesAsAttending(_ participationJSON: String) throws {
