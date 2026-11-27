@@ -6,7 +6,6 @@
     import Testing
     @testable import Dahlia
 
-    @MainActor
     struct ReleaseSchemaMigrationTests {
         /// Migration identifiers shipped through v1.8.0, in registration order.
         /// Release preparation appends newly shipped identifiers. Never edit existing entries to make this pass:

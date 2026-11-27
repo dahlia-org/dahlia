@@ -50,7 +50,9 @@ final class AppDatabaseManager: Sendable {
         } else {
             try DatabaseQueue(path: path, configuration: configuration)
         }
-        let copiesMigratedSchema = path == ":memory:" && onMigration == nil
+        // An empty database has nothing to migrate, so it takes the migrated schema as a copy instead of replaying every migration.
+        let copiesMigratedSchema = try onMigration == nil
+            && dbQueue.read { try Int.fetchOne($0, sql: "SELECT COUNT(*) FROM sqlite_master") == 0 }
         if copiesMigratedSchema {
             try Self.migratedInMemoryDatabase.get().backup(to: dbQueue)
         } else {
@@ -630,9 +632,13 @@ final class AppDatabaseManager: Sendable {
         upTo migrationIdentifier: String,
         excludingTableNames: Set<String> = []
     ) throws -> Bool {
-        let reference = try DatabaseQueue(configuration: configuration())
-        defer { try? reference.close() }
-        try schemaMigrator(for: migrationIdentifier).migrate(reference, upTo: migrationIdentifier)
+        let reference: any DatabaseWriter
+        if migrationIdentifier == currentMigrationIdentifier {
+            reference = try migratedInMemoryDatabase.get()
+        } else {
+            reference = try DatabaseQueue(configuration: configuration())
+            try schemaMigrator(for: migrationIdentifier).migrate(reference, upTo: migrationIdentifier)
+        }
         let expected = try reference.read {
             try schemaSignature(in: $0, excludingTableNames: excludingTableNames)
         }

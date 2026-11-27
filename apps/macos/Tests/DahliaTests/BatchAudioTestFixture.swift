@@ -6,7 +6,6 @@ import GRDB
 #if canImport(Testing)
     import Testing
 
-    @MainActor
     struct BatchAudioTestFixture {
         let database: AppDatabaseManager
         let testRootURL: URL

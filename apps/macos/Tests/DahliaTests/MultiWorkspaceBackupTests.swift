@@ -6,7 +6,6 @@ import GRDB
 #if canImport(Testing)
     import Testing
 
-    @MainActor
     struct MultiWorkspaceBackupTests {
         @Test
         func mixedRestorePreservesSkippedWorkspacesAndSharedTags() async throws {
@@ -247,34 +246,6 @@ import GRDB
             }
         }
 
-        @Test
-        func settingsKeepsExplicitSelectionAndRequiresPerWorkspaceRestoreChoice() async throws {
-            let fixture = try BatchAudioTestFixture(name: "MultiSettings", endedAt: .now, batchCompletedAt: .now)
-            defer { fixture.removeFiles() }
-            let second = try addWorkspace(to: fixture, name: "Second")
-            let model = BackupSettingsViewModel(dbQueue: fixture.database.dbQueue, applicationSupportURL: fixture.testRootURL)
-            model.selectedWorkspaceIds = [fixture.meeting.workspaceId, second.workspace.id]
-            await model.refresh()
-            await model.createBackup()
-            let metadata = try #require(model.generations.first?.metadata)
-            #expect(metadata.workspaces.count == 2)
-            model.selectedWorkspaceIds.removeAll()
-            await model.refresh()
-            #expect(model.selectedWorkspaceIds.isEmpty)
-            model.beginRestore(metadata)
-            #expect(model.restoreSelections.allSatisfy { $0.mode == nil })
-            #expect(!model.canRestore)
-            model.restoreSelections[0].mode = .overwrite
-            model.restoreSelections[1].mode = .newWorkspace
-            #expect(model.canRestore)
-            model.restoreSelections[1].name = " "
-            #expect(!model.canRestore)
-            model.restoreSelections[1].name = "Restored"
-            #expect(model.canRestore)
-            model.restoreSelections[0].mode = nil
-            #expect(model.canRestore)
-        }
-
         private func addWorkspace(to fixture: BatchAudioTestFixture, name: String) throws -> (workspace: WorkspaceRecord, meeting: MeetingRecord) {
             let workspace = WorkspaceRecord(id: .v7(), path: nil, name: name, createdAt: fixture.now, lastOpenedAt: fixture.now)
             var meeting = fixture.meeting
@@ -295,6 +266,38 @@ import GRDB
             try live.dbQueue.write { try $0.execute(sql: "UPDATE meetings SET name = 'Changed'") }
             try live.close()
             return url
+        }
+    }
+
+    @MainActor
+    struct MultiWorkspaceBackupSettingsTests {
+        @Test
+        func settingsKeepsExplicitSelectionAndRequiresPerWorkspaceRestoreChoice() async throws {
+            let fixture = try BatchAudioTestFixture(name: "MultiSettings", endedAt: .now, batchCompletedAt: .now)
+            defer { fixture.removeFiles() }
+            let second = WorkspaceRecord(id: .v7(), path: nil, name: "Second", createdAt: fixture.now, lastOpenedAt: fixture.now)
+            try await fixture.database.dbQueue.write { db in try second.insert(db) }
+            let model = BackupSettingsViewModel(dbQueue: fixture.database.dbQueue, applicationSupportURL: fixture.testRootURL)
+            model.selectedWorkspaceIds = [fixture.meeting.workspaceId, second.id]
+            await model.refresh()
+            await model.createBackup()
+            let metadata = try #require(model.generations.first?.metadata)
+            #expect(metadata.workspaces.count == 2)
+            model.selectedWorkspaceIds.removeAll()
+            await model.refresh()
+            #expect(model.selectedWorkspaceIds.isEmpty)
+            model.beginRestore(metadata)
+            #expect(model.restoreSelections.allSatisfy { $0.mode == nil })
+            #expect(!model.canRestore)
+            model.restoreSelections[0].mode = .overwrite
+            model.restoreSelections[1].mode = .newWorkspace
+            #expect(model.canRestore)
+            model.restoreSelections[1].name = " "
+            #expect(!model.canRestore)
+            model.restoreSelections[1].name = "Restored"
+            #expect(model.canRestore)
+            model.restoreSelections[0].mode = nil
+            #expect(model.canRestore)
         }
     }
 #endif
