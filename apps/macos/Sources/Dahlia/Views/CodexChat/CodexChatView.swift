@@ -88,6 +88,7 @@ struct CodexChatView: View {
                             onLoadEarlierMessages: { await session.loadEarlierMessages() },
                             parentThreadID: session.backendThreadID,
                             currentRunID: session.runtimeState?.turnID,
+                            agent: agent,
                             coordinator: coordinator,
                             onOpenThread: openHistoryThread
                         )

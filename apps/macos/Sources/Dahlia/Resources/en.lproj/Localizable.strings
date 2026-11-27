@@ -2045,6 +2045,7 @@
 
 "chat.worked" = "Worked";
 "chat.workedFor" = "Worked for %@";
+"chat.workingFor" = "Working for %@";
 "chat.toolUseCount" = "%lld tool uses";
 "Omnigent" = "Omnigent";
 "settings.agents.omnigent.connectionChanged" = "The Omnigent connection changed. Send a new message to use the selected workspace.";

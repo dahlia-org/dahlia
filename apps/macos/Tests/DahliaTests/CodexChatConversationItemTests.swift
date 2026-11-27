@@ -407,6 +407,26 @@ import Foundation
         }
 
         @Test
+        func agentChatHeadsSteplessAndStreamingRuns() {
+            let runID = UUID.v7()
+            let start = Date(timeIntervalSince1970: 1000)
+            let question = CodexChatMessage(id: "question", role: .user, text: "Hi", runID: runID, timestamp: start)
+            let answer = CodexChatMessage(
+                id: "answer", role: .assistant, text: "Hello", runID: runID, timestamp: start.addingTimeInterval(13)
+            )
+            #expect(CodexChatConversationItem.build(from: [question, answer]) == [.message(question), .message(answer)])
+            #expect(CodexChatConversationItem.build(from: [question, answer], showsRunHeaders: true) == [
+                .message(question), .work(id: answer.id, messages: [], duration: 13), .message(answer),
+            ])
+            var streaming = answer
+            streaming.isStreaming = true
+            #expect(CodexChatConversationItem.build(from: [question, streaming]) == [.message(question), .message(streaming)])
+            #expect(CodexChatConversationItem.build(from: [question, streaming], showsRunHeaders: true) == [
+                .message(question), .running(id: runID.uuidString, startedAt: start), .message(streaming),
+            ])
+        }
+
+        @Test
         func toolEndingRunsRemainExpandedIncludingRestoredToolsAndTrailingSteers() {
             let runID = UUID.v7()
             let question = CodexChatMessage(role: .user, text: "Fix it", runID: runID)

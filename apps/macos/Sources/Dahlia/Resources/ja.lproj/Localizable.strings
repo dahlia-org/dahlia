@@ -2045,6 +2045,7 @@
 
 "chat.worked" = "作業の経過";
 "chat.workedFor" = "作業時間 %@";
+"chat.workingFor" = "%@ 処理中";
 "chat.toolUseCount" = "%lld 件のツール操作";
 "Omnigent" = "Omnigent";
 "settings.agents.omnigent.connectionChanged" = "Omnigent の接続先が変更されました。選択したワークスペースを使うには、新しいメッセージを送ってください。";
