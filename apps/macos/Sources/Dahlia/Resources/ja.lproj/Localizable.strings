@@ -1495,6 +1495,12 @@
 "settings.agents.mcpWorkspaceIsAccount" = "このワークスペースはアカウント自身のもので、MCP にもそのまま使えます。";
 "settings.agents.enabledCount %lld" = "%lld 件オン";
 "settings.agents.mcpServiceWithServerName %@ %@" = "%1$@ (%2$@)";
+"settings.agents.mcpNameConflictTitle" = "同じ名前のコネクタがあります";
+"settings.agents.mcpNameConflictReplace" = "置き換える";
+"settings.agents.mcpNameConflictChoice" = "登録方法";
+"settings.agents.mcpNameConflictAlias" = "別名で登録";
+"settings.agents.mcpNameConflictMessage %@ %@" = "「%1$@」は %2$@ のコネクタが使っています。置き換えると古い方をオフにし、新しい方が名前を引き継ぎます。直接設定のコネクタを使うスケジュールは、ツールの許可を見直してください。";
+"settings.agents.omnigent.conflictMessage %@" = "Omnigent は %@ でオンになっています。Omnigent は一つの接続でしか使えないため、置き換えるとそちらはオフになります。";
 "settings.agents.unityGatewayHost %@" = "Databricks (%@)";
 "settings.agents.workspaceURL" = "ワークスペース URL";
 "settings.agents.mcps" = "コネクタ";
@@ -1945,8 +1951,7 @@
 "chat.workedFor" = "作業時間 %@";
 "chat.toolUseCount" = "%lld 件のツール操作";
 "Omnigent" = "Omnigent";
-"settings.agents.omnigent.enabled" = "Omnigent との統合を有効化（ベータ機能）";
-"settings.agents.omnigent.enabledHelp" = "チャットからこのワークスペースの Omnigent セッションを一覧・開始でき、チャットのサイドバーにも表示します。開始はチャットの承認方式に従います。";
+"settings.agents.omnigent.enabledHelp" = "ベータ機能。チャットからこのワークスペースの Omnigent セッションを一覧・開始でき、チャットのサイドバーにも表示します。開始はチャットの承認方式に従います。";
 "sidebar.omnigent.refresh" = "Omnigent セッションを更新";
 "sidebar.omnigent.noSessions" = "Omnigent セッションはありません";
 "omnigent.session.noMessages" = "まだメッセージはありません";

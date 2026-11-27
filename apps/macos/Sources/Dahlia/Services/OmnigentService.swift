@@ -28,13 +28,25 @@ enum OmnigentService {
         var errorDescription: String? { "Omnigent returned HTTP \(status): \(body)" }
     }
 
-    nonisolated static func enabledKey(_ account: String) -> String { "omnigentEnabled.\(account)" }
+    /// The one connection Omnigent is on for. Omnigent cannot be on for two, so there is no alias for it.
+    nonisolated static func connectionKey(_ account: String) -> String { "omnigentConnection.\(account)" }
+    /// Released settings' switch, which meant the oldest connection.
+    nonisolated static func legacyEnabledKey(_ account: String) -> String { "omnigentEnabled.\(account)" }
 
-    /// The Databricks workspace to call, when a connection exists and Omnigent is on (it is off by default).
-    nonisolated static func connectionID(defaults: UserDefaults = .standard) -> UUID? {
-        guard let connectionID = ProviderAccountDirectory.databricksConnectionID,
-              defaults.bool(forKey: enabledKey(AppAccount.key)) else { return nil }
-        return connectionID
+    /// The Databricks workspace to call, while Omnigent is on for a connection that exists (it is off by default).
+    nonisolated static func connectionID(
+        defaults: UserDefaults = .standard,
+        connections: [UUID] = ProviderAccountDirectory.databricksConnections().map(\.id)
+    ) -> UUID? {
+        let selected = defaults.string(forKey: connectionKey(AppAccount.key)).flatMap(UUID.init(uuidString:))
+            ?? (defaults.bool(forKey: legacyEnabledKey(AppAccount.key)) ? connections.first : nil)
+        return selected.flatMap { connections.contains($0) ? $0 : nil }
+    }
+
+    /// Turns Omnigent on for one connection, which turns it off for any other, or off with nil.
+    nonisolated static func setConnectionID(_ id: UUID?, defaults: UserDefaults = .standard) {
+        defaults.set(id?.uuidString, forKey: connectionKey(AppAccount.key))
+        defaults.removeObject(forKey: legacyEnabledKey(AppAccount.key))
     }
 
     static func sessions(connectionID: UUID) async throws -> [Session] {

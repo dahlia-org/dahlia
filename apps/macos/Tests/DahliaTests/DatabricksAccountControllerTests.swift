@@ -29,7 +29,7 @@
             #expect(model.pendingDatabricksSignOut == nil)
             await model.confirmDatabricksSignOut()
             #expect(try await service.connections() == [connection])
-            #expect(model.providerDatabricksConnectionID == connection.id)
+            #expect(model.databricksConnections.first?.id == connection.id)
         }
 
         @Test func removesOnlyTheChosenWorkspace() async throws {

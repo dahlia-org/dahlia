@@ -23,9 +23,18 @@ final class WorkspaceAISettingsModel {
     private(set) var databricksConnections: [DatabricksConnection] = []
     private(set) var pendingDatabricksSignOut: DatabricksConnection?
 
-    /// The Databricks connection Omnigent uses, the oldest, as `ProviderAccountDirectory.databricksConnectionID` does.
-    var providerDatabricksConnectionID: UUID? {
-        databricksConnections.first?.id
+    /// Bumped when Omnigent's connection changes, so views reading `omnigentConnectionID` update.
+    private var omnigentRevision = 0
+
+    /// The Databricks connection Omnigent is on for, while it is connected.
+    var omnigentConnectionID: UUID? {
+        _ = omnigentRevision
+        return OmnigentService.connectionID(defaults: setupDefaults, connections: databricksConnections.map(\.id))
+    }
+
+    func setOmnigentConnectionID(_ id: UUID?) {
+        OmnigentService.setConnectionID(id, defaults: setupDefaults)
+        omnigentRevision += 1
     }
 
     var generationSettings = WorkspaceGenerationSettings() {

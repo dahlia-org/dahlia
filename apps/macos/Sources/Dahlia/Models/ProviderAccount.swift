@@ -117,12 +117,6 @@ extension ProviderAccountDirectory {
         accounts.first { $0.capabilities.contains(capability) }
     }
 
-    /// The Databricks connection, for features that only Databricks offers (such as Omnigent).
-    static var databricksConnectionID: UUID? {
-        // shortcut: Omnigent always uses the oldest connection; let it choose one when users connect several workspaces.
-        databricksConnections().first?.id
-    }
-
     /// The provider account behind a Pi provider ID that asks Dahlia for a token, if the app bridges it.
     static func account(piProviderID: String) -> ProviderAccount? {
         modelAccounts.first { $0.piProviderID == piProviderID }

@@ -381,6 +381,51 @@ import os
         }
 
         @Test
+        func aServiceTakingAnotherServersNameReplacesItOrTakesAnAlias() throws {
+            let (model, defaults) = try Self.model(Self.runtime(commands: OSAllocatedUnfairLock(initialState: [])))
+            let first = Self.legacyWorkspace
+            let second = AgentMCPProvider(workspaceURL: URL(string: "https://second.cloud.databricks.com")!)
+            try model.setService("system.ai.github", enabled: true, of: first)
+            let original = try #require(model.servers(of: first).first)
+            #expect(model.conflictingServer(for: "system.ai.github", of: first) == nil)
+            #expect(model.conflictingServer(for: "main.default.github", of: second) == original)
+            #expect(model.conflictingServer(for: "system.ai.slack", of: second) == nil)
+
+            try model.enableService("system.ai.github", of: second, name: "github_work")
+            #expect(model.settings.servers.map(\.name).sorted() == ["github", "github_work"])
+            #expect(throws: AgentMCPSettingsError.self) { try model.enableService("system.ai.slack", of: second, name: "github") }
+
+            try model.setService("system.ai.github", enabled: false, of: second)
+            try model.enableService("system.ai.github", of: second, replacing: original)
+            #expect(model.servers(of: first).isEmpty)
+            let replacement = try #require(model.servers(of: second).first)
+            #expect(replacement.name == "github")
+            #expect(replacement.id != original.id) // Durable grants bind the registration, so they do not carry over.
+            #expect(AgentMCPSettings.load(defaults: defaults).servers.map(\.name) == ["github"])
+        }
+
+        @Test
+        func replacingADirectServerKeepsItOffUnderAnotherName() throws {
+            let (model, _) = try Self.model(Self.runtime(commands: OSAllocatedUnfairLock(initialState: [])))
+            try model.saveDirectServer(name: "slack", .init(command: "slack-mcp"))
+            let direct = try #require(model.directServers.first)
+            let tool = "mcp__slack__search"
+            let oldGrants = Set(AgentMCPSettings.scheduledToolGrants(
+                [tool], connections: model.settings.directConnectionIDs, servers: model.settings.scheduledServers
+            ))
+            #expect(model.settings.allowsScheduledTool(tool, grants: oldGrants))
+            #expect(model.conflictingServer(for: "system.ai.slack", of: Self.legacyWorkspace) == direct)
+            try model.enableService("system.ai.slack", of: Self.legacyWorkspace, replacing: direct)
+            let kept = try #require(model.directServers.first)
+            #expect(kept.name == "slack_2")
+            #expect(kept.direct?.isEnabled == false)
+            #expect(kept.direct?.command == "slack-mcp")
+            #expect(model.servers(of: Self.legacyWorkspace).map(\.name) == ["slack"])
+            #expect(!model.settings.allowsScheduledTool(tool, grants: oldGrants))
+            #expect(model.settings.allowsScheduledTool(tool, grants: [tool]))
+        }
+
+        @Test
         func retiredLightpandaRegistrationDoesNotLaunch() throws {
             let (model, defaults) = try Self.model(Self.runtime(commands: OSAllocatedUnfairLock(initialState: [])))
             var settings = model.settings

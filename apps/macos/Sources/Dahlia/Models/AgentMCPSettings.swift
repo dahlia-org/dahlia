@@ -273,10 +273,7 @@ struct AgentMCPSettings: Codable, Equatable, Sendable {
     /// The service's last name part made tool-safe (`github` for `system.ai.github`), numbered when a registered server
     /// or one of `taken` already has it.
     func defaultName(for service: String, taken: Set<String> = []) -> String {
-        let last = service.split(separator: ".").last.map(String.init) ?? service
-        let safe = String(last.lowercased().map { $0.isASCII && ($0.isLetter || $0.isNumber) ? $0 : "_" })
-            .replacing(/_{2,}/, with: "_")
-        let base = String(safe.prefix(36)).nilIfBlank ?? "mcp"
+        let base = Self.baseName(for: service)
         var name = base
         var number = 2
         while nameError(name) != nil || taken.contains(name) {
@@ -284,6 +281,14 @@ struct AgentMCPSettings: Codable, Equatable, Sendable {
             number += 1
         }
         return name
+    }
+
+    /// The service's last name part made tool-safe, before any number: `github` for `system.ai.github`.
+    static func baseName(for service: String) -> String {
+        let last = service.split(separator: ".").last.map(String.init) ?? service
+        let safe = String(last.lowercased().map { $0.isASCII && ($0.isLetter || $0.isNumber) ? $0 : "_" })
+            .replacing(/_{2,}/, with: "_")
+        return String(safe.prefix(36)).nilIfBlank ?? "mcp"
     }
 
     /// `mcp.json` entries keyed by server name. Gateway servers use `auth.provider`; a direct server's stdio command runs

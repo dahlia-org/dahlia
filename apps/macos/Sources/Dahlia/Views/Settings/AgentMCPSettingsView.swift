@@ -11,6 +11,9 @@ struct AgentMCPSettingsView: View {
     @State private var serviceSignIn: (service: String, task: Task<Void, Never>)?
     /// Each provider's listing in progress, cancelled when the tab goes away.
     @State private var listings: [String: Task<Void, Never>] = [:]
+    /// Optional so the catalog renders outside the main window, as in tests.
+    @Environment(MainWindowNavigation.self) private var navigation: MainWindowNavigation?
+    private let aiSettings = WorkspaceAISettingsModel.shared
 
     var body: some View {
         ScrollView {
@@ -43,7 +46,7 @@ struct AgentMCPSettingsView: View {
                                 .accessibilityHidden(true)
                             Text(L10n.unityGatewayHost(provider.host)).font(.dahliaHeadline)
                             Spacer()
-                            Text(L10n.agentEnabledCount(model.servers(of: provider).count))
+                            Text(L10n.agentEnabledCount(model.servers(of: provider).count + (isOmnigentOn(for: provider) ? 1 : 0)))
                                 .font(.dahliaSecondary)
                                 .foregroundStyle(.secondary)
                         }
@@ -136,6 +139,15 @@ struct AgentMCPSettingsView: View {
             ForEach(filtered, id: \.self) { service in
                 serviceCard(service, of: provider)
             }
+            if let connectionID = omnigentConnection(of: provider), matchesQuery(L10n.omnigent, comment: L10n.omnigentEnabledHelp) {
+                AgentMCPServiceCard(
+                    name: L10n.omnigent, comment: L10n.omnigentEnabledHelp,
+                    icon: AgentMCPServiceLogo.image(for: L10n.omnigent), isEnabled: omnigentEnabled(connectionID)
+                ) {
+                    EmptyView()
+                }
+                .help(L10n.omnigentEnabledHelp)
+            }
             Button { onAdd(provider) } label: {
                 VStack(alignment: .leading, spacing: 12) {
                     Label(L10n.mcpAddService, systemImage: "plus").font(.dahliaHeadline)
@@ -157,7 +169,9 @@ struct AgentMCPSettingsView: View {
         return AgentMCPServiceCard(
             name: AgentMCPServer.displayName(for: service),
             comment: model.comment(for: service, of: provider) ?? service,
-            icon: AgentMCPServiceLogo.image(for: service), isEnabled: enabled(service, of: provider)
+            icon: AgentMCPServiceLogo.image(for: service), isEnabled: enabled(service, of: provider),
+            // Another server took the plain name, so this one is told apart by its own.
+            alias: server.flatMap { $0.name == AgentMCPSettings.baseName(for: service) ? nil : $0.name }
         ) {
             if server == nil || !AgentMCPService.requiresUserSignIn(service) {
                 EmptyView()
@@ -187,6 +201,35 @@ struct AgentMCPSettingsView: View {
             }
         }
         .help(server.map { L10n.mcpServiceWithServerName(service, $0.name) } ?? service)
+    }
+
+    /// The Databricks connection behind a provider account, which Omnigent can be on for.
+    private func omnigentConnection(of provider: AgentMCPProvider) -> UUID? {
+        aiSettings.databricksConnections.first { URL(string: $0.host).map(AgentMCPProvider.id(for:)) == provider.id }?.id
+    }
+
+    private func isOmnigentOn(for provider: AgentMCPProvider) -> Bool {
+        omnigentConnection(of: provider).map { $0 == aiSettings.omnigentConnectionID } ?? false
+    }
+
+    /// Omnigent is on for one connection at most, so turning it on for another asks to replace, with no alias.
+    private func omnigentEnabled(_ connectionID: UUID) -> Binding<Bool> {
+        Binding {
+            aiSettings.omnigentConnectionID == connectionID
+        } set: { isOn in
+            guard isOn else { return aiSettings.setOmnigentConnectionID(nil) }
+            guard let current = aiSettings.omnigentConnectionID, current != connectionID, let navigation else {
+                return aiSettings.setOmnigentConnectionID(connectionID)
+            }
+            let host = aiSettings.databricksConnections.first { $0.id == current }.flatMap { URL(string: $0.host)?.host() } ?? ""
+            navigation.presentSettingsModal(AgentMCPReplaceDialog(
+                message: L10n.omnigentConflictMessage(L10n.unityGatewayHost(host)),
+                suggestedAlias: nil,
+                onReplace: { aiSettings.setOmnigentConnectionID(connectionID) },
+                onAlias: { _ in },
+                onClose: navigation.dismissSettingsModal
+            ))
+        }
     }
 
     private var columns: [GridItem] {
@@ -228,6 +271,13 @@ struct AgentMCPSettingsView: View {
         Binding {
             model.servers(of: provider).contains { $0.service == service }
         } set: { isOn in
+            if isOn, let navigation, let existing = model.conflictingServer(for: service, of: provider) {
+                return navigation.presentSettingsModal(AgentMCPReplaceDialog(
+                    service: service, existing: existing, model: model,
+                    enable: { try model.enableService(service, of: provider, name: $0, replacing: $1) },
+                    onClose: navigation.dismissSettingsModal
+                ))
+            }
             do {
                 try model.setService(service, enabled: isOn, of: provider)
                 model.errorMessage = nil

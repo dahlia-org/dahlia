@@ -8,7 +8,8 @@ enum AgentMCPServiceLogo {
             ("slack", "IntegrationSlack"), ("gmail", "IntegrationGmail"), ("drive", "IntegrationGoogleDrive"),
             ("github", "IntegrationGitHub"), ("atlassian", "IntegrationAtlassian"), ("jira", "IntegrationAtlassian"),
             ("confluence", "IntegrationAtlassian"), ("calendar", "IntegrationGoogleCalendar"),
-            ("microsoft", "IntegrationMicrosoft365"), ("genie", "IntegrationGenie"), ("sql", "IntegrationDBSQL"),
+            ("microsoft", "IntegrationMicrosoft365"), ("genie", "IntegrationGenie"),
+            ("omnigent", "IntegrationOmnigent"), ("sql", "IntegrationDBSQL"),
         ]
         if let logo = logos.first(where: { name.contains($0.0) }), let image = Bundle.appModule.image(forResource: logo.1) {
             // The GitHub mark is black, so it takes the text color to show in dark mode.
