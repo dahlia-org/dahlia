@@ -7,6 +7,8 @@ struct AgentMCPServiceCard<Actions: View>: View {
     @Binding var isEnabled: Bool
     /// Shown switched on and disabled: built in, with no way to turn it off.
     var isLocked = false
+    /// The server's own name, shown when it differs from the service's.
+    var alias: String?
     @ViewBuilder let actions: Actions
 
     var body: some View {
@@ -15,6 +17,9 @@ struct AgentMCPServiceCard<Actions: View>: View {
                 icon.resizable().scaledToFit().frame(width: 20, height: 20)
                     .accessibilityHidden(true)
                 Text(name).font(.dahliaHeadline)
+                if let alias {
+                    Text(alias).font(.dahliaSecondary).foregroundStyle(.secondary).lineLimit(1)
+                }
                 Spacer(minLength: 0)
                 actions.fixedSize()
                 Toggle(name, isOn: $isEnabled)

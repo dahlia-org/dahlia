@@ -2601,6 +2601,19 @@ enum L10n { // swiftlint:disable:this type_body_length
         String(localized: "settings.agents.mcpServiceWithServerName \(service) \(name)", bundle: bundle)
     }
 
+    static var mcpNameConflictTitle: String { String(localized: "settings.agents.mcpNameConflictTitle", bundle: bundle) }
+    static var mcpNameConflictReplace: String { String(localized: "settings.agents.mcpNameConflictReplace", bundle: bundle) }
+    static var mcpNameConflictChoice: String { String(localized: "settings.agents.mcpNameConflictChoice", bundle: bundle) }
+    static var mcpNameConflictAlias: String { String(localized: "settings.agents.mcpNameConflictAlias", bundle: bundle) }
+
+    static func mcpNameConflictMessage(_ name: String, _ place: String) -> String {
+        String(localized: "settings.agents.mcpNameConflictMessage \(name) \(place)", bundle: bundle)
+    }
+
+    static func omnigentConflictMessage(_ place: String) -> String {
+        String(localized: "settings.agents.omnigent.conflictMessage \(place)", bundle: bundle)
+    }
+
     static func unityGatewayHost(_ host: String) -> String {
         String(localized: "settings.agents.unityGatewayHost \(host)", bundle: bundle)
     }
@@ -3175,7 +3188,7 @@ enum L10n { // swiftlint:disable:this type_body_length
     static var chatNoticeExpanded: String { String(localized: "Chat notice expanded", bundle: bundle) }
     static var chatNoticeCollapsed: String { String(localized: "Chat notice collapsed", bundle: bundle) }
     static var omnigent: String { String(localized: "Omnigent", bundle: bundle) }
-    static var omnigentEnabled: String { String(localized: "settings.agents.omnigent.enabled", bundle: bundle) }
+    static var omnigentConnectionChanged: String { String(localized: "settings.agents.omnigent.connectionChanged", bundle: bundle) }
     static var omnigentEnabledHelp: String { String(localized: "settings.agents.omnigent.enabledHelp", bundle: bundle) }
     static var omnigentRefresh: String { String(localized: "sidebar.omnigent.refresh", bundle: bundle) }
     static var omnigentNoSessions: String { String(localized: "sidebar.omnigent.noSessions", bundle: bundle) }

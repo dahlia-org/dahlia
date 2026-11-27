@@ -6,15 +6,21 @@ import Testing
 
 struct OmnigentServiceTests {
     @Test
-    func onlyADatabricksConnectionThatTurnedItOnHasAWorkspace() throws {
+    func omnigentIsOnForOneExistingConnectionAtMost() throws {
         let defaults = try #require(UserDefaults(suiteName: "OmnigentServiceTests.\(UUID())"))
-        let id = UUID()
-        let connections: [ProviderAccountDirectory.Connection] = [.init(id: id, workspaceURL: URL(string: "https://dbc.cloud.databricks.com")!)]
-        ProviderAccountDirectory.$connections.withValue(connections) {
-            #expect(OmnigentService.connectionID(defaults: defaults) == nil)
-            defaults.set(true, forKey: OmnigentService.enabledKey(AppAccount.key))
-            #expect(OmnigentService.connectionID(defaults: defaults) == id)
-        }
+        let first = UUID()
+        let second = UUID()
+        #expect(OmnigentService.connectionID(defaults: defaults, connections: [first, second]) == nil)
+        // Released settings' switch meant the oldest connection.
+        defaults.set(true, forKey: OmnigentService.legacyEnabledKey(AppAccount.key))
+        #expect(OmnigentService.connectionID(defaults: defaults, connections: [first, second]) == first)
+        OmnigentService.setConnectionID(second, defaults: defaults)
+        #expect(defaults.object(forKey: OmnigentService.legacyEnabledKey(AppAccount.key)) == nil)
+        #expect(OmnigentService.connectionID(defaults: defaults, connections: [first, second]) == second)
+        // A removed connection turns it off rather than moving it to another.
+        #expect(OmnigentService.connectionID(defaults: defaults, connections: [first]) == nil)
+        OmnigentService.setConnectionID(nil, defaults: defaults)
+        #expect(OmnigentService.connectionID(defaults: defaults, connections: [first, second]) == nil)
     }
 
     @Test

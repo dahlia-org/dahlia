@@ -59,7 +59,6 @@ private struct AgentSettingsTabs: View {
                     AgentEnvironmentSection(model: launch)
                     AgentChatSettingsSection()
                     AgentChatInstructionsSection()
-                    if ProviderAccountDirectory.databricksConnectionID != nil { AgentOmnigentSection() }
                 }
                 .formStyle(.grouped)
                 .font(.dahliaBody)
@@ -112,7 +111,15 @@ struct AgentConnectorSettingsView: View {
     }
 
     private func presentMCPRegistration(_ provider: AgentMCPProvider) {
-        navigation.presentSettingsModal(AgentMCPRegistrationView(model: mcp, provider: provider, onClose: navigation.dismissSettingsModal))
+        navigation.presentSettingsModal(AgentMCPRegistrationView(
+            model: mcp, provider: provider, onClose: navigation.dismissSettingsModal
+        ) { service, existing in
+            navigation.presentSettingsModal(AgentMCPReplaceDialog(
+                service: service, existing: existing, model: mcp,
+                enable: { try mcp.addService(service, to: provider, name: $0, replacing: $1) },
+                onClose: navigation.dismissSettingsModal
+            ))
+        })
     }
 }
 
@@ -757,25 +764,5 @@ private struct AgentModelDetailsButton: View {
     private func price(_ cost: [String: JSONValue]) -> String {
         let value = { (key: String) in cost[key].flatMap { if case let .number(number) = $0 { number.formatted() } else { nil } } ?? "-" }
         return L10n.agentModelPriceValue(value("input"), value("output"), value("cacheRead"), value("cacheWrite"))
-    }
-}
-
-/// A Databricks account can let chat use its workspace's Omnigent and list the sessions in the Chat sidebar.
-private struct AgentOmnigentSection: View {
-    @AppStorage private var isEnabled: Bool
-
-    init() {
-        _isEnabled = AppStorage(wrappedValue: false, OmnigentService.enabledKey(AppAccount.key))
-    }
-
-    var body: some View {
-        Section {
-            Toggle(L10n.omnigentEnabled, isOn: $isEnabled)
-                .toggleStyle(.dahliaSwitch)
-        } header: {
-            Text(L10n.omnigent).font(.dahliaSectionHeader)
-        } footer: {
-            Text(L10n.omnigentEnabledHelp)
-        }
     }
 }

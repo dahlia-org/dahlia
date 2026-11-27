@@ -171,25 +171,56 @@ final class AgentMCPSettingsModel {
         } while pendingServiceRefreshIDs.contains(provider.id) && !Task.isCancelled
     }
 
-    /// Registers an explicitly named Unity Catalog service without enumerating other schemas.
-    func addService(_ input: String, to provider: AgentMCPProvider) throws {
-        let service = input.trimmingCharacters(in: .whitespacesAndNewlines)
-        let parts = service.split(separator: ".", omittingEmptySubsequences: false)
-        guard parts.count == 3, parts.allSatisfy({ !$0.isEmpty && $0.count <= 255 && $0.wholeMatch(of: /[A-Za-z0-9_-]+/) != nil }) else {
-            throw AgentMCPSettingsError(message: L10n.mcpServiceNameInvalid)
-        }
-        try setService(service, enabled: true, of: provider)
+    /// Registers an explicitly named Unity Catalog service without enumerating other schemas, as `enableService` names it.
+    func addService(_ input: String, to provider: AgentMCPProvider, name: String? = nil, replacing existing: AgentMCPServer? = nil) throws {
+        let service = try Self.validatedServiceName(input)
+        try enableService(service, of: provider, name: name, replacing: existing)
         var manual = settings.manualServices ?? [:]
         manual[provider.id] = Array(Set((manual[provider.id] ?? []) + [service])).sorted()
         settings.manualServices = manual
         settings.save(defaults: defaults)
     }
 
+    /// A fully qualified Unity Catalog name, `catalog.schema.service`.
+    static func validatedServiceName(_ input: String) throws -> String {
+        let service = input.trimmingCharacters(in: .whitespacesAndNewlines)
+        let parts = service.split(separator: ".", omittingEmptySubsequences: false)
+        guard parts.count == 3, parts.allSatisfy({ !$0.isEmpty && $0.count <= 255 && $0.wholeMatch(of: /[A-Za-z0-9_-]+/) != nil }) else {
+            throw AgentMCPSettingsError(message: L10n.mcpServiceNameInvalid)
+        }
+        return service
+    }
+
+    /// The server holding the name a service would take when turned on: another `github` for `system.ai.github`.
+    func conflictingServer(for service: String, of provider: AgentMCPProvider) -> AgentMCPServer? {
+        guard !servers(of: provider).contains(where: { $0.service == service }) else { return nil }
+        let name = AgentMCPSettings.baseName(for: service)
+        return settings.servers.first { $0.name == name }
+    }
+
+    /// Turns a service on as `name`, in place of `existing`, which turns off and gives up its name, or with a name of
+    /// its own (`github`, then `github_2`, ...).
+    func enableService(_ service: String, of provider: AgentMCPProvider, name: String? = nil, replacing existing: AgentMCPServer? = nil) throws {
+        guard !servers(of: provider).contains(where: { $0.service == service }) else { return }
+        if let existing { release(existing) }
+        try addServers([service: name ?? existing?.name ?? settings.defaultName(for: service)], to: provider)
+    }
+
+    /// A directly configured server stays, off and renamed, since removing it would lose its configuration.
+    private func release(_ server: AgentMCPServer) {
+        guard var direct = server.direct, let index = settings.servers.firstIndex(where: { $0.id == server.id }) else {
+            return remove(server)
+        }
+        direct.isEnabled = false
+        settings.servers[index].direct = direct
+        settings.servers[index].name = settings.defaultName(for: server.name)
+        settings.save(defaults: defaults)
+    }
+
     /// Turns a service on with a name of its own (`github`, then `github_2`, ...), or off, removing its server.
     func setService(_ service: String, enabled: Bool, of provider: AgentMCPProvider) throws {
         if enabled {
-            guard !servers(of: provider).contains(where: { $0.service == service }) else { return }
-            try addServers([service: settings.defaultName(for: service)], to: provider)
+            try enableService(service, of: provider)
         } else if let server = servers(of: provider).first(where: { $0.service == service }) {
             remove(server)
         }

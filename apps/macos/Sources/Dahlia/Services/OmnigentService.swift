@@ -28,13 +28,25 @@ enum OmnigentService {
         var errorDescription: String? { "Omnigent returned HTTP \(status): \(body)" }
     }
 
-    nonisolated static func enabledKey(_ account: String) -> String { "omnigentEnabled.\(account)" }
+    /// The one connection Omnigent is on for. Omnigent cannot be on for two, so there is no alias for it.
+    nonisolated static func connectionKey(_ account: String) -> String { "omnigentConnection.\(account)" }
+    /// Released settings' switch, which meant the oldest connection.
+    nonisolated static func legacyEnabledKey(_ account: String) -> String { "omnigentEnabled.\(account)" }
 
-    /// The Databricks workspace to call, when a connection exists and Omnigent is on (it is off by default).
-    nonisolated static func connectionID(defaults: UserDefaults = .standard) -> UUID? {
-        guard let connectionID = ProviderAccountDirectory.databricksConnectionID,
-              defaults.bool(forKey: enabledKey(AppAccount.key)) else { return nil }
-        return connectionID
+    /// The Databricks workspace to call, while Omnigent is on for a connection that exists (it is off by default).
+    nonisolated static func connectionID(
+        defaults: UserDefaults = .standard,
+        connections: [UUID] = ProviderAccountDirectory.databricksConnections().map(\.id)
+    ) -> UUID? {
+        let selected = defaults.string(forKey: connectionKey(AppAccount.key)).flatMap(UUID.init(uuidString:))
+            ?? (defaults.bool(forKey: legacyEnabledKey(AppAccount.key)) ? connections.first : nil)
+        return selected.flatMap { connections.contains($0) ? $0 : nil }
+    }
+
+    /// Turns Omnigent on for one connection, which turns it off for any other, or off with nil.
+    nonisolated static func setConnectionID(_ id: UUID?, defaults: UserDefaults = .standard) {
+        defaults.set(id?.uuidString, forKey: connectionKey(AppAccount.key))
+        defaults.removeObject(forKey: legacyEnabledKey(AppAccount.key))
     }
 
     static func sessions(connectionID: UUID) async throws -> [Session] {
@@ -262,12 +274,20 @@ enum OmnigentService {
 extension PiChatService {
     nonisolated static let readOmnigentTools = ["omni_list_agents", "omni_list_sessions", "omni_get_session"]
 
-    func omnigentTool(_ method: String, payload: JSONValue, threadID: String, processID: UUID) async throws -> JSONValue {
+    func omnigentTool(
+        _ method: String,
+        payload: JSONValue,
+        threadID: String,
+        processID: UUID,
+        execute: @Sendable (String, [String: JSONValue], UUID) async throws -> JSONValue = {
+            try await OmnigentService.tool($0, arguments: $1, connectionID: $2)
+        }
+    ) async throws -> JSONValue {
         guard let session = sessions[threadID], session.processID == processID, let turn = session.turn,
-              session.profile == .interactive else { throw CancellationError() }
-        // Read at each call: turning Omnigent off in Settings stops a process that still lists the tools.
-        guard let connectionID = omnigentConnection() else {
-            throw PiRuntimeError.rpcError(code: nil, message: "Omnigent is turned off for this account")
+              !turn.stopRequested, session.profile == .interactive else { throw CancellationError() }
+        // The process and its approval prompt use one destination; a settings change cannot redirect a pending call.
+        guard let connectionID = session.omnigentConnectionID, connectionID == omnigentConnection() else {
+            throw PiRuntimeError.rpcError(code: nil, message: L10n.omnigentConnectionChanged)
         }
         if method == "omni_create_session" {
             if let input = payload.objectValue?["input"]?.stringValue, input.count > 32000 {
@@ -279,6 +299,6 @@ extension PiChatService {
                 throw PiRuntimeError.rpcError(code: nil, message: "Work requested by another thread cannot start Omnigent sessions")
             }
         }
-        return try await OmnigentService.tool(method, arguments: payload.objectValue ?? [:], connectionID: connectionID)
+        return try await execute(method, payload.objectValue ?? [:], connectionID)
     }
 }

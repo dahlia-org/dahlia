@@ -106,7 +106,7 @@ extension PiChatService {
             }
             let needsApproval = action == "create" || action == "resume" || (action == "update" && existing?.enabled == true)
             let toolNames = payload.objectValue?["_readOnlyTools"]?.arrayValue?.compactMap(\.stringValue) ?? []
-            let tools = AgentMCPSettings.scheduledToolGrants(toolNames, connections: session.directConnections, servers: session.mcpServers)
+            let tools = AgentMCPSettings.scheduledToolGrants(toolNames, connections: session.mcpConnections, servers: session.mcpServers)
             if needsApproval {
                 // The card displays the effective revision, including fields omitted from an update.
                 var effective = payload.objectValue ?? [:]

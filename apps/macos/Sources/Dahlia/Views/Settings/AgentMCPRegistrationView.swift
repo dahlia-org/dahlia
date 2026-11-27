@@ -8,6 +8,8 @@ struct AgentMCPRegistrationView: View {
     @State private var errorMessage: String?
     @FocusState private var isFocused: Bool
     let onClose: () -> Void
+    /// The service would take another server's name; the caller asks how to register it.
+    let onConflict: (_ service: String, _ existing: AgentMCPServer) -> Void
 
     var body: some View {
         ZStack {
@@ -54,7 +56,11 @@ struct AgentMCPRegistrationView: View {
 
     private func add() {
         do {
-            try model.addService(serviceName, to: provider)
+            let service = try AgentMCPSettingsModel.validatedServiceName(serviceName)
+            if let existing = model.conflictingServer(for: service, of: provider) {
+                return onConflict(service, existing)
+            }
+            try model.addService(service, to: provider)
             onClose()
         } catch {
             errorMessage = error.localizedDescription

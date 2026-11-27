@@ -415,7 +415,8 @@ export default async function (pi: any) {
       // Starting a session runs work outside this Mac, so it is approved like an MCP tool that writes.
       if (omnigentTools.some((tool) => tool.name === name)) {
         return name === "omni_create_session"
-          ? approve(ctx, name, { kind: "mcpToolCall", server: "omnigent", tool: name, arguments: event.input })
+          ? approve(ctx, name, { kind: "mcpToolCall", server: "omnigent", tool: name,
+            arguments: { ...event.input, workspace: env.DAHLIA_PI_OMNIGENT_WORKSPACE } })
           : undefined;
       }
 

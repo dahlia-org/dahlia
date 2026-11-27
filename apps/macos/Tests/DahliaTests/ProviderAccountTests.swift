@@ -98,7 +98,6 @@
                 for capability in [ProviderCapability.model, .mcp, .calendar] {
                     #expect(ProviderAccountDirectory.account(offering: capability) == .databricks(connectionID: databricksID))
                 }
-                #expect(ProviderAccountDirectory.databricksConnectionID == databricksID)
                 // Storage and database are defined for later; nothing offers them yet.
                 for capability in [ProviderCapability.storage, .database] {
                     #expect(ProviderAccountDirectory.account(offering: capability) == nil)
@@ -117,7 +116,6 @@
                 ProviderAccountDirectory.$dahliaConnections.withValue([dahliaID]) {
                     #expect(ProviderAccountDirectory.account(offering: .model) == .dahlia(connectionID: dahliaID))
                     #expect(ProviderAccountDirectory.account(offering: .calendar) == nil)
-                    #expect(ProviderAccountDirectory.databricksConnectionID == nil)
                 }
             }
         }

@@ -1497,6 +1497,7 @@ import Synchronization
             }
             let registered = Mutex(AgentMCPSettings())
             let omnigentEnabled = Mutex(false)
+            let omnigentID = UUID()
             let chat = try PiChatService(
                 runtime: pi.service,
                 historyStore: Self.history(),
@@ -1504,7 +1505,7 @@ import Synchronization
                 agentLocator: PiAgentDirectoryLocator(applicationSupportURL: pi.rootURL),
                 mcpExecutableURL: URL(filePath: "/usr/bin/true"),
                 mcpSettings: { registered.withLock { $0 } },
-                omnigentConnection: { omnigentEnabled.withLock { $0 } ? UUID() : nil }
+                omnigentConnection: { omnigentEnabled.withLock { $0 } ? omnigentID : nil }
             )
             let thread = try await chat.startThread(model: nil, effort: "medium")
             _ = await chat.acquireThreadLease(threadID: thread.id)

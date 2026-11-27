@@ -201,7 +201,7 @@ DB の `accountID` と UserDefaults の接尾辞には、当面 `local` を定�
   サインインした Dahlia account の Server の Gateway は、アカウントのプロバイダーアカウント（capability は `model`、Pi のプロバイダー ID は `dahlia`）にした。サインインが 2 つ以上あるときは当面最も古い 1 つだけを使う。
   Server Account で走ったチャットとエージェントの行は、`accountID` に接続の ID を持ったまま残し、移さない（未リリースの別アカウントだったため）。
 - 実装した（2026-11-24）: `CodexRuntimeProvider` を削除した。機能はアカウントを引数に取らず、アカウントの固定キーは `AppAccount.key`（値は `local`、保存済みの設定キーと行の `accountID` のため）、プロバイダーアカウントは `ProviderAccountDirectory.accounts` から引く。アカウントの切り替えを前提にした判定（チャット・要約・画像解析の「実行中にアカウントが変わった」検査、カレンダーと Drive の「開いているアカウント」の追跡、セットアップツアーのアカウント）も削除した。型名は Codex から Pi に改めた（`PiRuntimeContextStore`、`PiRuntimeContextCoordinator`、`PiSubscriptionController`）。
-- 残り: 旧ディレクトリと旧設定キーの削除（1 リリース後）。`PiChatService` の実行の管理が今も `accountID`（常に `local`）を鍵にしていること。`AIAccountProvider`・`LocalAccountAISettings` の旧プロバイダー選択。`ScreenshotRemoteReference.accountConnectionId`。Omnigent が最も古い Databricks の接続だけを使う近道。実アプリでの確認。
+- 残り: 旧ディレクトリと旧設定キーの削除（1 リリース後）。`PiChatService` の実行の管理が今も `accountID`（常に `local`）を鍵にしていること。`AIAccountProvider`・`LocalAccountAISettings` の旧プロバイダー選択。`ScreenshotRemoteReference.accountConnectionId`。実アプリでの確認。
 
 #### 段階 3 の残り
 

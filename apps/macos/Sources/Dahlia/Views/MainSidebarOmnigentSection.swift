@@ -1,12 +1,11 @@
 import SwiftUI
 
-/// The Databricks workspace's Omnigent sessions in the Chat sidebar's `List`, shown once the account turns Omnigent on.
+/// The Databricks workspace's Omnigent sessions in the Chat sidebar's `List`, shown for the connection Omnigent is on for.
 /// A row opens the session's conversation in the main area.
 struct MainSidebarOmnigentSection: View {
     let connectionID: UUID
     let selectedSessionID: String?
     let onOpen: (String) -> Void
-    @AppStorage private var isEnabled: Bool
     @State private var isExpanded = true
     @State private var sessions: [OmnigentService.Session] = []
     @State private var error: String?
@@ -17,64 +16,59 @@ struct MainSidebarOmnigentSection: View {
         self.connectionID = connectionID
         self.selectedSessionID = selectedSessionID
         self.onOpen = onOpen
-        // The setting belongs to the app's account, which uses the connection.
-        let account = AppAccount.key
-        _isEnabled = AppStorage(wrappedValue: false, OmnigentService.enabledKey(account))
     }
 
     var body: some View {
-        if isEnabled {
-            MeetingSidebarHeader(
-                title: L10n.omnigent,
-                isExpanded: isExpanded,
-                onToggleExpansion: { isExpanded.toggle() },
-                icon: OmnigentLogo.image,
-                addButtonTitle: L10n.omnigentRefresh,
-                addButtonSystemImage: "arrow.clockwise",
-                canAdd: !isLoading,
-                onAdd: { revision += 1 }
-            )
-            .listRowSeparator(.hidden)
-            // Chat can start sessions and they finish on their own, so the list refreshes while it is shown.
-            .task(id: "\(revision)-\(isExpanded)") {
-                // A collapsed section shows no rows, so it does not poll; expanding reloads.
-                while isExpanded, !Task.isCancelled {
-                    await load()
-                    try? await Task.sleep(for: .seconds(30))
-                }
+        MeetingSidebarHeader(
+            title: L10n.omnigent,
+            isExpanded: isExpanded,
+            onToggleExpansion: { isExpanded.toggle() },
+            icon: OmnigentLogo.image,
+            addButtonTitle: L10n.omnigentRefresh,
+            addButtonSystemImage: "arrow.clockwise",
+            canAdd: !isLoading,
+            onAdd: { revision += 1 }
+        )
+        .listRowSeparator(.hidden)
+        // Chat can start sessions and they finish on their own, so the list refreshes while it is shown.
+        .task(id: "\(revision)-\(isExpanded)") {
+            // A collapsed section shows no rows, so it does not poll; expanding reloads.
+            while isExpanded, !Task.isCancelled {
+                await load()
+                try? await Task.sleep(for: .seconds(30))
             }
+        }
 
-            if isExpanded {
-                ForEach(sessions) { session in
-                    Button { onOpen(session.id) } label: {
-                        HStack(spacing: 8) {
-                            Text(session.title?.nilIfBlank ?? session.id).lineLimit(1)
-                            Spacer(minLength: 8)
-                            switch session.status {
-                            case "running", "waiting", "launching":
-                                ProgressView().controlSize(.small).accessibilityLabel(L10n.chatThreadRunning)
-                            case "failed":
-                                Image(systemName: "exclamationmark.triangle")
-                                    .foregroundStyle(.orange)
-                                    .accessibilityLabel(L10n.chatRunStatus("failed"))
-                            default:
-                                EmptyView()
-                            }
+        if isExpanded {
+            ForEach(sessions) { session in
+                Button { onOpen(session.id) } label: {
+                    HStack(spacing: 8) {
+                        Text(session.title?.nilIfBlank ?? session.id).lineLimit(1)
+                        Spacer(minLength: 8)
+                        switch session.status {
+                        case "running", "waiting", "launching":
+                            ProgressView().controlSize(.small).accessibilityLabel(L10n.chatThreadRunning)
+                        case "failed":
+                            Image(systemName: "exclamationmark.triangle")
+                                .foregroundStyle(.orange)
+                                .accessibilityLabel(L10n.chatRunStatus("failed"))
+                        default:
+                            EmptyView()
                         }
-                        .frame(maxWidth: .infinity, minHeight: 28, alignment: .leading)
-                        .contentShape(.rect)
-                        .modifier(SidebarNavigationRowModifier(isSelected: session.id == selectedSessionID))
-                        .accessibilityElement(children: .combine)
-                        .accessibilityAddTraits(session.id == selectedSessionID ? .isSelected : [])
                     }
-                    .buttonStyle(.plain)
-                    .listRowInsets(.vertical, 1.5)
-                    .listRowSeparator(.hidden)
+                    .frame(maxWidth: .infinity, minHeight: 28, alignment: .leading)
+                    .contentShape(.rect)
+                    .modifier(SidebarNavigationRowModifier(isSelected: session.id == selectedSessionID))
+                    .accessibilityElement(children: .combine)
+                    .accessibilityAddTraits(session.id == selectedSessionID ? .isSelected : [])
                 }
-                statusRow
-                    .listRowInsets(.vertical, 1.5)
-                    .listRowSeparator(.hidden)
+                .buttonStyle(.plain)
+                .listRowInsets(.vertical, 1.5)
+                .listRowSeparator(.hidden)
             }
+            statusRow
+                .listRowInsets(.vertical, 1.5)
+                .listRowSeparator(.hidden)
         }
     }
 
