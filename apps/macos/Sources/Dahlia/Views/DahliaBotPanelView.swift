@@ -69,6 +69,9 @@ struct DahliaBotPanelView: View {
         Section {
             if model.items.isEmpty { Text(L10n.agentBotInboxEmpty).foregroundStyle(.secondary) }
             ForEach(model.items) { item in itemRow(item) }
+            if model.hasMoreItems {
+                Button(L10n.loadMore) { model.loadMoreItems() }
+            }
         } header: {
             AgentSectionHeader(title: L10n.agentBotInbox) { EmptyView() }
         }

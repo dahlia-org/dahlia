@@ -39,6 +39,16 @@ final class DahliaBotPanelModel {
     /// The calendar Source's default name, in English like a connector's.
     static let calendarName = "Calendar"
     static let taskPage = 30
+    static let inboxPage = 30
+
+    struct InboxObservationID: Hashable {
+        var agentID: String?
+        var limit: Int
+    }
+
+    var inboxObservationID: InboxObservationID { InboxObservationID(agentID: agentID, limit: itemLimit) }
+    private(set) var itemLimit = inboxPage
+    private(set) var hasMoreItems = false
 
     var sources: [AgentSourceRecord] = []
     var events: [AgentEventRecord] = []
@@ -131,6 +141,8 @@ final class DahliaBotPanelModel {
         isBusy = false
         isLoadingFinishedTasks = false
         finishedTaskLimit = Self.taskPage
+        itemLimit = Self.inboxPage
+        hasMoreItems = false
         (sources, events, items, taskThreads, answers) = ([], [], [], [:], [:])
         (activeTasks, finishedTasks, hasMoreFinishedTasks) = ([], [], false)
         (soul, soulDraft, draft, error) = ("", nil, nil, nil)
@@ -255,7 +267,7 @@ final class DahliaBotPanelModel {
 
     /// Every request reads the entire visible range, so newer refreshes preserve pending pagination and saved changes.
     func refreshTasks() async throws {
-        guard let agentID else { return }
+        guard let agentID, !Task.isCancelled else { return }
         taskGeneration += 1
         let generation = taskGeneration
         let limit = max(finishedTaskLimit, finishedTasks.count)
@@ -263,10 +275,10 @@ final class DahliaBotPanelModel {
         do {
             tasks = try await loadTasks(agentID, limit)
         } catch {
-            guard generation == taskGeneration else { return }
+            guard generation == taskGeneration, !Task.isCancelled else { return }
             throw error
         }
-        guard generation == taskGeneration else { return }
+        guard generation == taskGeneration, !Task.isCancelled else { return }
         activeTasks = tasks.active
         finishedTasks = tasks.finished
         hasMoreFinishedTasks = tasks.finished.count == limit
@@ -321,19 +333,39 @@ final class DahliaBotPanelModel {
     func observeInbox(in dbQueue: any DatabaseWriter) async {
         guard let agentID else { return }
         let generation = agentGeneration
-        let observation = ValueObservation.tracking { try AgentInboxService.panelSnapshot(agentID: agentID, in: $0) }
-            .removeDuplicates()
-        var tasksMarker: (Int, Date?)?
+        let limit = itemLimit
+        // Explicit constant regions keep pooled fetches off the writer, including when the inbox starts empty.
+        let observation = ValueObservation.tracking(region: AgentItemRecord.all(), AgentTaskRecord.all()) {
+            try AgentInboxService.panelSnapshot(agentID: agentID, limit: limit + 1, in: $0)
+        }.removeDuplicates()
         do {
             for try await snapshot in observation.values(in: dbQueue, bufferingPolicy: .bufferingNewest(1)) {
-                guard generation == agentGeneration else { return }
-                (items, taskThreads) = (snapshot.items, snapshot.taskThreads)
-                let marker = (snapshot.taskCount, snapshot.tasksUpdatedAt)
-                // The first snapshot is the baseline; `refresh` loads the Task pages it shows.
-                if let tasksMarker, tasksMarker != marker {
-                    do { try await refreshTasks() } catch { if generation == agentGeneration { self.error = error.localizedDescription } }
+                guard generation == agentGeneration, limit == itemLimit, !Task.isCancelled else { return }
+                (items, taskThreads) = (Array(snapshot.items.prefix(limit)), snapshot.taskThreads)
+                hasMoreItems = snapshot.items.count > limit
+            }
+        } catch {
+            guard generation == agentGeneration, !Task.isCancelled else { return }
+            self.error = error.localizedDescription
+        }
+    }
+
+    func loadMoreItems() {
+        itemLimit += Self.inboxPage
+    }
+
+    /// Task invalidations coalesce while pages load without holding up the independent Item stream.
+    func observeTasks(in dbQueue: any DatabaseWriter) async {
+        guard agentID != nil else { return }
+        let generation = agentGeneration
+        let observation = ValueObservation.tracking(region: AgentTaskRecord.all(), fetch: { _ in () })
+        do {
+            for try await _ in observation.values(in: dbQueue, bufferingPolicy: .bufferingNewest(1)) {
+                guard generation == agentGeneration, !Task.isCancelled else { return }
+                do { try await refreshTasks() } catch {
+                    guard generation == agentGeneration, !Task.isCancelled else { return }
+                    self.error = error.localizedDescription
                 }
-                tasksMarker = marker
             }
         } catch {
             guard generation == agentGeneration, !Task.isCancelled else { return }

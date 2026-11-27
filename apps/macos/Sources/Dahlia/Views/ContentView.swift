@@ -291,8 +291,11 @@ struct ContentView: View {
             .onChange(of: mainWindowNavigation.isShowingSettings ? nil : shownAgent?.id, initial: true) { _, agentID in
                 botPanel.agentID = agentID
             }
-            .task(id: botPanel.agentID) {
+            .task(id: botPanel.inboxObservationID) {
                 if let dbQueue = appDatabase?.dbQueue { await botPanel.observeInbox(in: dbQueue) }
+            }
+            .task(id: botPanel.agentID) {
+                if let dbQueue = appDatabase?.dbQueue { await botPanel.observeTasks(in: dbQueue) }
             }
             .task {
                 if let dbQueue = appDatabase?.dbQueue { await agents.observeOpenItems(in: dbQueue) }

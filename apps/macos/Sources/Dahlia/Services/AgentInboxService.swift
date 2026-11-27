@@ -466,9 +466,6 @@ struct AgentInboxService: Sendable {
         var items: [AgentItemRecord]
         /// Each Task's Thread, by Task, for the Items that belong to one.
         var taskThreads: [String: String]
-        /// Change when a Task is added or changes, so the panel reloads its Task pages.
-        var taskCount: Int
-        var tasksUpdatedAt: Date?
     }
 
     func items() throws -> [AgentItemRecord] {
@@ -476,23 +473,23 @@ struct AgentInboxService: Sendable {
         return try dbQueue.read { try Self.openItems(agentID: agentID, in: $0) }
     }
 
-    static func openItems(agentID: String, in db: Database) throws -> [AgentItemRecord] {
+    static func openItems(agentID: String, limit: Int = -1, in db: Database) throws -> [AgentItemRecord] {
         try AgentItemRecord.fetchAll(
-            db, sql: "SELECT * FROM agent_user_inbox WHERE agentID=? AND status='open' ORDER BY createdAt DESC, id DESC",
-            arguments: [agentID]
+            db, sql: "SELECT * FROM agent_user_inbox WHERE agentID=? AND status='open' ORDER BY createdAt DESC, id DESC LIMIT ?",
+            arguments: [agentID, limit]
         )
     }
 
     /// Indexed and bounded reads only: with the single-connection fallback, an observation fetches on the writer.
-    static func panelSnapshot(agentID: String, in db: Database) throws -> PanelSnapshot {
-        let items = try openItems(agentID: agentID, in: db)
-        let threads = try Dictionary(uniqueKeysWithValues: Set(items.compactMap(\.taskID)).compactMap { id in
-            try AgentTaskRecord.fetchOne(db, key: id)?.threadID.map { (id, $0) }
-        })
-        let tasks = try Row.fetchOne(
-            db, sql: "SELECT COUNT(*) AS count, MAX(updatedAt) AS updatedAt FROM agent_tasks WHERE agentID=?", arguments: [agentID]
+    static func panelSnapshot(agentID: String, limit: Int, in db: Database) throws -> PanelSnapshot {
+        let items = try openItems(agentID: agentID, limit: limit, in: db)
+        let threads = try Dictionary(uniqueKeysWithValues: Row.fetchAll(db, sql: """
+        SELECT id, threadID FROM agent_tasks WHERE threadID IS NOT NULL AND id IN (
+            SELECT taskID FROM agent_user_inbox WHERE agentID=? AND status='open'
+            ORDER BY createdAt DESC, id DESC LIMIT ?
         )
-        return PanelSnapshot(items: items, taskThreads: threads, taskCount: tasks?["count"] ?? 0, tasksUpdatedAt: tasks?["updatedAt"])
+        """, arguments: [agentID, limit]).map { ($0["id"] as String, $0["threadID"] as String) })
+        return PanelSnapshot(items: items, taskThreads: threads)
     }
 
     /// Each agent's open Item count, for the sidebar's rows.
