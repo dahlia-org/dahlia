@@ -62,17 +62,17 @@
             let authorization = try await service.storageAuthorization(connectionID: connection.id)
             #expect(authorization.accessToken == "original")
             _ = try await service.accessToken(connectionID: connection.id, forceRefresh: true, interactive: false)
-            try await authorization.validate()
+            try authorization.validate()
             #expect(service.storageGeneration(connectionID: connection.id) == generation)
             #expect(authorization.accessToken == "original")
             await #expect(throws: CancellationError.self) { try await service.signIn(workspaceURL: Self.host) }
             #expect(service.storageGeneration(connectionID: connection.id) != generation)
-            await #expect(throws: CancellationError.self) { try await authorization.validate() }
+            #expect(throws: CancellationError.self) { try authorization.validate() }
             let next = try await service.storageAuthorization(connectionID: connection.id)
             #expect(next.accessToken == "access")
-            try await next.validate()
+            try next.validate()
             try await service.remove(connectionID: connection.id)
-            await #expect(throws: CancellationError.self) { try await next.validate() }
+            #expect(throws: CancellationError.self) { try next.validate() }
         }
 
         @Test

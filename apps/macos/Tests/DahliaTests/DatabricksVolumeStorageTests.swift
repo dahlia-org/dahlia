@@ -205,6 +205,49 @@ import Synchronization
             #expect(StorageStubURLProtocol.requests(host: host).count == requests.count)
         }
 
+        @Test(arguments: ["list", "upload", "download", "delete"])
+        func signInChangingDuringLocationValidationNeverAdmitsAnotherRequest(_ operation: String) async throws {
+            let state = Mutex((valid: true, replaceDuringLocationCheck: false))
+            let session = StorageStubURLProtocol.session(host: host) { request in
+                switch request.url!.path {
+                case "/api/2.0/preview/scim/v2/Me": Self.me
+                case Self.volumePath: .json(#"{"owner":"me@example.com","volume_type":"MANAGED"}"#)
+                default: .json(#"{"contents":[]}"#)
+                }
+            }
+            defer { finish(session) }
+            let storage = try DatabricksVolumeStorage(
+                host: #require(URL(string: "https://\(host)")), location: #require(DatabricksStorageLocation("main.dahlia")),
+                session: session,
+                authorization: ProviderStorageAuthorization(accessToken: "original-user") {
+                    guard state.withLock({ $0.valid }) else { throw CancellationError() }
+                },
+                validateLocation: {
+                    // Reproduce replacement after the old generation check, without a cancellation notification.
+                    state.withLock { if $0.replaceDuringLocationCheck { $0.valid = false } }
+                }
+            )
+            _ = try await storage.list(directory: "backup")
+            let admitted = StorageStubURLProtocol.requests(host: host).count
+            state.withLock { $0.replaceDuringLocationCheck = true }
+            let local = try temporaryBackupFile()
+            defer { try? FileManager.default.removeItem(at: local.deletingLastPathComponent()) }
+            let remote = ProviderStorageFile(
+                id: "/Volumes/main/dahlia/dahlia_storage_42/backup/Dahlia-test.tar.gz", name: "Dahlia-test.tar.gz", size: nil, modifiedAt: nil
+            )
+            await #expect(throws: CancellationError.self) {
+                switch operation {
+                case "list": _ = try await storage.list(directory: "backup")
+                case "upload": try await storage.upload(local, to: "backup", name: local.lastPathComponent)
+                case "download":
+                    let url = try await storage.download(remote)
+                    try? FileManager.default.removeItem(at: url)
+                default: try await storage.delete(remote)
+                }
+            }
+            #expect(StorageStubURLProtocol.requests(host: host).count == admitted)
+        }
+
         @Test
         func backupsOverTheSingleUploadLimitAreRefusedBeforeAnyRequest() async throws {
             let (storage, session) = storage { _ in StorageStubURLProtocol.Response() }

@@ -26,7 +26,7 @@ struct ProviderStorageFile: Identifiable, Equatable, Sendable {
 /// One operation's fixed bearer and the source owner's check that its sign-in is still current.
 struct ProviderStorageAuthorization: Sendable {
     let accessToken: String
-    let validate: @Sendable () async throws -> Void
+    let validate: @Sendable () throws -> Void
 }
 
 enum ProviderStorageError: LocalizedError, Equatable {

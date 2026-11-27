@@ -63,13 +63,14 @@ actor DatabricksVolumeStorage: ProviderStorage {
         location: DatabricksStorageLocation,
         session: URLSession = .shared,
         authorization: ProviderStorageAuthorization,
-        validateLocation: @escaping @Sendable () async throws -> Void = {}
+        validateLocation: @escaping @MainActor @Sendable () throws -> Void = {}
     ) {
         self.host = host
         self.location = location
-        http = ProviderStorageHTTP(session: session) {
-            try await authorization.validate()
-            try await validateLocation()
+        http = ProviderStorageHTTP(session: session) { @MainActor in
+            // Admission checks share one synchronous turn; neither can go stale during an intervening actor hop.
+            try validateLocation()
+            try authorization.validate()
             return authorization.accessToken
         }
     }

@@ -200,14 +200,13 @@ actor DatabricksOAuthService {
         let token = try await accessToken(connectionID: connectionID, interactive: false)
         try validateStorageAuthorization(connectionID: connectionID, generation: generation)
         return ProviderStorageAuthorization(accessToken: token) {
-            try await self.validateStorageAuthorization(connectionID: connectionID, generation: generation)
+            try self.validateStorageAuthorization(connectionID: connectionID, generation: generation)
         }
     }
 
-    private func validateStorageAuthorization(connectionID: UUID, generation: UUID) throws {
+    private nonisolated func validateStorageAuthorization(connectionID: UUID, generation: UUID) throws {
         try Task.checkCancellation()
         guard storageGeneration(connectionID: connectionID) == generation else { throw CancellationError() }
-        _ = try connection(id: connectionID)
     }
 
     /// `interactive: false` never opens the browser: a missing or unrefreshable credential throws instead.
