@@ -81,7 +81,8 @@ enum CodexChatConversationItem: Identifiable, Equatable {
             guard let messageID = messageIDs.last, !threads.isEmpty else { return [item] }
             return [item, .relatedThreads(messageID: messageID, threads: threads)]
         }
-        if showsStandaloneThinking || hasStreamingReasoning { items.append(.thinking) }
+        let hasRunningHeader = items.contains { if case .running = $0 { true } else { false } }
+        if showsStandaloneThinking || hasStreamingReasoning, !hasRunningHeader { items.append(.thinking) }
         return items
     }
 
@@ -90,6 +91,7 @@ enum CodexChatConversationItem: Identifiable, Equatable {
     /// With `showsRunHeaders`, a streaming run and a finished run without steps get a header too.
     private static func collapsingFinishedRuns(_ messages: [CodexChatMessage], showsRunHeaders: Bool) -> [Self] {
         var segments: [Self] = []
+        var runStartTimes: [UUID: Date] = [:]
         var start = messages.startIndex
         while start < messages.endIndex {
             let head = messages[start]
@@ -103,6 +105,11 @@ enum CodexChatConversationItem: Identifiable, Equatable {
             start = end
             // A request or notification opens the run and stays outside its steps.
             let bodyStart = run.startIndex + (head.role != .assistant && !head.isSteer ? 1 : 0)
+            // Live notices can split one run into several display segments.
+            if let runID = head.runID, bodyStart > run.startIndex, let timestamp = head.timestamp, runStartTimes[runID] == nil {
+                runStartTimes[runID] = timestamp
+            }
+            let startedAt = head.runID.flatMap { runStartTimes[$0] }
             guard head.runID != nil,
                   !run.contains(where: \.isStreaming),
                   let finalIndex = run[bodyStart...].lastIndex(where: { !$0.isSteer }),
@@ -112,7 +119,7 @@ enum CodexChatConversationItem: Identifiable, Equatable {
             else {
                 segments += messages[run.startIndex ..< bodyStart].map { .message($0) }
                 if showsRunHeaders, let runID = head.runID, run.contains(where: \.isStreaming) {
-                    segments.append(.running(id: runID.uuidString, startedAt: run.lazy.compactMap(\.timestamp).first))
+                    segments.append(.running(id: runID.uuidString, startedAt: startedAt ?? run.lazy.compactMap(\.timestamp).first))
                 }
                 segments += messages[bodyStart ..< run.endIndex].map { .message($0) }
                 continue
@@ -131,7 +138,7 @@ enum CodexChatConversationItem: Identifiable, Equatable {
             if steps.isEmpty, !showsRunHeaders {
                 segments.append(.message(answer))
             } else {
-                let duration = (bodyStart > run.startIndex ? head.timestamp : nil).flatMap { startedAt in
+                let duration = startedAt.flatMap { startedAt in
                     answer.timestamp.map { $0.timeIntervalSince(startedAt) }
                 }
                 var finalAnswer = answer
