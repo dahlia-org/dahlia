@@ -176,22 +176,27 @@
             }
         }
 
-        @Test(arguments: ContentWidth.allCases)
-        func selectedWidthIncludesTranscriptInsets(width: ContentWidth) async throws {
-            let harness = Harness()
+        @Test(arguments: ContentWidth.allCases, [false, true])
+        func selectedWidthIncludesTranscriptInsets(width: ContentWidth, reservesScrollbar: Bool) async throws {
+            let harness = Harness(reservesScrollbar: reservesScrollbar)
             defer { harness.stop() }
             harness.window.setContentSize(NSSize(width: 1400, height: 400))
             harness.show([TranscriptSegment(startTime: .now, text: "width", isConfirmed: true)], maxWidth: width.maxWidth)
             #expect(await harness.waitForRows(1, firstText: "width"))
+            let viewportWidth = try #require(try await harness.webView.evaluateJavaScript(
+                "document.documentElement.clientWidth"
+            ) as? Double)
+            #expect(harness.webView.frame.width == 1400)
+            if reservesScrollbar { #expect(viewportWidth == 1385) }
             let actual = try #require(try await harness.webView.evaluateJavaScript(
                 "document.getElementById('rows').getBoundingClientRect().width"
             ) as? Double)
-            #expect(abs(actual - min(1400, width.maxWidth)) < 2)
+            #expect(abs(actual - min(viewportWidth, width.maxWidth)) < 2)
         }
 
         @Test(arguments: [false, true])
         func widthChangesPreserveReadingOrLiveFollowing(following: Bool) async throws {
-            let harness = Harness(rendersAllRows: true)
+            let harness = Harness(rendersAllRows: true, reservesScrollbar: true)
             defer { harness.stop() }
             harness.window.setContentSize(NSSize(width: 1400, height: 400))
             var segments = (0 ..< 40).map { index in
@@ -204,6 +209,11 @@
             let follow: @MainActor (Bool) -> Void = { state.following = $0 }
             harness.show(segments, maxWidth: .infinity, scrollRequest: (1, .bottom), onFollowChange: follow)
             #expect(await harness.waitForRows(40, firstText: segments[0].text))
+            let viewportWidth = try #require(try await harness.webView.evaluateJavaScript(
+                "document.documentElement.clientWidth"
+            ) as? Double)
+            #expect(harness.webView.frame.width == 1400)
+            #expect(viewportWidth == 1385)
             let y = try #require(try await harness.webView.callAsyncJavaScript("""
             window.requestAnimationFrame = callback => { setTimeout(callback, 0); return 0; };
             const row = document.querySelectorAll('.row')[20];
@@ -219,7 +229,7 @@
                     let actual = try? await harness.webView.evaluateJavaScript(
                         "document.getElementById('rows').getBoundingClientRect().width"
                     ) as? Double
-                    return actual.map { abs($0 - min(1400, width.maxWidth)) < 2 } == true
+                    return actual.map { abs($0 - min(viewportWidth, width.maxWidth)) < 2 } == true
                 })
                 if following {
                     #expect(await harness.isAtBottom())
@@ -258,7 +268,7 @@
 
         @Test(arguments: [false, true], [false, true])
         func wideningKeepsADeepReadingAnchorVisible(recovering: Bool, nearEnd: Bool) async throws {
-            let harness = Harness()
+            let harness = Harness(reservesScrollbar: true)
             defer { harness.stop() }
             harness.window.setContentSize(NSSize(width: 1400, height: 400))
             let segments = (0 ..< 40).map { index in
@@ -270,6 +280,11 @@
             }
             harness.show(segments, maxWidth: ContentWidth.comfortable.maxWidth, scrollRequest: (1, .top))
             #expect(await harness.waitForRows(40, firstText: segments[0].text))
+            let viewportWidth = try #require(try await harness.webView.evaluateJavaScript(
+                "document.documentElement.clientWidth"
+            ) as? Double)
+            #expect(harness.webView.frame.width == 1400)
+            #expect(viewportWidth == 1385)
             let oldOffset = try #require(try await harness.webView.callAsyncJavaScript("""
             window.requestAnimationFrame = callback => { setTimeout(callback, 0); return 0; };
             const row = document.querySelectorAll('.row')[20];
@@ -292,7 +307,7 @@
             }
             #expect(await pollUntil {
                 await (try? harness.webView.evaluateJavaScript("""
-                document.getElementById('rows').getBoundingClientRect().width === 1400 &&
+                document.getElementById('rows').getBoundingClientRect().width === \(viewportWidth) &&
                 (typeof window.beforeDeepRecovery === 'undefined' || !\(recovering))
                 """) as? Bool) == true
             })
@@ -427,7 +442,7 @@
             let webView: WKWebView
             let coordinator: TranscriptWebSurface.Coordinator
 
-            init(rendersAllRows: Bool = false) {
+            init(rendersAllRows: Bool = false, reservesScrollbar: Bool = false) {
                 let surface = Self.surface([], showsTranslatedText: false)
                 coordinator = surface.makeCoordinator()
                 // Frame-controlled tests must not trigger the visible-page watchdog.
@@ -439,6 +454,14 @@
                 configuration.userContentController.addUserScript(WKUserScript(source: """
                 window.requestAnimationFrame = callback => { setTimeout(callback, 0); return 0; };
                 """, injectionTime: .atDocumentStart, forMainFrameOnly: true))
+                if reservesScrollbar {
+                    // Model an always-visible scrollbar without changing process-wide macOS preferences.
+                    configuration.userContentController.addUserScript(WKUserScript(source: """
+                    const scrollbarStyle = document.createElement('style');
+                    scrollbarStyle.textContent = 'html { overflow-y: scroll; } ::-webkit-scrollbar { width: 15px; }';
+                    document.head.append(scrollbarStyle);
+                    """, injectionTime: .atDocumentEnd, forMainFrameOnly: true))
+                }
                 if rendersAllRows {
                     // Width geometry checks need real row heights even when offscreen WebKit skips rendering frames.
                     configuration.userContentController.addUserScript(WKUserScript(source: """
