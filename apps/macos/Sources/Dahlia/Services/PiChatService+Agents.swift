@@ -73,6 +73,11 @@ extension PiChatService {
         }
     }
 
+    /// Takes effect the next time the agent's Pi starts.
+    func setAgentSmartRouting(_ id: String, _ enabled: Bool) throws {
+        try history().dbQueue.write { try $0.execute(sql: "UPDATE agents SET smartRouting=? WHERE id=?", arguments: [enabled, id]) }
+    }
+
     /// Deletes the agent with its sources, events, Tasks, and Items, and moves its home to the Trash. Its conversation
     /// stays in the history, read-only; the threads it launched stay as ordinary chats and keep running.
     func deleteAgent(_ id: String) async throws {

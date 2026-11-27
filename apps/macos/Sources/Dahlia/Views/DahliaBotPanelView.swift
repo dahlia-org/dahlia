@@ -140,6 +140,13 @@ struct DahliaBotPanelView: View {
                 selection: Binding(get: { model.unattendedModel }, set: { model.setUnattendedModel($0) }),
                 effort: Binding(get: { model.unattendedEffort }, set: { model.setUnattendedEffort($0) })
             )
+            Toggle(isOn: Binding(get: { model.smartRouting }, set: { model.setSmartRouting($0) })) {
+                HStack {
+                    Text(L10n.agentBotSmartRouting)
+                    SettingsInfoButton(help: L10n.agentBotSmartRoutingHelp)
+                }
+            }
+            .toggleStyle(.dahliaSwitch)
         } header: {
             AgentSectionHeader(title: L10n.agentBotModels) { EmptyView() }
         }

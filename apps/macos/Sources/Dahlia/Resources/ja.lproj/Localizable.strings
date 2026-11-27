@@ -2036,6 +2036,8 @@
 "settings.agents.alwaysOn.botIntakeModelHelp" = "イベントソースを読んで、イベントを記録するときに使うモデルです。";
 "settings.agents.alwaysOn.botUnattendedModel" = "自動で動くとき";
 "settings.agents.alwaysOn.botUnattendedModelHelp" = "イベントの通知やタスクの結果を受け取ったときなど、このエージェントがユーザーの入力なしで動くときのモデルです。会話でのモデルは変わりません。";
+"settings.agents.alwaysOn.botSmartRouting" = "スマートルーティング";
+"settings.agents.alwaysOn.botSmartRoutingHelp" = "エージェントが、起動するスレッドごとにモデルと推論の強度をタスクの難しさから選びます。簡単な仕事には軽いモデル、難しい仕事には強いモデルを使います。会話や SOUL.md でモデルや強度を指定したときは、その指定が優先されます。変更は、エージェントが次に起動したときから反映されます。";
 "settings.agents.alwaysOn.botModelDefault" = "既定のモデル";
 "settings.agents.alwaysOn.botModelConversation" = "会話と同じ";
 "settings.agents.alwaysOn.botSoul" = "人格";

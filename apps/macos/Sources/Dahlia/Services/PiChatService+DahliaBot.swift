@@ -80,6 +80,60 @@ extension PiChatService {
             + guidance
     }
 
+    /// How an agent with smart routing on picks a launched thread's model and effort: tiers by task (the axes of Unity
+    /// Gateway's task router) mapped to model families, never to one model, so the text outlives the catalog. Nil with
+    /// no model to choose from.
+    nonisolated static func smartRoutingPrompt(models: [CodexModel]) -> String? {
+        let listed = models.filter { !$0.hidden }.map { model in
+            let efforts = model.supportedReasoningEfforts.map(\.reasoningEffort).joined(separator: ", ")
+            return "- " + model.model + (efforts.isEmpty ? "" : ": effort " + efforts)
+        }
+        guard !listed.isEmpty else { return nil }
+        return """
+        Smart routing is on: for every thread_launch, choose model and effort from the task and pass both. What the user \
+        asks now, and then SOUL.md, come first when they name a model or an effort.
+
+        Model. Rate the task on each point and take the highest tier any point reaches: Simple, Standard, or Complex.
+        - Finding the target: Simple when the task names where to act; Standard when a focused search finds it; Complex \
+        when the thread must first work out what needs attention.
+        - Scope: Simple for one message, document, or record; Standard for several related ones; Complex across teams, \
+        accounts, or systems.
+        - Reasoning: Simple for one step with a known answer; Standard for several dependent steps; Complex when the \
+        approach itself is open (strategy, design, trade-offs).
+        - Live systems: at least Standard when the result depends on current data outside Dahlia or changes something \
+        there.
+        - Checking: one tier higher when nothing can confirm the result is right.
+
+        Tiers, by model family:
+        - Simple (a lookup, a summary, reformatting, a routine reply): the smallest family, such as Claude Haiku, GPT \
+        Luna, GLM Flash, or DeepSeek Flash.
+        - Standard (most work: research with clear sources, a drafted document, a change in several steps): the middle \
+        family, such as Claude Sonnet, GPT Terra, Gemini Flash or Hydrogen, GLM, DeepSeek Pro, or Kimi.
+        - Complex (open-ended research, a plan or design, work whose mistake is costly): the largest family, such as \
+        Claude Opus, GPT Sol, Gemini Pro, Neon, or Argon, or Kimi Pro.
+
+        Use only a model listed below, exactly as written, and the newest model of the family. When a tier's family is \
+        not listed, use the nearest larger one that is. When unsure between two tiers, take the higher.
+
+        Provider. When the tier has more than one family listed, choose by what the task is.
+        - Claude: the all-rounder, and the first choice for text people will read (replies, documents, summaries) and \
+        for judgment about people and tone.
+        - GPT: science, math, data analysis, and output that must follow a strict format. GPT Sol is good value: prefer \
+        it for Complex work that is not mainly writing.
+
+        Effort. Choose it apart from the model: a larger model does not call for more effort.
+        - A model that lists medium (Claude and GPT do): use medium, or low for mechanical work with nothing to \
+        work out.
+        - A model that lists no medium (DeepSeek and GLM list low, high, max): treat high as its medium. Use high, or \
+        low for mechanical work when the model lists low.
+        - Use none, minimal, xhigh, or max only when the user asks.
+        - For a model with no effort listed, leave effort out.
+
+        Available models:
+        \(listed.joined(separator: "\n"))
+        """
+    }
+
     /// Fences text so it cannot close its own fence: the markers are longer than any run of `>` inside.
     nonisolated static func fenced(_ text: String) -> String {
         var longest = 0
