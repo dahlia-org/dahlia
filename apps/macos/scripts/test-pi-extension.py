@@ -89,7 +89,7 @@ for line in sys.stdin:
 """
 
 
-def http_mcp(authorizations):
+def http_mcp(authorizations, extra_read_tools=()):
     """A streamable HTTP stand-in for a Unity AI Gateway MCP with one read-only and one changing tool."""
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, *_):
@@ -117,7 +117,8 @@ def http_mcp(authorizations):
                     {"name": "send_message", "inputSchema": {"type": "object"}},
                     {"name": "post_message", "inputSchema": {"type": "object", "required": ["message"], "properties": {
                         "message": {"type": "string"}, "thread_ts": {"type": "string"}, "broadcast": {"type": "boolean"}, "parent": {"type": ["string", "null"]}}}},
-                ]}
+                ] + [{"name": name, "inputSchema": {"type": "object"}, "annotations": {"readOnlyHint": True}}
+                     for name in extra_read_tools]}
             elif method == "tools/call" and msg["params"]["name"] == "post_message":
                 result = {"content": [{"type": "text", "text": "POSTED " + json.dumps(msg["params"].get("arguments", {}), sort_keys=True)}]}
             elif method == "tools/call":
@@ -1266,6 +1267,28 @@ def main():
     assert observed[0]["links"] == {"1700000000.123456": "https://team.slack.com/archives/C123/p1700000000123456"}, bridge
     assert observed[0]["pages"][0]["nextRequestKey"] == observed[1]["pages"][0]["requestKey"], bridge
     assert observed[1]["pages"][0]["nextRequestKey"] == "" and not observed[1]["pages"][0]["hasMore"], bridge
+
+    # This connector requires limit to be cleared for history/reply cursors, while channel/thread scope remains.
+    slack_tools = ["conversations_history", "conversations_replies"]
+    slack_server = http_mcp([], slack_tools)
+    try:
+        for tool in slack_tools:
+            scope = {"probe_case": "slack_csv", "channel_id": "C123", "include_activity_messages": False}
+            if tool == "conversations_replies":
+                scope["thread_ts"] = "1700000000.123456"
+            _, _, bridge, _ = run(
+                pi, "chat", [{"tool": f"mcp__slack__{tool}", "args": dict(scope, limit="50")},
+                             {"tool": f"mcp__slack__{tool}", "args": dict(scope, cursor="csv-next")}, {"text": "done"}],
+                ["--no-session", *CHAT_EXTENSIONS, "--tools", "event_record,mcp__slack__*"],
+                {"DAHLIA_PI_MCP_SERVERS": json.dumps(["slack"]), "DAHLIA_PI_PROFILE": "intake", "DAHLIA_PI_INTAKE_SERVICE": "slack"},
+                mcp_servers={"slack": {"url": f"http://127.0.0.1:{slack_server.server_port}/mcp", "exposure": "direct"}},
+                auth={}, bridge_answers={"intakeSeen": True})
+            pages = [page for method, payload in bridge if method == "intakeSeen" for page in payload["pages"]]
+            assert len(pages) == 2 and pages[0]["root"] and not pages[1]["root"], bridge
+            assert pages[0]["nextRequestKey"] == pages[1]["requestKey"] and pages[1]["nextRequestKey"] == "", pages
+            assert json.loads(pages[1]["requestKey"])[1] == dict(scope, cursor="csv-next"), pages
+    finally:
+        slack_server.shutdown()
 
     # An MCP error followed by a normal assistant ending must still reach the native cursor gate. A later success
     # does not erase the earlier failure: the native run retries the whole range.

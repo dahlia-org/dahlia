@@ -62,6 +62,54 @@ test('Slack CSV observations keep IDs, source links and last-row continuation me
   assert.deepEqual(calls[1].args.pages, [{ requestKey: page.pages[0].nextRequestKey, nextRequestKey: '', root: false, hasMore: false }]);
 });
 
+test('Slack CSV history and replies complete cursor chains when limit is omitted or cleared', async () => {
+  for (const name of ['conversations_history', 'conversations_replies']) {
+    for (const limit of ['50', '1d']) {
+      let observe;
+      const pages = [];
+      registerEventTools({ on(_name, handler) { observe = handler; }, registerTool() {} }, async (_ctx, _name, args) => pages.push(...args.pages), 'slack');
+      const toolName = `mcp__custom_slack__${name}`;
+      const scope = { channel_id: 'C123', include_activity_messages: false, ...(name === 'conversations_replies' ? { thread_ts: '1700000000.123456' } : {}) };
+      const root = { ...scope, limit };
+      await observe({ toolName, input: root, content: [{ text: slackCSV(slackURL, 'c2') }] }, {});
+      await observe({ toolName, input: { ...scope, cursor: 'c2' }, content: [{ text: slackCSV(slackURL, 'c3') }] }, {});
+      await observe({ toolName, input: { ...scope, cursor: 'c3', limit: '' }, content: [{ text: `${slackCSVHeader}\r\n` }] }, {});
+      assert.equal(pages[0].root, true);
+      assert.deepEqual(JSON.parse(pages[0].requestKey)[1], root);
+      assert.equal(pages[0].nextRequestKey, pages[1].requestKey);
+      assert.equal(pages[1].nextRequestKey, pages[2].requestKey);
+      assert.equal(pages[2].nextRequestKey, '');
+      assert.equal(pages[2].hasMore, false);
+      assert.deepEqual(pages.slice(1).map(page => page.root), [false, false]);
+      // The normalized continuation still retains every content-shaping argument.
+      for (const change of [{ channel_id: 'C999' }, { include_activity_messages: true }, { limit: '100' },
+        ...(scope.thread_ts ? [{ thread_ts: '1700000000.999999' }] : [])]) {
+        await observe({ toolName, input: { ...scope, cursor: 'c2', ...change }, content: [{ text: `${slackCSVHeader}\r\n` }] }, {});
+        assert.notEqual(pages[0].nextRequestKey, pages.at(-1).requestKey);
+      }
+    }
+  }
+});
+
+test('Slack cursor limit clearing does not weaken search, JSON or other tool request identities', async () => {
+  for (const [toolName, text] of [
+    ['mcp__slack__conversations_search_messages', slackCSV(slackURL, 'c2')],
+    ['mcp__other__history', slackCSV(slackURL, 'c2')],
+    ['mcp__slack__conversations_history', JSON.stringify({ messages: [], nextCursor: 'c2', has_more: true })],
+  ]) {
+    let observe;
+    const pages = [];
+    registerEventTools({ on(_name, handler) { observe = handler; }, registerTool() {} }, async (_ctx, _name, args) => pages.push(...args.pages), 'slack');
+    const root = { query: 'new messages', count: 10, limit: '50', filter: { channel: 'C123' } };
+    await observe({ toolName, input: root, content: [{ text }] }, {});
+    assert.deepEqual(JSON.parse(pages[0].nextRequestKey), [toolName, { ...root, cursor: 'c2' }]);
+    for (const change of [{ limit: '' }, { count: 100 }, { query: 'other' }, { filter: { channel: 'C999' } }]) {
+      await observe({ toolName, input: { ...root, cursor: 'c2', ...change }, content: [{ text }] }, {});
+      assert.notEqual(pages[0].nextRequestKey, pages.at(-1).requestKey);
+    }
+  }
+});
+
 test('source links use structured item metadata and ignore message body links', () => {
   const content = value => [{ text: JSON.stringify(value) }];
   const mail = content({ items: [

@@ -41,7 +41,7 @@ function listing(text: string): any {
   if (id < 0 || permalink < 0 || rows.some(row => row.length !== header.length)) return undefined;
   const messages = rows.map(row => ({ ts: row[id], permalink: row[permalink] }));
   const next = cursor >= 0 ? rows.at(-1)?.[cursor] ?? "" : undefined;
-  return { messages, ...(next !== undefined ? { nextCursor: next, has_more: next !== "" } : {}) };
+  return { slackCSV: true, messages, ...(next !== undefined ? { nextCursor: next, has_more: next !== "" } : {}) };
 }
 
 // Count observed message IDs independently from which messages intake selects. Conversation-only listings do not count.
@@ -99,17 +99,22 @@ function requestKey(tool: string, input: Record<string, unknown>): string {
   return JSON.stringify([tool, canonical(request)]);
 }
 
-// A continuation obligates intake to observe that exact next request, not an inferred search family.
+// A continuation obligates intake to observe the provider's next request, not an inferred search family.
 function listedPages(event: any): any[] {
   return (event.content ?? []).flatMap((part: any) => {
     try {
       const result = listing(part?.text ?? "");
       if (!Array.isArray(result?.items) && result?.has_more === undefined && result?.nextCursor === undefined) return [];
-      const input = event.input ?? {};
+      const input = { ...event.input };
       const next = typeof result.nextCursor === "string" ? result.nextCursor : "";
+      // Slack CSV history/replies require limit to be cleared when a cursor is provided.
+      const clearsLimit = result.slackCSV === true && /^mcp__.+__conversations_(history|replies)$/.test(event.toolName);
+      if (clearsLimit && input.cursor && input.limit === "") delete input.limit;
+      const nextInput = { ...input, cursor: next };
+      if (clearsLimit) delete nextInput.limit;
       return [{
         requestKey: requestKey(event.toolName, input),
-        nextRequestKey: next ? requestKey(event.toolName, { ...input, cursor: next }) : "",
+        nextRequestKey: next ? requestKey(event.toolName, nextInput) : "",
         root: input.cursor === undefined || input.cursor === "",
         hasMore: result.has_more === true,
       }];
