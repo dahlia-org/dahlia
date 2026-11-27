@@ -26,7 +26,7 @@ struct MCPCommandView: View {
                     systemImage: "info.circle",
                     action: showReRegistrationHelp
                 )
-                .buttonStyle(.borderless)
+                .buttonStyle(.dahlia())
                 .help(L10n.mcpReRegistrationHelp)
                 .popover(isPresented: $isReRegistrationHelpPresented, arrowEdge: .bottom) {
                     MCPReRegistrationHelpView(
@@ -41,9 +41,7 @@ struct MCPCommandView: View {
                     systemImage: copiedCommand == command ? "checkmark" : "doc.on.doc",
                     action: copyRegistrationCommand
                 )
-                .buttonStyle(.borderedProminent)
-                .buttonBorderShape(.capsule)
-                .controlSize(.large)
+                .buttonStyle(.dahlia(.primary))
                 .font(.dahliaBody.weight(.semibold))
             }
         }

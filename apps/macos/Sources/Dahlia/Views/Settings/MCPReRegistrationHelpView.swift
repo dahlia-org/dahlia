@@ -22,6 +22,7 @@ struct MCPReRegistrationHelpView: View {
                 systemImage: isCopied ? "checkmark" : "doc.on.doc",
                 action: onCopy
             )
+            .buttonStyle(.dahlia())
         }
         .padding()
     }

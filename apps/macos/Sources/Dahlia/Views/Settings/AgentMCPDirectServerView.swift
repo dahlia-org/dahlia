@@ -66,23 +66,23 @@ struct AgentMCPDirectServerView: View {
                     Text(name).textSelection(.enabled)
                 }
             }
-            Picker(L10n.mcpDirectInputMode, selection: Binding(get: { isJSON }, set: { switchMode($0) })) {
-                Text(L10n.mcpDirectForm).font(.dahliaBody).tag(false)
-                Text("JSON").font(.dahliaBody).tag(true)
-            }
-            .pickerStyle(.segmented)
+            DahliaSegmentedPicker(
+                title: L10n.mcpDirectInputMode,
+                selection: Binding(get: { isJSON }, set: { switchMode($0) }),
+                options: [false, true]
+            ) { $0 ? "JSON" : L10n.mcpDirectForm }
             if isJSON {
                 editor("JSON", text: $jsonText)
                 Text(L10n.mcpDirectJSONHelp).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             } else {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(L10n.mcpDirectTransport).foregroundStyle(.secondary)
-                    Picker(L10n.mcpDirectTransport, selection: $transport) {
-                        Text("stdio").font(.dahliaBody).tag(AgentMCPDirectConfiguration.Transport.stdio)
-                        Text("HTTP").font(.dahliaBody).tag(AgentMCPDirectConfiguration.Transport.http)
-                    }
-                    .pickerStyle(.segmented)
-                    .labelsHidden()
+                    DahliaSegmentedPicker(
+                        title: L10n.mcpDirectTransport,
+                        selection: $transport,
+                        options: [.stdio, .http]
+                    ) { $0 == .stdio ? "stdio" : "HTTP" }
+                        .labelsHidden()
                 }
                 switch transport {
                 case .stdio:
