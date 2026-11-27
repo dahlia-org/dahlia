@@ -56,6 +56,7 @@ final class MainWindowNavigation {
     private(set) var isNavigatingHistory = false
     private(set) var hasInitializedNavigationHistory = false
     private(set) var isShowingSettings = false
+    private(set) var isShowingHelp = false
     /// A settings modal card shown over the whole window.
     private(set) var settingsModal: AnyView?
     private(set) var setupTourMode: SetupTourMode?
@@ -224,7 +225,16 @@ final class MainWindowNavigation {
         openMainWindowWithoutActivation()
     }
 
+    func presentHelp() {
+        isShowingHelp = true
+    }
+
+    func dismissHelp() {
+        isShowingHelp = false
+    }
+
     func openSettings(category: SettingsCategory? = nil) {
+        dismissHelp()
         if let category {
             switch category {
             case .eventDisplay:
