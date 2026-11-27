@@ -6,6 +6,32 @@
 
     @MainActor
     struct HelpModalViewTests {
+        @Test
+        func proseFitsTheMinimumWindowWidth() async throws {
+            let host = NSHostingView(rootView: HelpModalView(onClose: {}, onOpenSettings: { _ in }))
+            host.frame = CGRect(x: 0, y: 0, width: 720, height: 520)
+            let window = NSWindow(contentRect: host.frame, styleMask: .titled, backing: .buffered, defer: false)
+            window.isReleasedWhenClosed = false
+            window.contentView = host
+            defer { window.close() }
+            window.makeKeyAndOrderFront(nil)
+            host.layoutSubtreeIfNeeded()
+
+            var topicScroll: NSScrollView?
+            try #require(await pollUntil {
+                topicScroll = scrollViews(in: host).max { $0.bounds.width < $1.bounds.width }
+                return topicScroll != nil
+            })
+            let topic = try #require(topicScroll)
+            #expect(topic.bounds.width <= 451)
+            #expect(!topic.hasHorizontalScroller)
+            #expect(scrollViews(in: host).contains { $0.hasHorizontalScroller })
+        }
+
+        private func scrollViews(in view: NSView) -> [NSScrollView] {
+            ((view as? NSScrollView).map { [$0] } ?? []) + view.subviews.flatMap { scrollViews(in: $0) }
+        }
+
         @Test(arguments: ["outside", "close", "escape"])
         func dismissesThroughEveryExit(exit: String) async throws {
             var closeCount = 0

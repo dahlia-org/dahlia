@@ -84,7 +84,7 @@ struct HelpModalView: View {
 
                 Divider()
 
-                ScrollView([.horizontal, .vertical]) {
+                ScrollView {
                     VStack(alignment: .leading, spacing: 20) {
                         switch topic {
                         case .summary: SummaryExplainer()
@@ -93,7 +93,7 @@ struct HelpModalView: View {
                         case .dahliaMCP: DahliaMCPExplainer(onOpenSettings: openDahliaMCPSettings)
                         }
                     }
-                    .frame(width: 710, alignment: .leading)
+                    .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(24)
                 }
                 .id(topic)
@@ -380,50 +380,56 @@ private struct AgentsExplainer: View {
         }
 
         ExplainerSection(title: L10n.howItWorksAgentsRoutingTitle) {
-            HStack(spacing: 12) {
-                ExplainerNode(
-                    systemImage: "arrow.triangle.branch",
-                    title: L10n.howItWorksAgentsAgentThread,
-                    caption: L10n.howItWorksAgentsAgentThreadCaption,
-                    tint: .purple
-                )
-                ExplainerArrow(label: L10n.howItWorksAgentsDelegate)
-                VStack(spacing: 6) {
+            ExplainerDiagram {
+                HStack(spacing: 12) {
                     ExplainerNode(
-                        systemImage: "bubble.left.and.text.bubble.right",
-                        title: L10n.howItWorksAgentsWorkThread,
-                        caption: L10n.howItWorksAgentsWorkThreadCaption,
-                        tint: .teal
+                        systemImage: "arrow.triangle.branch",
+                        title: L10n.howItWorksAgentsAgentThread,
+                        caption: L10n.howItWorksAgentsAgentThreadCaption,
+                        tint: .purple
                     )
-                    ExplainerNode(systemImage: "bubble.left.and.text.bubble.right", title: L10n.howItWorksAgentsWorkThread, tint: .teal)
-                        .opacity(0.6)
+                    ExplainerArrow(label: L10n.howItWorksAgentsDelegate)
+                    VStack(spacing: 6) {
+                        ExplainerNode(
+                            systemImage: "bubble.left.and.text.bubble.right",
+                            title: L10n.howItWorksAgentsWorkThread,
+                            caption: L10n.howItWorksAgentsWorkThreadCaption,
+                            tint: .teal
+                        )
+                        ExplainerNode(systemImage: "bubble.left.and.text.bubble.right", title: L10n.howItWorksAgentsWorkThread, tint: .teal)
+                            .opacity(0.6)
+                    }
                 }
             }
             ExplainerBody(L10n.howItWorksAgentsRoutingBody)
         }
 
         ExplainerSection(title: L10n.agentBotTasks) {
-            HStack(spacing: 8) {
-                ExplainerChip(L10n.agentBotTaskStatus("active"), tint: .blue)
-                ExplainerArrow()
-                VStack(alignment: .leading, spacing: 6) {
-                    ExplainerChip(L10n.agentBotTaskStatus("done"), tint: .green)
-                    ExplainerChip(L10n.agentBotTaskStatus("dismissed"), tint: .gray)
+            ExplainerDiagram {
+                HStack(spacing: 8) {
+                    ExplainerChip(L10n.agentBotTaskStatus("active"), tint: .blue)
+                    ExplainerArrow()
+                    VStack(alignment: .leading, spacing: 6) {
+                        ExplainerChip(L10n.agentBotTaskStatus("done"), tint: .green)
+                        ExplainerChip(L10n.agentBotTaskStatus("dismissed"), tint: .gray)
+                    }
                 }
             }
             ExplainerBody(L10n.howItWorksAgentsTasksBody)
         }
 
         ExplainerSection(title: L10n.agentBotInbox) {
-            HStack(spacing: 8) {
-                ExplainerChip(L10n.agentBotKindQuestion, tint: .green)
-                ExplainerChip(L10n.agentBotKindReport, tint: .green)
-                ExplainerChip(L10n.agentBotKindSuggestion, tint: .green)
-                ExplainerArrow()
-                ExplainerChip(L10n.agentBotAnswerSend, tint: .blue)
-                ExplainerChip(L10n.agentBotAccept, tint: .blue)
-                ExplainerChip(L10n.agentBotDismiss, tint: .blue)
-                ExplainerChip(L10n.agentBotSeen, tint: .blue)
+            ExplainerDiagram {
+                HStack(spacing: 8) {
+                    ExplainerChip(L10n.agentBotKindQuestion, tint: .green)
+                    ExplainerChip(L10n.agentBotKindReport, tint: .green)
+                    ExplainerChip(L10n.agentBotKindSuggestion, tint: .green)
+                    ExplainerArrow()
+                    ExplainerChip(L10n.agentBotAnswerSend, tint: .blue)
+                    ExplainerChip(L10n.agentBotAccept, tint: .blue)
+                    ExplainerChip(L10n.agentBotDismiss, tint: .blue)
+                    ExplainerChip(L10n.agentBotSeen, tint: .blue)
+                }
             }
             ExplainerBody(L10n.howItWorksAgentsConfirmationBody)
             ExplainerNote(L10n.howItWorksAgentsNote)
@@ -471,10 +477,12 @@ private struct DahliaMCPExplainer: View {
         }
 
         ExplainerSection(title: L10n.howItWorksMCPAccessTitle) {
-            HStack(spacing: 8) {
-                ExplainerChip(L10n.howItWorksMCPReadOnly, tint: .green)
-                ExplainerArrow(label: L10n.howItWorksMCPOptIn)
-                ExplainerChip(L10n.howItWorksMCPWrite, tint: .orange)
+            ExplainerDiagram {
+                HStack(spacing: 8) {
+                    ExplainerChip(L10n.howItWorksMCPReadOnly, tint: .green)
+                    ExplainerArrow(label: L10n.howItWorksMCPOptIn)
+                    ExplainerChip(L10n.howItWorksMCPWrite, tint: .orange)
+                }
             }
             ExplainerBody(L10n.howItWorksMCPAccessBody)
             ExplainerNote(L10n.howItWorksMCPNotShared)
@@ -550,10 +558,12 @@ private struct ExplainerDiagram<Content: View>: View {
     @ViewBuilder let content: Content
 
     var body: some View {
-        content
-            .padding(16)
-            .frame(maxWidth: .infinity)
-            .background(DahliaDesign.contentHighlightColor.opacity(0.5), in: .rect(cornerRadius: DahliaDesign.Card.regularCornerRadius))
+        ScrollView(.horizontal) {
+            content
+                .frame(width: 678)
+                .padding(16)
+        }
+        .background(DahliaDesign.contentHighlightColor.opacity(0.5), in: .rect(cornerRadius: DahliaDesign.Card.regularCornerRadius))
     }
 }
 

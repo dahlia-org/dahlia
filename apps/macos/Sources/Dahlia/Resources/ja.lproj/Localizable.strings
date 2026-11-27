@@ -784,7 +784,7 @@
 "help.howItWorks.summary.topic" = "要約の生成";
 "help.howItWorks.providers.topic" = "プロバイダーアカウント";
 "help.howItWorks.agents.topic" = "自律型エージェント";
-"help.howItWorks.summary.lead" = "録音中に集めた音声とスクリーンショットを、メモや予定などの会議の情報と合わせて、AI が 1 つの要約にまとめます。文字起こしは Mac 上の Apple Speech で行います。";
+"help.howItWorks.summary.lead" = "録音した音声は、Mac 上の Apple Speech で文字起こしします。要約モデルは、その文字起こしとスクリーンショット、メモや予定などの会議の情報を合わせて要約します。録音した音声を要約モデルに送ることはありません。";
 "help.howItWorks.summary.stageCapture" = "集める";
 "help.howItWorks.summary.stagePrepare" = "下ごしらえ";
 "help.howItWorks.summary.stageGenerate" = "まとめる";
@@ -804,7 +804,7 @@
 "help.howItWorks.summary.resultCaption" = "版を残して保存。フォルダーがあれば Markdown にも書き出し";
 "help.howItWorks.summary.selectionTitle" = "スクリーンショットが多いときの選別";
 "help.howItWorks.summary.selectionCapture" = "録画中: 画面が大きく変わったときだけ保存します。一度保存した画面に戻っても、もう一度は保存しません。";
-"help.howItWorks.summary.selectionFallback" = "選別に失敗したときや時間切れになったときは、候補をすべて要約に使います。";
+"help.howItWorks.summary.selectionFallback" = "選別に失敗したときや時間切れになったときは、候補の枚数制限前の、会議のすべてのスクリーンショットを要約に使います。候補から外れた画像や、選別なら除く画像も含みます。";
 "help.howItWorks.providers.lead" = "プロバイダーアカウントは、Dahlia が外部サービスの機能を使うためのサインインです。AI のモデルだけでなく、MCP サーバー、カレンダー、ストレージもここから取り込みます。";
 "help.howItWorks.providers.model" = "モデル";
 "help.howItWorks.providers.calendar" = "カレンダー";
@@ -862,7 +862,7 @@
 "help.howItWorks.mcp.readOnly" = "読み取り";
 "help.howItWorks.mcp.optIn" = "許可したときだけ";
 "help.howItWorks.mcp.write" = "書き込み";
-"help.howItWorks.mcp.accessBody" = "既定では、会議を探して要約や文字起こし、スクリーンショットを読むことだけができます。書き込みを許可すると、会議の情報の更新やプロジェクトの作成もできるようになります。参照する Workspace は 1 つに絞ることもできます。";
+"help.howItWorks.mcp.accessBody" = "既定の設定では、利用可能なすべての Workspace の会議、要約、確定した文字起こし、スクリーンショット、プロジェクトを読み取れます。設定をコピーする前に、参照先を 1 つの Workspace に絞れます。書き込みを許可すると、会議の情報の更新、保存済みの要約の置き換え、プロジェクトの作成や編集もできるようになります。";
 "help.howItWorks.mcp.notShared" = "音声、メモ、翻訳、確定前の文字起こしは渡しません。";
 "help.howItWorks.mcp.setupTitle" = "接続のしかた";
 "help.howItWorks.mcp.setupBody" = "設定の Dahlia MCP で接続する AI アプリを選ぶと、登録用のコマンドや設定がそのまま表示されます。コピーして AI アプリ側に貼り付けてください。";

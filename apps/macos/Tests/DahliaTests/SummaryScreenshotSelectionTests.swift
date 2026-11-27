@@ -8,6 +8,20 @@ import Foundation
 
     struct SummaryScreenshotSelectionTests {
         @Test
+        func selectionFailureRestoresImagesOutsideTheCandidatePool() async throws {
+            var candidates = try Self.screenshots(SummaryScreenshotSelection.candidateLimit + 1)
+            candidates[0].imageData = Data()
+            let pi = TestPiRuntime.generating(models: Self.models, reply: #"{"indices":[1]}"#)
+
+            let selected = try await SummaryScreenshotSelection.select(
+                candidates, settings: Self.settings(), appServer: pi.service
+            )
+
+            #expect(selected.count > SummaryScreenshotSelection.candidateLimit)
+            #expect(selected.map(\.id) == candidates.map(\.id))
+        }
+
+        @Test
         func invalidSelectionTriesTheImageFallbackBeforeKeepingAllCandidates() async throws {
             let candidates = try Self.screenshots(2)
             var settings = Self.settings()

@@ -784,7 +784,7 @@
 "help.howItWorks.summary.topic" = "Summaries";
 "help.howItWorks.providers.topic" = "Provider Accounts";
 "help.howItWorks.agents.topic" = "Autonomous Agents";
-"help.howItWorks.summary.lead" = "AI combines the audio and screenshots collected while recording with meeting details such as notes and the calendar event into one summary. Transcription runs on your Mac with Apple Speech.";
+"help.howItWorks.summary.lead" = "Apple Speech transcribes the recorded audio on your Mac. The summary model combines that transcript with screenshots and meeting context such as notes and the calendar event. Recorded audio is not sent to the summary model.";
 "help.howItWorks.summary.stageCapture" = "Capture";
 "help.howItWorks.summary.stagePrepare" = "Prepare";
 "help.howItWorks.summary.stageGenerate" = "Summarize";
@@ -804,7 +804,7 @@
 "help.howItWorks.summary.resultCaption" = "Saved with its versions, and written as Markdown when the Workspace has a folder";
 "help.howItWorks.summary.selectionTitle" = "Choosing among many screenshots";
 "help.howItWorks.summary.selectionCapture" = "While recording: a screenshot is saved only when the screen changes noticeably, and a screen already saved is not saved again.";
-"help.howItWorks.summary.selectionFallback" = "If selection fails or times out, every candidate goes into the summary.";
+"help.howItWorks.summary.selectionFallback" = "If selection fails or times out, all screenshots from the meeting go into the summary, including images outside the capped candidate pool and images that selection would otherwise exclude.";
 "help.howItWorks.providers.lead" = "Provider accounts are the sign-ins Dahlia uses to borrow capabilities from other services. They supply not only AI models but also MCP servers, calendars, and storage.";
 "help.howItWorks.providers.model" = "Models";
 "help.howItWorks.providers.calendar" = "Calendar";
@@ -862,7 +862,7 @@
 "help.howItWorks.mcp.readOnly" = "Read";
 "help.howItWorks.mcp.optIn" = "Only if you allow it";
 "help.howItWorks.mcp.write" = "Write";
-"help.howItWorks.mcp.accessBody" = "By default, AI apps can only find meetings and read their summaries, transcripts, and screenshots. If you allow writing, they can also update meeting details and create projects. You can also limit access to one Workspace.";
+"help.howItWorks.mcp.accessBody" = "The default configuration lets AI apps read meetings, summaries, finalized transcripts, screenshots, and projects across all available Workspaces. Before copying the configuration, you can limit access to one Workspace. Allowing writes also lets clients update meeting details, replace stored summaries, and create or edit projects.";
 "help.howItWorks.mcp.notShared" = "Audio, notes, translations, and transcripts that are not finalized are never shared.";
 "help.howItWorks.mcp.setupTitle" = "How to connect";
 "help.howItWorks.mcp.setupBody" = "Choose your AI app under Dahlia MCP in Settings to see the command or configuration to register. Copy it into the AI app.";
