@@ -286,6 +286,80 @@
             #expect(handled.handledAt != nil && handled.occurredAt == arrived.occurredAt)
         }
 
+        @Test(arguments: [false, true], ["future", "becomesDue", "arrived", "handled"])
+        func timezoneChangesRescheduleOnlyFutureUnhandledAgendas(weekly: Bool, state: String) throws {
+            let (service, _) = try service()
+            var losAngeles = Calendar(identifier: .gregorian)
+            losAngeles.timeZone = try #require(TimeZone(identifier: "America/Los_Angeles"))
+            var newYork = losAngeles
+            newYork.timeZone = try #require(TimeZone(identifier: "America/New_York"))
+            let at = now.addingTimeInterval(4 * 3600) // January15,2027 at12:00UTC.
+            let laTime = now.addingTimeInterval(8 * 3600), nyTime = now.addingTimeInterval(5 * 3600)
+            let initialCalendar = state == "arrived" ? newYork : losAngeles
+            let updatedCalendar = state == "arrived" ? losAngeles : newYork
+            let refreshAt = state == "arrived" || state == "becomesDue" ? at.addingTimeInterval(2 * 3600) : at
+            var source = try #require(try service.sources().first)
+            source.leadHours = nil
+            if weekly {
+                source.sourceOptions = .init(weeklyAt: "08:00", weekday: 6)
+            } else {
+                source.dailyAt = "08:00"
+            }
+            try service.saveSource(source, now: at)
+            let snapshot = AgentCalendarSnapshot(successfulProviders: ["provider-a"], selectedProviders: ["provider-a"])
+            try service.reconcileCalendar(snapshot, now: at, calendar: initialCalendar)
+            let reserved = try #require(try service.recentEvents().first)
+            #expect(reserved.occurredAt == (state == "arrived" ? nyTime : laTime))
+            if state == "handled" { try service.close(eventIDs: [reserved.id]) }
+            let before = try #require(try service.recentEvents().first)
+            // A missing provider result does not rewrite a reservation, even after the time zone changes.
+            try service.reconcileCalendar(.init(selectedProviders: ["provider-a"]), now: refreshAt, calendar: updatedCalendar)
+            #expect(try service.recentEvents().first?.occurredAt == reserved.occurredAt)
+            try service.reconcileCalendar(snapshot, now: refreshAt, calendar: updatedCalendar)
+            let retained = try #require(try service.recentEvents().first)
+            #expect(try service.recentEvents().count == 1)
+            #expect(retained.id == reserved.id && retained.key == reserved.key && retained.ref == reserved.ref)
+            #expect(retained.occurredAt == (state == "future" || state == "becomesDue" ? nyTime : before.occurredAt))
+            #expect(retained.handledAt == before.handledAt && retained.note == before.note && retained.createdAt == before.createdAt)
+            #expect(try service.source(source.id)?.lastRecordedCount == 0)
+            #expect(try service.inbox(now: refreshAt).events.count == (state == "arrived" || state == "becomesDue" ? 1 : 0))
+        }
+
+        @Test(arguments: [false, true])
+        func timezoneDateRolloverCancelsOnlyObsoleteFutureAgendaReservations(weekly: Bool) throws {
+            let (service, _) = try service()
+            var losAngeles = Calendar(identifier: .gregorian)
+            losAngeles.timeZone = try #require(TimeZone(identifier: "America/Los_Angeles"))
+            var tokyo = losAngeles
+            tokyo.timeZone = try #require(TimeZone(identifier: "Asia/Tokyo"))
+            // Sunday07:30 in LA, Monday00:30 in Tokyo: a date and ISO-week rollover.
+            let at = now.addingTimeInterval(2 * 86400 + 7.5 * 3600)
+            var source = try #require(try service.sources().first)
+            source.leadHours = nil
+            if weekly {
+                source.sourceOptions = .init(weeklyAt: "08:00", weekday: 1)
+            } else {
+                source.dailyAt = "08:00"
+            }
+            try service.saveSource(source, now: at)
+            let snapshot = AgentCalendarSnapshot(successfulProviders: ["provider-a"], selectedProviders: ["provider-a"])
+            try service.reconcileCalendar(snapshot, now: at, calendar: losAngeles)
+            let reservation = try #require(try service.recentEvents().first)
+            #expect(reservation.occurredAt > at)
+            try service.reconcileCalendar(.init(selectedProviders: ["provider-a"]), now: at, calendar: tokyo)
+            #expect(try service.recentEvents().map(\.id) == [reservation.id])
+            try service.reconcileCalendar(snapshot, now: at, calendar: tokyo)
+            let after = try service.recentEvents()
+            #expect(!after.contains { $0.id == reservation.id })
+            if weekly {
+                #expect(after.isEmpty) // Monday does not issue a Sunday agenda for the new ISO week.
+            } else {
+                let current = try #require(after.first)
+                #expect(after.count == 1 && current.key == "daily:2027-01-18")
+                #expect(tokyo.component(.hour, from: current.occurredAt) == 8)
+            }
+        }
+
         @Test func pausedSourceReconcilesEligibilityWithoutIssuingSignals() throws {
             let (service, _) = try service()
             let accepted = event("accepted", accepted: true), tentative = event("tentative")

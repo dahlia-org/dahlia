@@ -83,11 +83,8 @@ extension AgentInboxService {
                     }
                 }
                 var recorded = 0
-                // Agendas are durable occurrences, not schedule projections. Only settings saves change their notes
-                // or cancel future reservations; repeating a date/week never moves its occurrence or handled history.
-                for event in agendas {
-                    try event.insert(db, onConflict: .ignore)
-                    recorded += db.changesCount
+                if source.enabled, !successful.isEmpty {
+                    recorded = try Self.reconcileAgendaReservations(agendas, sourceID: source.id, now: now, db: db)
                 }
                 for event in meetings {
                     if var existing = try AgentEventRecord.fetchOne(
@@ -114,6 +111,28 @@ extension AgentInboxService {
                 }
             }
         }
+    }
+
+    /// Only future reservations follow the current local schedule; arrived decisions and handled history are durable.
+    private static func reconcileAgendaReservations(_ candidates: [AgentEventRecord], sourceID: String, now: Date, db: Database) throws -> Int {
+        let reservations = try AgentEventRecord.fetchAll(db, sql: """
+        SELECT * FROM agent_event_inbox WHERE sourceID=? AND handledAt IS NULL AND occurredAt>?
+        AND (key LIKE 'daily:%' OR key LIKE 'weekly:%')
+        """, arguments: [sourceID, now])
+        for reservation in reservations {
+            if let candidate = candidates.first(where: { $0.key == reservation.key }) {
+                try db.execute(sql: "UPDATE agent_event_inbox SET occurredAt=? WHERE id=?", arguments: [candidate.occurredAt, reservation.id])
+            } else {
+                try reservation.delete(db)
+            }
+        }
+        var recorded = 0
+        for candidate in candidates {
+            // The unique date/week key also prevents reissuing an arrived or handled occurrence.
+            try candidate.insert(db, onConflict: .ignore)
+            recorded += db.changesCount
+        }
+        return recorded
     }
 
     static func dailyComponents(_ value: String) -> (hour: Int, minute: Int)? {
