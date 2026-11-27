@@ -146,6 +146,8 @@ enum L10n { // swiftlint:disable:this type_body_length
     static var agentAlwaysOnAdvanced: String { String(localized: "settings.agents.alwaysOn.advanced", bundle: bundle) }
     static var agentAlwaysOnDeleteSource: String { String(localized: "settings.agents.alwaysOn.deleteSource", bundle: bundle) }
     static var agentAlwaysOnDeleteSourceMessage: String { String(localized: "settings.agents.alwaysOn.deleteSourceMessage", bundle: bundle) }
+    static var agentAlwaysOnServer: String { String(localized: "settings.agents.alwaysOn.server", bundle: bundle) }
+    static var agentAlwaysOnConnectionUnavailable: String { String(localized: "settings.agents.alwaysOn.connectionUnavailable", bundle: bundle) }
     static var agentAlwaysOnInstructions: String { String(localized: "settings.agents.alwaysOn.instructions", bundle: bundle) }
     static var agentAlwaysOnInstructionsPlaceholder: String { String(localized: "settings.agents.alwaysOn.instructionsPlaceholder", bundle: bundle) }
     static var agentAlwaysOnInterval: String { String(localized: "settings.agents.alwaysOn.interval", bundle: bundle) }

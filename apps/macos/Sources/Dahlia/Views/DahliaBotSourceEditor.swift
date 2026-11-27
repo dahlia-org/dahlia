@@ -27,10 +27,10 @@ struct DahliaBotSourceEditor: View {
                     Text(L10n.agentAlwaysOnChooseSource).font(.dahliaSectionHeader).foregroundStyle(.secondary)
                     if isNew {
                         LazyVGrid(columns: [GridItem(.adaptive(minimum: 140), spacing: 8)], alignment: .leading, spacing: 8) {
-                            ForEach(model.servers, id: \.self) { server in
-                                let selected = draft.wrappedValue.kind == "mcp" && server == draft.wrappedValue.server
-                                Button { model.choose(server: server) } label: {
-                                    serverLabel(server).frame(maxWidth: .infinity, alignment: .leading)
+                            ForEach(model.serverGroups, id: \.self) { group in
+                                let selected = draft.wrappedValue.kind == "mcp" && group.contains(draft.wrappedValue.server)
+                                Button { if !selected, let first = group.first { model.choose(server: first) } } label: {
+                                    serverLabel(group[0]).frame(maxWidth: .infinity, alignment: .leading)
                                 }
                                 .buttonStyle(.dahlia(selected ? .primary : .secondary))
                                 .accessibilityAddTraits(selected ? .isSelected : [])
@@ -60,6 +60,16 @@ struct DahliaBotSourceEditor: View {
                                 TextField(L10n.agentCalendarLeadHours, value: draft.leadHours, format: .number)
                             }
                         } else {
+                            if let sourceID = draft.wrappedValue.id {
+                                LabeledContent(L10n.agentAlwaysOnServer, value: model.sourceChoiceName(sourceID))
+                            } else if let group = model.serverGroups.first(where: { $0.contains(draft.wrappedValue.server) }) {
+                                Picker(
+                                    L10n.agentAlwaysOnServer,
+                                    selection: Binding(get: { draft.wrappedValue.server }, set: { model.choose(server: $0) })
+                                ) {
+                                    ForEach(group, id: \.self) { Text(model.choiceName($0)).font(.dahliaBody).tag($0) }
+                                }
+                            }
                             TextField(
                                 L10n.agentAlwaysOnInstructions,
                                 text: draft.instructions,

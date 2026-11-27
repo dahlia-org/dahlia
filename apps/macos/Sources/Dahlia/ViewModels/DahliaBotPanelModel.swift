@@ -32,6 +32,8 @@ final class DahliaBotPanelModel {
     var connections: [String: String] = [:]
     /// Each server's service, for its logo and name.
     var services: [String: String] = [:]
+    /// Each server's provider as the connector settings name it, to tell servers of one service apart.
+    var providers: [String: String] = [:]
     var paused = false
     var draft: Draft?
     var items: [AgentItemRecord] = []
@@ -272,20 +274,65 @@ final class DahliaBotPanelModel {
             guard generation == agentGeneration else { return }
             self.models = models
             // Only servers with a sign-in reach mcp.json, so only they can be read.
-            let settings = AgentMCPSettings.load()
-            servers = Self.sourceServers(in: settings)
-            services = Dictionary(settings.servers.map { ($0.name, $0.service) }) { first, _ in first }
-            connections = Dictionary(uniqueKeysWithValues: servers.compactMap { name in settings.connectionID(for: name).map { (name, $0) } })
+            let connectors = AgentMCPSettingsModel()
+            connectors.loadAccountProviders()
+            loadConnectors(connectors.settings, providers: connectors.selectableProviders)
         } catch {
             guard generation == agentGeneration else { return }
             self.error = error.localizedDescription
         }
     }
 
-    static func sourceServers(in settings: AgentMCPSettings) -> [String] {
+    func loadConnectors(_ settings: AgentMCPSettings, providers: [AgentMCPProvider]) {
+        servers = Self.sourceServers(in: settings, providers: providers)
+        services = Dictionary(settings.servers.map { ($0.name, $0.service) }) { first, _ in first }
+        self.providers = Dictionary(settings.servers.map { server in
+            (server.name, server.direct != nil ? L10n.mcpDirectSection : server.providerID.flatMap(settings.provider(id:))?.host ?? "")
+        }) { first, _ in first }
+        // Excluding a connector from new choices does not retire an existing source's connection.
+        connections = Dictionary(uniqueKeysWithValues: settings.piServers.keys.compactMap { name in
+            settings.connectionID(for: name).map { (name, $0) }
+        })
+    }
+
+    static func sourceServers(in settings: AgentMCPSettings, providers: [AgentMCPProvider]) -> [String] {
         let excluded = Set(["system.ai.web_search", "system.ai.google_drive", "system.ai.google_calendar"])
-        let services = Dictionary(settings.servers.map { ($0.name, $0.service) }) { first, _ in first }
-        return settings.piServers.keys.filter { !excluded.contains(services[$0] ?? $0) }.sorted()
+        let registered = settings.piServers
+        // Match Settings: direct servers first, then provider sections with built-in services before custom services.
+        let ordered = settings.servers.filter { $0.direct != nil } + providers.flatMap { provider in
+            settings.servers.filter { $0.direct == nil && $0.providerID == provider.id }.sorted { lhs, rhs in
+                if lhs.service.hasPrefix("system.ai.") != rhs.service.hasPrefix("system.ai.") { return lhs.service.hasPrefix("system.ai.") }
+                return lhs.service < rhs.service
+            }
+        }
+        return ordered.filter { registered[$0.name] != nil && !excluded.contains($0.service) }.map(\.name)
+    }
+
+    /// What a server reads from: every Slack server is one choice and every mail server another, so the user picks the
+    /// kind and gets its first server without choosing each time. Any other server is its own choice.
+    static func group(of server: String, service: String) -> String {
+        let name = "\(server) \(service)".lowercased()
+        if name.contains("slack") { return "slack" }
+        if ["gmail", "mail", "outlook"].contains(where: name.contains) { return "mail" }
+        return server
+    }
+
+    func group(_ server: String) -> String {
+        Self.group(of: server, service: services[server] ?? server)
+    }
+
+    /// `servers` by group, in the order of each group's first server.
+    var serverGroups: [[String]] {
+        var groups: [[String]] = []
+        var index: [String: Int] = [:]
+        for server in servers {
+            let key = group(server)
+            if let position = index[key] { groups[position].append(server) } else {
+                index[key] = groups.count
+                groups.append([server])
+            }
+        }
+        return groups
     }
 
     func setEnabled(_ enabled: Bool) async {
@@ -318,8 +365,8 @@ final class DahliaBotPanelModel {
         guard var changed = draft, changed.id == nil else { return }
         let previousName = changed.kind == "calendar" ? L10n.agentCalendarSource : displayName(changed.server)
         if changed.name.isEmpty || changed.name == previousName { changed.name = displayName(server) }
-        if changed.instructions.isEmpty || changed.instructions == Self.suggestedInstructions(for: changed.server) {
-            changed.instructions = Self.suggestedInstructions(for: server)
+        if changed.instructions.isEmpty || changed.instructions == Self.suggestedInstructions(forGroup: group(changed.server)) {
+            changed.instructions = Self.suggestedInstructions(forGroup: group(server))
         }
         changed.server = server
         changed.kind = "mcp"
@@ -334,16 +381,30 @@ final class DahliaBotPanelModel {
         draft = changed
     }
 
+    /// A server as the connector choice shows it: its name, then its provider.
+    func choiceName(_ server: String) -> String {
+        providers[server].flatMap(\.nilIfBlank).map { "\(server) (\($0))" } ?? server
+    }
+
+    func sourceChoiceName(_ sourceID: String) -> String {
+        guard let source = sources.first(where: { $0.id == sourceID }) else { return L10n.agentAlwaysOnConnectionUnavailable }
+        guard !source.connectionID.isEmpty, connections[source.server] == source.connectionID else {
+            return "\(source.server) (\(L10n.agentAlwaysOnConnectionUnavailable))"
+        }
+        return choiceName(source.server)
+    }
+
     func displayName(_ server: String) -> String {
         server.isEmpty ? "" : AgentMCPServer.displayName(for: services[server] ?? server)
     }
 
     /// What most people want read from a mail or Slack server, so adding one takes a click.
-    static func suggestedInstructions(for server: String) -> String {
-        let name = server.lowercased()
-        if name.contains("slack") { return L10n.agentAlwaysOnSuggestedSlack }
-        if ["gmail", "mail", "outlook"].contains(where: name.contains) { return L10n.agentAlwaysOnSuggestedMail }
-        return ""
+    static func suggestedInstructions(forGroup group: String) -> String {
+        switch group {
+        case "slack": L10n.agentAlwaysOnSuggestedSlack
+        case "mail": L10n.agentAlwaysOnSuggestedMail
+        default: ""
+        }
     }
 
     func saveDraft() async {

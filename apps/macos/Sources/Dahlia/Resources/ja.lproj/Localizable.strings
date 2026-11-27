@@ -1973,6 +1973,8 @@
 "settings.agents.alwaysOn.advanced" = "詳細設定";
 "settings.agents.alwaysOn.deleteSource" = "このイベントソースを削除しますか？";
 "settings.agents.alwaysOn.deleteSourceMessage" = "取り込んだイベントも削除されます。タスクのスレッドは残ります。";
+"settings.agents.alwaysOn.server" = "コネクタ";
+"settings.agents.alwaysOn.connectionUnavailable" = "接続を利用できません";
 "settings.agents.alwaysOn.instructions" = "読む内容";
 "settings.agents.alwaysOn.instructionsPlaceholder" = "例: 受信トレイの未読メール";
 "settings.agents.alwaysOn.interval" = "読む間隔";
