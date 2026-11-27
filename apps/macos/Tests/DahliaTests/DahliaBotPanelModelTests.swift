@@ -1,5 +1,6 @@
 #if canImport(Testing)
     import Foundation
+    import GRDB
     import Testing
     @testable import Dahlia
 
@@ -13,6 +14,40 @@
             let model = DahliaBotPanelModel(loadTasks: { _, limit in try await loader.load(limit: limit) })
             model.agentID = "agent"
             return model
+        }
+
+        /// An Item an agent saves shows without waiting for the periodic refresh, and a new Task reloads the Task pages.
+        @Test func observedInboxShowsSavedItemsAndTasksAtOnce() async throws {
+            let (queue, inbox) = try await Task.detached {
+                let queue = try AppDatabaseManager(path: ":memory:").dbQueue
+                let agent = try queue.write { try AgentRecord.insertForTest(in: $0) }
+                return (queue, AgentInboxService(dbQueue: queue, agentID: agent.id))
+            }.value
+            let model = DahliaBotPanelModel(loadTasks: { _, limit in try inbox.tasks(limit: limit) })
+            model.agentID = inbox.agentID
+            let agents = AgentsModel()
+            let observing = Task { await model.observeInbox(in: queue) }
+            let observingCounts = Task { await agents.observeOpenItems(in: queue) }
+            defer {
+                observing.cancel()
+                observingCounts.cancel()
+            }
+            try #require(await pollUntil { agents.openItems[inbox.agentID] == 0 })
+
+            let item = try await Task.detached { try inbox.createItem(kind: "report", title: "Saved") }.value
+            #expect(await pollUntil { model.items.map(\.id) == [item.id] })
+            #expect(await pollUntil { agents.openItems[inbox.agentID] == 1 })
+            let task = try await Task.detached {
+                let thread = UUID.v7().uuidString
+                try ChatThreadStore(dbQueue: queue).createThread(ChatThreadRecord(
+                    id: thread, accountID: AppAccount.key, title: "Task", createdAt: .now, updatedAt: .now
+                ))
+                return try inbox.openTask(threadID: thread, title: "Task", instructions: "", eventIDs: [])
+            }.value
+            #expect(await pollUntil { model.activeTasks.map(\.id) == [task.id] })
+            _ = try await Task.detached { try inbox.dismiss(itemID: item.id, revision: item.revision) }.value
+            #expect(await pollUntil { model.items.isEmpty })
+            #expect(await pollUntil { agents.openItems[inbox.agentID] == 0 })
         }
 
         @Test func connectorSnapshotLoadsOffMainActorAndKeepsAccountProviderOrder() async throws {

@@ -1,5 +1,6 @@
 import AppKit
 import Foundation
+import GRDB
 import Observation
 
 /// An agent's side panel and its event source editor: the Items that need the user, its Tasks, the Sources intake
@@ -295,11 +296,9 @@ final class DahliaBotPanelModel {
             try await refreshModelSettings()
             guard generation == agentGeneration else { return }
             let loaded = try await PiChatService.shared.loadAlwaysOnSettings(agentID)
-            let inbox = try await PiChatService.shared.loadBotInbox(agentID)
             // The window may have moved to another agent while this one loaded.
             guard generation == agentGeneration else { return }
             (sources, events, paused) = loaded
-            (items, taskThreads) = inbox
             try await refreshTasks()
             guard generation == agentGeneration else { return }
             if soulDraft == nil {
@@ -313,6 +312,31 @@ final class DahliaBotPanelModel {
             await refreshConnectors()
         } catch {
             guard generation == agentGeneration else { return }
+            self.error = error.localizedDescription
+        }
+    }
+
+    /// The Items come only from here, so a slower periodic read can never put back an Item already answered. GRDB
+    /// fetches off MainActor after each commit to the inbox or the Tasks; runs until cancelled or another agent is shown.
+    func observeInbox(in dbQueue: any DatabaseWriter) async {
+        guard let agentID else { return }
+        let generation = agentGeneration
+        let observation = ValueObservation.tracking { try AgentInboxService.panelSnapshot(agentID: agentID, in: $0) }
+            .removeDuplicates()
+        var tasksMarker: (Int, Date?)?
+        do {
+            for try await snapshot in observation.values(in: dbQueue, bufferingPolicy: .bufferingNewest(1)) {
+                guard generation == agentGeneration else { return }
+                (items, taskThreads) = (snapshot.items, snapshot.taskThreads)
+                let marker = (snapshot.taskCount, snapshot.tasksUpdatedAt)
+                // The first snapshot is the baseline; `refresh` loads the Task pages it shows.
+                if let tasksMarker, tasksMarker != marker {
+                    do { try await refreshTasks() } catch { if generation == agentGeneration { self.error = error.localizedDescription } }
+                }
+                tasksMarker = marker
+            }
+        } catch {
+            guard generation == agentGeneration, !Task.isCancelled else { return }
             self.error = error.localizedDescription
         }
     }

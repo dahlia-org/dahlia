@@ -1,4 +1,5 @@
 import Foundation
+import GRDB
 import Observation
 
 /// The user's agents as the window shows them: the sidebar's rows, the card that makes or changes one, and the one
@@ -18,6 +19,8 @@ final class AgentsModel {
     }
 
     private(set) var summaries: [PiChatService.AgentSummary] = []
+    /// Each agent's open Item count, kept current by `observeOpenItems` rather than the rows' periodic reload.
+    private(set) var openItems: [String: Int] = [:]
     private(set) var hasLoaded = false
     var draft: Draft?
     var pendingDeletion: AgentRecord?
@@ -36,6 +39,16 @@ final class AgentsModel {
         let agentIDs = Set(loaded.map(\.id))
         identityModels = identityModels.filter { agentIDs.contains($0.key) }
         hasLoaded = true
+    }
+
+    /// Runs until cancelled. GRDB fetches off MainActor after each commit to the inbox, so an Item shows as it is made.
+    func observeOpenItems(in dbQueue: any DatabaseWriter) async {
+        let observation = ValueObservation.tracking { try AgentInboxService.openItemCounts(in: $0) }.removeDuplicates()
+        do {
+            for try await counts in observation.values(in: dbQueue, bufferingPolicy: .bufferingNewest(1)) {
+                openItems = counts
+            }
+        } catch {}
     }
 
     /// Identity results outlive the Settings row, including saves completed after leaving the tab.

@@ -461,13 +461,47 @@ struct AgentInboxService: Sendable {
 
     // MARK: - Items
 
+    /// What the side panel shows of one agent's inbox, read in one snapshot so the panel can observe it.
+    struct PanelSnapshot: Equatable, Sendable {
+        var items: [AgentItemRecord]
+        /// Each Task's Thread, by Task, for the Items that belong to one.
+        var taskThreads: [String: String]
+        /// Change when a Task is added or changes, so the panel reloads its Task pages.
+        var taskCount: Int
+        var tasksUpdatedAt: Date?
+    }
+
     func items() throws -> [AgentItemRecord] {
-        try dbQueue.read {
-            try AgentItemRecord.fetchAll(
-                $0, sql: "SELECT * FROM agent_user_inbox WHERE agentID=? AND status='open' ORDER BY createdAt DESC, id DESC",
-                arguments: [agentID]
-            )
-        }
+        let agentID = agentID
+        return try dbQueue.read { try Self.openItems(agentID: agentID, in: $0) }
+    }
+
+    static func openItems(agentID: String, in db: Database) throws -> [AgentItemRecord] {
+        try AgentItemRecord.fetchAll(
+            db, sql: "SELECT * FROM agent_user_inbox WHERE agentID=? AND status='open' ORDER BY createdAt DESC, id DESC",
+            arguments: [agentID]
+        )
+    }
+
+    /// Indexed and bounded reads only: with the single-connection fallback, an observation fetches on the writer.
+    static func panelSnapshot(agentID: String, in db: Database) throws -> PanelSnapshot {
+        let items = try openItems(agentID: agentID, in: db)
+        let threads = try Dictionary(uniqueKeysWithValues: Set(items.compactMap(\.taskID)).compactMap { id in
+            try AgentTaskRecord.fetchOne(db, key: id)?.threadID.map { (id, $0) }
+        })
+        let tasks = try Row.fetchOne(
+            db, sql: "SELECT COUNT(*) AS count, MAX(updatedAt) AS updatedAt FROM agent_tasks WHERE agentID=?", arguments: [agentID]
+        )
+        return PanelSnapshot(items: items, taskThreads: threads, taskCount: tasks?["count"] ?? 0, tasksUpdatedAt: tasks?["updatedAt"])
+    }
+
+    /// Each agent's open Item count, for the sidebar's rows.
+    static func openItemCounts(in db: Database) throws -> [String: Int] {
+        try Dictionary(uniqueKeysWithValues: Row.fetchAll(
+            db, sql: """
+            SELECT id, (SELECT COUNT(*) FROM agent_user_inbox WHERE agentID=agents.id AND status='open') AS count FROM agents
+            """
+        ).map { ($0["id"], $0["count"]) })
     }
 
     /// Shows the user a question, a report, or a suggestion. A suggestion the user dismissed in the last 30 days is not
