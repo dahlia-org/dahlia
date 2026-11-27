@@ -21,6 +21,7 @@ struct TranscriptWebSurface: NSViewRepresentable {
     let hasEarlier: Bool
     let hasLater: Bool
     var baseSize: CGFloat = DahliaTypography.defaultBaseSize
+    var maxWidth = ContentWidth.mainDefault.maxWidth
     /// `token` が変わるたびに一度だけ `edge` へスクロールする。
     let scrollRequest: (token: Int, edge: Edge)?
     let onRequestPage: @MainActor (Edge) -> Void
@@ -34,7 +35,6 @@ struct TranscriptWebSurface: NSViewRepresentable {
         configuration.userContentController.add(context.coordinator, name: "transcript")
         configuration.userContentController.addUserScript(WKUserScript(source: """
         document.documentElement.style.setProperty('--inset', '\(DahliaDesign.tabContentInset)px');
-        document.documentElement.style.setProperty('--max-width', '\(DahliaDesign.mainContentMaxWidth)px');
         """, injectionTime: .atDocumentEnd, forMainFrameOnly: true))
         let view = WKWebView(frame: .zero, configuration: configuration)
         view.navigationDelegate = context.coordinator
@@ -118,6 +118,7 @@ struct TranscriptWebSurface: NSViewRepresentable {
         private var needsReset = true
         private var viewport: Viewport?
         private var sentBaseSize: CGFloat?
+        private var sentMaxWidth: CGFloat?
         private var sentRows: [String: Row] = [:]
         private var sentOrder: [String] = []
         private var sentContentID: AnyHashable?
@@ -150,6 +151,7 @@ struct TranscriptWebSurface: NSViewRepresentable {
         func load() {
             guard let view, let url = Bundle.appModule.url(forResource: "transcript-surface", withExtension: "html") else { return }
             isReady = false
+            sentMaxWidth = nil
             needsReset = true
             inFlight = nil
             view.loadFileURL(url, allowingReadAccessTo: url.deletingLastPathComponent())
@@ -162,7 +164,18 @@ struct TranscriptWebSurface: NSViewRepresentable {
 
         func contentDidChange() {
             if changedAt == nil { changedAt = .now }
+            applyMaxWidth()
             send()
+        }
+
+        private func applyMaxWidth() {
+            guard isReady, let view, sentMaxWidth != parent.maxWidth else { return }
+            sentMaxWidth = parent.maxWidth
+            let value = parent.maxWidth.isFinite ? "\(parent.maxWidth)px" : "none"
+            view.callAsyncJavaScript(
+                "document.documentElement.style.setProperty('--max-width', value)",
+                arguments: ["value": value], in: nil, in: .page
+            )
         }
 
         private func send() {
@@ -262,6 +275,7 @@ struct TranscriptWebSurface: NSViewRepresentable {
             case "ready":
                 isReady = true
                 needsReset = true
+                applyMaxWidth()
                 send()
             case "presented":
                 guard let sequence = body["seq"] as? Int, let inFlight, inFlight.sequence == sequence else { return }

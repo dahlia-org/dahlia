@@ -2,6 +2,7 @@ import SwiftUI
 
 /// ミーティング未選択時に表示するカレンダーの予定一覧。
 struct CalendarScheduleView: View {
+    @AppStorage(ContentWidth.mainUserDefaultsKey) private var mainContentWidth = ContentWidth.mainDefault
     @ObservedObject private var settings = AppSettings.shared
     @ObservedObject private var calendarSourceCoordinator = CalendarSourceCoordinator.shared
     @ObservedObject private var calendarAutoRecordingStore = CalendarAutoRecordingStore.shared
@@ -26,7 +27,7 @@ struct CalendarScheduleView: View {
             .padding(.horizontal, 28)
             .padding(.top, DahliaDesign.detailTopPadding)
             .padding(.bottom, 28)
-            .frame(maxWidth: DahliaDesign.mainContentMaxWidth, alignment: .leading)
+            .frame(maxWidth: mainContentWidth.maxWidth, alignment: .leading)
             .frame(maxWidth: .infinity, alignment: .top)
         }
         .background(Color(nsColor: .windowBackgroundColor))

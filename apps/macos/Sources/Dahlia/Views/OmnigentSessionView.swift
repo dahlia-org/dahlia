@@ -3,6 +3,7 @@ import SwiftUI
 
 /// An Omnigent session's conversation in the main area, read-only and kept current over SSE.
 struct OmnigentSessionView: View {
+    @AppStorage(ContentWidth.chatUserDefaultsKey) private var chatContentWidth = ContentWidth.chatDefault
     let headerLeadingInset: CGFloat
     @State private var model: OmnigentSessionModel
 
@@ -52,7 +53,7 @@ struct OmnigentSessionView: View {
                     }
                     statusRow
                 }
-                .frame(maxWidth: DahliaDesign.mainContentMaxWidth)
+                .frame(maxWidth: chatContentWidth.maxWidth)
                 .padding(.horizontal, CodexChatDesign.contentHorizontalPadding)
                 .padding(.vertical, 20)
                 .frame(maxWidth: .infinity)

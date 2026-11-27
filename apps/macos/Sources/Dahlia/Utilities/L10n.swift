@@ -1967,6 +1967,14 @@ enum L10n { // swiftlint:disable:this type_body_length
     static var textSizeFooter: String { String(localized: "appearance.textSize.footer", bundle: bundle) }
     static func textSizePoints(_ size: Int) -> String { String(localized: "appearance.textSize.points \(size)", bundle: bundle) }
     static func defaultTextSize(_ size: Int) -> String { String(localized: "appearance.textSize.default \(size)", bundle: bundle) }
+    static var chatContentWidth: String { String(localized: "appearance.chatWidth", bundle: bundle) }
+    static var chatContentWidthDescription: String { String(localized: "appearance.chatWidth.description", bundle: bundle) }
+    static var mainContentWidth: String { String(localized: "appearance.mainWidth", bundle: bundle) }
+    static var mainContentWidthDescription: String { String(localized: "appearance.mainWidth.description", bundle: bundle) }
+    static var contentWidthComfortable: String { String(localized: "appearance.width.comfortable", bundle: bundle) }
+    static var contentWidthWide: String { String(localized: "appearance.width.wide", bundle: bundle) }
+    static var contentWidthFull: String { String(localized: "appearance.width.full", bundle: bundle) }
+    static func contentWidthDefault(_ name: String) -> String { String(localized: "appearance.width.default \(name)", bundle: bundle) }
     static var followSystem: String { String(localized: "Follow System", bundle: bundle) }
     static var notificationSettingsDescription: String { String(
         localized: "Choose one or both conditions. Calendar notifications use events from enabled calendar sources.",

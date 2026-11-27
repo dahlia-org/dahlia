@@ -20,6 +20,8 @@ struct AppearanceSettingsView: View {
     @AppStorage(AppSettings.meetingSidebarRowStyleUserDefaultsKey)
     private var meetingSidebarRowStyle = MeetingSidebarRowStyle.standard.rawValue
     @AppStorage(DahliaTypography.baseSizeUserDefaultsKey) private var textSize = Int(DahliaTypography.defaultBaseSize)
+    @AppStorage(ContentWidth.chatUserDefaultsKey) private var chatContentWidth = ContentWidth.chatDefault
+    @AppStorage(ContentWidth.mainUserDefaultsKey) private var mainContentWidth = ContentWidth.mainDefault
     @Environment(MainWindowNavigation.self) private var navigation
 
     var body: some View {
@@ -71,6 +73,18 @@ struct AppearanceSettingsView: View {
                 selection: $textSize,
                 options: DahliaTypography.baseSizeOptions
             ) { $0 == Int(DahliaTypography.defaultBaseSize) ? L10n.defaultTextSize($0) : L10n.textSizePoints($0) }
+            DahliaMenuPicker(
+                title: L10n.chatContentWidth,
+                description: L10n.chatContentWidthDescription,
+                selection: $chatContentWidth,
+                options: ContentWidth.allCases
+            ) { $0.label(default: ContentWidth.chatDefault) }
+            DahliaMenuPicker(
+                title: L10n.mainContentWidth,
+                description: L10n.mainContentWidthDescription,
+                selection: $mainContentWidth,
+                options: ContentWidth.allCases
+            ) { $0.label(default: ContentWidth.mainDefault) }
             DahliaSegmentedPicker(
                 title: L10n.sidebarDisplayStyle,
                 selection: $meetingSidebarRowStyle,

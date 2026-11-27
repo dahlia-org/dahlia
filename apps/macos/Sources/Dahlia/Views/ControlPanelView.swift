@@ -29,6 +29,7 @@ enum DetailTab: String, CaseIterable, Identifiable {
 
 /// メインコントロールウィンドウ（議事録ビュー）。
 struct ControlPanelView: View {
+    @AppStorage(ContentWidth.mainUserDefaultsKey) private var mainContentWidth = ContentWidth.mainDefault
     @ObservedObject var viewModel: CaptionViewModel
     var sidebarViewModel: SidebarViewModel
     let recordingCoordinator: RecordingCoordinator
@@ -75,7 +76,7 @@ struct ControlPanelView: View {
                         tabContent
                         pageFooter
                     }
-                    .frame(maxWidth: DahliaDesign.mainContentMaxWidth)
+                    .frame(maxWidth: mainContentWidth.maxWidth)
                     .frame(maxWidth: .infinity)
                 }
             }

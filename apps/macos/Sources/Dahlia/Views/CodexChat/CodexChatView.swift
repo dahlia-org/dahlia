@@ -135,7 +135,7 @@ struct CodexChatView: View {
                         Spacer(minLength: 12)
                     }
                 }
-                .frame(maxWidth: showsWelcome ? 720 : .infinity)
+                .frame(maxWidth: showsWelcome ? (contentMaxWidth ?? .infinity) : .infinity)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
             .coordinateSpace(name: CodexChatAddPanelLayout.coordinateSpaceName)
