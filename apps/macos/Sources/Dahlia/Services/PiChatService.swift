@@ -1060,6 +1060,11 @@ actor PiChatService: CodexChatServicing {
             arguments += ["--append-system-prompt", instructions]
         }
         arguments += try botArguments(profile, threadID: threadID, memoryEnabled: memorySetting)
+        // Only the agent's own thread launches threads; a changed toggle reaches it when its Pi next starts.
+        if profile == .bot, agent(currentThread: threadID)?.smartRouting == true,
+           let routing = await Self.smartRoutingPrompt(models: (try? runtime.models()) ?? []) {
+            arguments += ["--append-system-prompt", routing]
+        }
         if profile != .bot {
             arguments += ["--append-system-prompt", HermesLearning.prompts["skills_guidance"] ?? ""]
             for skill in PiBundle.presetSkillURLs() {

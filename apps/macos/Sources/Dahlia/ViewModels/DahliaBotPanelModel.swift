@@ -66,6 +66,8 @@ final class DahliaBotPanelModel {
     private(set) var unattendedModel = ""
     private(set) var intakeEffort = ""
     private(set) var unattendedEffort = ""
+    /// Whether the agent picks each launched thread's model and effort. Saved on the agent.
+    private(set) var smartRouting = false
 
     /// The text being edited, while the user edits `SOUL.md`.
     var soulDraft: String?
@@ -85,6 +87,9 @@ final class DahliaBotPanelModel {
         saveAgentModel: @escaping @Sendable (String, AgentRecord.ModelUse, String, String) async throws -> Void = {
             try await PiChatService.shared.setAgentModel($0, use: $1, model: $2, effort: $3)
         },
+        saveSmartRouting: @escaping @Sendable (String, Bool) async throws -> Void = {
+            try await PiChatService.shared.setAgentSmartRouting($0, $1)
+        },
         saveSoulFile: @escaping @Sendable (String, String) async throws -> Void = {
             try await PiChatService.shared.saveBotSoul($0, $1)
         },
@@ -97,6 +102,7 @@ final class DahliaBotPanelModel {
     ) {
         self.loadAgent = loadAgent
         self.saveAgentModel = saveAgentModel
+        self.saveSmartRouting = saveSmartRouting
         self.saveSoulFile = saveSoulFile
         self.loadTasks = loadTasks
         self.loadConnectorSettings = loadConnectorSettings
@@ -104,6 +110,7 @@ final class DahliaBotPanelModel {
 
     private let loadAgent: @Sendable (String) async throws -> AgentRecord
     private let saveAgentModel: @Sendable (String, AgentRecord.ModelUse, String, String) async throws -> Void
+    private let saveSmartRouting: @Sendable (String, Bool) async throws -> Void
     private var modelSettingsRevision = 0
     private var pendingModelSaves = 0
     private var taskGeneration = 0
@@ -127,6 +134,7 @@ final class DahliaBotPanelModel {
         (activeTasks, finishedTasks, hasMoreFinishedTasks) = ([], [], false)
         (soul, soulDraft, draft, error) = ("", nil, nil, nil)
         (intakeModel, intakeEffort, unattendedModel, unattendedEffort) = ("", "", "", "")
+        smartRouting = false
     }
 
     /// A model and its effort are one choice: following the default clears the effort, and a model takes its own default
@@ -157,19 +165,29 @@ final class DahliaBotPanelModel {
         saveModel(.unattended)
     }
 
+    func setSmartRouting(_ enabled: Bool) {
+        guard areModelSettingsLoaded, let agentID else { return }
+        smartRouting = enabled
+        saveModelSetting { [saveSmartRouting] in try await saveSmartRouting(agentID, enabled) }
+    }
+
     private func saveModel(_ use: AgentRecord.ModelUse) {
         guard let agentID else { return }
-        modelSettingsRevision += 1
-        pendingModelSaves += 1
-        let generation = agentGeneration
         let (model, effort) = switch use {
         case .intake: (intakeModel, intakeEffort)
         case .unattended: (unattendedModel, unattendedEffort)
         }
+        saveModelSetting { [saveAgentModel] in try await saveAgentModel(agentID, use, model, effort) }
+    }
+
+    private func saveModelSetting(_ save: @escaping @Sendable () async throws -> Void) {
+        modelSettingsRevision += 1
+        pendingModelSaves += 1
+        let generation = agentGeneration
         Task {
             defer { if generation == agentGeneration { pendingModelSaves -= 1 } }
             do {
-                try await saveAgentModel(agentID, use, model, effort)
+                try await save()
             } catch {
                 guard generation == agentGeneration else { return }
                 self.error = error.localizedDescription
@@ -186,6 +204,7 @@ final class DahliaBotPanelModel {
         guard generation == agentGeneration, revision == modelSettingsRevision else { return }
         (intakeModel, intakeEffort) = (agent.intakeModel ?? "", agent.intakeEffort ?? "")
         (unattendedModel, unattendedEffort) = (agent.unattendedModel ?? "", agent.unattendedEffort ?? "")
+        smartRouting = agent.smartRouting
         areModelSettingsLoaded = true
     }
 

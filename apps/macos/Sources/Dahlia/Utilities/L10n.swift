@@ -230,12 +230,14 @@ enum L10n { // swiftlint:disable:this type_body_length
     static var agentBotAccepted: String { String(localized: "settings.agents.alwaysOn.botAccepted", bundle: bundle) }
     static var agentBotSeen: String { String(localized: "settings.agents.alwaysOn.botSeen", bundle: bundle) }
     static var agentBotGuidancePlaceholder: String { String(localized: "settings.agents.alwaysOn.botGuidancePlaceholder", bundle: bundle) }
-    static var agentBotModels: String { String(localized: "settings.agents.alwaysOn.botModels", bundle: bundle) }
+    static var agentBotWorkers: String { String(localized: "settings.agents.alwaysOn.botWorkers", bundle: bundle) }
     static var agentBotEffort: String { String(localized: "settings.agents.alwaysOn.botEffort", bundle: bundle) }
     static var agentBotIntakeModel: String { String(localized: "settings.agents.alwaysOn.botIntakeModel", bundle: bundle) }
     static var agentBotIntakeModelHelp: String { String(localized: "settings.agents.alwaysOn.botIntakeModelHelp", bundle: bundle) }
     static var agentBotUnattendedModel: String { String(localized: "settings.agents.alwaysOn.botUnattendedModel", bundle: bundle) }
     static var agentBotUnattendedModelHelp: String { String(localized: "settings.agents.alwaysOn.botUnattendedModelHelp", bundle: bundle) }
+    static var agentBotSmartRouting: String { String(localized: "settings.agents.alwaysOn.botSmartRouting", bundle: bundle) }
+    static var agentBotSmartRoutingHelp: String { String(localized: "settings.agents.alwaysOn.botSmartRoutingHelp", bundle: bundle) }
     static var agentBotModelDefault: String { String(localized: "settings.agents.alwaysOn.botModelDefault", bundle: bundle) }
     static var agentBotModelConversation: String { String(localized: "settings.agents.alwaysOn.botModelConversation", bundle: bundle) }
     static var agentBotSoul: String { String(localized: "settings.agents.alwaysOn.botSoul", bundle: bundle) }

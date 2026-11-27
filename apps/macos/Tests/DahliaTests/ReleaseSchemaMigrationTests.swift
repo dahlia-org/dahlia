@@ -548,6 +548,35 @@
         }
 
         @Test
+        func alwaysOnMigrationPreservesThreadsAndDefaultsSmartRoutingOff() throws {
+            let queue = try DatabaseQueue(configuration: AppDatabaseManager.configuration())
+            try AppDatabaseManager.migrator.migrate(queue, upTo: "v67_providerAccounts")
+            let id = UUID.v7().uuidString
+            try queue.write { db in
+                try db.execute(
+                    sql: "INSERT INTO chat_threads (id, accountID, title, status, createdAt, updatedAt) VALUES (?, 'local', 'Kept', 'idle', ?, ?)",
+                    arguments: [id, Date.now, Date.now]
+                )
+            }
+
+            try AppDatabaseManager.migrator.migrate(queue)
+
+            try queue.write { db in
+                let thread = try #require(try ChatThreadRecord.fetchOne(db, key: id))
+                #expect(thread.title == "Kept" && thread.agentID == nil)
+                // Omit the column to exercise SQLite's default, independently of the Swift initializer.
+                try db.execute(sql: """
+                INSERT INTO agents (id, name, directory, avatar, color, threadID, createdAt, updatedAt)
+                VALUES ('agent', 'Agent', 'agent', 'mascot:E1', '#000000', ?, ?, ?)
+                """, arguments: [id, Date.now, Date.now])
+                let agent = try #require(try AgentRecord.fetchOne(db, key: "agent"))
+                #expect(!agent.smartRouting && agent.threadID == id)
+                #expect(try Row.fetchAll(db, sql: "PRAGMA foreign_key_check").isEmpty)
+                #expect(try AppDatabaseManager.hasExpectedCurrentSchema(db))
+            }
+        }
+
+        @Test
         func settledMigrationKeepsThreadsActive() throws {
             let queue = try DatabaseQueue(configuration: AppDatabaseManager.configuration())
             try AppDatabaseManager.migrator.migrate(queue, upTo: "v68_alwaysOnAgent")
