@@ -1088,6 +1088,19 @@
                 ]))
                 #expect(prompt.hasSuffix("Available models:\n- a/small: effort low, high\n- a/plain"))
                 #expect(PiChatService.smartRoutingPrompt(models: [model("a/hidden", efforts: [], hidden: true)]) == nil)
+
+                let own = model("anthropic/claude-haiku-5-5", efforts: ["low", "medium", "high"])
+                let workspace = model("legacy.invalid/system.ai.claude-sonnet-5-5", efforts: ["medium"])
+                let ownOnly = try #require(PiChatService.smartRoutingPrompt(models: [own]))
+                // A stronger model in an added workspace must not widen automatic routing's provider scope.
+                #expect(PiChatService.smartRoutingPrompt(models: [workspace, own]) == ownOnly)
+                #expect(ownOnly.hasSuffix("Available models:\n- anthropic/claude-haiku-5-5: effort low, medium, high"))
+                #expect(ownOnly.contains("if neither is available, use the strongest model listed"))
+                let workspaceOnly = try #require(PiChatService.smartRoutingPrompt(models: [workspace]))
+                #expect(workspaceOnly.hasSuffix("Available models:\n- legacy.invalid/system.ai.claude-sonnet-5-5: effort medium"))
+                #expect(PiChatService.smartRoutingPrompt(models: [
+                    model(own.model, efforts: ["medium"], hidden: true), workspace,
+                ]) == workspaceOnly)
             }
 
             /// Deleting an agent removes its inbox and home; its conversation stays read-only, takes no new run, and the

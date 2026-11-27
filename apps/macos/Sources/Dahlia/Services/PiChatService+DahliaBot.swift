@@ -84,7 +84,8 @@ extension PiChatService {
     /// Gateway's task router) mapped to model families, never to one model, so the text outlives the catalog. Nil with
     /// no model to choose from.
     nonisolated static func smartRoutingPrompt(models: [CodexModel]) -> String? {
-        let listed = models.filter { !$0.hidden }.map { model in
+        let eligible = PiRuntimeService.ownProvidersFirst(models.filter { !$0.hidden }) { $0.isEmpty ? nil : $0 } ?? []
+        let listed = eligible.map { model in
             let efforts = model.supportedReasoningEfforts.map(\.reasoningEffort).joined(separator: ", ")
             return "- " + model.model + (efforts.isEmpty ? "" : ": effort " + efforts)
         }
@@ -112,8 +113,9 @@ extension PiChatService {
         - Complex (open-ended research, a plan or design, work whose mistake is costly): the largest family, such as \
         Claude Opus, GPT Sol, Gemini Pro, Neon, or Argon, or Kimi Pro.
 
-        Use only a model listed below, exactly as written, and the newest model of the family. When a tier's family is \
-        not listed, use the nearest larger one that is. When unsure between two tiers, take the higher.
+        For automatic choices, use only a model listed below, exactly as written, and the newest model of the family. \
+        Choose the requested tier or the nearest larger family available; if neither is available, use the strongest \
+        model listed. When unsure between two tiers, take the higher.
 
         Provider. When the tier has more than one family listed, choose by what the task is.
         - Claude: the all-rounder, and the first choice for text people will read (replies, documents, summaries) and \
