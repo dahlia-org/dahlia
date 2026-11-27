@@ -8,13 +8,26 @@ import Foundation
 
     struct SettingsCategoryTests {
         @Test
+        func englishConnectorLabelMatchesTheDocumentedSearch() throws {
+            let path = try #require(Bundle.appModule.path(forResource: "en", ofType: "lproj"))
+            let english = try #require(Bundle(path: path))
+            let label = english.localizedString(forKey: "settings.agents.mcps", value: nil, table: nil)
+            #expect(label == "Connectors")
+            #expect(SettingsCategory.mcp.matches(L10n.agentMCPs))
+        }
+
+        @Test
         func accountAndWorkspacePreferencesHaveSeparateDestinations() {
-            #expect(SettingsGroup.features.categories == [.workspace, .meetings, .providers, .agents, .skills, .memory, .dahliaMCP, .calendar, .meetingLinks])
+            #expect(SettingsGroup.features.categories == [.workspace, .meetings, .calendar, .meetingLinks])
+            #expect(SettingsGroup.agent.categories == [.providers, .modelProvider, .mcp, .skills, .memory, .agents])
+            #expect(SettingsGroup.advanced.categories == [.dahliaMCP, .search, .audioDiagnostics])
+            #expect(SettingsCategory.mcp.matches("Gmail"))
+            #expect(!SettingsCategory.agents.matches(L10n.unityGatewayMCPs))
             // Provider accounts have their own page, found by the services they sign in to.
             #expect(SettingsNavigation.visibleSelection(.providers) == .providers)
             #expect(SettingsCategory.providers.matches("Google"))
             #expect(SettingsCategory.providers.matches("Databricks"))
-            // Memory has its own page; its review switch moved there from Dahlia AI.
+            // Memory has its own page; its review switch moved there from Advanced Settings.
             #expect(SettingsCategory.memory.matches(L10n.agentMemoryReviewEnabled))
             // Skill optimization and the unattended-run history are a tab of Skills.
             #expect(SettingsCategory.skills.matches(L10n.agentSkillOptimizer))
@@ -32,10 +45,9 @@ import Foundation
             #expect(SettingsCategory.appearance.matches(L10n.appearanceMenuBar))
             #expect(SettingsCategory.meetingLinks.matches(L10n.meetingLinkApplications))
             #expect(!SettingsCategory.appearance.matches(L10n.meetingLinkApplications))
-            #expect(SettingsCategory.agents.matches("Gmail"))
             #expect(SettingsCategory.agents.matches(L10n.agentPackages))
             #expect(SettingsCategory.agents.matches("npm"))
-            #expect(SettingsNavigation.visibleSelection(.accountPreferences) == .agents)
+            #expect(SettingsNavigation.visibleSelection(.accountPreferences) == .modelProvider)
             #expect(SettingsNavigation.visibleSelection(.macInference) == .agents)
             #expect(!SettingsGroup.app.categories.contains(.macInference))
             #expect(SettingsCategory.accountPreferences.label == L10n.accountPreferences)
@@ -57,10 +69,8 @@ import Foundation
                 .workspacePreferences,
                 .macInference,
                 .dahliaAccounts,
-                .modelProvider,
                 .aiSummary,
                 .instructions,
-                .mcp,
                 .language,
                 .recordingStopDetection,
                 .eventDisplay,
@@ -104,11 +114,11 @@ import Foundation
             #expect(SettingsNavigation.visibleSelection(.eventDisplay) == .calendar)
             #expect(SettingsNavigation.visibleSelection(.recordingStopDetection) == .meetings)
             #expect(SettingsNavigation.visibleSelection(.instructions) == .agents)
-            #expect(SettingsNavigation.visibleSelection(.mcp) == .agents)
-            #expect(SettingsNavigation.visibleSelection(.aiSummary) == .agents)
+            #expect(SettingsNavigation.visibleSelection(.mcp) == .mcp)
+            #expect(SettingsNavigation.visibleSelection(.aiSummary) == .modelProvider)
             #expect(SettingsNavigation.visibleSelection(.dahliaAccounts) == .agents)
             #expect(SettingsNavigation.visibleSelection(.workspace) == .workspace)
-            #expect(SettingsNavigation.visibleSelection(.modelProvider) == .agents)
+            #expect(SettingsNavigation.visibleSelection(.modelProvider) == .modelProvider)
             #expect(SettingsNavigation.visibleSelection(.calendar) == .calendar)
             #expect(SettingsNavigation.visibleSelection(.screenshots) == .meetings)
 
@@ -134,17 +144,17 @@ import Foundation
             #expect(SettingsCategory.meetings.matches(L10n.automaticMeetingEndRecordingStop))
             #expect(SettingsCategory.general.matches(L10n.externalMicrophoneEchoCancellation))
             #expect(SettingsCategory.meetings.matches(L10n.translationTargetLanguage))
-            #expect(SettingsCategory.agents.matches("  chatGPT \n "))
+            #expect(SettingsCategory.modelProvider.matches("  chatGPT \n "))
             #expect(SettingsCategory.calendar.matches("google"))
-            #expect(SettingsCategory.agents.matches(L10n.summaryStyle))
+            #expect(SettingsCategory.modelProvider.matches(L10n.summaryStyle))
             #expect(SettingsCategory.accountPreferences.matches(L10n.imageAnalysis))
             #expect(SettingsCategory.accountPreferences.matches(L10n.imageAnalysisEnabled))
-            #expect(SettingsCategory.agents.matches(L10n.imageAnalysis))
-            #expect(SettingsCategory.agents.matches(L10n.imageAnalysisEnabled))
-            #expect(SettingsCategory.agents.matches(L10n.modelProvider))
+            #expect(SettingsCategory.modelProvider.matches(L10n.imageAnalysis))
+            #expect(SettingsCategory.modelProvider.matches(L10n.imageAnalysisEnabled))
+            #expect(SettingsCategory.modelProvider.matches(L10n.modelProvider))
             #expect(SettingsCategory.general.matches(" \n "))
             #expect(!SettingsCategory.general.matches("not-a-setting"))
-            #expect(!SettingsCategory.agents.matches("ChatGPT not-a-setting"))
+            #expect(!SettingsCategory.modelProvider.matches("ChatGPT not-a-setting"))
         }
 
         @Test
@@ -162,9 +172,12 @@ import Foundation
             defaults.set(SettingsCategory.dahliaAccounts.rawValue, forKey: SettingsNavigation.selectedCategoryDefaultsKey)
             #expect(SettingsNavigation.savedSelection(in: defaults) == .agents)
 
-            for category in [SettingsCategory.accountPreferences, .macInference, .modelProvider] {
+            defaults.set(SettingsCategory.macInference.rawValue, forKey: SettingsNavigation.selectedCategoryDefaultsKey)
+            #expect(SettingsNavigation.savedSelection(in: defaults) == .agents)
+
+            for category in [SettingsCategory.accountPreferences, .accountsAndWorkspaces, .aiSummary] {
                 defaults.set(category.rawValue, forKey: SettingsNavigation.selectedCategoryDefaultsKey)
-                #expect(SettingsNavigation.savedSelection(in: defaults) == .agents)
+                #expect(SettingsNavigation.savedSelection(in: defaults) == .modelProvider)
             }
 
             defaults.set(SettingsCategory.recordingStopDetection.rawValue, forKey: SettingsNavigation.selectedCategoryDefaultsKey)

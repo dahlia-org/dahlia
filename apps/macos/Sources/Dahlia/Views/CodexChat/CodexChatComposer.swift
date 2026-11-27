@@ -215,7 +215,7 @@ struct CodexChatComposer: View {
 
     private func openMCPSettings() {
         dismissAddPanel()
-        navigation.openAgentSettings(tab: .mcps)
+        navigation.openSettings(category: .mcp)
     }
 
     private func handleImageImport(_ result: Result<[URL], any Error>) {

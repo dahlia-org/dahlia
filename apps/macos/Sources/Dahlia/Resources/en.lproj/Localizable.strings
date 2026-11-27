@@ -718,7 +718,7 @@
 "Share" = "Share";
 "Share Summary" = "Share Summary";
 "share.exportToGoogleDrive" = "Export to Google Drive";
-"share.exportToGoogleDrivePrompt" = "Export this meeting's notes to Google Drive as a Google Doc. Use get_meeting to retrieve the meeting name, start time, and summary, and get_meeting_transcript to retrieve every page of the original transcript. In the Meetings folder directly under My Drive (create it if missing), create a meeting folder named {meeting name} - YYYY/MM/DD HH:MM JST. Inside it, create a Google Doc named {meeting name} - YYYY/MM/DD HH:MM JST - Notes by Dahlia. Replace {meeting name} with the meeting name and use the meeting's start time converted to Japan Standard Time (Asia/Tokyo), in 24-hour format. Treat the / characters in the date as part of the folder and document names. Reuse the same meeting folder if it already exists. Create two document tabs, in this order, within that single Google Doc: the first, 📝 Notes, contains the summary with its headings, bullet lists, and action items preserved; the second, 📖 Transcript, contains the entire original transcript in chronological order, without summarizing, omitting, translating, or paraphrasing anything. Preserve speakers and timestamps when available. Use actual Google Docs tabs, not body headings or separate files. If you cannot retrieve the full transcript or create tabs, explain the limitation and what remains incomplete; do not report the export as complete. Give me the link to the document you create. If no Google Drive tool is available, tell me to add a Databricks workspace that offers the Google Drive MCP under Settings > Dahlia AI > Models > Providers, then turn on Google Drive on the MCP tab.";
+"share.exportToGoogleDrivePrompt" = "Export this meeting's notes to Google Drive as a Google Doc. Use get_meeting to retrieve the meeting name, start time, and summary, and get_meeting_transcript to retrieve every page of the original transcript. In the Meetings folder directly under My Drive (create it if missing), create a meeting folder named {meeting name} - YYYY/MM/DD HH:MM JST. Inside it, create a Google Doc named {meeting name} - YYYY/MM/DD HH:MM JST - Notes by Dahlia. Replace {meeting name} with the meeting name and use the meeting's start time converted to Japan Standard Time (Asia/Tokyo), in 24-hour format. Treat the / characters in the date as part of the folder and document names. Reuse the same meeting folder if it already exists. Create two document tabs, in this order, within that single Google Doc: the first, 📝 Notes, contains the summary with its headings, bullet lists, and action items preserved; the second, 📖 Transcript, contains the entire original transcript in chronological order, without summarizing, omitting, translating, or paraphrasing anything. Preserve speakers and timestamps when available. Use actual Google Docs tabs, not body headings or separate files. If you cannot retrieve the full transcript or create tabs, explain the limitation and what remains incomplete; do not report the export as complete. Give me the link to the document you create. If no Google Drive tool is available, tell me to add a Databricks workspace that offers the Google Drive MCP under Settings > Providers, then turn on Google Drive under Agent > Connectors.";
 "Copy for Google Docs" = "Copy for Google Docs";
 "Copy for Slack" = "Copy for Slack";
 "Summary Prompt" = "Summary Prompt";
@@ -1083,7 +1083,7 @@
 "This request is too large to review completely, so it cannot be approved." = "This request is too large to review completely, so it cannot be approved.";
 "This request asks for permissions outside the allowed workspace and cannot be approved." = "This request asks for permissions outside the allowed workspace and cannot be approved.";
 "Open Accounts and Workspaces Settings" = "Open Accounts and Workspaces Settings";
-"chat.openAgentSettings" = "Open Dahlia AI Settings";
+"chat.openAgentSettings" = "Open Agent Advanced Settings";
 "Loading models…" = "Loading models…";
 "Chat is running" = "Chat is running";
 "chat.thread.runningShort" = "Running";
@@ -1255,7 +1255,7 @@
 "Or continue without signing in" = "Or continue without signing in";
 "Choose the languages Dahlia should recognize. Set the AI output language in Manage Workspaces." = "Choose the languages Dahlia should recognize. Set the AI output language in Workspace settings.";
 "Recognition and OCR Languages" = "Recognition and OCR Languages";
-"setup.modelProviderDescription" = "Sign in to the model providers used for summaries and other AI features. You can use several at once. If you skip this, summaries and other AI features stay unavailable until you set one up in Settings > Dahlia AI.";
+"setup.modelProviderDescription" = "Sign in to the model providers used for summaries and other AI features. You can use several at once. If you skip this, summaries and other AI features stay unavailable until you set one up in Settings > Providers.";
 "Allow access to the audio sources Dahlia records. You can continue and grant access later." = "Allow access to the audio sources Dahlia records. You can continue and grant access later.";
 "Calendar (Optional)" = "Calendar (Optional)";
 "Connect a calendar to see upcoming meetings in Dahlia. You can set this up later." = "Connect a calendar to see upcoming meetings in Dahlia. You can set this up later.";
@@ -1432,9 +1432,12 @@
 
 "Used for searchable image text and captions, and for choosing useful screenshots before summary generation." = "Used for searchable image text and captions, and for choosing useful screenshots before summary generation.";
 
-"settings.agents" = "Dahlia AI";
-"settings.agents.intro" = "Configure summaries, image analysis, and chat for the selected account on this Mac.";
+"settings.agents" = "Advanced Settings";
+"settings.agents.intro" = "Configure Pi, chat, schedules, plugins, and security for the selected account on this Mac.";
+"settings.models.intro" = "Configure each provider's models, summaries, and image analysis for the selected account on this Mac.";
 "settings.group.features" = "Features";
+"settings.group.agent" = "Agent";
+"settings.connectors.intro" = "Configure the MCP servers that chat uses. Saved on this Mac for the selected account.";
 "Dahlia MCP" = "Dahlia MCP";
 "settings.meetings.intro" = "Configure audio and visual data processing. Transcription, subtitle, and screenshot capture settings are saved for the selected account on this Mac.";
 "settings.dahliaMCP.intro" = "Use Dahlia meetings from an external AI app. Choose what it can access and do, then copy the connection settings.";
@@ -1487,14 +1490,14 @@
 "settings.agents.mcpDirectPairsInvalid" = "Give every environment variable and header with a value a name, and use each name once.";
 "settings.agents.mcpDirectCommandRequired" = "Enter a command.";
 "settings.agents.mcpDirectURLInvalid" = "Enter an http or https URL.";
-"settings.agents.mcpNoProviders" = "Add a Databricks workspace under Providers on the Models tab to turn on its Unity AI Gateway MCPs here.";
-"settings.agents.mcpProviderSignInRequired" = "Sign-in required. Sign in again under Providers on the Models tab.";
+"settings.agents.mcpNoProviders" = "Add a Databricks workspace under Agent > Providers to turn on its Unity AI Gateway MCPs here.";
+"settings.agents.mcpProviderSignInRequired" = "Sign-in required. Sign in again under Agent > Providers.";
 "settings.agents.mcpWorkspaceIsAccount" = "This is the account's own workspace. Its MCPs are already available.";
 "settings.agents.enabledCount %lld" = "%lld on";
 "settings.agents.mcpServiceWithServerName %@ %@" = "%1$@ (%2$@)";
 "settings.agents.unityGatewayHost %@" = "Databricks (%@)";
 "settings.agents.workspaceURL" = "Workspace URL";
-"settings.agents.mcps" = "Connector";
+"settings.agents.mcps" = "Connectors";
 "settings.agents.mcpLoadingServices" = "Loading Unity AI Gateway MCPs…";
 "settings.agents.mcpNoServices" = "This workspace's Unity AI Gateway (system.ai) has no MCPs you can use.";
 "settings.agents.mcpRemoveWorkspaceDescription" = "Signs out of this workspace and deletes every MCP server registered on it.";
@@ -1506,7 +1509,7 @@
 "settings.agents.workingDirectory" = "Working folder";
 "settings.agents.workingDirectory.notAllowed" = "Set the working folder to a full path, or one that starts with ~. It cannot be the home folder, a folder that contains it, inside Library, a folder that holds commands (a PATH folder), or a folder containing shell startup files.";
 "settings.agents.workingDirectory.help" = "The folder chat works in. It is readable and writable without an additional grant. Changes apply when you reopen the chat.";
-"No executable Pi at %@. Install Pi in Settings > Dahlia AI." = "No executable Pi at %@. Install Pi in Settings > Dahlia AI.";
+"No executable Pi at %@. Install Pi in Settings > Agent > Advanced Settings." = "No executable Pi at %@. Install Pi in Settings > Agent > Advanced Settings.";
 "Pi was not found on PATH. You can install Dahlia-managed Pi from Settings." = "Pi was not found on PATH. You can install Dahlia-managed Pi from Settings.";
 "settings.agents.piNotInstalled" = "Pi is not installed";
 "settings.agents.installPi" = "Install Pi";
@@ -1622,7 +1625,7 @@
 
 "settings.agents.skills" = "Skills";
 "settings.agents.skills.empty" = "No skills recognized.";
-"settings.agents.skills.pathConflict" = "The skills folder and its descendants cannot be on PATH. Remove them from Environment Variables under Dahlia AI > General.";
+"settings.agents.skills.pathConflict" = "The skills folder and its descendants cannot be on PATH. Remove them from Environment Variables under Agent > Advanced Settings > General.";
 "settings.agents.skills.help" = "Skills recognized by a new chat process, including preset, account-created, and plugin skills. Refresh after changes. Running chats pick up changes when their process restarts.";
 "settings.agents.fileAccess.builtIn" = "Default folder and file access";
 "settings.agents.fileAccess.builtInHelp" = "Folder access includes descendants. Default permissions cannot be changed. Protected Pi runtime code, Dahlia data, and shell startup restrictions take precedence over system permissions. The var and etc directories under /opt/homebrew and /usr/local are unreadable. Individual device files are omitted.";
@@ -1664,7 +1667,7 @@
 "Refresh Backups" = "Refresh Backups";
 
 "setup.piDescription" = "Pi is needed for AI features such as chat and summaries. Pi was not found. Install it under Dahlia’s management to continue setting up AI.";
-"setup.piSkipDescription" = "Choose Continue to set this up later. You can install Pi or change which Pi to use in Settings → Dahlia AI.";
+"setup.piSkipDescription" = "Choose Continue to set this up later. You can install Pi or change which Pi to use in Settings → Agent → Advanced Settings.";
 
 "Pi installation failed — %@: %@" = "Pi installation failed — %@: %@";
 "Release information" = "Release information";
@@ -1963,7 +1966,7 @@
 "Authorize Calendar and Drive" = "Authorize Calendar and Drive";
 "settings.agents.alwaysOn.help" = "While the app is open, Dahlia reads the event sources that are on and tells this agent about new events. Nothing is read while recording. Writes to other services, such as replies, follow the same approval settings as your chats.";
 "settings.agents.alwaysOn.sources" = "Event Sources";
-"settings.agents.alwaysOn.noServers" = "To add mail or Slack, register an MCP server under Connectors in Dahlia AI settings. Calendar uses the app’s calendar settings.";
+"settings.agents.alwaysOn.noServers" = "To add mail or Slack, register an MCP server under Agent > Connectors in Settings. Calendar uses the app’s calendar settings.";
 "settings.agents.alwaysOn.editSource" = "Edit Event Source";
 "settings.agents.alwaysOn.addSource" = "Add Event Source";
 "settings.agents.alwaysOn.chooseSource" = "Where to Read From";

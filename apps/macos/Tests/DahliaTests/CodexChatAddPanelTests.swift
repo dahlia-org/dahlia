@@ -71,8 +71,7 @@
             let settingsY = plusCenterY + 15 - offset.height - panelHeight + 25
             try click(CGPoint(x: settingsX, y: settingsY), in: window)
             #expect(await pollUntil(timeout: .seconds(2)) { navigation.isShowingSettings })
-            #expect(navigation.settingsCategory == .agents)
-            #expect(navigation.agentSettingsTab == .mcps)
+            #expect(navigation.settingsCategory == .mcp)
         }
 
         @Test

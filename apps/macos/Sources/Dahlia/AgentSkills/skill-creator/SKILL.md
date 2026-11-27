@@ -102,6 +102,6 @@ do not present it as a successful model run or a measured improvement.
 
 Report the saved path, the capability, the invocation `/skill:<name> <request>`, and what was actually checked.
 New or changed skills load in a new Dahlia chat process; an already-running chat keeps its existing resource snapshot.
-The user can reload the list in Dahlia AI Settings → Skills to check discovery; this does not refresh an active chat.
+The user can reload the list in Settings → Agent → Skills to check discovery; this does not refresh an active chat.
 For a behavioral check, use a new chat and a representative request. Explain that the account-owned folder can be
 edited or removed to update or uninstall the skill, with the change taking effect in subsequent chat processes.
