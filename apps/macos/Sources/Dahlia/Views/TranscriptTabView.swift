@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct TranscriptTabView<Header: View, Footer: View>: View {
+    @AppStorage(ContentWidth.mainUserDefaultsKey) private var mainContentWidth = ContentWidth.mainDefault
     @ObservedObject var store: TranscriptStore
     let showsTranslatedText: Bool
     let retryInitialMeetingLoad: () -> Void
@@ -22,7 +23,7 @@ struct TranscriptTabView<Header: View, Footer: View>: View {
                 header
                 if showsTranscriptContent { transcriptBanners }
             }
-            .frame(maxWidth: DahliaDesign.mainContentMaxWidth)
+            .frame(maxWidth: mainContentWidth.maxWidth)
             .frame(maxWidth: .infinity)
             if store.isLoadingInitialPage {
                 ProgressView()
@@ -45,13 +46,14 @@ struct TranscriptTabView<Header: View, Footer: View>: View {
                     hasLater: store.hasLaterSegments,
                     baseSize: DahliaTypography.baseSizeOptions.contains(interfaceTextSize)
                         ? CGFloat(interfaceTextSize) : DahliaTypography.defaultBaseSize,
+                    maxWidth: mainContentWidth.maxWidth,
                     scrollRequest: scrollRequest,
                     onRequestPage: loadPage,
                     onFollowChange: { store.setFollowingLatest($0) }
                 )
             }
             footer
-                .frame(maxWidth: DahliaDesign.mainContentMaxWidth)
+                .frame(maxWidth: mainContentWidth.maxWidth)
                 .frame(maxWidth: .infinity)
         }
         .onChange(of: showsTranscriptContent, initial: true) { _, shows in

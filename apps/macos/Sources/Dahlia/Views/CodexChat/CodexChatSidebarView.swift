@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct CodexChatSidebarView: View {
+    @AppStorage(ContentWidth.chatUserDefaultsKey) private var chatContentWidth = ContentWidth.chatDefault
     @Bindable var coordinator: CodexChatCoordinator
     @Bindable var sidebarViewModel: SidebarViewModel
     @Binding var showsHistory: Bool
@@ -30,7 +31,7 @@ struct CodexChatSidebarView: View {
             reservesSidebarToggle: !isFullScreen || reservesPanelToggle,
             reservesWindowControls: false,
             headerLeadingInset: headerLeadingInset,
-            contentMaxWidth: isFullScreen ? DahliaDesign.mainContentMaxWidth : nil,
+            contentMaxWidth: isFullScreen ? chatContentWidth.maxWidth : nil,
             isSidePanel: !isFullScreen,
             agent: agent
         )

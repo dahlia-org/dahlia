@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct UnprocessedRecordingsView: View {
+    @AppStorage(ContentWidth.mainUserDefaultsKey) private var mainContentWidth = ContentWidth.mainDefault
     let items: [BackupPreflightItem]
     @ObservedObject var captionViewModel: CaptionViewModel
     let sidebarViewModel: SidebarViewModel
@@ -38,7 +39,7 @@ struct UnprocessedRecordingsView: View {
         .padding(.horizontal, 28)
         .padding(.top, DahliaDesign.detailTopPadding)
         .padding(.bottom, 28)
-        .frame(maxWidth: DahliaDesign.mainContentMaxWidth, maxHeight: .infinity, alignment: .topLeading)
+        .frame(maxWidth: mainContentWidth.maxWidth, maxHeight: .infinity, alignment: .topLeading)
         .frame(maxWidth: .infinity, alignment: .top)
         .confirmationDialog(
             L10n.discardUnprocessedRecordingConfirmation,

@@ -37,8 +37,11 @@
             #expect((distanceFromBottom < 120) == isSidePanel)
         }
 
-        @Test(arguments: [CGSize(width: 1000, height: 760), CGSize(width: 420, height: 360), CGSize(width: 320, height: 600)], [false, true])
-        func newChatKeepsTheComposerInsideItsViewport(size: CGSize, hasLongDraft: Bool) throws {
+        @Test(arguments: [CGSize(width: 1400, height: 760), CGSize(width: 420, height: 360), CGSize(width: 320, height: 600)].flatMap { size in
+            ContentWidth.allCases.map { (size, $0) }
+        }, [false, true])
+        func newChatKeepsTheComposerInsideItsViewport(layout: (CGSize, ContentWidth), hasLongDraft: Bool) throws {
+            let (size, contentWidth) = layout
             let suite = "CodexChatWelcomeLayoutTests.\(UUID())"
             let defaults = try #require(UserDefaults(suiteName: suite))
             defer { defaults.removePersistentDomain(forName: suite) }
@@ -56,7 +59,7 @@
                 showsHistory: .constant(false),
                 onNewChat: {}, onOpenHistory: { _ in }, onShowFullScreen: nil,
                 reservesSidebarToggle: false, reservesWindowControls: false, headerLeadingInset: 0,
-                contentMaxWidth: 1000
+                contentMaxWidth: contentWidth.maxWidth
             )
             .environment(MainWindowNavigation(openMainWindow: {}, initialSettingsCategory: .general))
             .defaultAppStorage(defaults)
@@ -71,7 +74,7 @@
             // The scrolling document can extend beyond the window; its visible viewport must remain inside it.
             let viewport = try #require(editor.enclosingScrollView?.contentView)
             let frame = host.convert(viewport.bounds, from: viewport)
-            #expect(frame.width > 100)
+            #expect(frame.width > min(size.width, contentWidth.maxWidth) - 150)
             #expect(frame.height > 10)
             #expect(host.bounds.contains(frame))
             #expect(editor.font?.pointSize == 14)
@@ -80,7 +83,7 @@
                 let bitmap = try #require(host.bitmapImageRepForCachingDisplay(in: host.bounds))
                 host.cacheDisplay(in: host.bounds, to: bitmap)
                 let data = try #require(bitmap.representation(using: .png, properties: [:]))
-                try data.write(to: URL(fileURLWithPath: directory).appending(path: "chat-\(Int(size.width))x\(Int(size.height))-\(hasLongDraft).png"))
+                try data.write(to: URL(fileURLWithPath: directory).appending(path: "chat-\(Int(size.width))x\(Int(size.height))-\(contentWidth.rawValue)-\(hasLongDraft).png"))
             }
         }
     }

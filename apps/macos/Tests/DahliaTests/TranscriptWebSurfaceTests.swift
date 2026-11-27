@@ -176,6 +176,139 @@
             }
         }
 
+        @Test(arguments: ContentWidth.allCases)
+        func selectedWidthIncludesTranscriptInsets(width: ContentWidth) async throws {
+            let harness = Harness()
+            defer { harness.stop() }
+            harness.window.setContentSize(NSSize(width: 1400, height: 400))
+            harness.show([TranscriptSegment(startTime: .now, text: "width", isConfirmed: true)], maxWidth: width.maxWidth)
+            #expect(await harness.waitForRows(1, firstText: "width"))
+            let actual = try #require(try await harness.webView.evaluateJavaScript(
+                "document.getElementById('rows').getBoundingClientRect().width"
+            ) as? Double)
+            #expect(abs(actual - min(1400, width.maxWidth)) < 2)
+        }
+
+        @Test(arguments: [false, true])
+        func widthChangesPreserveReadingOrLiveFollowing(following: Bool) async throws {
+            let harness = Harness(rendersAllRows: true)
+            defer { harness.stop() }
+            harness.window.setContentSize(NSSize(width: 1400, height: 400))
+            var segments = (0 ..< 40).map { index in
+                TranscriptSegment(
+                    startTime: Date(timeIntervalSince1970: Double(index)),
+                    text: "row \(index) " + String(repeating: "wrapping transcript text ", count: 14), isConfirmed: true
+                )
+            }
+            let state = FollowState()
+            let follow: @MainActor (Bool) -> Void = { state.following = $0 }
+            harness.show(segments, maxWidth: .infinity, scrollRequest: (1, .bottom), onFollowChange: follow)
+            #expect(await harness.waitForRows(40, firstText: segments[0].text))
+            let y = try #require(try await harness.webView.callAsyncJavaScript("""
+            window.requestAnimationFrame = callback => { setTimeout(callback, 0); return 0; };
+            const row = document.querySelectorAll('.row')[20];
+            document.scrollingElement.scrollTop = following ? document.scrollingElement.scrollHeight : row.offsetTop + 5;
+            window.dispatchEvent(new Event('scroll'));
+            await new Promise(requestAnimationFrame);
+            return row.getBoundingClientRect().top;
+            """, arguments: ["following": following], in: nil, contentWorld: .page) as? Double)
+            #expect(await pollUntil { state.following == following })
+            for width in [ContentWidth.comfortable, .wide, .full] {
+                harness.show(segments, maxWidth: width.maxWidth, scrollRequest: (1, .bottom), onFollowChange: follow)
+                #expect(await pollUntil {
+                    let actual = try? await harness.webView.evaluateJavaScript(
+                        "document.getElementById('rows').getBoundingClientRect().width"
+                    ) as? Double
+                    return actual.map { abs($0 - min(1400, width.maxWidth)) < 2 } == true
+                })
+                if following {
+                    #expect(await harness.isAtBottom())
+                } else {
+                    #expect(await harness.waitForRow(segments[20].text, at: y))
+                }
+                #expect(state.following == following)
+            }
+            segments.append(TranscriptSegment(startTime: .now, text: "finalized after width change", isConfirmed: true))
+            harness.show(segments, maxWidth: ContentWidth.comfortable.maxWidth, scrollRequest: (1, .bottom), onFollowChange: follow)
+            #expect(await harness.waitForText("finalized after width change"))
+            if following {
+                #expect(await harness.isAtBottom())
+            } else {
+                #expect(await harness.waitForRow(segments[20].text, at: y))
+            }
+            _ = try await harness.webView.evaluateJavaScript("window.beforeWidthRecovery = true")
+            harness.coordinator.webViewWebContentProcessDidTerminate(harness.webView)
+            #expect(await pollUntil {
+                await (try? harness.webView.evaluateJavaScript(
+                    "typeof window.beforeWidthRecovery === 'undefined' && document.querySelectorAll('.row').length === 41"
+                ) as? Bool) == true
+            })
+            #expect(await pollUntil {
+                await (try? harness.webView.evaluateJavaScript(
+                    "document.getElementById('rows').getBoundingClientRect().width"
+                ) as? Double) == ContentWidth.comfortable.maxWidth
+            })
+            if following {
+                #expect(await harness.isAtBottom())
+            } else {
+                #expect(await harness.waitForRow(segments[20].text, at: y))
+            }
+            #expect(state.following == following)
+        }
+
+        @Test(arguments: [false, true], [false, true])
+        func wideningKeepsADeepReadingAnchorVisible(recovering: Bool, nearEnd: Bool) async throws {
+            let harness = Harness()
+            defer { harness.stop() }
+            harness.window.setContentSize(NSSize(width: 1400, height: 400))
+            let segments = (0 ..< 40).map { index in
+                TranscriptSegment(
+                    startTime: Date(timeIntervalSince1970: Double(index)),
+                    text: "row \(index) " + String(repeating: "long wrapped segment ", count: index == 20 ? 300 : 4),
+                    isConfirmed: true
+                )
+            }
+            harness.show(segments, maxWidth: ContentWidth.comfortable.maxWidth, scrollRequest: (1, .top))
+            #expect(await harness.waitForRows(40, firstText: segments[0].text))
+            let oldOffset = try #require(try await harness.webView.callAsyncJavaScript("""
+            window.requestAnimationFrame = callback => { setTimeout(callback, 0); return 0; };
+            const row = document.querySelectorAll('.row')[20];
+            // Offscreen WebKit may retain the intrinsic placeholder; model a fully rendered reading row.
+            row.style.contentVisibility = 'visible';
+            row.scrollIntoView({ block: 'start' });
+            document.scrollingElement.scrollTop += nearEnd ? row.getBoundingClientRect().height - 80 : 100;
+            window.dispatchEvent(new Event('scroll'));
+            await new Promise(requestAnimationFrame);
+            window.beforeDeepRecovery = true;
+            return row.getBoundingClientRect().top;
+            """, arguments: ["nearEnd": nearEnd], in: nil, contentWorld: .page) as? Double)
+            #expect(oldOffset < -80)
+            if recovering {
+                _ = try await harness.webView.evaluateJavaScript("window.dahliaTranscript.apply = () => {}; true")
+            }
+            harness.show(segments, maxWidth: .infinity, scrollRequest: (1, .top))
+            if recovering {
+                harness.coordinator.webViewWebContentProcessDidTerminate(harness.webView)
+            }
+            #expect(await pollUntil {
+                await (try? harness.webView.evaluateJavaScript("""
+                document.getElementById('rows').getBoundingClientRect().width === 1400 &&
+                (typeof window.beforeDeepRecovery === 'undefined' || !\(recovering))
+                """) as? Bool) == true
+            })
+            let bounds = try #require(try await harness.webView.evaluateJavaScript("""
+            (() => {
+              const row = document.querySelectorAll('.row')[20];
+              const bounds = row.getBoundingClientRect();
+              return [bounds.top, bounds.bottom, bounds.height];
+            })()
+            """) as? [Double])
+            try #require(bounds.count == 3)
+            #expect((-oldOffset >= bounds[2]) == nearEnd)
+            #expect(bounds[0] < 400 && bounds[1] > 0)
+            if !nearEnd { #expect(abs(bounds[0] - oldOffset) < 2) }
+        }
+
         @Test
         func existingPageAppliesChangedTextSizeWithoutReloading() async {
             let harness = Harness()
@@ -294,7 +427,7 @@
             let webView: WKWebView
             let coordinator: TranscriptWebSurface.Coordinator
 
-            init() {
+            init(rendersAllRows: Bool = false) {
                 let surface = Self.surface([], showsTranslatedText: false)
                 coordinator = surface.makeCoordinator()
                 // Frame-controlled tests must not trigger the visible-page watchdog.
@@ -302,6 +435,18 @@
                 window.isReleasedWhenClosed = false
                 let configuration = WKWebViewConfiguration()
                 configuration.userContentController.add(coordinator, name: "transcript")
+                // Offscreen WebKit can report visible without drawing frames; drive presentation acknowledgements.
+                configuration.userContentController.addUserScript(WKUserScript(source: """
+                window.requestAnimationFrame = callback => { setTimeout(callback, 0); return 0; };
+                """, injectionTime: .atDocumentStart, forMainFrameOnly: true))
+                if rendersAllRows {
+                    // Width geometry checks need real row heights even when offscreen WebKit skips rendering frames.
+                    configuration.userContentController.addUserScript(WKUserScript(source: """
+                    const style = document.createElement('style');
+                    style.textContent = '.row { content-visibility: visible; }';
+                    document.head.append(style);
+                    """, injectionTime: .atDocumentEnd, forMainFrameOnly: true))
+                }
                 webView = WKWebView(frame: window.contentLayoutRect, configuration: configuration)
                 window.contentView = webView
                 coordinator.view = webView
@@ -328,13 +473,14 @@
                 hasEarlier: Bool = false,
                 hasLater: Bool = false,
                 baseSize: CGFloat = 14,
+                maxWidth: CGFloat = ContentWidth.mainDefault.maxWidth,
                 scrollRequest: (token: Int, edge: TranscriptWebSurface.Edge)? = nil,
                 onFollowChange: @escaping @MainActor (Bool) -> Void = { _ in },
                 onRequestPage: @escaping @MainActor (TranscriptWebSurface.Edge) -> Void = { _ in }
             ) {
                 coordinator.parent = Self.surface(
                     segments, showsTranslatedText: showsTranslatedText, contentID: contentID,
-                    hasEarlier: hasEarlier, hasLater: hasLater, baseSize: baseSize,
+                    hasEarlier: hasEarlier, hasLater: hasLater, baseSize: baseSize, maxWidth: maxWidth,
                     scrollRequest: scrollRequest, onFollowChange: onFollowChange, onRequestPage: onRequestPage
                 )
                 coordinator.contentDidChange()
@@ -382,13 +528,14 @@
                 hasEarlier: Bool = false,
                 hasLater: Bool = false,
                 baseSize: CGFloat = 14,
+                maxWidth: CGFloat = ContentWidth.mainDefault.maxWidth,
                 scrollRequest: (token: Int, edge: TranscriptWebSurface.Edge)? = nil,
                 onFollowChange: @escaping @MainActor (Bool) -> Void = { _ in },
                 onRequestPage: @escaping @MainActor (TranscriptWebSurface.Edge) -> Void = { _ in }
             ) -> TranscriptWebSurface {
                 TranscriptWebSurface(
                     contentID: contentID, segments: segments, recordingSessions: [], timeBase: Date(timeIntervalSince1970: 0),
-                    showsTranslatedText: showsTranslatedText, hasEarlier: hasEarlier, hasLater: hasLater, baseSize: baseSize,
+                    showsTranslatedText: showsTranslatedText, hasEarlier: hasEarlier, hasLater: hasLater, baseSize: baseSize, maxWidth: maxWidth,
                     scrollRequest: scrollRequest,
                     onRequestPage: onRequestPage, onFollowChange: onFollowChange
                 )

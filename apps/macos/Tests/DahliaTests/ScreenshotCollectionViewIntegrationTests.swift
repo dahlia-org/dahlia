@@ -120,7 +120,21 @@ import SwiftUI
             #expect(layout.sectionInset.left == 212)
             #expect(layout.sectionInset.right == 212)
             #expect(layout.itemSize == ScreenshotCollectionLayout.metrics(
-                containerWidth: DahliaDesign.mainContentMaxWidth,
+                containerWidth: ContentWidth.mainDefault.maxWidth,
+                minimumItemWidth: layout.minimumItemWidth
+            ).itemSize)
+        }
+
+        @Test
+        func fullContentWidthFillsWideViewport() {
+            let layout = ScreenshotCollectionLayout()
+            layout.contentMaxWidth = ContentWidth.full.maxWidth
+            let collection = NSCollectionView(frame: NSRect(x: 0, y: 0, width: 1400, height: 360))
+            collection.collectionViewLayout = layout
+            layout.prepare()
+            #expect(layout.sectionInset.left == ScreenshotCollectionLayout.sectionPadding)
+            #expect(layout.itemSize == ScreenshotCollectionLayout.metrics(
+                containerWidth: 1400,
                 minimumItemWidth: layout.minimumItemWidth
             ).itemSize)
         }

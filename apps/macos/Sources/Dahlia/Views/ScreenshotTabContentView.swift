@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct ScreenshotTabContentView: View {
+    @AppStorage(ContentWidth.mainUserDefaultsKey) private var mainContentWidth = ContentWidth.mainDefault
     @ObservedObject var screenshotStore: ScreenshotStore
     let pageHeader: AnyView
     let pageFooter: AnyView
@@ -30,7 +31,7 @@ struct ScreenshotTabContentView: View {
                     .frame(maxWidth: .infinity, minHeight: 280)
                     pageFooter
                 }
-                .frame(maxWidth: DahliaDesign.mainContentMaxWidth)
+                .frame(maxWidth: mainContentWidth.maxWidth)
                 .frame(maxWidth: .infinity)
             }
         } else {
@@ -54,6 +55,7 @@ struct ScreenshotTabContentView: View {
                 recordingSessions: recordingSessions,
                 fallbackTimeBase: fallbackTimeBase,
                 minimumItemWidth: minimumItemWidth,
+                contentMaxWidth: mainContentWidth.maxWidth,
                 isSelecting: $isSelecting,
                 referencedScreenshotIDs: referencedScreenshotIDs,
                 isDeletionDisabled: isDeletionDisabled,

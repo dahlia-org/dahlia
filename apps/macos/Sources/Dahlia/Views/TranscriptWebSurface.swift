@@ -21,6 +21,7 @@ struct TranscriptWebSurface: NSViewRepresentable {
     let hasEarlier: Bool
     let hasLater: Bool
     var baseSize: CGFloat = DahliaTypography.defaultBaseSize
+    var maxWidth = ContentWidth.mainDefault.maxWidth
     /// `token` が変わるたびに一度だけ `edge` へスクロールする。
     let scrollRequest: (token: Int, edge: Edge)?
     let onRequestPage: @MainActor (Edge) -> Void
@@ -34,7 +35,6 @@ struct TranscriptWebSurface: NSViewRepresentable {
         configuration.userContentController.add(context.coordinator, name: "transcript")
         configuration.userContentController.addUserScript(WKUserScript(source: """
         document.documentElement.style.setProperty('--inset', '\(DahliaDesign.tabContentInset)px');
-        document.documentElement.style.setProperty('--max-width', '\(DahliaDesign.mainContentMaxWidth)px');
         """, injectionTime: .atDocumentEnd, forMainFrameOnly: true))
         let view = WKWebView(frame: .zero, configuration: configuration)
         view.navigationDelegate = context.coordinator
@@ -118,6 +118,7 @@ struct TranscriptWebSurface: NSViewRepresentable {
         private var needsReset = true
         private var viewport: Viewport?
         private var sentBaseSize: CGFloat?
+        private var sentMaxWidth: CGFloat?
         private var sentRows: [String: Row] = [:]
         private var sentOrder: [String] = []
         private var sentContentID: AnyHashable?
@@ -150,6 +151,7 @@ struct TranscriptWebSurface: NSViewRepresentable {
         func load() {
             guard let view, let url = Bundle.appModule.url(forResource: "transcript-surface", withExtension: "html") else { return }
             isReady = false
+            sentMaxWidth = nil
             needsReset = true
             inFlight = nil
             view.loadFileURL(url, allowingReadAccessTo: url.deletingLastPathComponent())
@@ -191,7 +193,7 @@ struct TranscriptWebSurface: NSViewRepresentable {
             let edges = (hasEarlier: parent.hasEarlier, hasLater: parent.hasLater)
             let scroll = parent.scrollRequest.flatMap { $0.token == sentScrollToken ? nil : $0 }
             guard reset || !changed.isEmpty || order != sentOrder || sentEdges.map({ $0 != edges }) ?? true || scroll != nil || sentBaseSize != parent
-                .baseSize else {
+                .baseSize || sentMaxWidth != parent.maxWidth else {
                 changedAt = nil
                 return
             }
@@ -205,6 +207,7 @@ struct TranscriptWebSurface: NSViewRepresentable {
                 "hasEarlier": edges.hasEarlier,
                 "hasLater": edges.hasLater,
                 "baseSize": parent.baseSize,
+                "maxWidth": parent.maxWidth.isFinite ? "\(parent.maxWidth)px" : "none",
             ]
             update["scrollTo"] = scroll?.edge.rawValue
             if reset, scroll == nil { update["restoreViewport"] = viewport?.message }
@@ -219,6 +222,7 @@ struct TranscriptWebSurface: NSViewRepresentable {
             sentContentID = parent.contentID
             sentEdges = edges
             sentBaseSize = parent.baseSize
+            sentMaxWidth = parent.maxWidth
             needsReset = false
             inFlight = (sequence, changedAt ?? .now, scroll?.token)
             changedAt = nil

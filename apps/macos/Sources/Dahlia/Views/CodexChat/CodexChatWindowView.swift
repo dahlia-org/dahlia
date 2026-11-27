@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct CodexChatWindowView: View {
+    @AppStorage(ContentWidth.chatUserDefaultsKey) private var chatContentWidth = ContentWidth.chatDefault
     @Bindable var coordinator: CodexChatCoordinator
     @Bindable var sidebarViewModel: SidebarViewModel
     @State private var sessionID: CodexChatSessionID
@@ -34,7 +35,7 @@ struct CodexChatWindowView: View {
                     reservesSidebarToggle: false,
                     reservesWindowControls: true,
                     headerLeadingInset: 0,
-                    contentMaxWidth: nil
+                    contentMaxWidth: chatContentWidth.maxWidth
                 )
             } else {
                 VStack(spacing: 0) {

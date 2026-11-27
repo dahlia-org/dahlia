@@ -554,6 +554,14 @@
 "appearance.textSize.footer" = "開いている画面の一部は、表示し直すかアプリを再起動すると新しい文字サイズになります。";
 "appearance.textSize.points %lld" = "%lld pt";
 "appearance.textSize.default %lld" = "%lld pt（標準）";
+"appearance.chatWidth" = "チャットの横幅";
+"appearance.chatWidth.description" = "大きな画面でメッセージと入力欄が広がる最大の幅です。";
+"appearance.mainWidth" = "ミーティングなどの横幅";
+"appearance.mainWidth.description" = "チャット以外の画面（ミーティング、プロジェクト、予定など）が広がる最大の幅です。";
+"appearance.width.comfortable" = "狭め";
+"appearance.width.wide" = "ワイド";
+"appearance.width.full" = "全幅";
+"appearance.width.default %@" = "%@（デフォルト）";
 "Follow System" = "システムに従う";
 "Choose one or both conditions. Calendar notifications use events from enabled calendar sources." = "1つまたは両方の条件を選択できます。カレンダー通知には、有効なカレンダーソースの予定が使用されます。";
 "Choose which languages are available for transcription and automatic detection." = "文字起こしと自動判定で利用する言語を選びます。";

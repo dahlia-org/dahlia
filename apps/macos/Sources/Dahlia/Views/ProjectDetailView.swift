@@ -2,6 +2,7 @@ import GRDB
 import SwiftUI
 
 struct ProjectDetailView: View {
+    @AppStorage(ContentWidth.mainUserDefaultsKey) private var mainContentWidth = ContentWidth.mainDefault
     let project: ProjectOverviewItem
     let projects: [ProjectOverviewItem]
     let appearance: ProjectAppearance
@@ -60,7 +61,7 @@ struct ProjectDetailView: View {
         .padding(.horizontal, 28)
         .padding(.top, DahliaDesign.detailTopPadding)
         .padding(.bottom, 24)
-        .frame(maxWidth: DahliaDesign.mainContentMaxWidth, maxHeight: .infinity, alignment: .topLeading)
+        .frame(maxWidth: mainContentWidth.maxWidth, maxHeight: .infinity, alignment: .topLeading)
         .frame(maxWidth: .infinity, alignment: .top)
         .task(id: ListLoadID(hierarchy: hierarchy, workspaceID: workspaceID, changeToken: workspaceChangeToken)) {
             await model.reload(projectIDs: projectIDs, workspaceID: workspaceID, dbQueue: dbQueue)

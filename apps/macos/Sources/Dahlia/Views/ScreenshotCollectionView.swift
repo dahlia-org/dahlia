@@ -13,6 +13,7 @@ struct ScreenshotCollectionView: NSViewRepresentable {
     let recordingSessions: [RecordingSessionTimeline]
     let fallbackTimeBase: Date
     let minimumItemWidth: Double
+    var contentMaxWidth = ContentWidth.mainDefault.maxWidth
     @Binding var isSelecting: Bool
     let referencedScreenshotIDs: Set<UUID>
     let isDeletionDisabled: Bool
@@ -28,6 +29,7 @@ struct ScreenshotCollectionView: NSViewRepresentable {
     func makeNSView(context: Context) -> NSScrollView {
         let layout = ScreenshotCollectionLayout()
         layout.minimumItemWidth = minimumItemWidth
+        layout.contentMaxWidth = contentMaxWidth
 
         let collectionView = NSCollectionView()
         collectionView.autoresizingMask = [.width]
@@ -143,6 +145,7 @@ extension ScreenshotCollectionView {
             guard !isDismantled else { return }
             self.parent = parent
             layout.minimumItemWidth = parent.minimumItemWidth
+            layout.contentMaxWidth = parent.contentMaxWidth
             layout.setPageContent(header: parent.pageHeader, footer: parent.pageFooter)
 
             let screenshots = parent.screenshots

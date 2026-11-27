@@ -18,6 +18,14 @@ final class ScreenshotCollectionLayout: NSCollectionViewFlowLayout {
         }
     }
 
+    var contentMaxWidth = ContentWidth.mainDefault.maxWidth {
+        didSet {
+            guard contentMaxWidth != oldValue else { return }
+            measuredWidth = nil
+            invalidateLayout()
+        }
+    }
+
     var pageHeader: NSHostingView<AnyView>?
     var pageFooter: NSHostingView<AnyView>?
     private var headerContent: AnyView?
@@ -37,7 +45,7 @@ final class ScreenshotCollectionLayout: NSCollectionViewFlowLayout {
 
     private func pageSize(_ content: AnyView?, host: NSHostingView<AnyView>?, width: CGFloat) -> NSSize {
         guard let content, let host, width > 0 else { return .zero }
-        host.rootView = AnyView(content.frame(maxWidth: DahliaDesign.mainContentMaxWidth).frame(width: width).fixedSize(
+        host.rootView = AnyView(content.frame(maxWidth: contentMaxWidth).frame(width: width).fixedSize(
             horizontal: false,
             vertical: true
         ))
@@ -76,7 +84,7 @@ final class ScreenshotCollectionLayout: NSCollectionViewFlowLayout {
             if footerReferenceSize != footerSize { footerReferenceSize = footerSize }
             measuredWidth = viewportWidth
         }
-        let contentWidth = min(viewportWidth, DahliaDesign.mainContentMaxWidth)
+        let contentWidth = min(viewportWidth, contentMaxWidth)
         let sideInset = Self.sectionPadding + max(0, (viewportWidth - contentWidth) / 2)
         sectionInset.left = sideInset
         sectionInset.right = sideInset
