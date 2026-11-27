@@ -232,6 +232,7 @@ actor PiChatService: CodexChatServicing {
         var profile: PiExecutionProfile = .interactive
         var memoryEnabled = true
         var allowedTools: Set<String> = []
+        var directConnections: [String: String] = [:]
         var mcpServers: Set<String> = []
         var mcpServersNeedingSignIn: [String] = []
     }
@@ -980,8 +981,7 @@ actor PiChatService: CodexChatServicing {
         let generation = providerGeneration
         try await runtime.requireConfigured()
         let profile = launchProfile(threadID)
-        // Pi reads mcp.json only when it starts, so settings changes reach the next process the account starts. `--tools`
-        // and the allowlist come from this same snapshot: a process that reads another thread's newer file stays limited to it.
+        // Connection settings and tools share one launch snapshot. Existing processes keep their connections.
         let mcp = mcpSettings()
         let mcpServers = mcp.piServers
         let scope = try launchScope(profile, threadID: threadID, workRoot: workingDirectory.url())
@@ -1003,8 +1003,23 @@ actor PiChatService: CodexChatServicing {
         Additional file access (protected Dahlia data and runtime code remain restricted):
         \(accessDescription.isEmpty ? "None" : accessDescription)
         """
-        try PiProviderConfiguration.writeMCPServers(mcpServers, agentURL: agentLocator.agentURL())
-        let serverNames = ["dahlia"] + (scope.servers ?? mcpServers.keys.sorted())
+        // Native MCP starts configured servers before tool hooks. Keep the shared file empty and register only
+        // this process's immutable snapshot through the extension, so simultaneous launches cannot broaden it.
+        try PiProviderConfiguration.writeMCPServers([:], agentURL: agentLocator.agentURL())
+        let allowedTools = try scheduledRuns[threadID].map {
+            try scheduleService().allowedTools(runID: $0.id, account: AppAccount.key)
+        } ?? []
+        let grantedTools = Set(allowedTools)
+        let scopedServers = (scope.servers ?? mcpServers.keys.sorted()).filter { server in
+            profile != .scheduled || allowedTools.contains { tool in
+                AgentMCPSettings.scheduledServer(for: tool, servers: mcp.scheduledServers) == server && mcp.allowsScheduledTool(
+                    tool,
+                    grants: grantedTools
+                )
+            }
+        }
+        let serverNames = ["dahlia"] + scopedServers
+        let serverConfiguration = try HermesLearning.json(mcpServers.filter { scopedServers.contains($0.key) })
         // `--no-extensions` also drops Pi's MCP extension; explicitly enable it and the tools chat may call.
         let isChild = (try? history().thread(id: threadID, accountID: AppAccount.key).parentThreadID) != nil
         let threadTools = Self.readThreadTools + (isChild ? [] : Self.manageThreadTools)
@@ -1025,10 +1040,7 @@ actor PiChatService: CodexChatServicing {
             // Super Agent's delegated task is a helper: it only reads threads, like any child.
             + (profile == .bot ? (isChild ? Self.readThreadTools : PiExecutionProfile.botTools + Self.readThreadTools + Self.manageThreadTools) : [])
             + (webAccess ? AgentWebAccessSettings.toolNames : []) + serverNames.map { "mcp__\($0)__*" }
-        let allowedTools = try scheduledRuns[threadID].map {
-            try scheduleService().allowedTools(runID: $0.id, account: AppAccount.key)
-        } ?? []
-        // Only chat calls MCP servers; Dahlia's extension registers the sign-ins mcp.json names.
+        // The extension registers the sign-ins named by this process snapshot.
         let agentName = agent(ofThread: threadID)?.name ?? ""
         var arguments = sessionArguments + [
             "-e", mcpExtension,
@@ -1065,6 +1077,7 @@ actor PiChatService: CodexChatServicing {
                     "DAHLIA_PI_MCP_COMMAND": String(decoding: JSONEncoder().encode(mcpCommand), as: UTF8.self),
                     // The only MCP servers whose tools chat may call; the extension blocks every other server.
                     "DAHLIA_PI_MCP_SERVERS": String(decoding: JSONEncoder().encode(serverNames), as: UTF8.self),
+                    "DAHLIA_PI_MCP_CONFIG": serverConfiguration,
                     // Dahlia starts this standalone MCP worker under its dedicated Seatbelt profile.
                     "DAHLIA_PI_WEB_ACCESS": webAccess ? webAccessURL.path : "",
                     "DAHLIA_PI_MCP_EXTENSION": mcpExtension,
@@ -1119,7 +1132,7 @@ actor PiChatService: CodexChatServicing {
                 "DAHLIA_PI_MCP_COMMAND": HermesLearning.json(mcpCommand),
                 "DAHLIA_PI_MCP_SERVERS": HermesLearning.json(serverNames),
             ],
-            profile: profile, memoryEnabled: memorySetting, allowedTools: Set(allowedTools),
+            profile: profile, memoryEnabled: memorySetting, allowedTools: Set(allowedTools), directConnections: mcp.directConnectionIDs,
             // `omnigent` names the approvals of `omni_create_session`.
             mcpServers: Set(serverNames + (threadTools.contains("omni_create_session") ? ["omnigent"] : []))
         )

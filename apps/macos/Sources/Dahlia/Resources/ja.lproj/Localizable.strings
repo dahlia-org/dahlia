@@ -1473,6 +1473,20 @@
 "settings.providers.registered" = "登録済み";
 "settings.providers.registeredSignInAgainHint" = "Databricks は登録済みです。再認証するには、初期設定の完了後に設定の「プロバイダー」で「サインインし直す」を選んでください。ここでは別のワークスペースを追加できます。";
 "settings.agents.mcpSearchPrompt" = "コネクタを検索";
+"settings.agents.mcpDirectSection" = "直接設定";
+"settings.agents.mcpDirectAddHelp" = "stdio のコマンドまたは HTTP の URL で MCP サーバーを設定します。";
+"settings.agents.mcpDirectName" = "サーバー名";
+"settings.agents.mcpDirectTransport" = "接続方式";
+"settings.agents.mcpDirectCommand" = "コマンド";
+"settings.agents.mcpDirectArguments" = "引数";
+"settings.agents.mcpDirectEnvironment" = "環境変数";
+"settings.agents.mcpDirectHeaders" = "ヘッダー";
+"settings.agents.mcpDirectHelp" = "値に ${VAR} と書くと、チャットの環境変数から読み込みます。秘密の値は「環境変数」に設定して参照してください。stdio のコマンドはチャットの sandbox の外で実行されます。変更は新しいチャットから適用されます。";
+"settings.agents.mcpDirectPairKey" = "名前";
+"settings.agents.mcpDirectPairValue" = "値";
+"settings.agents.mcpDirectPairsInvalid" = "環境変数とヘッダーは、値のある行に名前を入力し、同じ名前を重ねないでください。";
+"settings.agents.mcpDirectCommandRequired" = "コマンドを入力してください。";
+"settings.agents.mcpDirectURLInvalid" = "http または https の URL を入力してください。";
 "settings.agents.mcpNoProviders" = "「モデル」の「プロバイダー」で Databricks ワークスペースを追加すると、その Unity AI Gateway の MCP をここでオンにできます。";
 "settings.agents.mcpProviderSignInRequired" = "サインインが必要です。「モデル」の「プロバイダー」でサインインし直してください。";
 "settings.agents.mcpWorkspaceIsAccount" = "このワークスペースはアカウント自身のもので、MCP にもそのまま使えます。";
@@ -1485,7 +1499,7 @@
 "settings.agents.mcpNoServices" = "このワークスペースの Unity AI Gateway（system.ai）に、使える MCP はありません。";
 "settings.agents.mcpRemoveWorkspaceDescription" = "このワークスペースからサインアウトし、登録した MCP サーバーもすべて削除します。";
 "settings.agents.mcpRemoveWorkspace %@" = "「%@」を削除しますか？";
-"settings.agents.mcpServerNameInvalid" = "サーバー名には英小文字・数字・_ を40文字まで使えます。";
+"settings.agents.mcpServerNameInvalid" = "サーバー名には英小文字・数字・_ を40文字まで使えます。_ は連続できません。";
 "settings.agents.mcpServerNameTaken" = "このサーバー名はすでに使われています。";
 "chat.mcpSignInRequired %@" = "%@ を使うにはサインインが必要です。設定の「プロバイダー」でサインインし直してください。";
 "settings.agents.piCommandInUse" = "使用するコマンド";
@@ -2058,3 +2072,14 @@
 "Remove attached images before compacting context" = "コンテキストを圧縮する前に添付画像を削除してください";
 
 "Skip and continue" = "スキップして続行";
+
+"settings.agents.mcpDirectConnectionChanged" = "承認中にコネクタが変更されました。予定をもう一度確認してください。";
+
+"settings.agents.mcpDirectInputMode" = "入力形式";
+"settings.agents.mcpDirectForm" = "フォーム";
+"settings.agents.mcpDirectURL" = "URL";
+"settings.agents.mcpDirectArgument" = "引数";
+"settings.agents.mcpDirectJSONHelp" = "接続設定、サーバー名で囲んだ設定、または mcpServers 形式の JSON を1件入力できます。名前付きの JSON では、そのサーバー名を使います。";
+"settings.agents.mcpDirectJSONInvalid" = "64 KiB 以下の MCP サーバー1件の JSON を入力してください。type、command、args、env、url、headers に対応しています。";
+"settings.agents.mcpDirectJSONNameMismatch" = "登録済みのサーバー名は変更できません。JSON のサーバー名を合わせてください。";
+"settings.agents.mcpDirectJSONTooLarge" = "JSON モードで扱える設定は64 KiBまでです。";

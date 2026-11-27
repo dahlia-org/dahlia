@@ -5,6 +5,7 @@ struct CodexChatMCPServersView: View {
     let onOpenSettings: () -> Void
 
     var body: some View {
+        let servers = settings.servers.filter { $0.direct?.isEnabled != false }
         VStack(alignment: .leading, spacing: 6) {
             Text(L10n.agentMCPs)
                 .font(.dahliaBody)
@@ -13,7 +14,7 @@ struct CodexChatMCPServersView: View {
                 .frame(height: CodexChatDesign.configurationRowHeight)
                 .padding(.horizontal, 10)
 
-            if settings.servers.isEmpty {
+            if servers.isEmpty {
                 Text(L10n.chatNoMCPServers)
                     .font(.dahliaBody)
                     .foregroundStyle(DahliaDesign.secondaryTextColor)
@@ -22,7 +23,7 @@ struct CodexChatMCPServersView: View {
             } else {
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 0) {
-                        ForEach(settings.servers) { server in
+                        ForEach(servers) { server in
                             HStack(spacing: 8) {
                                 AgentMCPServiceLogo.image(for: server.service)
                                     .resizable()
@@ -40,7 +41,7 @@ struct CodexChatMCPServersView: View {
                         }
                     }
                 }
-                .frame(idealHeight: min(CGFloat(settings.servers.count) * CodexChatDesign.configurationRowHeight, 220), maxHeight: 220)
+                .frame(idealHeight: min(CGFloat(servers.count) * CodexChatDesign.configurationRowHeight, 220), maxHeight: 220)
                 .scrollBounceBehavior(.basedOnSize)
             }
 

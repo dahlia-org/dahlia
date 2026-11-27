@@ -59,8 +59,8 @@ extension PiChatService {
         let account = AppAccount.key
         if method == "scheduledTool" {
             let name = payload.objectValue?["name"]?.stringValue ?? ""
-            return .bool(session.profile == .scheduled && name.hasPrefix("mcp__") && payload.objectValue?["readOnly"] == .bool(true) && session
-                .allowedTools.contains(name))
+            return .bool(session.profile == .scheduled && name.hasPrefix("mcp__") && payload.objectValue?["readOnly"] == .bool(true)
+                && mcpSettings().allowsScheduledTool(name, grants: session.allowedTools))
         }
         guard session.profile.allows(method) else { throw HermesLearning.failure("Tool unavailable for this execution profile.") }
         switch method {
@@ -89,6 +89,7 @@ extension PiChatService {
                       let approval = sessions[threadID]?.turn?.pendingSchedules.removeValue(forKey: id)
                 else { throw HermesLearning.failure("Schedule approval is no longer pending.") }
                 guard payload.objectValue?["approved"] == .bool(true) else { throw HermesLearning.failure("The schedule was not approved.") }
+                try mcpSettings().validateScheduledGrants(approval.tools)
                 if let existing = approval.existing {
                     guard try scheduleService().record(id: existing.id, account: account).revision == existing.revision
                     else { throw HermesLearning.failure("Schedule changed during approval. Review the new revision.") }
@@ -104,7 +105,8 @@ extension PiChatService {
                 try scheduleService().record(id: $0, account: account)
             }
             let needsApproval = action == "create" || action == "resume" || (action == "update" && existing?.enabled == true)
-            let tools = payload.objectValue?["_readOnlyTools"]?.arrayValue?.compactMap(\.stringValue) ?? []
+            let toolNames = payload.objectValue?["_readOnlyTools"]?.arrayValue?.compactMap(\.stringValue) ?? []
+            let tools = AgentMCPSettings.scheduledToolGrants(toolNames, connections: session.directConnections, servers: session.mcpServers)
             if needsApproval {
                 // The card displays the effective revision, including fields omitted from an update.
                 var effective = payload.objectValue ?? [:]
@@ -113,7 +115,7 @@ extension PiChatService {
                     effective = ["action": .string(action), "job_id": .string(existing.id), "name": .string(existing.name)]
                 }
                 effective.removeValue(forKey: "_readOnlyTools")
-                effective["approved_read_only_tools"] = .array(tools.sorted().map(JSONValue.string))
+                effective["approved_read_only_tools"] = .array(tools.filter { $0.hasPrefix("mcp__") }.sorted().map(JSONValue.string))
                 effective["prompt"] = effective["prompt"] ?? existing.map { .string($0.prompt) }
                 effective["schedule"] = effective["schedule"] ?? existing.map { .string($0.schedule) }
                 effective["skills"] = effective["skills"] ?? existing

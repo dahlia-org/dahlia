@@ -39,7 +39,8 @@
             #expect(models.objectValue?["providers"]?.objectValue?.keys.sorted() == [kept.id])
             #expect(try Data(contentsOf: root.appending(path: "auth.json")) == auth)
             let mcp = try JSONDecoder().decode(JSONValue.self, from: Data(contentsOf: root.appending(path: "mcp.json")))
-            #expect(mcp.objectValue?["mcpServers"]?.objectValue?.keys.sorted() == [kept.id])
+            #expect(mcp.objectValue?["mcpServers"]?.objectValue?.isEmpty == true)
+            #expect(saved.piServers.keys.sorted() == [kept.id])
 
             AgentMCPSettings.allowProviderAccount(removed.id, defaults: defaults)
             stale.save(defaults: defaults)

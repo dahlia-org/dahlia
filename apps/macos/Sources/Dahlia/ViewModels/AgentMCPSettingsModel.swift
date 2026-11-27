@@ -210,6 +210,34 @@ final class AgentMCPSettingsModel {
         settings.save(defaults: defaults)
     }
 
+    /// Servers configured directly over stdio or HTTP, in the order they were added.
+    var directServers: [AgentMCPServer] {
+        settings.servers.filter { $0.direct != nil }
+    }
+
+    /// Keeps the name on edit; a changed connection retires the registration's durable Source grants.
+    func saveDirectServer(name input: String, _ configuration: AgentMCPDirectConfiguration, replacing existing: AgentMCPServer? = nil) throws {
+        if let error = configuration.error { throw AgentMCPSettingsError(message: error) }
+        if let existing, let index = settings.servers.firstIndex(where: { $0.id == existing.id }) {
+            let current = settings.servers[index]
+            settings.servers[index] = AgentMCPServer(
+                id: current.direct?.piEntry == configuration.piEntry ? current.id : .v7(),
+                name: current.name, providerID: current.providerID, service: current.service, direct: configuration
+            )
+        } else {
+            let name = input.trimmingCharacters(in: .whitespacesAndNewlines)
+            if let error = settings.nameError(name) { throw AgentMCPSettingsError(message: error) }
+            settings.servers.append(AgentMCPServer(id: .v7(), name: name, providerID: nil, service: name, direct: configuration))
+        }
+        settings.save(defaults: defaults)
+    }
+
+    func setDirectServer(_ server: AgentMCPServer, enabled: Bool) {
+        guard var configuration = server.direct else { return }
+        configuration.isEnabled = enabled
+        try? saveDirectServer(name: server.name, configuration, replacing: server)
+    }
+
     func remove(_ server: AgentMCPServer) {
         settings.servers.removeAll { $0.id == server.id }
         // The account's own workspace stays only while it has servers; its sign-in is the account's, so nothing signs out.

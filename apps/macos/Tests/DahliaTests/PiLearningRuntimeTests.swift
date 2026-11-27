@@ -303,11 +303,18 @@
             let store = try store()
             let schedules = AgentScheduleService(dbQueue: store.dbQueue)
             let now = Date()
+            let connectors = AgentMCPSettings(servers: [
+                AgentMCPServer(id: .v7(), name: "approved", providerID: nil, service: "approved", direct: .init(command: "approved-mcp")),
+                AgentMCPServer(id: .v7(), name: "unrelated", providerID: nil, service: "unrelated", direct: .init(command: "unrelated-mcp")),
+                AgentMCPServer(id: .v7(), name: "mail", providerID: nil, service: "mail", direct: .init(command: "ambiguous-mcp")),
+                AgentMCPServer(id: .v7(), name: "mail__work", providerID: nil, service: "mail__work", direct: .init(command: "ambiguous-mcp")),
+            ])
             _ = try schedules.execute(
                 .object(["action": .string("create"), "schedule": .string("30m"), "prompt": .string("Read only")]),
                 account: "local",
                 approved: true,
-                tools: [],
+                tools: AgentMCPSettings.scheduledToolGrants(["mcp__approved__read"], connections: connectors.directConnectionIDs, servers: connectors.scheduledServers)
+                    + ["mcp__mail__work__read"] + ["mail", "mail__work"].compactMap { connectors.directConnectionIDs[$0].map { "connection|mcp__mail__work__read|\($0)" } },
                 now: now
             )
             try schedules.tick(account: "local", now: now.addingTimeInterval(1801))
@@ -319,7 +326,7 @@
                 workingDirectory: PiWorkingDirectory(override: pi.rootURL.appending(path: "work")),
                 agentLocator: PiAgentDirectoryLocator(applicationSupportURL: pi.rootURL),
                 mcpExecutableURL: URL(filePath: "/usr/bin/true"),
-                mcpSettings: { AgentMCPSettings() },
+                mcpSettings: { connectors },
                 fileAccessSettings: { .init() }
             )
             await chat.scheduleRuns(accountID: "local")
@@ -330,6 +337,8 @@
             #expect(try await chat.loadThread(id: row.threadID).isReadOnly)
             let launch = try #require(pi.launches.all.first { $0.mode == .chat })
             #expect(launch.profile == .scheduled && launch.arguments.contains("--no-session"))
+            let configuration = try #require(launch.environment["DAHLIA_PI_MCP_CONFIG"])
+            #expect(configuration.contains("approved-mcp") && !configuration.contains("unrelated-mcp") && !configuration.contains("ambiguous-mcp"))
             #expect(!launch.arguments.contains("--session") && !launch.arguments.contains("--session-id"))
             #expect(try schedules.unread(thread: row.threadID, account: "local") == (scenario != "silentOnly"))
             let firstSummary = try #require(store.listThreads(accountID: "local", cursor: nil).threads.first { $0.id == row.threadID })

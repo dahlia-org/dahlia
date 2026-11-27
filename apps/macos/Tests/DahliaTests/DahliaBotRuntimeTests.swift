@@ -195,6 +195,7 @@
                         + ["read", "ls", "write", "edit", "mcp__dahlia__*"]
                 ))
                 #expect(launch.environment["DAHLIA_PI_MCP_SERVERS"] == #"["dahlia"]"#)
+                #expect(launch.environment["DAHLIA_PI_MCP_CONFIG"] == "{}")
                 #expect(launch.environment["DAHLIA_PI_MEMORY_ENABLED"] == "0" && launch.environment["DAHLIA_PI_WEB_ACCESS"]?.isEmpty == true)
                 let system = try #require(launch.arguments.firstIndex(of: "--system-prompt").map { launch.arguments[$0 + 1] })
                 #expect(system == PiChatService.botSystemPrompt(name: "Super Agent"))

@@ -66,7 +66,11 @@ import os
         ) throws -> (AgentMCPSettingsModel, UserDefaults) {
             let defaults = try #require(UserDefaults(suiteName: "AgentMCPSettingsModelTests.\(UUID())"))
             settings.save(defaults: defaults)
-            let model = AgentMCPSettingsModel(service: pi.service, urlOpener: urlOpener, defaults: defaults, signInWorkspace: signInWorkspace
+            let model = AgentMCPSettingsModel(
+                service: pi.service,
+                urlOpener: urlOpener,
+                defaults: defaults,
+                signInWorkspace: signInWorkspace
             )
             return (model, defaults)
         }
@@ -387,6 +391,40 @@ import os
         }
 
         @Test
+        func newServerNamesCannotRepeatUnderscores() {
+            // `mcp__mail__work__read` would match both `mail` and `mail__work`.
+            let settings = AgentMCPSettings()
+            #expect(settings.nameError("mail__work") != nil)
+            #expect(settings.nameError("mail_work") == nil)
+            #expect(settings.defaultName(for: "main.default.foo__-bar") == "foo_bar")
+            #expect(settings.defaultName(for: "main.default.foo-", taken: ["foo_"]) == "foo_2")
+            #expect(settings.defaultName(for: "main.default.-", taken: ["_"]) == "_2")
+        }
+
+        @Test(arguments: ["mail__work", "mail_"], [false, true])
+        func scheduledToolsRejectOverlappingServerNames(other: String, gateway: Bool) throws {
+            let provider = try AgentMCPProvider(workspaceURL: #require(URL(string: "https://example.com")))
+            let settings = AgentMCPSettings(providers: [provider], servers: [
+                .init(id: .v7(), name: "mail", providerID: nil, service: "mail", direct: .init(command: "mail-mcp")),
+                .init(
+                    id: .v7(),
+                    name: other,
+                    providerID: gateway ? provider.id : nil,
+                    service: other,
+                    direct: gateway ? nil : .init(command: "work-mcp")
+                ),
+            ])
+            let tool = "mcp__\(other)__read"
+            let grants = AgentMCPSettings.scheduledToolGrants([tool], connections: settings.directConnectionIDs, servers: settings.scheduledServers)
+            #expect(grants.isEmpty)
+            #expect(AgentMCPSettings.scheduledServer(for: tool, servers: settings.scheduledServers) == nil)
+            let stale = Set([tool] + settings.directConnectionIDs.values.map { "connection|\(tool)|\($0)" })
+            #expect(!settings.allowsScheduledTool(tool, grants: stale))
+            #expect(AgentMCPSettings.scheduledServer(for: "mcp__mail__write", servers: settings.scheduledServers) == "mail")
+            #expect(settings.piServers.count == 2) // Legacy registration data is retained.
+        }
+
+        @Test
         func webWorkerNamespaceCannotBeOverriddenByConfiguredServices() throws {
             let provider = try AgentMCPProvider(workspaceURL: #require(URL(string: "https://example.cloud.databricks.com")))
             var settings = AgentMCPSettings()
@@ -461,7 +499,8 @@ import os
             #expect(provider.workspaceURL == URL(string: "https://account.cloud.databricks.com"))
             // Listing takes the account's bridged sign-in; nothing signs in.
             _ = try await model.services(of: provider)
-            #expect(commands.withLock { $0 } == ["/databricks-mcp-services https://account.cloud.databricks.com --provider account.cloud.databricks.com"])
+            #expect(commands
+                .withLock { $0 } == ["/databricks-mcp-services https://account.cloud.databricks.com --provider account.cloud.databricks.com"])
 
             try model.addServers(["system.ai.slack": "slack"], to: provider)
             #expect(AgentMCPSettings.load(defaults: defaults).piServers["slack"] == .object([
@@ -473,6 +512,212 @@ import os
             try model.remove(#require(model.settings.servers.first))
             #expect(model.settings == AgentMCPSettings())
             #expect(commands.withLock { $0 }.count == 1)
+        }
+
+        @Test
+        func aDirectServerIsWrittenAsItsStdioOrHTTPEntryWhileOn() throws {
+            let (model, defaults) = try Self.model(Self.runtime(commands: OSAllocatedUnfairLock(initialState: [])))
+            let script = #"eval "$(/usr/libexec/path_helper -s)"; exec dbexec repo run mcp start-single slack"#
+            // Empty rows are skipped; a value keeps its spaces and `=`.
+            let env = try #require(AgentMCPDirectConfiguration.pairs([("DBEXEC_NO_CERT_REFRESH", "1"), ("", ""), (" A ", "b = c")]))
+            #expect(env == ["DBEXEC_NO_CERT_REFRESH": "1", "A": "b = c"])
+            #expect(AgentMCPDirectConfiguration.pairs([("", "value")]) == nil)
+            #expect(AgentMCPDirectConfiguration.pairs([("A", "1"), ("A", "2")]) == nil)
+
+            try model.saveDirectServer(name: "slack", .init(command: "/bin/bash", args: ["-c", script], env: env))
+            try model.saveDirectServer(name: "docs", .init(transport: .http, url: "https://example.com/mcp", headers: ["X-Key": "${KEY}"]))
+            let servers = AgentMCPSettings.load(defaults: defaults).piServers
+            #expect(servers["slack"] == .object([
+                "command": .string("/bin/bash"), "args": .array([.string("-c"), .string(script)]), "exposure": .string("direct"),
+                "env": .object(["DBEXEC_NO_CERT_REFRESH": .string("1"), "A": .string("b = c")]),
+            ]))
+            #expect(servers["docs"] == .object([
+                "url": .string("https://example.com/mcp"), "headers": .object(["X-Key": .string("${KEY}")]), "exposure": .string("direct"),
+            ]))
+            // A name is unique across gateway and direct servers, and an entry Pi cannot start is not saved.
+            #expect(throws: AgentMCPSettingsError.self) { try model.saveDirectServer(name: "slack", .init(command: "x")) }
+            #expect(throws: AgentMCPSettingsError.self) { try model.saveDirectServer(name: "other", .init(transport: .http, url: "file:///x")) }
+            #expect(throws: AgentMCPSettingsError.self) { try model.saveDirectServer(name: "other", .init()) }
+
+            // Off keeps the configuration but leaves mcp.json and grants; on brings both back.
+            let slack = try #require(model.directServers.first)
+            let grant = try #require(model.settings.connectionID(for: "slack"))
+            model.setDirectServer(slack, enabled: false)
+            #expect(model.settings.piServers["slack"] == nil && model.settings.connectionID(for: "slack") == nil)
+            model.setDirectServer(slack, enabled: true)
+            #expect(model.settings.connectionID(for: "slack") == grant)
+            model.remove(slack)
+            #expect(model.directServers.map(\.name) == ["docs"])
+        }
+
+        @Test
+        func editingADirectConnectionRetiresItsSourceGrant() throws {
+            let (model, defaults) = try Self.model(Self.runtime(commands: OSAllocatedUnfairLock(initialState: [])))
+            let configurations: [AgentMCPDirectConfiguration] = [
+                .init(command: "mcp", args: ["a b"], env: ["DATABASE_URL": "first"]),
+                .init(command: "mcp", args: ["a b"], env: ["DATABASE_URL": "second"]),
+                .init(command: "mcp", args: ["a", "b"], env: ["DATABASE_URL": "second"]),
+                .init(transport: .http, url: "https://example.com/mcp", headers: ["X-Tenant": "first"]),
+                .init(transport: .http, url: "https://example.com/mcp", headers: ["X-Tenant": "second"]),
+            ]
+            try model.saveDirectServer(name: "direct", configurations[0])
+            for configuration in configurations.dropFirst() {
+                let previous = try #require(model.directServers.first)
+                let grant = try #require(model.settings.connectionID(for: previous.name))
+                try model.saveDirectServer(name: previous.name, configuration, replacing: previous)
+                let saved = AgentMCPSettings.load(defaults: defaults)
+                #expect(saved.connectionID(for: previous.name) != grant)
+                #expect(saved.serverName(for: grant) == nil)
+
+                let current = try #require(model.directServers.first)
+                let currentGrant = saved.connectionID(for: current.name)
+                try model.saveDirectServer(name: current.name, configuration, replacing: current)
+                #expect(model.settings.connectionID(for: current.name) == currentGrant)
+            }
+        }
+
+        @Test
+        func directDraftParsesOnlyItsSelectedTransport() throws {
+            let http = try AgentMCPDirectConfiguration.parse(
+                transport: .http, command: "", arguments: [], environment: [("", "unfinished")], url: "https://example.com/mcp", headers: [(
+                    "X-Key",
+                    "value"
+                )]
+            )
+            #expect(http.error == nil && http.env.isEmpty && http.headers == ["X-Key": "value"])
+            let stdio = try AgentMCPDirectConfiguration.parse(
+                transport: .stdio, command: "/bin/bash", arguments: ["-c", "echo 'a b'"], environment: [("KEY", "value")], url: "", headers: [(
+                    "",
+                    "unfinished"
+                )]
+            )
+            #expect(stdio.error == nil && stdio.args == ["-c", "echo 'a b'"] && stdio.headers.isEmpty)
+            #expect(throws: AgentMCPSettingsError.self) {
+                try AgentMCPDirectConfiguration.parse(
+                    transport: .stdio, command: "mcp", arguments: [], environment: [("", "unfinished")], url: "", headers: []
+                )
+            }
+            #expect(throws: AgentMCPSettingsError.self) {
+                try AgentMCPDirectConfiguration.parse(
+                    transport: .http, command: "", arguments: [], environment: [], url: "https://example.com", headers: [("", "unfinished")]
+                )
+            }
+            for url in ["https:", "http:/mcp", "https:///", "file:///mcp"] {
+                #expect(AgentMCPDirectConfiguration(transport: .http, url: url).error != nil)
+            }
+        }
+
+        @Test
+        func directJSONPreservesArgumentBoundariesAndConnectionFields() throws {
+            let stdio = AgentMCPDirectConfiguration(command: "/bin/bash", args: ["-c", "a b", "", "first\nsecond"], env: ["KEY": "${VALUE}"])
+            let http = AgentMCPDirectConfiguration(
+                transport: .http,
+                url: "https://example.com:65535/mcp",
+                headers: ["Authorization": "Bearer ${TOKEN}"]
+            )
+            for configuration in [stdio, http] {
+                let json = try configuration.jsonString()
+                let plain = try AgentMCPDirectConfiguration.parseJSON(json)
+                #expect(plain.name == nil && plain.configuration == configuration)
+                for name in ["slack", "command", "url", "type"] {
+                    for wrapped in ["{\"\(name)\":\(json)}", "{\"mcpServers\":{\"\(name)\":\(json)}}"] {
+                        let parsed = try AgentMCPDirectConfiguration.parseJSON(wrapped)
+                        #expect(parsed.name == name && parsed.configuration == configuration)
+                    }
+                }
+            }
+            let draft = try AgentMCPDirectConfiguration.parse(
+                transport: .stdio, command: "mcp", arguments: stdio.args, environment: [], url: "", headers: []
+            )
+            #expect(draft.args == stdio.args)
+            #expect(try AgentMCPDirectConfiguration.parseJSON(#"{"command":"mcp"}"#).configuration.transport == .stdio)
+            #expect(try AgentMCPDirectConfiguration.parseJSON(#"{"url":"https://example.com"}"#).configuration.transport == .http)
+        }
+
+        @Test(arguments: [
+            "[]", "{}", #"{"a":{"command":"a"},"b":{"command":"b"}}"#,
+            #"{"mcpServers":{},"extra":true}"#, #"{"command":"mcp","args":"-c"}"#,
+            #"{"command":"mcp","env":{"KEY":1}}"#, #"{"type":"sse","url":"https://example.com"}"#,
+            #"{"command":"mcp","headers":{}}"#, #"{"url":"https://example.com","args":[]}"#,
+            #"{"command":"mcp","auth":{}}"#, #"{"type":"stdio"}"#,
+            #"{"command":"mcp","env":{"":"value"}}"#,
+            #"{"url":"https://example.com","headers":{"X-Key":"a"," X-Key ":"b"}}"#,
+            String(repeating: " ", count: 65537),
+        ])
+        func invalidDirectJSONIsRejected(_ json: String) {
+            #expect(throws: AgentMCPSettingsError.self) { try AgentMCPDirectConfiguration.parseJSON(json) }
+        }
+
+        @Test
+        func generatedDirectJSONFitsTheImportBudget() throws {
+            let empty = AgentMCPDirectConfiguration(command: "mcp", args: [""])
+            let argumentBytes = try 65536 - (empty.jsonString().utf8.count)
+            let boundary = AgentMCPDirectConfiguration(command: "mcp", args: [String(repeating: "a", count: argumentBytes)])
+            let json = try boundary.jsonString()
+            #expect(json.utf8.count == 65536)
+            #expect(try AgentMCPDirectConfiguration.parseJSON(json).configuration == boundary)
+            for argument in [
+                String(repeating: "a", count: argumentBytes + 1),
+                String(repeating: "あ", count: argumentBytes / 3 + 1),
+                String(repeating: "\n", count: argumentBytes / 2 + 1),
+            ] {
+                let oversized = AgentMCPDirectConfiguration(command: "mcp", args: [argument])
+                #expect(throws: AgentMCPSettingsError.self) { try oversized.jsonString() }
+            }
+        }
+
+        @Test
+        func incompleteDirectJSONCanReturnToFormButCannotBeSaved() throws {
+            let (model, _) = try Self.model(Self.runtime(commands: OSAllocatedUnfairLock(initialState: [])))
+            for draft in [AgentMCPDirectConfiguration(), .init(transport: .http), .init(transport: .http, url: "https://example.com:99999")] {
+                let parsed = try AgentMCPDirectConfiguration.parseJSON(draft.jsonString())
+                #expect(parsed.configuration == draft)
+                #expect(throws: AgentMCPSettingsError.self) { try model.saveDirectServer(name: "draft", parsed.configuration) }
+            }
+            #expect(model.directServers.isEmpty)
+        }
+
+        @Test(arguments: ["65536", "99999", "-1", "invalid"])
+        func directHTTPRejectsInvalidPorts(_ port: String) {
+            #expect(AgentMCPDirectConfiguration(transport: .http, url: "https://example.com:\(port)/mcp").error != nil)
+        }
+
+        @Test(arguments: ["0", "443", "65535"])
+        func directHTTPAcceptsValidPorts(_ port: String) {
+            #expect(AgentMCPDirectConfiguration(transport: .http, url: "https://example.com:\(port)/mcp").error == nil)
+        }
+
+        @Test
+        func scheduledDirectToolsRequireTheirApprovedConnection() throws {
+            let (model, _) = try Self.model(Self.runtime(commands: OSAllocatedUnfairLock(initialState: [])))
+            try model.saveDirectServer(name: "mail", .init(command: "mcp", env: ["TENANT": "first"]))
+            let name = "mcp__mail__read"
+            let grants = Set(AgentMCPSettings.scheduledToolGrants(
+                [name, "mcp__dahlia__get_meeting"],
+                connections: model.settings.directConnectionIDs,
+                servers: model.settings.scheduledServers
+            ))
+            #expect(model.settings.allowsScheduledTool(name, grants: grants))
+            #expect(!model.settings.allowsScheduledTool(name, grants: [name]))
+            #expect(model.settings.allowsScheduledTool("mcp__dahlia__get_meeting", grants: grants))
+            let server = try #require(model.directServers.first)
+            model.setDirectServer(server, enabled: false)
+            #expect(!model.settings.allowsScheduledTool(name, grants: grants))
+            model.setDirectServer(server, enabled: true)
+            #expect(model.settings.allowsScheduledTool(name, grants: grants))
+            try model.saveDirectServer(name: "mail", .init(command: "mcp", env: ["TENANT": "second"]), replacing: server)
+            #expect(!model.settings.allowsScheduledTool(name, grants: grants))
+            let edited = try #require(model.directServers.first)
+            let renewed = Set(AgentMCPSettings.scheduledToolGrants(
+                [name],
+                connections: model.settings.directConnectionIDs,
+                servers: model.settings.scheduledServers
+            ))
+            #expect(model.settings.allowsScheduledTool(name, grants: renewed))
+            model.remove(edited)
+            #expect(!model.settings.allowsScheduledTool(name, grants: renewed))
+            try model.saveDirectServer(name: "mail", .init(command: "mcp", env: ["TENANT": "second"]))
+            #expect(!model.settings.allowsScheduledTool(name, grants: renewed))
         }
 
         @Test

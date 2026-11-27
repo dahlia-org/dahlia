@@ -4,6 +4,8 @@ import SwiftUI
 struct AgentMCPSettingsView: View {
     let model: AgentMCPSettingsModel
     let onAdd: (AgentMCPProvider) -> Void
+    /// Opens the direct server modal: nil adds one, a server edits it.
+    let onEditDirect: (AgentMCPServer?) -> Void
     @State private var collapsedProviderIDs: Set<String> = []
     @State private var query = ""
     @State private var serviceSignIn: (service: String, task: Task<Void, Never>)?
@@ -16,6 +18,21 @@ struct AgentMCPSettingsView: View {
                 TextField(L10n.mcpSearchPrompt, text: $query, prompt: Text(L10n.mcpSearchPrompt))
                     .textFieldStyle(.roundedBorder)
                     .accessibilityLabel(L10n.mcpSearchPrompt)
+                DisclosureGroup(isExpanded: expansion(ofID: Self.directSectionID)) {
+                    directServers.padding(.top, 12)
+                } label: {
+                    HStack(spacing: 8) {
+                        Image(systemName: "terminal").frame(width: 16, height: 16).accessibilityHidden(true)
+                        Text(L10n.mcpDirectSection).font(.dahliaHeadline)
+                        Spacer()
+                        Text(L10n.agentEnabledCount(model.directServers.count { $0.direct?.isEnabled == true }))
+                            .font(.dahliaSecondary)
+                            .foregroundStyle(.secondary)
+                    }
+                    .contentShape(.rect)
+                    .onTapGesture { expansion(ofID: Self.directSectionID).wrappedValue.toggle() }
+                    .accessibilityAddTraits(.isButton)
+                }
                 ForEach(model.selectableProviders) { provider in
                     DisclosureGroup(isExpanded: expansion(of: provider)) {
                         services(of: provider)
@@ -56,6 +73,38 @@ struct AgentMCPSettingsView: View {
         .onDisappear {
             serviceSignIn?.task.cancel()
             listings.values.forEach { $0.cancel() }
+        }
+    }
+
+    private static let directSectionID = "direct"
+
+    private var directServers: some View {
+        LazyVGrid(columns: columns, alignment: .leading, spacing: 12) {
+            ForEach(model.directServers.filter { matchesQuery($0.name, comment: $0.direct?.endpoint) }) { server in
+                AgentMCPServiceCard(
+                    name: server.name, comment: server.direct?.endpoint ?? "",
+                    icon: AgentMCPServiceLogo.image(for: server.name),
+                    isEnabled: Binding { server.direct?.isEnabled == true } set: { model.setDirectServer(server, enabled: $0) }
+                ) {
+                    Button(L10n.edit, systemImage: "pencil") { onEditDirect(server) }
+                        .labelStyle(.iconOnly)
+                        .help(L10n.edit)
+                        .buttonStyle(AgentMCPIconButtonStyle())
+                }
+                .help(server.direct?.endpoint ?? server.name)
+            }
+            Button { onEditDirect(nil) } label: {
+                VStack(alignment: .leading, spacing: 12) {
+                    Label(L10n.mcpAddService, systemImage: "plus").font(.dahliaHeadline)
+                    Text(L10n.mcpDirectAddHelp).foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Spacer(minLength: 0)
+                }
+                .padding(16)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                .contentShape(.rect)
+            }
+            .buttonStyle(.dahlia(cornerRadius: DahliaDesign.Card.regularCornerRadius))
         }
     }
 
@@ -153,10 +202,14 @@ struct AgentMCPSettingsView: View {
 
     /// Lists open until closed, so the switches show without a click.
     private func expansion(of provider: AgentMCPProvider) -> Binding<Bool> {
+        expansion(ofID: provider.id)
+    }
+
+    private func expansion(ofID id: String) -> Binding<Bool> {
         Binding {
-            !collapsedProviderIDs.contains(provider.id)
+            !collapsedProviderIDs.contains(id)
         } set: { isExpanded in
-            if isExpanded { collapsedProviderIDs.remove(provider.id) } else { collapsedProviderIDs.insert(provider.id) }
+            if isExpanded { collapsedProviderIDs.remove(id) } else { collapsedProviderIDs.insert(id) }
         }
     }
 

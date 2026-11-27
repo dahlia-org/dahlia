@@ -8,8 +8,10 @@ struct AgentMCPServer: Codable, Hashable, Identifiable, Sendable {
     var name: String
     /// The sign-in the server uses. Optional for compatibility with retired local tools.
     let providerID: String?
-    /// The fully qualified Unity AI Gateway service name.
+    /// The fully qualified Unity AI Gateway service name; a directly configured server's own name.
     let service: String
+    /// A server configured directly over stdio or HTTP, with no provider.
+    var direct: AgentMCPDirectConfiguration?
 
     /// The service's last name part as Settings shows it: `Google Calendar` for `system.ai.google_calendar`.
     static func displayName(for service: String) -> String {
@@ -64,7 +66,82 @@ struct AgentMCPProvider: Codable, Hashable, Identifiable, Sendable {
     }
 }
 
-/// The MCP servers registered for one account, kept in app defaults. Credentials are not stored here.
+/// A directly configured MCP server, as other MCP clients' `mcpServers` entries: a stdio command or a streamable HTTP URL.
+struct AgentMCPDirectConfiguration: Codable, Hashable, Sendable {
+    enum Transport: String, Codable, CaseIterable, Sendable {
+        case stdio, http
+    }
+
+    var transport: Transport = .stdio
+    var isEnabled = true
+    var command = ""
+    var args: [String] = []
+    var env: [String: String] = [:]
+    var url = ""
+    var headers: [String: String] = [:]
+
+    /// The command or URL displayed in Settings.
+    var endpoint: String {
+        transport == .stdio ? ([command] + args).joined(separator: " ") : url
+    }
+
+    /// Why Pi could not start the server, or nil.
+    var error: String? {
+        switch transport {
+        case .stdio:
+            return command.trimmingCharacters(in: .whitespaces).isEmpty ? L10n.mcpDirectCommandRequired : nil
+        case .http:
+            if let endpoint = URL(string: url), let scheme = endpoint.scheme,
+               ["http", "https"].contains(scheme.lowercased()), endpoint.host()?.isEmpty == false,
+               endpoint.port.map({ (0 ... 65535).contains($0) }) ?? true { return nil }
+            return L10n.mcpDirectURLInvalid
+        }
+    }
+
+    static func parse(
+        transport: Transport, command: String, arguments: [String], environment: [Pair], url: String, headers: [Pair]
+    ) throws -> Self {
+        guard let env = transport == .stdio ? pairs(environment) : [:],
+              let headers = transport == .http ? pairs(headers) : [:]
+        else { throw AgentMCPSettingsError(message: L10n.mcpDirectPairsInvalid) }
+        return Self(
+            transport: transport, command: command.trimmingCharacters(in: .whitespaces),
+            args: arguments, env: env,
+            url: url.trimmingCharacters(in: .whitespaces), headers: headers
+        )
+    }
+
+    /// The `mcp.json` entry. Pi resolves `${VAR}` in `env` and `headers` from the chat's environment.
+    var piEntry: JSONValue {
+        var entry: [String: JSONValue] = ["exposure": .string("direct")]
+        switch transport {
+        case .stdio:
+            entry["command"] = .string(command)
+            entry["args"] = .array(args.map(JSONValue.string))
+            if !env.isEmpty { entry["env"] = .object(env.mapValues(JSONValue.string)) }
+        case .http:
+            entry["url"] = .string(url)
+            if !headers.isEmpty { entry["headers"] = .object(headers.mapValues(JSONValue.string)) }
+        }
+        return .object(entry)
+    }
+
+    typealias Pair = (key: String, value: String)
+
+    /// Key and value rows as a dictionary, skipping empty rows, or nil when a row has no key or repeats one.
+    static func pairs(_ rows: [Pair]) -> [String: String]? {
+        var pairs: [String: String] = [:]
+        for row in rows {
+            let key = row.key.trimmingCharacters(in: .whitespaces)
+            if key.isEmpty, row.value.isEmpty { continue }
+            guard !key.isEmpty, pairs.updateValue(row.value, forKey: key) == nil else { return nil }
+        }
+        return pairs
+    }
+}
+
+/// The MCP servers registered for one account, kept in app defaults. Gateway credentials are not stored here;
+/// a directly configured server keeps its `env` and `headers` as entered (`${VAR}` keeps a secret out).
 struct AgentMCPSettings: Codable, Equatable, Sendable {
     private static let removedProvidersKey = "agentMCPs.removedProviderAccounts"
     var providers: [AgentMCPProvider] = []
@@ -83,7 +160,7 @@ struct AgentMCPSettings: Codable, Equatable, Sendable {
 
     static func load(defaults: UserDefaults = .standard) -> Self {
         var settings = defaults.data(forKey: defaultsKey()).flatMap { try? JSONDecoder().decode(Self.self, from: $0) } ?? Self()
-        settings.servers.removeAll { $0.providerID == nil && $0.service == "lightpanda" }
+        settings.servers.removeAll { $0.providerID == nil && $0.direct == nil && $0.service == "lightpanda" }
         if settings.manualServices == nil {
             let manual = (settings.listedServices ?? [:]).mapValues { $0.filter { !$0.hasPrefix("system.ai.") } }
                 .filter { !$0.value.isEmpty }
@@ -110,7 +187,7 @@ struct AgentMCPSettings: Codable, Equatable, Sendable {
         settings.save(defaults: defaults)
         guard FileManager.default.fileExists(atPath: agentURL.path) else { return }
         try PiProviderConfiguration.updateProviders(agentURL: agentURL) { $0[id] = nil }
-        try PiProviderConfiguration.writeMCPServers(settings.piServers, agentURL: agentURL)
+        try PiProviderConfiguration.writeMCPServers([:], agentURL: agentURL)
     }
 
     /// An explicitly added service may use the host again after it has been connected as an app provider account.
@@ -135,7 +212,9 @@ struct AgentMCPSettings: Codable, Equatable, Sendable {
 
     /// Durable grants bind the registration and endpoint, never its reusable tool-name prefix.
     func connectionID(for name: String) -> String? {
-        guard let server = servers.first(where: { $0.name == name }), let providerID = server.providerID,
+        guard let server = servers.first(where: { $0.name == name }) else { return nil }
+        if let direct = server.direct { return direct.isEnabled ? "\(server.id.uuidString)|direct" : nil }
+        guard let providerID = server.providerID,
               let provider = provider(id: providerID) else { return nil }
         return "\(server.id.uuidString)|\(providerID)|\(server.url(workspaceURL: provider.workspaceURL).absoluteString)"
     }
@@ -144,9 +223,48 @@ struct AgentMCPSettings: Codable, Equatable, Sendable {
         servers.first { self.connectionID(for: $0.name) == connectionID }?.name
     }
 
+    var directConnectionIDs: [String: String] {
+        servers.reduce(into: [:]) { result, server in
+            if server.direct != nil { result[server.name] = connectionID(for: server.name) }
+        }
+    }
+
+    var scheduledServers: Set<String> { Set(piServers.keys).union(["dahlia"]) }
+
+    /// Legacy names can overlap tool prefixes. Refuse ambiguity rather than start an unapproved server.
+    static func scheduledServer(for tool: String, servers: Set<String>) -> String? {
+        let matches = servers.filter { tool.hasPrefix("mcp__\($0)__") }
+        return matches.count == 1 ? matches.first : nil
+    }
+
+    /// Identity tokens stay alongside tool names in the existing schedule grant array.
+    static func scheduledToolGrants(_ tools: [String], connections: [String: String], servers: Set<String>) -> [String] {
+        let tools = tools.filter { scheduledServer(for: $0, servers: servers) != nil }
+        return tools + tools.compactMap { tool in
+            guard let server = scheduledServer(for: tool, servers: servers), let identity = connections[server] else { return nil }
+            return "connection|\(tool)|\(identity)"
+        }
+    }
+
+    func allowsScheduledTool(_ tool: String, grants: Set<String>) -> Bool {
+        guard grants.contains(tool), Self.scheduledServer(for: tool, servers: scheduledServers) != nil else { return false }
+        let prefix = "connection|\(tool)|"
+        let approved = Set(grants.filter { $0.hasPrefix(prefix) })
+        let expected = Set(Self.scheduledToolGrants([tool], connections: directConnectionIDs, servers: scheduledServers)
+            .filter { $0.hasPrefix(prefix) })
+        return approved == expected
+    }
+
+    func validateScheduledGrants(_ tools: [String]) throws {
+        let grants = Set(tools)
+        guard tools.filter({ $0.hasPrefix("mcp__") }).allSatisfy({ allowsScheduledTool($0, grants: grants) })
+        else { throw HermesLearning.failure(L10n.mcpDirectConnectionChanged) }
+    }
+
     /// Why `name` cannot name a new server, or nil. Internal server names cannot be overridden by gateway services.
     func nameError(_ name: String) -> String? {
-        guard name.count <= 40, name.wholeMatch(of: /[a-z0-9_]+/) != nil else { return L10n.mcpServerNameInvalid }
+        // `__` would make `mcp__a__b__c` match both servers `a` and `a__b`, so a scheduled run could start both.
+        guard name.count <= 40, name.wholeMatch(of: /[a-z0-9_]+/) != nil, !name.contains("__") else { return L10n.mcpServerNameInvalid }
         guard name != "dahlia", name != AgentWebAccessSettings.serverName,
               !servers.contains(where: { $0.name == name }) else { return L10n.mcpServerNameTaken }
         return nil
@@ -156,20 +274,27 @@ struct AgentMCPSettings: Codable, Equatable, Sendable {
     /// or one of `taken` already has it.
     func defaultName(for service: String, taken: Set<String> = []) -> String {
         let last = service.split(separator: ".").last.map(String.init) ?? service
-        let base = String(last.lowercased().map { $0.isASCII && ($0.isLetter || $0.isNumber) ? $0 : "_" }.prefix(36)).nilIfBlank ?? "mcp"
+        let safe = String(last.lowercased().map { $0.isASCII && ($0.isLetter || $0.isNumber) ? $0 : "_" })
+            .replacing(/_{2,}/, with: "_")
+        let base = String(safe.prefix(36)).nilIfBlank ?? "mcp"
         var name = base
         var number = 2
         while nameError(name) != nil || taken.contains(name) {
-            name = "\(base)_\(number)"
+            name = base + (base.hasSuffix("_") ? "" : "_") + String(number)
             number += 1
         }
         return name
     }
 
-    /// `mcp.json` entries keyed by server name. Gateway servers use `auth.provider`.
+    /// `mcp.json` entries keyed by server name. Gateway servers use `auth.provider`; a direct server's stdio command runs
+    /// as Pi's child, outside the chat's Seatbelt, like Dahlia MCP.
     var piServers: [String: JSONValue] {
         servers.reduce(into: [:]) { entries, server in
             guard server.name != AgentWebAccessSettings.serverName else { return }
+            if let direct = server.direct {
+                if direct.isEnabled { entries[server.name] = direct.piEntry }
+                return
+            }
             guard let providerID = server.providerID, let provider = provider(id: providerID) else { return }
             entries[server.name] = .object([
                 "url": .string(server.url(workspaceURL: provider.workspaceURL).absoluteString),
