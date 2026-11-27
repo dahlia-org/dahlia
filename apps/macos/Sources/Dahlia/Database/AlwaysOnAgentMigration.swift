@@ -17,6 +17,7 @@ enum AlwaysOnAgentMigration {
             avatar TEXT NOT NULL, color TEXT NOT NULL,
             threadID TEXT UNIQUE REFERENCES chat_threads(id) ON DELETE SET NULL,
             intakeModel TEXT, intakeEffort TEXT, unattendedModel TEXT, unattendedEffort TEXT,
+            smartRouting BOOLEAN NOT NULL DEFAULT 0,
             createdAt DATETIME NOT NULL, updatedAt DATETIME NOT NULL
         );
         -- Not a foreign key: a thread stays its agent's, read-only, after the agent is deleted.

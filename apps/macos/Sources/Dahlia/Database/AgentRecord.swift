@@ -23,6 +23,8 @@ struct AgentRecord: Codable, FetchableRecord, PersistableRecord, Identifiable, S
     /// The model of its turns that start without the user (event notices, results of its tasks); unset, its conversation's.
     var unattendedModel: String?
     var unattendedEffort: String?
+    /// Whether it picks each launched thread's model and effort from the task (`PiChatService.smartRoutingPrompt`).
+    var smartRouting = false
     var createdAt: Date
     var updatedAt: Date
 

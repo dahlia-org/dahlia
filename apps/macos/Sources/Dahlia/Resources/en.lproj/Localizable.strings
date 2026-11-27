@@ -2030,12 +2030,14 @@
 "settings.agents.alwaysOn.botAccepted" = "Go ahead";
 "settings.agents.alwaysOn.botSeen" = "Done";
 "settings.agents.alwaysOn.botGuidancePlaceholder" = "For example: who comes first, tone, what never to do, quiet hours";
-"settings.agents.alwaysOn.botModels" = "Models";
+"settings.agents.alwaysOn.botWorkers" = "Workers";
 "settings.agents.alwaysOn.botEffort" = "Reasoning Effort";
-"settings.agents.alwaysOn.botIntakeModel" = "Intake";
+"settings.agents.alwaysOn.botIntakeModel" = "Intake Model";
 "settings.agents.alwaysOn.botIntakeModelHelp" = "The model that reads event sources and records events.";
 "settings.agents.alwaysOn.botUnattendedModel" = "Unattended Runs";
 "settings.agents.alwaysOn.botUnattendedModelHelp" = "The model this agent uses when it runs without your input, such as for event notices and task results. Your conversation keeps its own model.";
+"settings.agents.alwaysOn.botSmartRouting" = "Smart Routing";
+"settings.agents.alwaysOn.botSmartRoutingHelp" = "The agent picks the model and effort of each thread it launches from how hard the task is: a lighter model for simple work, a stronger one for hard work. A model or effort you name in the conversation or in SOUL.md comes first. Changes apply from the agent's next start.";
 "settings.agents.alwaysOn.botModelDefault" = "Default Model";
 "settings.agents.alwaysOn.botModelConversation" = "Same as Conversation";
 "settings.agents.alwaysOn.botSoul" = "Soul";

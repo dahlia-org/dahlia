@@ -570,7 +570,8 @@
 
             /// A thread Super Agent launches is a Task in the history; the task it delegates is a helper in its home, in no
             /// sidebar, with only its reading tools.
-            @Test func superAgentLaunchesTasksAndDelegatesHelpers() async throws {
+            @Test(arguments: [false, true])
+            func superAgentLaunchesTasksAndDelegatesHelpers(smartRouting: Bool) async throws {
                 let provider = AppAccount.key
                 let db = try AppDatabaseManager(path: ":memory:").dbQueue
                 // Some models send every optional field, empty; an empty field counts as left out.
@@ -593,6 +594,7 @@
                     ),
                 ]])
                 defer { cleanUp(fixture) }
+                try await fixture.service.setAgentSmartRouting(fixture.agentID, smartRouting)
                 let threadID = try await fixture.service.botThread(fixture.agentID)
                 let handle = try await fixture.service.beginTurn(
                     threadID: threadID,
@@ -621,6 +623,13 @@
                 })
                 let helper = try #require(fixture.pi.launches.all
                     .first { $0.arguments.contains(PiChatService.botTaskSystemPrompt(name: "Super Agent")) })
+                let agentLaunch = try #require(fixture.pi.launches.all
+                    .first { $0.arguments.contains(PiChatService.botSystemPrompt(name: "Super Agent")) })
+                #expect(agentLaunch.arguments.contains { $0.hasPrefix("Smart routing is on:") } == smartRouting)
+                #expect(!helper.arguments.contains { $0.hasPrefix("Smart routing is on:") })
+                #expect(await pollUntil { fixture.pi.launches.all.contains { $0.profile == .interactive } })
+                let taskLaunch = try #require(fixture.pi.launches.all.first { $0.profile == .interactive })
+                #expect(!taskLaunch.arguments.contains { $0.hasPrefix("Smart routing is on:") })
                 let tools = try #require(helper.arguments.firstIndex(of: "--tools").map { helper.arguments[$0 + 1] }).split(separator: ",")
                 #expect(Set(tools.map(String.init)) == Set(PiChatService.readThreadTools + ["read", "ls", "write", "edit", "mcp__dahlia__*"]))
                 #expect(try await !fixture.service.loadThread(id: delegated.id).isReadOnly)
@@ -1056,6 +1065,42 @@
                 agent = try await fixture.service.agent(fixture.agentID)
                 #expect(agent.unattendedModel == nil && agent.unattendedEffort == nil)
                 #expect(agent.intakeModel == "intake" && agent.intakeEffort == "low")
+            }
+
+            /// Smart routing is off until the user turns it on, and its prompt lists only the models a launch may name.
+            @Test func smartRoutingIsSavedAndListsTheModelsToChooseFrom() async throws {
+                let db = try AppDatabaseManager(path: ":memory:").dbQueue
+                let fixture = try fixture(db: db, provider: AppAccount.key, calls: [:])
+                defer { cleanUp(fixture) }
+                #expect(try await !fixture.service.agent(fixture.agentID).smartRouting)
+                try await fixture.service.setAgentSmartRouting(fixture.agentID, true)
+                #expect(try await fixture.service.agent(fixture.agentID).smartRouting)
+
+                func model(_ id: String, efforts: [String], hidden: Bool = false) -> CodexModel {
+                    CodexModel(
+                        id: id, model: id, displayName: id, description: "", hidden: hidden, isDefault: false,
+                        supportedReasoningEfforts: efforts.map { CodexReasoningEffortOption(reasoningEffort: $0, description: "") },
+                        defaultReasoningEffort: "medium", inputModalities: nil
+                    )
+                }
+                let prompt = try #require(PiChatService.smartRoutingPrompt(models: [
+                    model("a/small", efforts: ["low", "high"]), model("a/plain", efforts: []), model("a/hidden", efforts: ["low"], hidden: true),
+                ]))
+                #expect(prompt.hasSuffix("Available models:\n- a/small: effort low, high\n- a/plain"))
+                #expect(PiChatService.smartRoutingPrompt(models: [model("a/hidden", efforts: [], hidden: true)]) == nil)
+
+                let own = model("anthropic/claude-haiku-5-5", efforts: ["low", "medium", "high"])
+                let workspace = model("legacy.invalid/system.ai.claude-sonnet-5-5", efforts: ["medium"])
+                let ownOnly = try #require(PiChatService.smartRoutingPrompt(models: [own]))
+                // A stronger model in an added workspace must not widen automatic routing's provider scope.
+                #expect(PiChatService.smartRoutingPrompt(models: [workspace, own]) == ownOnly)
+                #expect(ownOnly.hasSuffix("Available models:\n- anthropic/claude-haiku-5-5: effort low, medium, high"))
+                #expect(ownOnly.contains("if neither is available, use the strongest model listed"))
+                let workspaceOnly = try #require(PiChatService.smartRoutingPrompt(models: [workspace]))
+                #expect(workspaceOnly.hasSuffix("Available models:\n- legacy.invalid/system.ai.claude-sonnet-5-5: effort medium"))
+                #expect(PiChatService.smartRoutingPrompt(models: [
+                    model(own.model, efforts: ["medium"], hidden: true), workspace,
+                ]) == workspaceOnly)
             }
 
             /// Deleting an agent removes its inbox and home; its conversation stays read-only, takes no new run, and the

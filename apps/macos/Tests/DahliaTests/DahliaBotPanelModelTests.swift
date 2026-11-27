@@ -57,7 +57,8 @@
             let choices = ModelChoiceFixture()
             let model = DahliaBotPanelModel(
                 loadAgent: { try await choices.load($0) },
-                saveAgentModel: { try await choices.save($0, use: $1, model: $2, effort: $3) }
+                saveAgentModel: { try await choices.save($0, use: $1, model: $2, effort: $3) },
+                saveSmartRouting: { try await choices.save($0, smartRouting: $1) }
             )
             model.agentID = "A"
             try await model.refreshModelSettings()
@@ -70,7 +71,9 @@
             model.setUnattendedModel("too early")
             model.setIntakeEffort("high")
             model.setUnattendedEffort("high")
+            model.setSmartRouting(true)
             #expect(!model.areModelSettingsLoaded && model.intakeModel.isEmpty && model.unattendedModel.isEmpty)
+            #expect(!model.smartRouting)
             #expect(await choices.writeCount == 0)
             await choices.release()
             try await loading.value
@@ -83,12 +86,16 @@
             #expect(saved.intakeModel == "edited" && saved.intakeEffort == "low")
             #expect(saved.unattendedModel == "notice-B" && saved.unattendedEffort == "xhigh")
             #expect(try await choices.record("A").intakeModel == "intake-A")
+            model.setSmartRouting(true)
+            try #require(await pollUntil { await choices.writeCount == 3 })
+            #expect(try await choices.record("B").smartRouting)
+            #expect(try await !choices.record("A").smartRouting)
 
             await choices.holdNextLoad()
             let refreshing = Task { try await model.refreshModelSettings() }
             try #require(await pollUntil { await choices.isPending })
             model.setIntakeEffort("high")
-            try #require(await pollUntil { await choices.writeCount == 3 })
+            try #require(await pollUntil { await choices.writeCount == 4 })
             await choices.release()
             try await refreshing.value
             #expect(model.intakeEffort == "high")
@@ -306,6 +313,13 @@
             case .intake: (agent.intakeModel, agent.intakeEffort) = (model, effort)
             case .unattended: (agent.unattendedModel, agent.unattendedEffort) = (model, effort)
             }
+            records[id] = agent
+            writeCount += 1
+        }
+
+        func save(_ id: String, smartRouting: Bool) throws {
+            var agent = try record(id)
+            agent.smartRouting = smartRouting
             records[id] = agent
             writeCount += 1
         }

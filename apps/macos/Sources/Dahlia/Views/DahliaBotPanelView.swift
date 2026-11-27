@@ -114,6 +114,12 @@ struct DahliaBotPanelView: View {
         if let agent {
             Section {
                 AgentIdentityRow(agent: agent, identity: agents.identity(for: agent)).id(agent.id)
+                modelPicker(
+                    L10n.agentBotUnattendedModel, help: L10n.agentBotUnattendedModelHelp, fallback: L10n.agentBotModelConversation,
+                    selection: Binding(get: { model.unattendedModel }, set: { model.setUnattendedModel($0) }),
+                    effort: Binding(get: { model.unattendedEffort }, set: { model.setUnattendedEffort($0) })
+                )
+                .disabled(!model.areModelSettingsLoaded)
             }
         }
         // One group, with a row per source.
@@ -121,6 +127,12 @@ struct DahliaBotPanelView: View {
             ForEach(model.sources) { source in sourceCard(source) }
             if model.servers.isEmpty { Text(L10n.agentAlwaysOnNoServers).foregroundStyle(.secondary) }
             if let error = model.error, model.draft == nil { Text(error).foregroundStyle(.red).textSelection(.enabled) }
+            modelPicker(
+                L10n.agentBotIntakeModel, help: L10n.agentBotIntakeModelHelp, fallback: L10n.agentBotModelDefault,
+                selection: Binding(get: { model.intakeModel }, set: { model.setIntakeModel($0) }),
+                effort: Binding(get: { model.intakeEffort }, set: { model.setIntakeEffort($0) })
+            )
+            .disabled(!model.areModelSettingsLoaded)
         } header: {
             HStack {
                 Text(L10n.agentAlwaysOnSources).font(.dahliaSectionHeader)
@@ -130,18 +142,15 @@ struct DahliaBotPanelView: View {
             }
         }
         Section {
-            modelPicker(
-                L10n.agentBotIntakeModel, help: L10n.agentBotIntakeModelHelp, fallback: L10n.agentBotModelDefault,
-                selection: Binding(get: { model.intakeModel }, set: { model.setIntakeModel($0) }),
-                effort: Binding(get: { model.intakeEffort }, set: { model.setIntakeEffort($0) })
-            )
-            modelPicker(
-                L10n.agentBotUnattendedModel, help: L10n.agentBotUnattendedModelHelp, fallback: L10n.agentBotModelConversation,
-                selection: Binding(get: { model.unattendedModel }, set: { model.setUnattendedModel($0) }),
-                effort: Binding(get: { model.unattendedEffort }, set: { model.setUnattendedEffort($0) })
-            )
+            Toggle(isOn: Binding(get: { model.smartRouting }, set: { model.setSmartRouting($0) })) {
+                HStack {
+                    Text(L10n.agentBotSmartRouting)
+                    SettingsInfoButton(help: L10n.agentBotSmartRoutingHelp)
+                }
+            }
+            .toggleStyle(.dahliaSwitch)
         } header: {
-            AgentSectionHeader(title: L10n.agentBotModels) { EmptyView() }
+            AgentSectionHeader(title: L10n.agentBotWorkers) { EmptyView() }
         }
         .disabled(!model.areModelSettingsLoaded)
         soulSection(deleting: agent)
