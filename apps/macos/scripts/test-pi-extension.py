@@ -1238,6 +1238,16 @@ def main():
             bridge_answers={"intakeSeen": True})
         assert [call for call in bridge if call[0] == "intakeSeen"] == expected, (profile, bridge)
 
+    # Only observed provider IDs, not message body links, become source navigation metadata.
+    link_listing = {"probe_items": [{"id": "19abc", "threadId": "19abc", "body": "https://unrelated.example"}]}
+    _, _, bridge, _ = run(
+        pi, "chat", [{"tool": "mcp__gmail__search_messages", "args": link_listing}, {"text": "done"}],
+        ["--no-session", *CHAT_EXTENSIONS, "--tools", "event_record,mcp__gmail__*"],
+        {"DAHLIA_PI_MCP_SERVERS": json.dumps(["gmail"]), "DAHLIA_PI_PROFILE": "intake", "DAHLIA_PI_INTAKE_SERVICE": "mail"},
+        mcp_servers=mcp_servers, auth=auth, bridge_answers={"intakeSeen": True})
+    observed = [payload for method, payload in bridge if method == "intakeSeen"]
+    assert len(observed) == 1 and observed[0]["links"] == {"19abc": "https://mail.google.com/mail/u/0/#all/19abc"}, bridge
+
     # An MCP error followed by a normal assistant ending must still reach the native cursor gate. A later success
     # does not erase the earlier failure: the native run retries the whole range.
     _, results, bridge, _ = run(

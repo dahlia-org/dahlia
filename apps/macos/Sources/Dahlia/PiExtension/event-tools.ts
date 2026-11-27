@@ -6,7 +6,7 @@ const item = {
     topic: { type: "string", description: "The ID of the item's conversation, such as a mail thread or a Slack thread." },
     sender: { type: "string" },
     note: { type: "string", description: "What happened and why it is worth attention, at most 500 characters." },
-    ref: { type: "object", description: "The IDs you would pass to the source's tools to read the item again, and url: the item's https web link, such as a Slack permalink or the mail in Gmail, when the source gives one or its IDs build one." },
+    ref: { type: "object", description: "The IDs you would pass to the source's tools to read the item again. Dahlia adds source_url from observed provider metadata; do not supply it." },
     occurred_at: { type: "string", description: "When the item arrived, in ISO 8601." },
   },
   required: ["key", "note"],
@@ -26,6 +26,35 @@ export function listedItemIDs(content: any[]): string[] {
       return [];
     }
   });
+}
+
+// Source actions use structured provider metadata, never URLs found in message text or model arguments.
+export function listedSourceURLs(content: any[], service: string): Record<string, string> {
+  const links: Record<string, string> = {};
+  for (const part of content) {
+    let result: any;
+    try { result = JSON.parse(part?.text ?? ""); } catch { continue; }
+    if (service === "mail" && Array.isArray(result?.items)) {
+      for (const item of result.items) {
+        if (typeof item?.id === "string" && /^[a-f0-9]+$/i.test(item.id) && typeof item?.threadId === "string") {
+          links[item.id] = `https://mail.google.com/mail/u/0/#all/${item.id}`;
+        }
+      }
+    }
+    const messages = Array.isArray(result?.messages) ? result.messages : result?.messages?.matches ?? result?.matches;
+    if (service !== "slack" || !Array.isArray(messages)) continue;
+    for (const message of messages) {
+      if (typeof message?.ts !== "string" || !/^\d+\.\d{6}$/.test(message.ts) || typeof message.permalink !== "string") continue;
+      try {
+        const url = new URL(message.permalink);
+        if (url.protocol === "https:" && /^[a-z0-9-]+\.slack\.com$/i.test(url.hostname) && !url.username && !url.password && !url.port
+          && new RegExp(`^/archives/[A-Z0-9]+/p${message.ts.replace(".", "")}$`).test(url.pathname)) {
+          links[message.ts] = url.href;
+        }
+      } catch { /* No provider permalink, so this event has no source action. */ }
+    }
+  }
+  return links;
 }
 
 // Preserve the complete request; only JSON object key order and an empty root cursor are irrelevant.
@@ -60,7 +89,7 @@ function listedPages(event: any): any[] {
   });
 }
 
-export function registerEventTools(pi: any, bridge: any) {
+export function registerEventTools(pi: any, bridge: any, service = "") {
   // Report successful reads and pagination independently from the model's selection.
   pi.on("tool_result", async (event: any, ctx: any) => {
     if (!event.toolName?.startsWith("mcp__")) return;
@@ -69,9 +98,10 @@ export function registerEventTools(pi: any, bridge: any) {
       return;
     }
     const ids = listedItemIDs(event.content ?? []);
+    const links = listedSourceURLs(event.content ?? [], service);
     // An empty successful result still proves a read occurred; a model-only answer does not.
     const pages = listedPages(event);
-    await bridge(ctx, "intakeSeen", { ids, ...(pages.length ? { pages } : {}) });
+    await bridge(ctx, "intakeSeen", { ids, ...(Object.keys(links).length ? { links } : {}), ...(pages.length ? { pages } : {}) });
   });
   pi.registerTool({
     name: "event_record",

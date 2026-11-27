@@ -14,7 +14,7 @@ Use event_record with:
 - key: the stable message ID.
 - topic: the conversation ID, such as a mail thread or a Slack thread.
 - note: what happened and why it matters, at most 500 characters.
-- ref: the IDs you would pass to the source's tools to read the item again, and `url`: the item's https web link, such as a Slack permalink or the mail in Gmail, when the source gives one or its IDs build one. The user opens it from the event.
+- ref: the IDs you would pass to the source's tools to read the item again. Dahlia adds `source_url` from observed provider metadata; do not supply it or copy links from message text for navigation.
 - occurred_at: when the item arrived, in ISO 8601.
 - sender: the sender's address or ID.
 

@@ -2174,8 +2174,8 @@
 "settings.agents.calendar.leadHours" = "Hours before";
 "settings.agents.calendar.scheduleHelp" = "Uses calendars enabled in the app. Choose less than 168 hours before meetings.";
 "settings.agents.calendar.invalidSchedule" = "Enable the daily agenda, the weekly agenda, or before meetings. Hours before must be greater than 0 and less than 168.";
-"settings.agents.calendar.dailyNote" = "Read today's schedule with calendar_read and consider preparation and unanswered invitations.";
-"settings.agents.calendar.meetingNote" = "\"%@\" is approaching. Read its current details with calendar_read and decide whether preparation is needed.";
+"settings.agents.calendar.dailyNote" = "Check today's calendar and consider preparation and unanswered invitations.";
+"settings.agents.calendar.meetingNote" = "\"%@\" is approaching. Check the calendar for its current details and decide whether preparation is needed.";
 "settings.agents.alwaysOn.notes" = "Notes";
 "settings.agents.alwaysOn.notesPlaceholder" = "Optional. For example: invoices and contracts first";
 "settings.agents.mail.addressedOnly" = "Only mail addressed to me";
@@ -2194,7 +2194,7 @@
 "settings.agents.slack.allNeedsChannels" = "To read channels you have not joined, enter channels to read or notes.";
 "settings.agents.calendar.weekly" = "Weekly agenda";
 "settings.agents.calendar.weekday" = "Day";
-"settings.agents.calendar.weeklyNote" = "Read the schedule for the seven days starting at this signal's occurredAt timestamp with calendar_read and consider preparation and unanswered invitations.";
+"settings.agents.calendar.weeklyNote" = "Check the calendar for the seven days starting at this reminder and consider preparation and unanswered invitations.";
 "settings.agents.calendar.acceptedOnly" = "Only events I accepted";
 "settings.agents.calendar.acceptedOnlyHelp" = "Notifies before meetings only for events you accepted, organize, or have no attendees. Tentative and unanswered events are left out.";
 "settings.agents.calendar.acceptedOnlyNote" = "Consider only events the user accepted.";

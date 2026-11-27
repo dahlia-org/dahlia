@@ -111,6 +111,42 @@
                 #expect((source.lastIntakeAt != nil) == complete)
             }
 
+            @Test func observedSourceLinksReachOnlyTheMatchingEventAndRun() async throws {
+                let link = "https://mail.google.com/mail/u/0/#all/19abc"
+                let items: [JSONValue] = ["19abc", "other"].map { key in
+                    .object([
+                        "key": .string(key), "note": .string("Reply needed"),
+                        "ref": .object(["source_url": .string("https://forged.example")]),
+                    ])
+                }
+                let selected: JSONValue = .object(["items": .array(items)])
+                let fixture = try fixture(calls: [
+                    ("intakeSeen", .object([
+                        "ids": .array([.string("19abc")]),
+                        "links": .object(["19abc": .string(link), "other": .string("https://unseen.example")]),
+                    ])),
+                    ("eventRecord", selected),
+                ], ending: [TestPiTransport.assistantEnd("Read"), TestPiTransport.settled()])
+                defer { try? FileManager.default.removeItem(at: fixture.pi.rootURL) }
+                await drain(fixture)
+                let (_, _, events) = try await saved(fixture)
+                let ref = try JSONDecoder().decode(JSONValue.self, from: Data(#require(events.first?.ref).utf8))
+                #expect(ref.objectValue?["source_url"]?.stringValue == link)
+                let other = try #require(events.first { $0.key == "other" })
+                let otherRef = try JSONDecoder().decode(JSONValue.self, from: Data(#require(other.ref).utf8))
+                #expect(otherRef.objectValue?["source_url"] == nil)
+
+                let next = try self.fixture(
+                    calls: [("eventRecord", selected)],
+                    ending: [TestPiTransport.assistantEnd("Read"), TestPiTransport.settled()]
+                )
+                defer { try? FileManager.default.removeItem(at: next.pi.rootURL) }
+                await drain(next)
+                let (_, _, nextEvents) = try await saved(next)
+                let nextRef = try JSONDecoder().decode(JSONValue.self, from: Data(#require(nextEvents.first?.ref).utf8))
+                #expect(nextRef.objectValue?["source_url"] == nil)
+            }
+
             @Test(arguments: ["success", "unauthorized", "refused", "mcpError"])
             func readPositionMovesOnlyAfterACleanRun(scenario: String) async throws {
                 var calls = [

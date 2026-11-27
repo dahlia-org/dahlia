@@ -124,11 +124,7 @@ struct AgentInboxService: Sendable {
             }
             try source.save(db)
             if source.kind == "calendar" {
-                // Retained agendas can predate today and must reflect settings even without a provider refresh.
-                try db.execute(sql: """
-                UPDATE agent_event_inbox SET note = CASE WHEN key LIKE 'daily:%' THEN ? ELSE ? END
-                WHERE sourceID=? AND handledAt IS NULL AND (key LIKE 'daily:%' OR key LIKE 'weekly:%')
-                """, arguments: [AgentSourcePrompt.dailyNote(source), AgentSourcePrompt.weeklyNote(source), source.id])
+                try Self.refreshAgendaNotes(source, in: db)
                 // Schedule changes cancel future reservations; arrived agendas remain decisions with their original time.
                 if !source.enabled {
                     try db.execute(
@@ -196,7 +192,13 @@ struct AgentInboxService: Sendable {
 
     /// Records selected signals. Duplicates keep their first row; blocked senders leave no row.
     @discardableResult
-    func record(_ items: [IntakeItem], caller: Caller, remaining: Int = 20, now: Date = .now) throws -> [String: String] {
+    func record(
+        _ items: [IntakeItem],
+        caller: Caller,
+        remaining: Int = 20,
+        sourceURLs: [String: URL] = [:],
+        now: Date = .now
+    ) throws -> [String: String] {
         guard case let .intake(sourceID, revision) = caller else { throw Failure(message: "Only an intake run records items.") }
         return try dbQueue.write { db in
             let source = try Self.currentSource(sourceID, revision: revision, in: db)
@@ -222,9 +224,20 @@ struct AgentInboxService: Sendable {
                     statuses[item.key] = "limit"
                     continue
                 }
+                var ref = item.ref
+                // Only tool-result observation supplies navigation metadata; the model cannot forge this field.
+                if var fields = ref?.objectValue {
+                    fields.removeValue(forKey: "source_url")
+                    ref = .object(fields)
+                }
+                if let url = sourceURLs[item.key] {
+                    var fields = ref?.objectValue ?? [:]
+                    fields["source_url"] = .string(url.absoluteString)
+                    ref = .object(fields)
+                }
                 let event = try AgentEventRecord(
                     id: UUID.v7().uuidString, agentID: source.agentID, sourceID: sourceID, key: item.key, topic: item.topic,
-                    note: String(item.note.prefix(Self.noteLimit)), ref: item.ref.map(Self.text), occurredAt: min(item.occurredAt ?? now, now),
+                    note: String(item.note.prefix(Self.noteLimit)), ref: ref.map(Self.text), occurredAt: min(item.occurredAt ?? now, now),
                     taskID: nil, handledAt: nil, createdAt: now
                 )
                 try event.insert(db, onConflict: .ignore)

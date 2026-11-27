@@ -389,68 +389,63 @@ struct DahliaBotPanelView: View {
     }
 }
 
-/// One recorded event: its source's icon, time, and note. Clicking it shows the whole note, and clicking again folds it.
-/// An event whose `ref` has an https `url` (a Google Calendar event, a Slack permalink, a mail) gets a button that opens it.
+/// One recorded event, limited to two lines. Clicking a linked event opens its source item.
 private struct DahliaBotEventRow: View {
     let event: AgentEventRecord
     let icon: Image
-    @State private var isExpanded = false
     @State private var isHovered = false
     @Environment(\.openURL) private var openURL
 
-    /// Intake writes `ref` from other people's messages, so only an https link opens.
+    /// Model-written reference URLs are not source links; only the app supplies `source_url`.
     private var url: URL? {
         guard let ref = event.ref,
-              let value = (try? JSONDecoder().decode(JSONValue.self, from: Data(ref.utf8)))?.objectValue?["url"]?.stringValue,
+              let value = (try? JSONDecoder().decode(JSONValue.self, from: Data(ref.utf8)))?.objectValue?["source_url"]?.stringValue,
               let url = URL(string: value), url.scheme?.lowercased() == "https", url.host() != nil else { return nil }
         return url
     }
 
     var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 4) {
+        if let url {
+            Button { openURL(url) } label: { note }
+                .buttonStyle(.plain)
+                .onHover { isHovered = $0 }
+                .accessibilityHint(L10n.openInBrowser)
+        } else {
             note
-            if let url {
-                CodexChatIconButton(label: L10n.openInBrowser, systemImage: "arrow.up.right.square", size: 24) { openURL(url) }
-                    .alignmentGuide(.firstTextBaseline) { $0[.bottom] - 7 }
-            }
         }
     }
 
     private var note: some View {
-        Button { isExpanded.toggle() } label: {
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
-                icon
-                    .resizable()
-                    .scaledToFit()
-                    .frame(width: 16, height: 16)
-                    // A handled event gets a dot on its icon, so the row's layout never changes with its state.
-                    .overlay(alignment: .bottomTrailing) {
-                        if event.handledAt != nil {
-                            Circle().fill(.green)
-                                .frame(width: 6, height: 6)
-                                .overlay { Circle().strokeBorder(Color(nsColor: .windowBackgroundColor), lineWidth: 1) }
-                                .offset(x: 2, y: 2)
-                        }
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            icon
+                .resizable()
+                .scaledToFit()
+                .frame(width: 16, height: 16)
+                // A handled event gets a dot on its icon, so the row's layout never changes with its state.
+                .overlay(alignment: .bottomTrailing) {
+                    if event.handledAt != nil {
+                        Circle().fill(.green)
+                            .frame(width: 6, height: 6)
+                            .overlay { Circle().strokeBorder(Color(nsColor: .windowBackgroundColor), lineWidth: 1) }
+                            .offset(x: 2, y: 2)
                     }
-                    .alignmentGuide(.firstTextBaseline) { $0[.bottom] - 3 }
-                    .accessibilityHidden(true)
-                Text(event.occurredAt, format: .dateTime.hour().minute())
-                    .font(.dahliaSecondary).foregroundStyle(.secondary).monospacedDigit()
-                Text(event.note)
-                    .lineLimit(isExpanded ? nil : 3)
-                    .multilineTextAlignment(.leading)
-                    .fixedSize(horizontal: false, vertical: true)
-                Spacer(minLength: 0)
-            }
-            .padding(.vertical, 2)
-            .padding(.horizontal, 4)
-            .contentShape(.rect)
-            .background(isHovered ? DahliaDesign.contentHighlightColor : .clear, in: .rect(cornerRadius: 6))
+                }
+                .alignmentGuide(.firstTextBaseline) { $0[.bottom] - 3 }
+                .accessibilityHidden(true)
+            Text(event.occurredAt, format: .dateTime.hour().minute())
+                .font(.dahliaSecondary).foregroundStyle(.secondary).monospacedDigit()
+            Text(event.note)
+                .lineLimit(2)
+                .truncationMode(.tail)
+                .multilineTextAlignment(.leading)
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 0)
         }
-        .buttonStyle(.plain)
-        .onHover { isHovered = $0 }
+        .padding(.vertical, 2)
+        .padding(.horizontal, 4)
+        .contentShape(.rect)
+        .background(isHovered ? DahliaDesign.contentHighlightColor : .clear, in: .rect(cornerRadius: 6))
         .accessibilityValue(event.handledAt == nil ? L10n.agentAlwaysOnEventUnassigned : L10n.agentAlwaysOnEventProcessed)
-        .accessibilityHint(isExpanded ? L10n.collapse : L10n.expand)
     }
 }
 
