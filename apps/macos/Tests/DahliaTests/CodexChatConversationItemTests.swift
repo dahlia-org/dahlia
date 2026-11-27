@@ -464,6 +464,38 @@ import Foundation
         }
 
         @Test(arguments: [false, true])
+        func pagedRunNeverUsesCompactionOrOutputTimeAsItsStart(streaming: Bool) {
+            let runID = UUID.v7()
+            let start = Date(timeIntervalSince1970: 1000)
+            let request = CodexChatMessage(role: .user, text: "Hi", runID: runID, timestamp: start)
+            let notice = CodexChatMessage(role: .notice(.info), text: "Pi notice")
+            let compaction = CodexChatMessage(
+                role: .compaction(.init(tokensBefore: 100, tokensAfter: 50)), text: "", runID: runID,
+                timestamp: start.addingTimeInterval(30)
+            )
+            let laterNotice = CodexChatMessage(role: .notice(.warning), text: "Another Pi notice")
+            let answer = CodexChatMessage(
+                role: .assistant, text: "Hello", isStreaming: streaming, runID: runID, timestamp: start.addingTimeInterval(35)
+            )
+            let earlier = (0 ..< 39).map { CodexChatMessage(id: "earlier-\($0)", role: .notice(.info), text: "Earlier") }
+            let messages = earlier + [request, notice, compaction, laterNotice, answer]
+            let pages = CodexChatConversationWindow.pageRanges(in: messages)
+            let visible = CodexChatConversationWindow().visibleRange(in: pages)
+            #expect(visible.lowerBound == 40)
+            let items = CodexChatConversationItem.build(from: Array(messages[visible]), showsRunHeaders: true)
+            let prefix: [CodexChatConversationItem] = [.message(notice), .message(compaction), .message(laterNotice)]
+            #expect(items == prefix + [
+                streaming ? .running(id: runID.uuidString, startedAt: nil) : .work(id: answer.id, messages: [], duration: nil),
+                .message(answer),
+            ])
+            let restored = CodexChatConversationItem.build(from: [request, notice, compaction, laterNotice, answer], showsRunHeaders: true)
+            #expect(restored == [.message(request)] + prefix + [
+                streaming ? .running(id: runID.uuidString, startedAt: start) : .work(id: answer.id, messages: [], duration: 35),
+                .message(answer),
+            ])
+        }
+
+        @Test(arguments: [false, true])
         func agentRunningHeaderReplacesThinkingWhilePreparationKeepsIt(reasoning: Bool) {
             let runID = UUID.v7()
             let start = Date(timeIntervalSince1970: 1000)

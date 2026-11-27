@@ -106,7 +106,7 @@ enum CodexChatConversationItem: Identifiable, Equatable {
             // A request or notification opens the run and stays outside its steps.
             let bodyStart = run.startIndex + (head.role != .assistant && !head.isSteer ? 1 : 0)
             // Live notices can split one run into several display segments.
-            if let runID = head.runID, bodyStart > run.startIndex, let timestamp = head.timestamp, runStartTimes[runID] == nil {
+            if let runID = head.runID, isRunOpener(head), let timestamp = head.timestamp, runStartTimes[runID] == nil {
                 runStartTimes[runID] = timestamp
             }
             let startedAt = head.runID.flatMap { runStartTimes[$0] }
@@ -119,7 +119,7 @@ enum CodexChatConversationItem: Identifiable, Equatable {
             else {
                 segments += messages[run.startIndex ..< bodyStart].map { .message($0) }
                 if showsRunHeaders, let runID = head.runID, run.contains(where: \.isStreaming) {
-                    segments.append(.running(id: runID.uuidString, startedAt: startedAt ?? run.lazy.compactMap(\.timestamp).first))
+                    segments.append(.running(id: runID.uuidString, startedAt: startedAt))
                 }
                 segments += messages[bodyStart ..< run.endIndex].map { .message($0) }
                 continue
@@ -153,6 +153,11 @@ enum CodexChatConversationItem: Identifiable, Equatable {
 
     private static func isRequest(_ message: CodexChatMessage) -> Bool {
         message.role == .user && !message.isSteer
+    }
+
+    private static func isRunOpener(_ message: CodexChatMessage) -> Bool {
+        if case .notice = message.role { return true }
+        return isRequest(message)
     }
 
     static func relatedThreadAnchors(
