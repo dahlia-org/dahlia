@@ -513,7 +513,8 @@ extension PiChatService {
         let store = try history()
         guard let title = args["title"]?.stringValue?.nilIfBlank else { throw PiRuntimeError.invalidProtocolResponse }
         // A thread an agent launches is its Task: its result comes back to the agent, and the events it hands over go to it.
-        let launcher = agent(currentThread: caller.id)?.id
+        let launchingAgent = agent(currentThread: caller.id)
+        let launcher = launchingAgent?.id
         let isTask = launcher != nil
         let requestID = args["client_request_id"]?.stringValue?.nilIfBlank ?? UUID.v7().uuidString
         if let existing = try store.idleLaunch(requesterID: caller.id, rootRunID: callerTurn.run.rootRunID, clientRequestID: requestID) {
@@ -554,7 +555,7 @@ extension PiChatService {
             let run = try message.map {
                 try queueAgentRun(
                     targetID: thread.id, caller: caller, turn: callerTurn, input: $0, requestID: requestID, arguments: args,
-                    context: context, notifiesCaller: isTask, updating: handoff
+                    context: context, approvalMethod: launchingAgent?.workerApprovalMethod, notifiesCaller: isTask, updating: handoff
                 )
             }
             guard let run else {
@@ -634,6 +635,7 @@ extension PiChatService {
         requestID: String,
         arguments: [String: JSONValue],
         context: CodexChatContext? = nil,
+        approvalMethod: CodexChatApprovalMethod? = nil,
         notifiesCaller: Bool = true,
         updating: @Sendable (Database) throws -> Void = { _ in }
     ) throws -> ChatRunRecord {
@@ -654,7 +656,8 @@ extension PiChatService {
             input: agentRequestText(text, callerID: caller.id),
             model: arguments["model"]?.stringValue,
             effort: arguments["effort"]?.stringValue ?? caller.reasoningEffort ?? "medium",
-            approvalMethod: sessions[caller.id]?.approvalMethod?.rawValue ?? "ask",
+            // Launch supplies its new Task's method before the Task and run are saved together.
+            approvalMethod: (approvalMethod ?? requesterApprovalCeiling(caller.id, thread: targetID))?.rawValue ?? "ask",
             clientRequestID: requestID,
             createdAt: .now,
             requestedByRunID: turn.id

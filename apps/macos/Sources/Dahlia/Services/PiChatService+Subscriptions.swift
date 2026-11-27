@@ -181,10 +181,16 @@ extension PiChatService {
             guard let saved = try? history().run(id: turn.id) else { return .ask }
             requester = saved.requestedByThreadID
         }
-        for ceiling in [requester, parent].compactMap(\.self) {
-            if let chosen = chosenApprovalMethod(ceiling) { method = Self.stricterApproval(method, chosen) }
+        if let requester, let chosen = requesterApprovalCeiling(requester, thread: threadID) {
+            method = Self.stricterApproval(method, chosen)
         }
+        if let parent, let chosen = chosenApprovalMethod(parent) { method = Self.stricterApproval(method, chosen) }
         return method
+    }
+
+    /// What work a thread requested may not be looser than: an agent's worker setting for its Tasks, else its own choice.
+    func requesterApprovalCeiling(_ requester: String, thread threadID: String) -> CodexChatApprovalMethod? {
+        workerApprovalMethod(requester: requester, thread: threadID) ?? chosenApprovalMethod(requester)
     }
 
     func inheritedApprovalMethod(threadID: String, requested: CodexChatApprovalMethod) throws -> CodexChatApprovalMethod {

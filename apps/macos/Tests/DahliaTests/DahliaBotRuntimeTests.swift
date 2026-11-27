@@ -1126,6 +1126,8 @@
                 let store = ChatThreadStore(dbQueue: db)
                 let original = try await firstRun(fixture, thread: launched)
                 _ = try await fixture.service.updateApprovalMethod(threadID: launched, approvalMethod: .fullAccess)
+                // The agent's worker setting caps its Task; once the agent is gone, its retired thread's own choice does.
+                try await fixture.service.setAgentWorkerApprovalMethod(fixture.agentID, .ask)
                 _ = try await fixture.service.updateApprovalMethod(threadID: botThread, approvalMethod: .ask)
                 #expect(await fixture.service.effectiveApprovalMethod(launched) == .ask)
                 let queuedThread = UUID.v7().uuidString
@@ -1164,6 +1166,89 @@
                 AgentBackgroundActivity.setRecording(false)
                 await fixture.service.drainAlwaysOn()
                 #expect(try await botRuns(fixture).count == 1)
+            }
+
+            /// A Task follows its agent's worker setting, Auto review by default, not the method of the turn that launched it:
+            /// a notice turn asks, yet its Task reviews with AI. Tightening the setting reaches the running Task.
+            @Test func tasksFollowTheAgentsWorkerApproval() async throws {
+                let db = try AppDatabaseManager(path: ":memory:").dbQueue
+                let fixture = try fixture(db: db, provider: AppAccount.key, calls: [.bot: [
+                    threadCall("thread_launch", [
+                        "title": .string("Work"), "message": .string("Do it"), "client_request_id": .string("w1"),
+                    ]),
+                ]])
+                defer { cleanUp(fixture) }
+                #expect(try await fixture.service.agent(fixture.agentID).workerApprovalMethod == .autoReview)
+                _ = try recordMail(fixture, excerpt: "Hello")
+                try await notify(fixture)
+                #expect(try await botRuns(fixture).last?.approvalMethod == "ask")
+                let launched = try #require(try tasks(fixture).first?.threadID)
+                #expect(try await firstRun(fixture, thread: launched).approvalMethod == "autoReview")
+                #expect(await pollUntil { await fixture.service.effectiveApprovalMethod(launched) == .autoReview })
+
+                try await fixture.service.setAgentWorkerApprovalMethod(fixture.agentID, .ask)
+                #expect(await fixture.service.effectiveApprovalMethod(launched) == .ask)
+                #expect(try await fixture.service.agent(fixture.agentID).workerApprovalMethod == .ask)
+                try await fixture.service.setAgentWorkerApprovalMethod(fixture.agentID, .fullAccess)
+                #expect(await fixture.service.effectiveApprovalMethod(launched) == .autoReview)
+            }
+
+            @Test(arguments: ["thread_launch", "thread_send", "delegate_task"])
+            func workerApprovalOnlyAppliesToAgentTasks(method: String) async throws {
+                let db = try AppDatabaseManager(path: ":memory:").dbQueue
+                let store = ChatThreadStore(dbQueue: db)
+                let target = UUID.v7().uuidString
+                try store.createThread(ChatThreadRecord(id: target, accountID: AppAccount.key, title: "Chat", createdAt: .now, updatedAt: .now))
+                let replies = CommandLog()
+                let fixture = try fixture(db: db, provider: AppAccount.key, calls: [.bot: [
+                    threadCall(method, [
+                        "thread_id": .string(target), "title": .string("Work"), "message": .string("Do it"),
+                        "task": .string("Do it"), "client_request_id": .string("approval"), "mode": .string("queue"),
+                    ]),
+                ]], replies: replies)
+                defer { cleanUp(fixture) }
+                try await fixture.service.setAgentWorkerApprovalMethod(fixture.agentID, .ask)
+                _ = try await fixture.service.updateApprovalMethod(threadID: target, approvalMethod: .fullAccess)
+                let bot = try await fixture.service.botThread(fixture.agentID)
+                let handle = try await fixture.service.beginTurn(
+                    threadID: bot, inputs: [.text("Do it")], model: nil, effort: "medium", approvalMethod: .fullAccess
+                )
+                for try await _ in handle.events {}
+                let result = try #require(answers(replies).first?.objectValue)
+                let rawRunID = try #require(result["run_id"]?.stringValue)
+                let runID = try #require(UUID(uuidString: rawRunID))
+                let run = try #require(try store.run(id: runID))
+                #expect(run.approvalMethod == (method == "thread_launch" ? "ask" : "fullAccess"))
+            }
+
+            @Test func existingTasksUseCurrentWorkerApprovalForNewRuns() async throws {
+                let db = try AppDatabaseManager(path: ":memory:").dbQueue
+                let store = ChatThreadStore(dbQueue: db)
+                let target = UUID.v7().uuidString
+                try store.createThread(ChatThreadRecord(id: target, accountID: AppAccount.key, title: "Task", createdAt: .now, updatedAt: .now))
+                let replies = CommandLog()
+                let fixture = try fixture(db: db, provider: AppAccount.key, calls: [.bot: [
+                    threadCall("thread_send", [
+                        "thread_id": .string(target), "message": .string("Do it"),
+                        "client_request_id": .string("send"), "mode": .string("queue"),
+                    ]),
+                ]], replies: replies)
+                defer { cleanUp(fixture) }
+                try fixture.inbox.openTask(threadID: target, title: "Task", instructions: "Work", eventIDs: [])
+                let bot = try await fixture.service.botThread(fixture.agentID)
+                for method in [CodexChatApprovalMethod.ask, .fullAccess] {
+                    try await fixture.service.setAgentWorkerApprovalMethod(fixture.agentID, method)
+                    let handle = try await fixture.service.beginTurn(
+                        threadID: bot, inputs: [.text("Do it")], model: nil, effort: "medium", approvalMethod: .ask
+                    )
+                    for try await _ in handle.events {}
+                    let rawRunID = try #require(answers(replies).last?.objectValue?["run_id"]?.stringValue)
+                    let runID = try #require(UUID(uuidString: rawRunID))
+                    #expect(try store.run(id: runID)?.approvalMethod == method.rawValue)
+                    try #require(await pollUntil { (try? store.run(id: runID)?.status) == "running" })
+                    #expect(await fixture.service.effectiveApprovalMethod(target) == method)
+                    await fixture.service.closeSession(target)
+                }
             }
 
             @Test func untrustedTextCannotCloseItsFenceOrPassForDahliasLines() {

@@ -68,6 +68,8 @@ final class DahliaBotPanelModel {
     private(set) var unattendedEffort = ""
     /// Whether the agent picks each launched thread's model and effort. Saved on the agent.
     private(set) var smartRouting = false
+    /// The approval method of the threads the agent launches. Saved on the agent.
+    private(set) var workerApprovalMethod = CodexChatApprovalMethod.autoReview
 
     /// The text being edited, while the user edits `SOUL.md`.
     var soulDraft: String?
@@ -90,6 +92,9 @@ final class DahliaBotPanelModel {
         saveSmartRouting: @escaping @Sendable (String, Bool) async throws -> Void = {
             try await PiChatService.shared.setAgentSmartRouting($0, $1)
         },
+        saveWorkerApprovalMethod: @escaping @Sendable (String, CodexChatApprovalMethod) async throws -> Void = {
+            try await PiChatService.shared.setAgentWorkerApprovalMethod($0, $1)
+        },
         saveSoulFile: @escaping @Sendable (String, String) async throws -> Void = {
             try await PiChatService.shared.saveBotSoul($0, $1)
         },
@@ -103,6 +108,7 @@ final class DahliaBotPanelModel {
         self.loadAgent = loadAgent
         self.saveAgentModel = saveAgentModel
         self.saveSmartRouting = saveSmartRouting
+        self.saveWorkerApprovalMethod = saveWorkerApprovalMethod
         self.saveSoulFile = saveSoulFile
         self.loadTasks = loadTasks
         self.loadConnectorSettings = loadConnectorSettings
@@ -111,6 +117,7 @@ final class DahliaBotPanelModel {
     private let loadAgent: @Sendable (String) async throws -> AgentRecord
     private let saveAgentModel: @Sendable (String, AgentRecord.ModelUse, String, String) async throws -> Void
     private let saveSmartRouting: @Sendable (String, Bool) async throws -> Void
+    private let saveWorkerApprovalMethod: @Sendable (String, CodexChatApprovalMethod) async throws -> Void
     private var modelSettingsRevision = 0
     private var pendingModelSaves = 0
     private var taskGeneration = 0
@@ -135,6 +142,7 @@ final class DahliaBotPanelModel {
         (soul, soulDraft, draft, error) = ("", nil, nil, nil)
         (intakeModel, intakeEffort, unattendedModel, unattendedEffort) = ("", "", "", "")
         smartRouting = false
+        workerApprovalMethod = .autoReview
     }
 
     /// A model and its effort are one choice: following the default clears the effort, and a model takes its own default
@@ -171,6 +179,12 @@ final class DahliaBotPanelModel {
         saveModelSetting { [saveSmartRouting] in try await saveSmartRouting(agentID, enabled) }
     }
 
+    func setWorkerApprovalMethod(_ method: CodexChatApprovalMethod) {
+        guard areModelSettingsLoaded, let agentID else { return }
+        workerApprovalMethod = method
+        saveModelSetting { [saveWorkerApprovalMethod] in try await saveWorkerApprovalMethod(agentID, method) }
+    }
+
     private func saveModel(_ use: AgentRecord.ModelUse) {
         guard let agentID else { return }
         let (model, effort) = switch use {
@@ -205,6 +219,7 @@ final class DahliaBotPanelModel {
         (intakeModel, intakeEffort) = (agent.intakeModel ?? "", agent.intakeEffort ?? "")
         (unattendedModel, unattendedEffort) = (agent.unattendedModel ?? "", agent.unattendedEffort ?? "")
         smartRouting = agent.smartRouting
+        workerApprovalMethod = agent.workerApprovalMethod
         areModelSettingsLoaded = true
     }
 

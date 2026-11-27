@@ -553,9 +553,11 @@ actor PiChatService: CodexChatServicing {
         if let scheduled = scheduledRuns[threadID] {
             let parentID = try history().thread(id: threadID, accountID: AppAccount.key).parentThreadID
             let isRequestersChild = parentID != nil && parentID == scheduled.requestedByThreadID
-            let ceiling = scheduled.requestedByThreadID.flatMap(chosenApprovalMethod).map { Self.stricterApproval(requested, $0) }
-                ?? requested
-            let own = chosenApprovalMethod(threadID) ?? (isRequestersChild ? ceiling : .autoReview)
+            let requester = scheduled.requestedByThreadID
+            let worker = requester.flatMap { workerApprovalMethod(requester: $0, thread: threadID) }
+            let ceiling = (worker ?? requester.flatMap(chosenApprovalMethod)).map { Self.stricterApproval(requested, $0) } ?? requested
+            // An agent's Task starts at its worker setting, as a child starts at its parent's.
+            let own = chosenApprovalMethod(threadID) ?? (isRequestersChild || worker != nil ? ceiling : .autoReview)
             method = Self.stricterApproval(ceiling, own)
         } else {
             chosenApprovalMethods[threadID] = requested

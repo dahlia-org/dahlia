@@ -238,6 +238,8 @@ enum L10n { // swiftlint:disable:this type_body_length
     static var agentBotUnattendedModelHelp: String { String(localized: "settings.agents.alwaysOn.botUnattendedModelHelp", bundle: bundle) }
     static var agentBotSmartRouting: String { String(localized: "settings.agents.alwaysOn.botSmartRouting", bundle: bundle) }
     static var agentBotSmartRoutingHelp: String { String(localized: "settings.agents.alwaysOn.botSmartRoutingHelp", bundle: bundle) }
+    static var agentBotWorkerApproval: String { String(localized: "settings.agents.alwaysOn.botWorkerApproval", bundle: bundle) }
+    static var agentBotWorkerApprovalHelp: String { String(localized: "settings.agents.alwaysOn.botWorkerApprovalHelp", bundle: bundle) }
     static var agentBotModelDefault: String { String(localized: "settings.agents.alwaysOn.botModelDefault", bundle: bundle) }
     static var agentBotModelConversation: String { String(localized: "settings.agents.alwaysOn.botModelConversation", bundle: bundle) }
     static var agentBotSoul: String { String(localized: "settings.agents.alwaysOn.botSoul", bundle: bundle) }

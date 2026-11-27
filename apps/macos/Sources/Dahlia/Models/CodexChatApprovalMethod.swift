@@ -1,7 +1,7 @@
 import Foundation
 
 /// Whether chat asks before changing Dahlia data. Commands and file changes in the working folder are never asked about.
-enum CodexChatApprovalMethod: String, CaseIterable, Identifiable, Sendable {
+enum CodexChatApprovalMethod: String, Codable, CaseIterable, Identifiable, Sendable {
     case ask
     case autoReview
     case fullAccess
