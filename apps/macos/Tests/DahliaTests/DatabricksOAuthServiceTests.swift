@@ -44,6 +44,38 @@
         static let token = #"{"access_token":"access","refresh_token":"refresh","token_type":"Bearer","expires_in":3600}"#
 
         @Test
+        func storageAuthorizationSurvivesRefreshButNotSignInOrRemoval() async throws {
+            let connection = DatabricksConnection(id: .v7(), host: Self.host)
+            let memory = DatabricksTestStorage(connection: connection)
+            memory.state.withLock { state in
+                state.credentials[connection.id] = DatabricksOAuthCredential(
+                    accessToken: "original", refreshToken: "refresh", expirationDate: .now.addingTimeInterval(3600),
+                    tokenEndpoint: URL(string: Self.host + "/oidc/v1/token")!
+                )
+            }
+            let session = makeSession { request in
+                request.url!.path.contains(".well-known") ? (404, "") : (200, Self.token)
+            }
+            defer { session.invalidateAndCancel() }
+            let service = DatabricksOAuthService(session: session, storage: memory.storage, authorize: { _ in throw CancellationError() })
+            let generation = service.storageGeneration(connectionID: connection.id)
+            let authorization = try await service.storageAuthorization(connectionID: connection.id)
+            #expect(authorization.accessToken == "original")
+            _ = try await service.accessToken(connectionID: connection.id, forceRefresh: true, interactive: false)
+            try await authorization.validate()
+            #expect(service.storageGeneration(connectionID: connection.id) == generation)
+            #expect(authorization.accessToken == "original")
+            await #expect(throws: CancellationError.self) { try await service.signIn(workspaceURL: Self.host) }
+            #expect(service.storageGeneration(connectionID: connection.id) != generation)
+            await #expect(throws: CancellationError.self) { try await authorization.validate() }
+            let next = try await service.storageAuthorization(connectionID: connection.id)
+            #expect(next.accessToken == "access")
+            try await next.validate()
+            try await service.remove(connectionID: connection.id)
+            await #expect(throws: CancellationError.self) { try await next.validate() }
+        }
+
+        @Test
         func registrationCleanupFailureKeepsConnectionForRetry() async throws {
             let connection = DatabricksConnection(id: .v7(), host: Self.host)
             let memory = DatabricksTestStorage(connection: connection)

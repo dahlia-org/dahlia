@@ -3,11 +3,16 @@ import Foundation
 /// A provider account's file storage. A directory is one folder name under Dahlia's root there: `My Drive/Dahlia` on
 /// Google Drive, the user's volume on Databricks. Backups use `backup`.
 protocol ProviderStorage: Sendable {
+    func validate() async throws
     func list(directory: String) async throws -> [ProviderStorageFile]
     func upload(_ file: URL, to directory: String, name: String) async throws
     /// Downloads to a temporary file the caller removes.
     func download(_ file: ProviderStorageFile) async throws -> URL
     func delete(_ file: ProviderStorageFile) async throws
+}
+
+extension ProviderStorage {
+    func validate() async throws { try Task.checkCancellation() }
 }
 
 struct ProviderStorageFile: Identifiable, Equatable, Sendable {
@@ -16,6 +21,12 @@ struct ProviderStorageFile: Identifiable, Equatable, Sendable {
     let name: String
     let size: Int64?
     let modifiedAt: Date?
+}
+
+/// One operation's fixed bearer and the source owner's check that its sign-in is still current.
+struct ProviderStorageAuthorization: Sendable {
+    let accessToken: String
+    let validate: @Sendable () async throws -> Void
 }
 
 enum ProviderStorageError: LocalizedError, Equatable {
@@ -74,7 +85,9 @@ struct ProviderStorageHTTP: Sendable {
     }
 
     private func authorized(_ request: URLRequest) async throws -> URLRequest {
+        try Task.checkCancellation()
         let token = try await accessToken()
+        try Task.checkCancellation()
         var request = request
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         return request

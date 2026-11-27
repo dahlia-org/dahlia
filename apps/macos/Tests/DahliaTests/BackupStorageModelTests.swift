@@ -14,6 +14,7 @@ import GRDB
         /// Listings that finished; the caller's continuation is queued before this count can be read.
         private(set) var listReturns = 0
         private var uploadError: (any Error)?
+        private var failListingAfter: Int?
         private var held = false
         private var waiters: [CheckedContinuation<Void, Never>] = []
         private var downloadURL: URL?
@@ -30,6 +31,7 @@ import GRDB
             listCalls += 1
             if held { await withCheckedContinuation { waiters.append($0) } }
             listReturns += 1
+            if let failListingAfter, listCalls > failListingAfter { throw URLError(.timedOut) }
             return files
         }
 
@@ -55,6 +57,7 @@ import GRDB
             downloadWaiter = nil
         }
 
+        func failListings(after calls: Int) { failListingAfter = calls }
         func holdListings() { held = true }
         func delete(_ file: ProviderStorageFile) async throws { files.removeAll { $0.id == file.id } }
 
@@ -354,22 +357,179 @@ import GRDB
             #expect(defaults.string(forKey: BackupStorageDestination.userDefaultsKey) == nil)
         }
 
+        @Test(arguments: ["main.other", ""])
+        func editingOrClearingLocationDuringPreflightNeverUploads(_ value: String) async throws {
+            let account = ProviderAccount.databricks(connectionID: .v7())
+            let storage = FakeStorage()
+            let (model, defaults) = try model([account: storage])
+            defer { defaults.removePersistentDomain(forName: suite) }
+            DatabricksStorageLocation.save(DatabricksStorageLocation("main.dahlia"), connectionID: account.connectionID, defaults: defaults)
+            model.select(account)
+            #expect(await pollUntil { await storage.listCalls > 0 && !model.isBusy })
+            let calls = await storage.listCalls
+            await storage.holdListings()
+            let generation = try generation(named: "Dahlia-location.tar.gz")
+            defer { try? FileManager.default.removeItem(at: generation.fileURL.deletingLastPathComponent()) }
+            let upload = Task { await model.upload(generation) }
+            #expect(await pollUntil { await storage.listCalls > calls })
+            // No notification: admission must validate the actual setting even before observers run.
+            defaults.set(value, forKey: DatabricksStorageLocation.key(for: account.connectionID))
+            await storage.release()
+            await upload.value
+            #expect(await storage.uploads.isEmpty)
+            #expect(FileManager.default.fileExists(atPath: generation.fileURL.path))
+            await model.refresh()
+            #expect(model.errorMessage == nil)
+        }
+
         @Test
-        func aDatabricksConnectionWithoutAStorageLocationAsksForOne() throws {
+        func editingLocationDuringLocalCreationKeepsTheLocalGenerationOnly() async throws {
+            let account = ProviderAccount.databricks(connectionID: .v7())
+            let storage = FakeStorage()
+            let (model, defaults) = try model([account: storage])
+            defer { defaults.removePersistentDomain(forName: suite) }
+            model.select(account)
+            #expect(await pollUntil { await storage.listCalls > 0 && !model.isBusy })
+            let generation = try generation(named: "Dahlia-local-context.tar.gz")
+            defer { try? FileManager.default.removeItem(at: generation.fileURL.deletingLastPathComponent()) }
+            await model.createBackup {
+                defaults.set("main.changed", forKey: DatabricksStorageLocation.key(for: account.connectionID))
+                return generation
+            }
+            #expect(await storage.uploads.isEmpty)
+            #expect(FileManager.default.fileExists(atPath: generation.fileURL.path))
+        }
+
+        @Test(arguments: [true, false])
+        func selectedDatabricksChangesInvalidateTheOwnedOperation(signIn: Bool) async throws {
+            let account = ProviderAccount.databricks(connectionID: .v7())
+            let storage = FakeStorage()
+            let defaults = try #require(UserDefaults(suiteName: suite))
+            defer { defaults.removePersistentDomain(forName: suite) }
+            var factoryCalls = 0
+            let model = BackupStorageModel(defaults: defaults, providerChangeNotifications: []) { _ in
+                factoryCalls += 1
+                return storage
+            }
+            model.select(account)
+            #expect(await pollUntil { factoryCalls == 1 && !model.isBusy })
+            await storage.holdListings()
+            let calls = await storage.listCalls
+            let generation = try generation(named: "Dahlia-stale.tar.gz")
+            defer { try? FileManager.default.removeItem(at: generation.fileURL.deletingLastPathComponent()) }
+            let upload = Task { await model.upload(generation) }
+            #expect(await pollUntil { await storage.listCalls > calls })
+            let before = factoryCalls
+            if signIn {
+                NotificationCenter.default.post(
+                    name: DatabricksOAuthService.storageAuthorizationDidChange(connectionID: account.connectionID),
+                    object: nil
+                )
+            } else {
+                DatabricksStorageLocation.save(DatabricksStorageLocation("main.changed"), connectionID: account.connectionID, defaults: defaults)
+            }
+            #expect(await pollUntil { factoryCalls > before })
+            await storage.release()
+            await upload.value
+            #expect(await pollUntil { !model.isBusy })
+            #expect(await storage.uploads.isEmpty)
+            await model.upload(generation)
+            #expect(await storage.uploads == [generation.fileURL.lastPathComponent])
+        }
+
+        @Test
+        func recoveryListExcludesOrdinaryFilesAndRejectsTheirHandles() async throws {
+            let account = ProviderAccount.databricks(connectionID: .v7())
+            let storage = FakeStorage(files: ["report.csv", "Dahlia-valid.tar.gz", "Dahlia-upper.TAR.GZ"])
+            let (model, defaults) = try model([account: storage])
+            defer { defaults.removePersistentDomain(forName: suite) }
+            model.select(account)
+            #expect(await pollUntil { !model.isBusy && model.files.count == 2 })
+            #expect(model.files.map(\.name) == ["Dahlia-valid.tar.gz", "Dahlia-upper.TAR.GZ"])
+            let ordinary = try #require(await storage.files.first { $0.name == "report.csv" })
+            await model.delete(ordinary)
+            #expect(await storage.files.contains(ordinary))
+            let service = try await Task.detached {
+                let database = try AppDatabaseManager(path: ":memory:")
+                return BackupService(
+                    dbQueue: database.dbQueue,
+                    applicationSupportURL: FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+                )
+            }.value
+            await model.download(ordinary, into: service)
+            #expect(await storage.downloadCalls == 0)
+        }
+
+        @Test(arguments: [true, false])
+        func downloadedArchiveIsImportedOnlyForTheCurrentLocation(locationChanges: Bool) async throws {
+            let root = FileManager.default.temporaryDirectory.appending(path: "storage-import-\(UUID())")
+            defer { try? FileManager.default.removeItem(at: root) }
+            let (generation, service) = try await Task.detached {
+                let database = try AppDatabaseManager(path: ":memory:")
+                let workspace = WorkspaceRecord(id: .v7(), path: nil, name: "Backup", createdAt: .now, lastOpenedAt: .now)
+                try await database.dbQueue.write { try workspace.insert($0) }
+                let source = BackupService(dbQueue: database.dbQueue, applicationSupportURL: root.appending(path: "source"))
+                let generation = try await source.createGeneration(workspaceIds: [workspace.id])
+                return (generation, BackupService(dbQueue: database.dbQueue, applicationSupportURL: root.appending(path: "target")))
+            }.value
+            let account = ProviderAccount.databricks(connectionID: .v7())
+            let storage = FakeStorage(files: [generation.fileURL.lastPathComponent])
+            let (model, defaults) = try model([account: storage])
+            defer { defaults.removePersistentDomain(forName: suite) }
+            model.select(account)
+            #expect(await pollUntil { !model.isBusy && model.files.count == 1 })
+            await storage.setDownload(generation.fileURL)
+            await storage.failListings(after: storage.listCalls)
+            let file = try #require(model.files.first)
+            let download = Task { await model.download(file, into: service) }
+            #expect(await pollUntil { await storage.downloadCalls == 1 })
+            if locationChanges { defaults.set("main.changed", forKey: DatabricksStorageLocation.key(for: account.connectionID)) }
+            await storage.releaseDownload()
+            await download.value
+            #expect(try await service.listGenerations().count == (locationChanges ? 0 : 1))
+            #expect(model.statusMessage == (locationChanges ? nil : L10n.backupImported))
+            if !locationChanges { #expect(model.errorMessage == URLError(.timedOut).localizedDescription) }
+            #expect(!FileManager.default.fileExists(atPath: generation.fileURL.path))
+        }
+
+        @Test(arguments: [true, false])
+        func completedTransfersKeepTheirSuccessWhenRefreshFails(upload: Bool) async throws {
+            let account = ProviderAccount.databricks(connectionID: .v7())
+            let storage = FakeStorage(files: ["Dahlia-existing.tar.gz"])
+            let (model, defaults) = try model([account: storage])
+            defer { defaults.removePersistentDomain(forName: suite) }
+            model.select(account)
+            #expect(await pollUntil { !model.isBusy && model.files.count == 1 })
+            let calls = await storage.listCalls
+            await storage.failListings(after: calls + (upload ? 1 : 0))
+            if upload {
+                let generation = try generation(named: "Dahlia-completed.tar.gz")
+                defer { try? FileManager.default.removeItem(at: generation.fileURL.deletingLastPathComponent()) }
+                await model.upload(generation)
+                #expect(await storage.uploads == [generation.fileURL.lastPathComponent])
+            } else {
+                try await model.delete(#require(model.files.first))
+                #expect(await storage.files.isEmpty)
+            }
+            #expect(model.statusMessage == (upload ? L10n.backupStorageUploaded : L10n.backupStorageDeleted))
+            #expect(model.errorMessage == URLError(.timedOut).localizedDescription)
+        }
+
+        @Test
+        func aDatabricksConnectionWithoutAStorageLocationAsksForOne() async throws {
             let id = UUID.v7()
             let suite = "BackupStorageLocation.\(UUID())"
             let defaults = try #require(UserDefaults(suiteName: suite))
             defer { defaults.removePersistentDomain(forName: suite) }
-            try ProviderAccountDirectory.$connections.withValue([.init(
+            try await ProviderAccountDirectory.$connections.withValue([.init(
                 id: id,
                 workspaceURL: #require(URL(string: "https://dbc.example"))
-            )]) { () throws in
-                #expect(throws: ProviderStorageError.schemaNotConfigured) {
-                    try ProviderAccount.databricks(connectionID: id).storage(defaults: defaults)
+            )]) { () async throws in
+                await #expect(throws: ProviderStorageError.schemaNotConfigured) {
+                    try await ProviderAccount.databricks(connectionID: id).storage(defaults: defaults)
                 }
                 DatabricksStorageLocation.save(DatabricksStorageLocation("main.dahlia"), connectionID: id, defaults: defaults)
-                let storage = try ProviderAccount.databricks(connectionID: id).storage(defaults: defaults)
-                #expect(storage is DatabricksVolumeStorage)
+                #expect(DatabricksStorageLocation.load(connectionID: id, defaults: defaults)?.description == "main.dahlia")
                 #expect(ProviderAccount.databricks(connectionID: id).capabilities.contains(.storage))
                 #expect(!ProviderAccount.dahlia(connectionID: id).capabilities.contains(.storage))
             }

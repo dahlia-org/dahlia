@@ -20,7 +20,7 @@ enum BackupStorageDestination {
 extension ProviderAccount {
     /// The account's storage, or nil when it offers none.
     @MainActor
-    func storage(defaults: UserDefaults = .standard) throws -> (any ProviderStorage)? {
+    func storage(defaults: UserDefaults = .standard) async throws -> (any ProviderStorage)? {
         switch self {
         case let .google(id):
             let expected = ProviderAccountDirectory.googleConnections().first { $0.id == id }?.account.id
@@ -37,8 +37,11 @@ extension ProviderAccount {
             guard let location = DatabricksStorageLocation.load(connectionID: id, defaults: defaults) else {
                 throw ProviderStorageError.schemaNotConfigured
             }
-            return DatabricksVolumeStorage(host: host, location: location) {
-                try await DatabricksOAuthService.shared.accessToken(connectionID: id, interactive: false)
+            let authorization = try await DatabricksOAuthService.shared.storageAuthorization(connectionID: id)
+            return DatabricksVolumeStorage(host: host, location: location, authorization: authorization) { @MainActor in
+                guard DatabricksStorageLocation.load(connectionID: id, defaults: defaults) == location else {
+                    throw CancellationError()
+                }
             }
         case .dahlia:
             return nil
@@ -65,17 +68,20 @@ final class BackupStorageModel {
     private(set) var statusMessage: String?
     private(set) var errorMessage: String?
     private let defaults: UserDefaults
-    private let makeStorage: @MainActor (ProviderAccount) throws -> (any ProviderStorage)?
+    private let makeStorage: @MainActor (ProviderAccount) async throws -> (any ProviderStorage)?
     private var storage: (any ProviderStorage)?
     private var revision = 0
     private var operation: Task<Void, Never>?
     private var authorizationObserver: GoogleAuthSessionObserver?
+    private var locationObserver: GoogleAuthSessionObserver?
+    private var operationLocation: DatabricksStorageLocation?
+    private var operationAuthorizationGeneration: UUID?
     private var providerObservers: [GoogleAuthSessionObserver] = []
 
     init(
         defaults: UserDefaults = .standard,
         providerChangeNotifications: [Notification.Name] = [GoogleProviderAccount.didChange, .databricksConnectionDidChange],
-        makeStorage: @escaping @MainActor (ProviderAccount) throws -> (any ProviderStorage)? = { try $0.storage() }
+        makeStorage: @escaping @MainActor (ProviderAccount) async throws -> (any ProviderStorage)? = { try await $0.storage() }
     ) {
         self.defaults = defaults
         self.makeStorage = makeStorage
@@ -111,6 +117,22 @@ final class BackupStorageModel {
     /// Transfers can outlive the settings view, so their owner also owns sign-out invalidation.
     private func observeAuthorization() {
         authorizationObserver = nil
+        locationObserver = nil
+        if case let .databricks(id) = destination {
+            let invalidate: @MainActor @Sendable (Bool) async -> Void = { [weak self] _ in
+                guard let self, destination == .databricks(connectionID: id) else { return }
+                cancel()
+                storage = nil
+                files = []
+                await refresh()
+            }
+            locationObserver = GoogleAuthSessionObserver(
+                notificationName: DatabricksStorageLocation.didChange(connectionID: id), handler: invalidate
+            )
+            authorizationObserver = GoogleAuthSessionObserver(
+                notificationName: DatabricksOAuthService.storageAuthorizationDidChange(connectionID: id), handler: invalidate
+            )
+        }
         guard case let .google(id) = destination else { return }
         let account = destination
         authorizationObserver = GoogleAuthSessionObserver(
@@ -145,7 +167,7 @@ final class BackupStorageModel {
     func createBackup(_ create: @escaping @MainActor () async -> BackupGeneration?) async {
         await run {
             guard let generation = await create() else { return nil }
-            try Task.checkCancellation()
+            try await self.checkOperation()
             guard self.destination != nil else { return nil }
             return try await self.uploadGeneration(generation)
         }
@@ -159,10 +181,10 @@ final class BackupStorageModel {
     }
 
     private func uploadGeneration(_ generation: BackupGeneration) async throws -> String {
-        let storage = try requireStorage()
+        let storage = try await requireStorage()
         let name = generation.fileURL.lastPathComponent
         let existing = try await storage.list(directory: BackupStorageDestination.directory)
-        try Task.checkCancellation()
+        try await checkOperation()
         guard !existing.contains(where: { $0.name == name }) else { return L10n.backupStorageAlreadyUploaded }
         try await storage.upload(generation.fileURL, to: BackupStorageDestination.directory, name: name)
         return L10n.backupStorageUploaded
@@ -172,10 +194,10 @@ final class BackupStorageModel {
     func download(_ file: ProviderStorageFile, into service: BackupService) async {
         guard files.contains(file) else { return }
         await run {
-            let storage = try self.requireStorage()
+            let storage = try await self.requireStorage()
             let url = try await storage.download(file)
             defer { try? FileManager.default.removeItem(at: url) }
-            try Task.checkCancellation()
+            try await self.checkOperation()
             _ = try await service.importGeneration(from: url)
             return L10n.backupImported
         }
@@ -184,7 +206,7 @@ final class BackupStorageModel {
     func delete(_ file: ProviderStorageFile) async {
         guard files.contains(file) else { return }
         await run {
-            let storage = try self.requireStorage()
+            let storage = try await self.requireStorage()
             try await storage.delete(file)
             return L10n.backupStorageDeleted
         }
@@ -208,10 +230,25 @@ final class BackupStorageModel {
         await refresh()
     }
 
-    private func requireStorage() throws -> any ProviderStorage {
-        guard let destination, let storage = try storage ?? makeStorage(destination) else {
+    private func checkOperation() async throws {
+        try Task.checkCancellation()
+        if case let .databricks(id) = destination {
+            guard DatabricksStorageLocation.load(connectionID: id, defaults: defaults) == operationLocation,
+                  DatabricksOAuthService.shared.storageGeneration(connectionID: id) == operationAuthorizationGeneration else {
+                throw CancellationError()
+            }
+        }
+        try await storage?.validate()
+        try Task.checkCancellation()
+    }
+
+    private func requireStorage() async throws -> any ProviderStorage {
+        try await checkOperation()
+        if let storage { return storage }
+        guard let destination, let storage = try await makeStorage(destination) else {
             throw ProviderStorageError.authorizationRequired
         }
+        try await checkOperation()
         self.storage = storage
         return storage
     }
@@ -219,6 +256,14 @@ final class BackupStorageModel {
     private func run(_ body: @escaping @MainActor () async throws -> String?) async {
         guard !isBusy else { return }
         let revision = revision
+        storage = nil
+        if case let .databricks(id) = destination {
+            operationLocation = DatabricksStorageLocation.load(connectionID: id, defaults: defaults)
+            operationAuthorizationGeneration = DatabricksOAuthService.shared.storageGeneration(connectionID: id)
+        } else {
+            operationLocation = nil
+            operationAuthorizationGeneration = nil
+        }
         isBusy = true
         statusMessage = nil
         errorMessage = nil
@@ -226,18 +271,20 @@ final class BackupStorageModel {
             guard let self else { return }
             defer { if self.revision == revision { isBusy = false } }
             do {
-                try Task.checkCancellation()
+                try await checkOperation()
                 let message = try await body()
-                try Task.checkCancellation()
+                try await checkOperation()
+                guard self.revision == revision else { return }
+                statusMessage = message
                 let files: [ProviderStorageFile] = if destination != nil {
                     try await requireStorage().list(directory: BackupStorageDestination.directory)
                 } else {
                     []
                 }
+                try await checkOperation()
                 guard self.revision == revision else { return }
-                self.files = files
+                self.files = files.filter { BackupArchive.isBackupFile(URL(fileURLWithPath: $0.name)) }
                 needsAuthorization = false
-                statusMessage = message
             } catch {
                 guard self.revision == revision else { return }
                 if case .google = destination {

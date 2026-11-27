@@ -55,6 +55,26 @@ actor DatabricksOAuthService {
     /// they are read once per refresh, and holding them in memory would only widen their exposure.
     private var accessTokens: [UUID: (token: String, expirationDate: Date)] = [:]
     private var generations: [UUID: UUID] = [:]
+    /// Identity changes invalidate storage operations; ordinary token refreshes do not.
+    private nonisolated let storageGenerations = Mutex<[UUID: UUID]>([:])
+
+    nonisolated func storageGeneration(connectionID: UUID) -> UUID {
+        storageGenerations.withLock {
+            if let generation = $0[connectionID] { return generation }
+            let generation = UUID()
+            $0[connectionID] = generation
+            return generation
+        }
+    }
+
+    nonisolated static func storageAuthorizationDidChange(connectionID: UUID) -> Notification.Name {
+        Notification.Name("DatabricksStorageAuthorization.\(connectionID.uuidString)")
+    }
+
+    private func invalidateStorageAuthorization(connectionID: UUID) {
+        storageGenerations.withLock { $0[connectionID] = UUID() }
+        NotificationCenter.default.post(name: Self.storageAuthorizationDidChange(connectionID: connectionID), object: nil)
+    }
 
     init(
         session: URLSession = URLSession(configuration: .ephemeral, delegate: OAuthNoRedirectDelegate(), delegateQueue: nil),
@@ -163,6 +183,7 @@ actor DatabricksOAuthService {
         let connection = try connection(id: connectionID)
         // A promoted legacy gateway must never fall back to Pi's retained OAuth after its app credential goes.
         try storage.removeProviderRegistrations(connection)
+        invalidateStorageAuthorization(connectionID: connectionID)
         generations[connectionID] = UUID()
         pending[connectionID]?.task.cancel()
         pending[connectionID] = nil
@@ -172,6 +193,21 @@ actor DatabricksOAuthService {
         try storage.deleteCredential(connectionID)
         DatabricksStorageLocation.save(nil, connectionID: connectionID)
         NotificationCenter.default.post(name: .databricksConnectionDidChange, object: nil)
+    }
+
+    func storageAuthorization(connectionID: UUID) async throws -> ProviderStorageAuthorization {
+        let generation = storageGeneration(connectionID: connectionID)
+        let token = try await accessToken(connectionID: connectionID, interactive: false)
+        try validateStorageAuthorization(connectionID: connectionID, generation: generation)
+        return ProviderStorageAuthorization(accessToken: token) {
+            try await self.validateStorageAuthorization(connectionID: connectionID, generation: generation)
+        }
+    }
+
+    private func validateStorageAuthorization(connectionID: UUID, generation: UUID) throws {
+        try Task.checkCancellation()
+        guard storageGeneration(connectionID: connectionID) == generation else { throw CancellationError() }
+        _ = try connection(id: connectionID)
     }
 
     /// `interactive: false` never opens the browser: a missing or unrefreshable credential throws instead.
@@ -285,6 +321,7 @@ actor DatabricksOAuthService {
     }
 
     private func login(_ connection: DatabricksConnection) async throws -> DatabricksOAuthCredential {
+        invalidateStorageAuthorization(connectionID: connection.id)
         let endpoints = try await discover(workspace: connection.host)
         try Task.checkCancellation()
         let verifier = Self.randomString(byteCount: 64)

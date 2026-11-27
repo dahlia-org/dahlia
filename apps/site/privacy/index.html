@@ -64,7 +64,7 @@
           <h3>Google account and Calendar data</h3>
           <p>
             When you add a Google provider account, Dahlia requests your account identifier, display name, email address,
-            and read-only Calendar and Drive permissions together. You choose which features use that account.
+            read-only Calendar permissions, and permission to create, read, download, and trash Dahlia-created Drive files together. You choose which features use that account.
             When you enable Calendar, Dahlia reads your
             calendar list and upcoming events from calendars you select. Event data can include the title, description,
             start and end times, attendance status, event type, calendar and event identifiers, conference link, and
@@ -78,6 +78,14 @@
             there. Deleting a backup in Dahlia moves it to the Drive trash. A backup contains the selected workspaces'
             meetings, transcripts, summaries, and screenshots. Google Docs exports through Dahlia AI use a separately
             configured MCP connection and its permissions, subject to the approval settings for that AI connection.
+          </p>
+          <h3>Databricks backup storage</h3>
+          <p>
+            When you select a Databricks provider account for backups, Dahlia sends the workspace archive directly from
+            your Mac to that workspace using your credential. It uses the <q>backup</q> folder in your managed volume
+            under the catalog and schema you configure. The archive contains the same workspace data described above.
+            You can list, download, and permanently delete these backups in Dahlia. Signing out does not delete them.
+            Access and retention are governed by your Databricks workspace permissions and policies.
           </p>
           <h3>Diagnostics</h3>
           <p>
@@ -173,7 +181,7 @@
             not send Google Calendar data to an AI service merely because you connected your account or viewed your schedule.
           </p>
           <p>
-            Backups and Drive requests are sent directly to Google from your Mac. If you ask Dahlia AI to export to Google
+            Backups are sent directly from your Mac to the Google Drive or Databricks destination you select. Drive requests are sent to Google. If you ask Dahlia AI to export to Google
             Docs, the configured MCP connection sends the requested content to Google under its own permissions. Outside the user-facing features described in this policy, Dahlia does not disclose Google
             user data except as necessary for security purposes or to comply with applicable law.
           </p>

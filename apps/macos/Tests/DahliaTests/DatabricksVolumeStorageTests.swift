@@ -13,8 +13,9 @@ import Synchronization
         private func storage(_ handler: @escaping StorageStubURLProtocol.Handler) -> (DatabricksVolumeStorage, URLSession) {
             let session = StorageStubURLProtocol.session(host: host, handler: handler)
             let storage = DatabricksVolumeStorage(
-                host: URL(string: "https://\(host)")!, location: DatabricksStorageLocation("main.dahlia")!, session: session
-            ) { "databricks-token" }
+                host: URL(string: "https://\(host)")!, location: DatabricksStorageLocation("main.dahlia")!, session: session,
+                authorization: ProviderStorageAuthorization(accessToken: "databricks-token", validate: {})
+            )
             return (storage, session)
         }
 
@@ -156,6 +157,52 @@ import Synchronization
                 }
             }
             #expect(StorageStubURLProtocol.requests(host: host).filter { $0.httpMethod == "DELETE" }.count == 1)
+        }
+
+        @Test(arguments: ["identity", "volume", "directory"])
+        func invalidationStopsTheNextRequestWithoutSwitchingBearer(_ phase: String) async throws {
+            let valid = Mutex(true)
+            let session = StorageStubURLProtocol.session(host: host) { request in
+                #expect(request.value(forHTTPHeaderField: "Authorization") == "Bearer original-user")
+                let path = request.url!.path
+                if path.hasSuffix("/Me") {
+                    if phase == "identity" { valid.withLock { $0 = false } }
+                    return Self.me
+                }
+                if path == Self.volumePath {
+                    if phase == "volume" { valid.withLock { $0 = false } }
+                    return .json(#"{"owner":"me@example.com","volume_type":"MANAGED"}"#)
+                }
+                if path.contains("/fs/directories/") {
+                    valid.withLock { $0 = false }
+                    return StorageStubURLProtocol.Response()
+                }
+                return StorageStubURLProtocol.Response(status: 500)
+            }
+            defer { finish(session) }
+            let storage = try DatabricksVolumeStorage(
+                host: #require(URL(string: "https://\(host)")), location: #require(DatabricksStorageLocation("main.dahlia")),
+                session: session,
+                authorization: ProviderStorageAuthorization(accessToken: "original-user") {
+                    guard valid.withLock({ $0 }) else { throw CancellationError() }
+                }
+            )
+            let file = try temporaryBackupFile()
+            defer { try? FileManager.default.removeItem(at: file.deletingLastPathComponent()) }
+            await #expect(throws: CancellationError.self) { try await storage.upload(file, to: "backup", name: file.lastPathComponent) }
+            let requests = StorageStubURLProtocol.requests(host: host)
+            #expect(!requests.contains { $0.url!.path.contains("/fs/files/") })
+            #expect(requests.count == (phase == "identity" ? 1 : phase == "volume" ? 2 : 3))
+            // Cached roots and handles do not bypass the context check on subsequent operations.
+            await #expect(throws: CancellationError.self) {
+                try await storage.delete(ProviderStorageFile(
+                    id: "/Volumes/main/dahlia/dahlia_storage_42/backup/x",
+                    name: "x",
+                    size: nil,
+                    modifiedAt: nil
+                ))
+            }
+            #expect(StorageStubURLProtocol.requests(host: host).count == requests.count)
         }
 
         @Test

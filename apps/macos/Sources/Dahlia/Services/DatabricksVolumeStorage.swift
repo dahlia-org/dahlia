@@ -25,7 +25,13 @@ struct DatabricksStorageLocation: Equatable, Sendable, CustomStringConvertible {
     }
 
     static func save(_ location: Self?, connectionID: UUID, defaults: UserDefaults = .standard) {
+        guard load(connectionID: connectionID, defaults: defaults) != location else { return }
         defaults.set(location?.description, forKey: key(for: connectionID))
+        NotificationCenter.default.post(name: didChange(connectionID: connectionID), object: nil)
+    }
+
+    static func didChange(connectionID: UUID) -> Notification.Name {
+        Notification.Name("DatabricksStorageLocation.\(connectionID.uuidString)")
     }
 }
 
@@ -49,18 +55,23 @@ actor DatabricksVolumeStorage: ProviderStorage {
     private let host: URL
     private let location: DatabricksStorageLocation
     private let http: ProviderStorageHTTP
-    /// `/Volumes/<catalog>/<schema>/<volume>` once found and verified; checked once per instance.
+    /// Verified only within this operation's fixed authorization context.
     private var root: String?
 
     init(
         host: URL,
         location: DatabricksStorageLocation,
         session: URLSession = .shared,
-        accessToken: @escaping @Sendable () async throws -> String
+        authorization: ProviderStorageAuthorization,
+        validateLocation: @escaping @Sendable () async throws -> Void = {}
     ) {
         self.host = host
         self.location = location
-        http = ProviderStorageHTTP(session: session, accessToken: accessToken)
+        http = ProviderStorageHTTP(session: session) {
+            try await authorization.validate()
+            try await validateLocation()
+            return authorization.accessToken
+        }
     }
 
     func list(directory: String) async throws -> [ProviderStorageFile] {
@@ -97,6 +108,8 @@ actor DatabricksVolumeStorage: ProviderStorage {
         } while token != nil
         return files.sorted { ($0.modifiedAt ?? .distantPast) > ($1.modifiedAt ?? .distantPast) }
     }
+
+    func validate() async throws { _ = try await http.accessToken() }
 
     func upload(_ file: URL, to directory: String, name: String) async throws {
         let size = try Int64(file.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0)
