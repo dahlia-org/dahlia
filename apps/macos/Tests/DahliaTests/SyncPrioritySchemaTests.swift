@@ -4,7 +4,6 @@
     import Testing
     @testable import Dahlia
 
-    @MainActor
     struct SyncPrioritySchemaTests {
         @Test func reconciliationMigrationPreservesExistingWorkspace() throws {
             let queue = try DatabaseQueue(configuration: AppDatabaseManager.configuration())

@@ -5,7 +5,6 @@ import GRDB
 #if canImport(Testing)
     import Testing
 
-    @MainActor
     struct BackgroundJobsMigrationTests {
         @Test(arguments: ["v52_documentsAndSync", "v53_sharedBackgroundJobs", "v53_documentsSyncAndBackgroundJobs"])
         func validatesBackupsWithActualMergedDevelopmentHistory(prior: String) throws {

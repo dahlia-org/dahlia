@@ -630,9 +630,13 @@ final class AppDatabaseManager: Sendable {
         upTo migrationIdentifier: String,
         excludingTableNames: Set<String> = []
     ) throws -> Bool {
-        let reference = try DatabaseQueue(configuration: configuration())
-        defer { try? reference.close() }
-        try schemaMigrator(for: migrationIdentifier).migrate(reference, upTo: migrationIdentifier)
+        let reference: any DatabaseWriter
+        if migrationIdentifier == currentMigrationIdentifier {
+            reference = try migratedInMemoryDatabase.get()
+        } else {
+            reference = try DatabaseQueue(configuration: configuration())
+            try schemaMigrator(for: migrationIdentifier).migrate(reference, upTo: migrationIdentifier)
+        }
         let expected = try reference.read {
             try schemaSignature(in: $0, excludingTableNames: excludingTableNames)
         }
