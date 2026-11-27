@@ -8,6 +8,15 @@ import Foundation
 
     struct SettingsCategoryTests {
         @Test
+        func englishConnectorLabelMatchesTheDocumentedSearch() throws {
+            let path = try #require(Bundle.appModule.path(forResource: "en", ofType: "lproj"))
+            let english = try #require(Bundle(path: path))
+            let label = english.localizedString(forKey: "settings.agents.mcps", value: nil, table: nil)
+            #expect(label == "Connectors")
+            #expect(SettingsCategory.mcp.matches(L10n.agentMCPs))
+        }
+
+        @Test
         func accountAndWorkspacePreferencesHaveSeparateDestinations() {
             #expect(SettingsGroup.features.categories == [.workspace, .meetings, .calendar, .meetingLinks])
             #expect(SettingsGroup.agent.categories == [.providers, .modelProvider, .mcp, .skills, .memory, .agents])

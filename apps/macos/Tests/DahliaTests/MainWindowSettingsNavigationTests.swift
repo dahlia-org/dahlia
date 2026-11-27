@@ -5,6 +5,26 @@
 
     @MainActor
     struct MainWindowSettingsNavigationTests {
+        @Test(arguments: [PiRuntimeError.piCommandNotFound(nil), .piCommandNotFound("/missing/pi")])
+        func missingPiRecoveryOpensInstallationControls(error: PiRuntimeError) throws {
+            let message = try #require(error.errorDescription)
+            let view = CodexChatErrorView(message: message, onRetry: {})
+            #expect(view.recoverySettingsCategory == .agents)
+            let navigation = MainWindowNavigation(openMainWindow: {}, initialSettingsCategory: .general)
+            for previousTab in AgentSettingsView.Tab.allCases {
+                navigation.agentSettingsTab = previousTab
+                navigation.openSettings(category: view.recoverySettingsCategory)
+                #expect(navigation.settingsCategory == .agents)
+                #expect(navigation.agentSettingsTab == .general)
+            }
+        }
+
+        @Test
+        func chatRecoveryKeepsProviderAndModelDestinations() {
+            #expect(CodexChatErrorView(message: L10n.codexNotLoggedIn, onRetry: {}).recoverySettingsCategory == .providers)
+            #expect(CodexChatErrorView(message: L10n.codexTurnFailed, onRetry: {}).recoverySettingsCategory == .modelProvider)
+        }
+
         @Test
         func meetingsStartWithProcessingFlowAndKeepItWhenReturningFromWorkspaceSettings() throws {
             let suite = "MainWindowSettingsNavigationTests.\(UUID())"

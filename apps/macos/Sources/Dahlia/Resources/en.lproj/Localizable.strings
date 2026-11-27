@@ -1497,7 +1497,7 @@
 "settings.agents.mcpServiceWithServerName %@ %@" = "%1$@ (%2$@)";
 "settings.agents.unityGatewayHost %@" = "Databricks (%@)";
 "settings.agents.workspaceURL" = "Workspace URL";
-"settings.agents.mcps" = "Connector";
+"settings.agents.mcps" = "Connectors";
 "settings.agents.mcpLoadingServices" = "Loading Unity AI Gateway MCPs…";
 "settings.agents.mcpNoServices" = "This workspace's Unity AI Gateway (system.ai) has no MCPs you can use.";
 "settings.agents.mcpRemoveWorkspaceDescription" = "Signs out of this workspace and deletes every MCP server registered on it.";

@@ -51,7 +51,7 @@ Choose **Follow System, Light Mode, or Dark Mode** in the sidebar footer's setti
 
 The macOS interface defines font sizes as offsets from a default 14 pt base: body text, controls, and window headers use +0; section names, metadata, and hover help use −2. Larger titles use the same base with positive offsets.
 
-The chat header shows **Dahlia AI**, followed by the conversation title when a chat is open. New chats center the greeting and composer. **App integrations** below the composer shows representative app icons and opens **Settings → Agents → MCP** when clicked. The × button hides it for that chat; a new chat shows it again. The composer’s + menu provides image attachments, meeting references, the registered MCP server list, and a link to MCP settings. It overlays the content without moving the composer, opening below when there is room and above near the bottom of the window.
+The chat header shows **Dahlia AI**, followed by the conversation title when a chat is open. New chats center the greeting and composer. **App integrations** below the composer shows representative app icons and opens **Settings → Agent → Connectors** when clicked. The × button hides it for that chat; a new chat shows it again. The composer’s + menu provides image attachments, meeting references, the registered MCP server list, and a link to MCP settings. It overlays the content without moving the composer, opening below when there is room and above near the bottom of the window.
 
 Hover over a chat message to show its copy button and recorded time, when available. Copying shows a checkmark and a brief confirmation. Assistant message footers also show a disabled fork icon; branching from a response is not available yet.
 

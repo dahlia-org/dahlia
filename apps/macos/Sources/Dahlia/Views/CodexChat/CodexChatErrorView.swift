@@ -7,6 +7,18 @@ struct CodexChatErrorView: View {
     let onRetry: () -> Void
     var onSkipAndContinue: (() -> Void)?
 
+    // shortcut: other runtime setup errors identify their page in the text; carry the error's kind here if
+    // a message names Advanced Settings for another reason.
+    var recoverySettingsCategory: SettingsCategory {
+        if message == L10n.codexNotLoggedIn {
+            .providers
+        } else if message == L10n.piCommandNotFound || message.contains(L10n.agentAdvancedSettings) {
+            .agents
+        } else {
+            .modelProvider
+        }
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             Label(message, systemImage: "exclamationmark.triangle.fill")
@@ -17,15 +29,12 @@ struct CodexChatErrorView: View {
                 if let onSkipAndContinue {
                     Button(L10n.chatSkipAndContinue, action: onSkipAndContinue)
                 }
-                // Pi installation lives under General; provider sign-in and models live under Models.
-                // shortcut: matches the page's name in the text; carry the error's kind here if a message names Agents
-                // for another reason.
-                if message == L10n.codexNotLoggedIn {
-                    // No provider is signed in; the Providers page signs in to one.
+                switch recoverySettingsCategory {
+                case .providers:
                     Button(L10n.manageProviders) { mainWindowNavigation.openSettings(category: .providers) }
-                } else if message.contains(L10n.agentAdvancedSettings) {
+                case .agents:
                     Button(L10n.openAgentSettings) { mainWindowNavigation.openSettings(category: .agents) }
-                } else {
+                default:
                     Button(L10n.openAISettings) { mainWindowNavigation.openSettings(category: .modelProvider) }
                 }
             }
