@@ -43,10 +43,13 @@ final class AgentsModel {
 
     /// Runs until cancelled. GRDB fetches off MainActor after each commit to the inbox, so an Item shows as it is made.
     func observeOpenItems(in dbQueue: any DatabaseWriter) async {
-        let observation = ValueObservation.trackingConstantRegion { try AgentInboxService.openItemCounts(in: $0) }.removeDuplicates()
+        // GRDB may fetch on the writer during registration catch-up; observe only a content-free signal.
+        let observation = ValueObservation.tracking(region: AgentRecord.all(), AgentItemRecord.all(), fetch: { _ in () })
         do {
-            for try await counts in observation.values(in: dbQueue, bufferingPolicy: .bufferingNewest(1)) {
-                openItems = counts
+            for try await _ in observation.values(in: dbQueue, bufferingPolicy: .bufferingNewest(1)) {
+                let counts = try await dbQueue.read { try AgentInboxService.openItemCounts(in: $0) }
+                guard !Task.isCancelled else { return }
+                if openItems != counts { openItems = counts }
             }
         } catch {}
     }

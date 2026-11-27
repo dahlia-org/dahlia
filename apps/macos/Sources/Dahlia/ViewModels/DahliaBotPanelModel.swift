@@ -334,14 +334,17 @@ final class DahliaBotPanelModel {
         guard let agentID else { return }
         let generation = agentGeneration
         let limit = itemLimit
-        // Explicit constant regions keep pooled fetches off the writer, including when the inbox starts empty.
-        let observation = ValueObservation.tracking(region: AgentItemRecord.all(), AgentTaskRecord.all()) {
-            try AgentInboxService.panelSnapshot(agentID: agentID, limit: limit + 1, in: $0)
-        }.removeDuplicates()
+        // Even registration catch-up fetches only a signal; projection SELECTs always use an explicit async read.
+        let observation = ValueObservation.tracking(region: AgentItemRecord.all(), AgentTaskRecord.all(), fetch: { _ in () })
         do {
-            for try await snapshot in observation.values(in: dbQueue, bufferingPolicy: .bufferingNewest(1)) {
+            for try await _ in observation.values(in: dbQueue, bufferingPolicy: .bufferingNewest(1)) {
+                let snapshot = try await dbQueue.read {
+                    try AgentInboxService.panelSnapshot(agentID: agentID, limit: limit + 1, in: $0)
+                }
                 guard generation == agentGeneration, limit == itemLimit, !Task.isCancelled else { return }
-                (items, taskThreads) = (Array(snapshot.items.prefix(limit)), snapshot.taskThreads)
+                let visibleItems = Array(snapshot.items.prefix(limit))
+                if items != visibleItems { items = visibleItems }
+                if taskThreads != snapshot.taskThreads { taskThreads = snapshot.taskThreads }
                 hasMoreItems = snapshot.items.count > limit
             }
         } catch {

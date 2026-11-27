@@ -22,7 +22,7 @@
         func observedInboxShowsSavedItemsAndTasksAtOnce(usesPool: Bool) async throws {
             let directory = FileManager.default.temporaryDirectory.appending(path: "dahlia-inbox-\(UUID.v7())")
             defer { try? FileManager.default.removeItem(at: directory) }
-            let reads = OSAllocatedUnfairLock(initialState: [(reader: Bool, main: Bool)]())
+            let reads = OSAllocatedUnfairLock(initialState: [(reader: Bool, main: Bool, panel: Bool)]())
             let (queue, inbox) = try await Task.detached {
                 var configuration = AppDatabaseManager.configuration()
                 configuration.prepareDatabase { db in
@@ -31,7 +31,8 @@
                         guard case let .statement(statement) = event,
                               statement.sql.hasPrefix("SELECT"), statement.sql.contains("FROM agent_user_inbox"),
                               statement.sql.contains("status='open'") else { return }
-                        reads.withLock { $0.append((reader, Thread.isMainThread)) }
+                        let panel = statement.sql.contains("ORDER BY")
+                        reads.withLock { $0.append((reader, Thread.isMainThread, panel)) }
                     }
                 }
                 let queue: any DatabaseWriter
@@ -45,18 +46,49 @@
                 let agent = try queue.write { try AgentRecord.insertForTest(in: $0) }
                 return (queue, AgentInboxService(dbQueue: queue, agentID: agent.id))
             }.value
+            let releaseWriter = DispatchSemaphore(value: 0)
+            defer { releaseWriter.signal() }
+            let writerStarted = OSAllocatedUnfairLock(initialState: false)
+            let registrationItem = try await Task.detached {
+                let item = try inbox.createItem(kind: "report", title: "During registration")
+                try inbox.dismiss(itemID: item.id, revision: item.revision)
+                return item
+            }.value
+            let registrationWrite: Task<Void, any Error>?
+            if usesPool {
+                registrationWrite = Task.detached {
+                    try queue.write { db in
+                        try db.execute(sql: "UPDATE agent_user_inbox SET status='open' WHERE id=?", arguments: [registrationItem.id])
+                        writerStarted.withLock { $0 = true }
+                        releaseWriter.wait()
+                    }
+                }
+                try #require(await pollUntil { writerStarted.withLock { $0 } })
+            } else {
+                registrationWrite = nil
+            }
             let model = DahliaBotPanelModel(loadTasks: { _, limit in try inbox.tasks(limit: limit) })
             model.agentID = inbox.agentID
             let agents = AgentsModel()
             let observing = Task { await model.observeInbox(in: queue) }
-            let observingTasks = Task { await model.observeTasks(in: queue) }
             let observingCounts = Task { await agents.observeOpenItems(in: queue) }
             defer {
                 observing.cancel()
-                observingTasks.cancel()
                 observingCounts.cancel()
             }
             try #require(await pollUntil { agents.openItems[inbox.agentID] == 0 })
+            if let registrationWrite {
+                // Both initial reader snapshots precede this commit; writer-side registration is still queued.
+                try #require(await pollUntil { reads.withLock { $0.contains(where: \.panel) } })
+                releaseWriter.signal()
+                try await registrationWrite.value
+                #expect(await pollUntil { model.items.map(\.id) == [registrationItem.id] })
+                #expect(await pollUntil { agents.openItems[inbox.agentID] == 1 })
+                _ = try await Task.detached { try inbox.dismiss(itemID: registrationItem.id, revision: registrationItem.revision) }.value
+                #expect(await pollUntil { model.items.isEmpty && agents.openItems[inbox.agentID] == 0 })
+            }
+            let observingTasks = Task { await model.observeTasks(in: queue) }
+            defer { observingTasks.cancel() }
 
             let item = try await Task.detached { try inbox.createItem(kind: "report", title: "Saved") }.value
             #expect(await pollUntil { model.items.map(\.id) == [item.id] })
