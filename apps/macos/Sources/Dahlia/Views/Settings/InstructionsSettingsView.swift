@@ -134,7 +134,7 @@ struct InstructionsSettingsView: View {
                             Button(L10n.useForSummary) {
                                 sidebarViewModel.useInstructionForSummary(selectedInstruction.id)
                             }
-                            .buttonStyle(.borderedProminent)
+                            .buttonStyle(.dahlia(.primary))
                         }
 
                         Button(L10n.delete, role: .destructive) {

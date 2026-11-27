@@ -111,7 +111,7 @@ struct GoogleOAuthConsentSheet: View {
                     onConsent()
                     close()
                 }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(.dahlia(.primary))
                 .keyboardShortcut(.defaultAction)
             }
         }

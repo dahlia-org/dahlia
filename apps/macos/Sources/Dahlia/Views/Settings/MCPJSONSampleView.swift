@@ -20,9 +20,7 @@ struct MCPJSONSampleView: View {
                     systemImage: isCopied ? "checkmark" : "doc.on.doc",
                     action: copy
                 )
-                .buttonStyle(.borderedProminent)
-                .buttonBorderShape(.capsule)
-                .controlSize(.large)
+                .buttonStyle(.dahlia(.primary))
                 .font(.dahliaBody.weight(.semibold))
             }
         }
