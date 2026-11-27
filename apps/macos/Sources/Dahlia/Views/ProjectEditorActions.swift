@@ -12,8 +12,7 @@ struct ProjectEditorActions: View {
         HStack(spacing: 12) {
             if let onDelete {
                 Button(L10n.deleteProject, systemImage: "trash", role: .destructive, action: onDelete)
-                    .buttonStyle(.borderedProminent)
-                    .tint(.red)
+                    .buttonStyle(.dahlia(.destructive))
                     .controlSize(.extraLarge)
                     .disabled(isSaving)
             }
@@ -24,7 +23,7 @@ struct ProjectEditorActions: View {
                 Text(L10n.cancel)
                     .frame(minWidth: 72)
             }
-            .buttonStyle(.bordered)
+            .buttonStyle(.dahlia())
             .controlSize(.extraLarge)
             .keyboardShortcut(.cancelAction)
             .disabled(isSaving)
@@ -41,7 +40,7 @@ struct ProjectEditorActions: View {
                 }
                 .frame(minWidth: 96)
             }
-            .buttonStyle(.borderedProminent)
+            .buttonStyle(.dahlia(.primary))
             .controlSize(.extraLarge)
             .disabled(isSaveDisabled || isSaving)
         }

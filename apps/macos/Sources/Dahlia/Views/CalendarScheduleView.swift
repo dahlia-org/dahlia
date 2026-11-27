@@ -291,7 +291,7 @@ struct CalendarScheduleView: View {
 
             if let actionTitle, let action {
                 Button(actionTitle, action: action)
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(.dahlia(.primary))
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)

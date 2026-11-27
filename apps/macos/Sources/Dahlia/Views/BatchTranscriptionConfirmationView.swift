@@ -101,15 +101,18 @@ struct BatchTranscriptionConfirmationView: View {
                     .keyboardShortcut(.cancelAction)
                 if isRetranscription {
                     Button(L10n.retranscribe, action: startTranscription)
+                        .buttonStyle(.dahlia(.primary))
                         .disabled(isStartDisabled)
                 } else {
                     Button(processingMethod != nil ? L10n.startProcessing : L10n.startTranscription, action: startTranscription)
+                        .buttonStyle(.dahlia(.primary))
                         .keyboardShortcut(.defaultAction)
                         .disabled(isStartDisabled)
                 }
             }
             .padding(20)
         }
+        .dahliaAppearance()
         .frame(
             minWidth: 500,
             idealWidth: 520,

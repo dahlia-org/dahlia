@@ -53,7 +53,7 @@ struct AppLanguageSelectionSheet: View {
                                             .foregroundStyle(.secondary)
                                     }
                                 }
-                                .toggleStyle(.checkbox)
+                                .toggleStyle(.dahliaCheckbox)
                             }
                         }
                     } header: {
@@ -67,6 +67,7 @@ struct AppLanguageSelectionSheet: View {
 
             DahliaSheetActionBar {
                 Button(L10n.done, action: save)
+                    .buttonStyle(.dahlia(.primary))
                     .keyboardShortcut(.defaultAction)
                     .disabled(!draft.isValid)
             }

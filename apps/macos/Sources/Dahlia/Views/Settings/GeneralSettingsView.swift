@@ -40,13 +40,13 @@ struct GeneralSettingsView: View {
                             L10n.microphoneActivityNotification,
                             isOn: $settings.microphoneMeetingNotificationsEnabled
                         )
-                        .toggleStyle(.checkbox)
+                        .toggleStyle(.dahliaCheckbox)
 
                         Toggle(
                             L10n.calendarEventNotification,
                             isOn: $settings.calendarEventMeetingNotificationsEnabled
                         )
-                        .toggleStyle(.checkbox)
+                        .toggleStyle(.dahliaCheckbox)
                     }
                 } label: {
                     Text(L10n.notificationConditions)

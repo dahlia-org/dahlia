@@ -47,6 +47,8 @@ private struct DahliaAppearanceModifier: ViewModifier {
             .foregroundStyle(DahliaDesign.primaryTextColor)
             .labelStyle(DahliaFixedSymbolLabelStyle())
             .buttonBorderShape(.roundedRectangle(radius: DahliaDesign.Button.cornerRadius))
+            // Buttons without their own style use the app's, not the native push button.
+            .buttonStyle(.dahlia())
     }
 }
 

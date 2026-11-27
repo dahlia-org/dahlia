@@ -412,7 +412,7 @@ private struct CalendarSourceSelectionView: View {
                                         .accessibilityHidden(true)
                                 }
                             }
-                            .toggleStyle(.checkbox)
+                            .toggleStyle(.dahliaCheckbox)
                             .frame(maxWidth: .infinity, alignment: .leading)
                         }
                     }
