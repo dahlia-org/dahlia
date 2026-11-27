@@ -1,12 +1,10 @@
 import AppKit
 import SwiftUI
 
-/// AI settings for the open account: Pi, providers, generation preferences, models, and MCP servers.
+/// Agent advanced settings for the open account: Pi, chat, schedules, plugins, and security.
 struct AgentSettingsView: View {
     enum Tab: String, CaseIterable, Identifiable {
         case general
-        case models
-        case mcps
         case schedules
         case packages
         case security
@@ -16,8 +14,6 @@ struct AgentSettingsView: View {
         var label: String {
             switch self {
             case .general: L10n.general
-            case .models: L10n.agentModels
-            case .mcps: L10n.agentMCPs
             case .schedules: L10n.agentSchedules
             case .packages: L10n.agentPackages
             case .security: L10n.agentSecurity
@@ -33,19 +29,8 @@ struct AgentSettingsView: View {
 private struct AgentSettingsTabs: View {
 
     @Environment(MainWindowNavigation.self) private var navigation
-    /// Shared by the Models tab's providers and the MCP tab, so a provider added in one shows in the other.
-    @State private var mcp: AgentMCPSettingsModel
-    @State private var launch: PiLaunchSettingsModel
-    @State private var packages: PiPackageSettingsModel
-    /// The Local Account's subscriptions, which only it can sign in to.
-    @State private var subscriptions: [PiSubscriptionController]
-
-    init() {
-        _mcp = State(initialValue: AgentMCPSettingsModel())
-        _launch = State(initialValue: PiLaunchSettingsModel())
-        _packages = State(initialValue: PiPackageSettingsModel())
-        _subscriptions = State(initialValue: PiSubscription.allCases.map { PiSubscriptionController(subscription: $0) })
-    }
+    @State private var launch = PiLaunchSettingsModel()
+    @State private var packages = PiPackageSettingsModel()
 
     var body: some View {
         @Bindable var navigation = navigation
@@ -59,7 +44,7 @@ private struct AgentSettingsTabs: View {
                         tabs: AgentSettingsView.Tab.allCases,
                         selection: $navigation.agentSettingsTab,
                         label: \.label,
-                        accessibilityLabel: L10n.agents
+                        accessibilityLabel: L10n.agentAdvancedSettings
                     )
                 }
             }
@@ -78,23 +63,46 @@ private struct AgentSettingsTabs: View {
                 }
                 .formStyle(.grouped)
                 .font(.dahliaBody)
-            case .models:
-                AgentModelSettingsView(mcp: mcp, subscriptions: subscriptions) {
-                    navigation.openSettings(category: .providers)
-                }
             case .packages:
                 AgentPackageSettingsView(model: packages)
             case .schedules:
                 AgentScheduleSettingsView()
-            case .mcps:
-                AgentMCPSettingsView(model: mcp, onAdd: presentMCPRegistration) { server in
-                    navigation.presentSettingsModal(
-                        AgentMCPDirectServerView(model: mcp, server: server, onClose: navigation.dismissSettingsModal)
-                    )
-                }
             case .security:
                 AgentSecuritySettingsView()
             }
+        }
+        .onDisappear { navigation.dismissSettingsModal() }
+    }
+}
+
+/// The Models page: each provider's models, summary generation, and image analysis.
+struct AgentModelsPageView: View {
+    @Environment(MainWindowNavigation.self) private var navigation
+    @State private var mcp = AgentMCPSettingsModel()
+    /// The Local Account's subscriptions, which only it can sign in to.
+    @State private var subscriptions = PiSubscription.allCases.map { PiSubscriptionController(subscription: $0) }
+
+    var body: some View {
+        AgentModelSettingsView(mcp: mcp, subscriptions: subscriptions) {
+            navigation.openSettings(category: .providers)
+        }
+        .task {
+            await mcp.refreshSignInState()
+            mcp.loadAccountProviders()
+        }
+    }
+}
+
+/// The Connectors page: MCP servers from providers and those configured directly.
+struct AgentConnectorSettingsView: View {
+    @Environment(MainWindowNavigation.self) private var navigation
+    @State private var mcp = AgentMCPSettingsModel()
+
+    var body: some View {
+        AgentMCPSettingsView(model: mcp, onAdd: presentMCPRegistration) { server in
+            navigation.presentSettingsModal(
+                AgentMCPDirectServerView(model: mcp, server: server, onClose: navigation.dismissSettingsModal)
+            )
         }
         .task {
             await mcp.refreshSignInState()
@@ -535,7 +543,7 @@ extension PiSubscription {
     }
 }
 
-/// The account's Unity AI Gateway models, under each gateway's provider row as the MCP tab groups services: the
+/// The account's Unity AI Gateway models, under each gateway's provider row as the Connectors page groups services: the
 /// Databricks account's own gateway and the workspaces added under Models. Each model turns on or off with a switch;
 /// only those turned on go to the account's `models.json`, so Pi, and with it the chat, summary, and image analysis model
 /// pickers, knows only them.

@@ -23,7 +23,7 @@ struct CodexChatErrorView: View {
                 if message == L10n.codexNotLoggedIn {
                     // No provider is signed in; the Providers page signs in to one.
                     Button(L10n.manageProviders) { mainWindowNavigation.openSettings(category: .providers) }
-                } else if message.contains(L10n.agents) {
+                } else if message.contains(L10n.agentAdvancedSettings) {
                     Button(L10n.openAgentSettings) { mainWindowNavigation.openSettings(category: .agents) }
                 } else {
                     Button(L10n.openAISettings) { mainWindowNavigation.openSettings(category: .modelProvider) }

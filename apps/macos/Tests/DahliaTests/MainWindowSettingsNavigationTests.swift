@@ -48,12 +48,10 @@
             let suite = "MainWindowSettingsNavigationTests.\(UUID())"
             let defaults = try #require(UserDefaults(suiteName: suite))
             defer { defaults.removePersistentDomain(forName: suite) }
-            var observedTab: AgentSettingsView.Tab?
             var observedCategory: SettingsCategory?
             var navigation: MainWindowNavigation?
             let subject = MainWindowNavigation(
                 openMainWindow: {
-                    observedTab = navigation?.agentSettingsTab
                     observedCategory = navigation?.settingsCategory
                 },
                 initialSettingsCategory: .general,
@@ -61,13 +59,11 @@
             )
             navigation = subject
             subject.recordNavigation(to: .chat)
-            subject.agentSettingsTab = .models
 
-            subject.openAgentSettings(tab: .mcps)
+            subject.openSettings(category: .mcp)
 
             #expect(subject.isShowingSettings)
-            #expect(observedTab == .mcps)
-            #expect(observedCategory == .agents)
+            #expect(observedCategory == .mcp)
             #expect(subject.currentLocation == .chat)
 
             subject.dismissSettings()
@@ -96,18 +92,13 @@
         }
 
         @Test(arguments: [SettingsCategory.accountsAndWorkspaces, .accountPreferences, .aiSummary])
-        func inferenceAndMCPLinksOpenDahliaAITabs(category: SettingsCategory) {
+        func inferenceAndMCPLinksOpenTheirAgentPages(category: SettingsCategory) {
             let navigation = MainWindowNavigation(openMainWindow: {}, initialSettingsCategory: .general)
             navigation.openSettings(category: category)
-            #expect(navigation.settingsCategory == .agents)
-            #expect(navigation.agentSettingsTab == .models)
+            #expect(navigation.settingsCategory == .modelProvider)
 
             navigation.openSettings(category: .mcp)
-            #expect(navigation.settingsCategory == .agents)
-            #expect(navigation.agentSettingsTab == .mcps)
-
-            navigation.openSettings(category: .aiSummary)
-            #expect(navigation.agentSettingsTab == .models)
+            #expect(navigation.settingsCategory == .mcp)
 
             navigation.agentSettingsTab = .schedules
             navigation.openSettings()
@@ -147,15 +138,11 @@
         }
 
         @Test
-        func providerSetupOpensModelsFromEveryAITab() {
+        func providerSetupOpensTheModelsPage() {
             let navigation = MainWindowNavigation(openMainWindow: {}, initialSettingsCategory: .general)
-            for previousTab in AgentSettingsView.Tab.allCases {
-                navigation.agentSettingsTab = previousTab
-                navigation.openSettings(category: .modelProvider)
-                #expect(navigation.settingsCategory == .agents)
-                #expect(navigation.agentSettingsTab == .models)
-            }
-            #expect(AgentSettingsView.Tab.allCases == [.general, .models, .mcps, .schedules, .packages, .security])
+            navigation.openSettings(category: .modelProvider)
+            #expect(navigation.settingsCategory == .modelProvider)
+            #expect(AgentSettingsView.Tab.allCases == [.general, .schedules, .packages, .security])
         }
 
         @Test

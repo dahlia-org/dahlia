@@ -84,8 +84,12 @@ struct SettingsDetailView: View {
             GeneralSettingsView()
         case .appearance:
             AppearanceSettingsView()
-        case .accountsAndWorkspaces, .dahliaAccounts, .accountPreferences, .macInference, .modelProvider, .aiSummary, .mcp, .agents:
+        case .dahliaAccounts, .macInference, .agents:
             AgentSettingsView()
+        case .accountsAndWorkspaces, .accountPreferences, .modelProvider, .aiSummary:
+            AgentModelsPageView()
+        case .mcp:
+            AgentConnectorSettingsView()
         case .workspace, .workspacePreferences:
             WorkspaceSettingsView(
                 appDatabase: appDatabase,
@@ -133,6 +137,8 @@ struct SettingsDetailView: View {
         switch SettingsNavigation.visibleSelection(selection) {
         case .accountsAndWorkspaces: L10n.settingsAccountsIntro
         case .agents: L10n.settingsAgentsIntro
+        case .modelProvider: L10n.settingsModelsIntro
+        case .mcp: L10n.settingsConnectorsIntro
         case .skills: L10n.settingsSkillsIntro
         case .memory: L10n.settingsMemoryIntro
         case .meetings: L10n.settingsMeetingsIntro

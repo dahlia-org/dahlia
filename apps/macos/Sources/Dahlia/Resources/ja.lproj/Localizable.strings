@@ -718,7 +718,7 @@
 "Share" = "共有";
 "Share Summary" = "要約を共有";
 "share.exportToGoogleDrive" = "Google Drive へ書き出す";
-"share.exportToGoogleDrivePrompt" = "この会議の議事録を Google ドキュメントとして Google Drive に書き出してください。get_meeting で会議名・開始日時・要約を取得し、get_meeting_transcript で文字起こしの原文を全ページ取得してください。My Drive 直下の Meetings フォルダ（なければ作成）配下に、{meeting name} - YYYY/MM/DD HH:MM JST という名前の会議フォルダを作成し、その中に {meeting name} - YYYY/MM/DD HH:MM JST - Notes by Dahlia という名前の Google ドキュメントを作成してください。{meeting name} は会議名、日時は会議の開始日時を日本標準時（Asia/Tokyo）に変換した24時間表記とし、日付の / はフォルダ名・文書名の一部として扱ってください。同じ会議フォルダが既にあれば再利用してください。1つの Google ドキュメント内に2つのドキュメントタブを順番に作り、1つ目の「📝 メモ」には要約を、見出し・箇条書き・アクションアイテムの構成を保って記載してください。2つ目の「📖 文字起こし」には原文すべてを時系列順に、要約・省略・翻訳・言い換えをせず記載し、話者・時刻があれば保持してください。本文の見出しや別ファイルではなく Google ドキュメントのタブで分けてください。全文取得やタブの作成ができない場合は、その制約と未完了の内容を伝え、完了したと報告しないでください。作成したドキュメントのリンクを教えてください。Google Drive のツールが使えない場合は、設定の「Dahlia AI」>「モデル」の「プロバイダー」で Google Drive の MCP がある Databricks ワークスペースを追加し、「MCP」タブで Google Drive をオンにするよう案内してください。";
+"share.exportToGoogleDrivePrompt" = "この会議の議事録を Google ドキュメントとして Google Drive に書き出してください。get_meeting で会議名・開始日時・要約を取得し、get_meeting_transcript で文字起こしの原文を全ページ取得してください。My Drive 直下の Meetings フォルダ（なければ作成）配下に、{meeting name} - YYYY/MM/DD HH:MM JST という名前の会議フォルダを作成し、その中に {meeting name} - YYYY/MM/DD HH:MM JST - Notes by Dahlia という名前の Google ドキュメントを作成してください。{meeting name} は会議名、日時は会議の開始日時を日本標準時（Asia/Tokyo）に変換した24時間表記とし、日付の / はフォルダ名・文書名の一部として扱ってください。同じ会議フォルダが既にあれば再利用してください。1つの Google ドキュメント内に2つのドキュメントタブを順番に作り、1つ目の「📝 メモ」には要約を、見出し・箇条書き・アクションアイテムの構成を保って記載してください。2つ目の「📖 文字起こし」には原文すべてを時系列順に、要約・省略・翻訳・言い換えをせず記載し、話者・時刻があれば保持してください。本文の見出しや別ファイルではなく Google ドキュメントのタブで分けてください。全文取得やタブの作成ができない場合は、その制約と未完了の内容を伝え、完了したと報告しないでください。作成したドキュメントのリンクを教えてください。Google Drive のツールが使えない場合は、設定の「プロバイダー」で Google Drive の MCP がある Databricks ワークスペースを追加し、「エージェント」>「コネクタ」で Google Drive をオンにするよう案内してください。";
 "Copy for Google Docs" = "Google Docs 用にコピー";
 "Copy for Slack" = "Slack 用にコピー";
 "Summary Prompt" = "要約プロンプト";
@@ -1083,7 +1083,7 @@
 "This request is too large to review completely, so it cannot be approved." = "このリクエストは全体を確認するには大きすぎるため、許可できません。";
 "This request asks for permissions outside the allowed workspace and cannot be approved." = "許可されたワークスペース外の権限を求めているため、この要求は許可できません。";
 "Open Accounts and Workspaces Settings" = "アカウントとワークスペースを開く";
-"chat.openAgentSettings" = "Dahlia AIの設定を開く";
+"chat.openAgentSettings" = "エージェントの詳細設定を開く";
 "Loading models…" = "モデルを読み込み中…";
 "Chat is running" = "チャットを実行中";
 "chat.thread.runningShort" = "実行中";
@@ -1255,7 +1255,7 @@
 "Or continue without signing in" = "またはログインせずに続ける";
 "Choose the languages Dahlia should recognize. Set the AI output language in Manage Workspaces." = "Dahliaが認識する言語を選びます。AIの出力言語は「ワークスペース」で変更できます。";
 "Recognition and OCR Languages" = "認識・OCR対象の言語";
-"setup.modelProviderDescription" = "要約などのAI機能で使うモデルプロバイダーにサインインします。複数同時に使えます。スキップすると要約などは使えませんが、後から設定の「Dahlia AI」で設定できます。";
+"setup.modelProviderDescription" = "要約などのAI機能で使うモデルプロバイダーにサインインします。複数同時に使えます。スキップすると要約などは使えませんが、後から設定の「プロバイダー」で設定できます。";
 "Allow access to the audio sources Dahlia records. You can continue and grant access later." = "Dahliaが録音するオーディオへのアクセスを許可します。後から許可することもできます。";
 "Calendar (Optional)" = "カレンダー（オプション）";
 "Connect a calendar to see upcoming meetings in Dahlia. You can set this up later." = "カレンダーを接続すると、Dahliaで今後のミーティングを確認できます。後から設定することもできます。";
@@ -1432,9 +1432,12 @@
 
 "Used for searchable image text and captions, and for choosing useful screenshots before summary generation." = "検索用の OCR・caption の生成と、要約前の有用なスクリーンショットの選別に共通で使用します。";
 
-"settings.agents" = "Dahlia AI";
-"settings.agents.intro" = "要約・画像解析・チャットの設定です。選択中のアカウントごとに、このMacに保存します。";
+"settings.agents" = "詳細設定";
+"settings.agents.intro" = "Pi・チャット・定期実行・プラグイン・セキュリティの設定です。選択中のアカウントごとに、このMacに保存します。";
+"settings.models.intro" = "プロバイダーごとのモデル、要約、画像解析の設定です。選択中のアカウントごとに、このMacに保存します。";
 "settings.group.features" = "機能";
+"settings.group.agent" = "エージェント";
+"settings.connectors.intro" = "チャットから使う MCP サーバーの設定です。選択中のアカウントごとに、この Mac に保存します。";
 "Dahlia MCP" = "Dahlia MCP";
 "settings.meetings.intro" = "音声・映像のデータ処理を設定します。文字起こし・字幕・画像取得の設定は、選択中のアカウントごとにこのMacに保存します。";
 "settings.dahliaMCP.intro" = "外部の AI アプリから Dahlia のミーティングを利用できます。公開する範囲と権限を選び、接続用の設定をコピーしてください。";
@@ -1487,8 +1490,8 @@
 "settings.agents.mcpDirectPairsInvalid" = "環境変数とヘッダーは、値のある行に名前を入力し、同じ名前を重ねないでください。";
 "settings.agents.mcpDirectCommandRequired" = "コマンドを入力してください。";
 "settings.agents.mcpDirectURLInvalid" = "http または https の URL を入力してください。";
-"settings.agents.mcpNoProviders" = "「モデル」の「プロバイダー」で Databricks ワークスペースを追加すると、その Unity AI Gateway の MCP をここでオンにできます。";
-"settings.agents.mcpProviderSignInRequired" = "サインインが必要です。「モデル」の「プロバイダー」でサインインし直してください。";
+"settings.agents.mcpNoProviders" = "「エージェント」>「プロバイダー」で Databricks ワークスペースを追加すると、その Unity AI Gateway の MCP をここでオンにできます。";
+"settings.agents.mcpProviderSignInRequired" = "サインインが必要です。「エージェント」>「プロバイダー」でサインインし直してください。";
 "settings.agents.mcpWorkspaceIsAccount" = "このワークスペースはアカウント自身のもので、MCP にもそのまま使えます。";
 "settings.agents.enabledCount %lld" = "%lld 件オン";
 "settings.agents.mcpServiceWithServerName %@ %@" = "%1$@ (%2$@)";
@@ -1506,7 +1509,7 @@
 "settings.agents.workingDirectory" = "作業フォルダ";
 "settings.agents.workingDirectory.notAllowed" = "作業フォルダには、フルパスか ~ で始まるパスを指定してください。ホームフォルダ自身、それを含むフォルダ、ライブラリの中、コマンドの置き場所（PATH のフォルダ）やシェルの起動ファイルを含むフォルダは指定できません。";
 "settings.agents.workingDirectory.help" = "チャットの作業場所です。このフォルダは追加の許可なしに読み書きできます。変更はチャットを開き直したときに反映されます。";
-"No executable Pi at %@. Install Pi in Settings > Dahlia AI." = "%@ に実行可能な Pi がありません。設定の「Dahlia AI」で Pi をインストールしてください。";
+"No executable Pi at %@. Install Pi in Settings > Agent > Advanced Settings." = "%@ に実行可能な Pi がありません。設定の「エージェント」>「詳細設定」で Pi をインストールしてください。";
 "Pi was not found on PATH. You can install Dahlia-managed Pi from Settings." = "PATH 上に Pi が見つかりません。設定からアプリ管理下の Pi をインストールできます。";
 "settings.agents.piNotInstalled" = "Pi がインストールされていません";
 "settings.agents.installPi" = "Pi をインストール";
@@ -1622,7 +1625,7 @@
 
 "settings.agents.skills" = "スキル";
 "settings.agents.skills.empty" = "認識しているスキルはありません。";
-"settings.agents.skills.pathConflict" = "スキル保存先とその配下は PATH に指定できません。「Dahlia AI」>「一般」の環境変数から外してください。";
+"settings.agents.skills.pathConflict" = "スキル保存先とその配下は PATH に指定できません。「エージェント」>「詳細設定」>「一般」の環境変数から外してください。";
 "settings.agents.skills.help" = "新しいチャットプロセスが認識するスキルです。標準スキル、このアカウントが保存したスキル、プラグインのスキルを表示します。追加・変更後は更新してください。実行中のチャットには次のプロセス起動時に反映されます。";
 "settings.agents.fileAccess.builtIn" = "既定で許可されているフォルダ・ファイル";
 "settings.agents.fileAccess.builtInHelp" = "フォルダは配下を含みます。既定の許可は変更できません。システムの許可よりも、Pi の実行コード・Dahlia の保護データ・シェル起動ファイルの制限を優先します。/opt/homebrew と /usr/local の var・etc は読み取り不可です。表示には個別のデバイスファイルを含みません。";
@@ -1664,7 +1667,7 @@
 "Refresh Backups" = "バックアップを再読み込み";
 
 "setup.piDescription" = "Pi はチャットや要約などの AI 機能に必要です。Pi が見つからないため、Dahlia の管理下にインストールしてください。";
-"setup.piSkipDescription" = "「続ける」で後回しにできます。後から「設定 → Dahlia AI」でインストールや切り替えができます。";
+"setup.piSkipDescription" = "「続ける」で後回しにできます。後から「設定 → エージェント → 詳細設定」でインストールや切り替えができます。";
 
 "Pi installation failed — %@: %@" = "Pi のインストールに失敗しました — %@：%@";
 "Release information" = "リリース情報の取得";
@@ -1963,7 +1966,7 @@
 "Authorize Calendar and Drive" = "カレンダーと Drive の利用を許可";
 "settings.agents.alwaysOn.help" = "アプリが開いている間、オンのイベントソースを読み、新しいイベントをこのエージェントに知らせます。録音中は読みません。返信などの外部への書き込みは、通常のチャットと同じ承認設定に従います。";
 "settings.agents.alwaysOn.sources" = "イベントソース";
-"settings.agents.alwaysOn.noServers" = "メールや Slack を追加するには、設定の「Dahlia AI」の「コネクタ」で MCP サーバーを登録してください。カレンダーはアプリのカレンダー設定を使います。";
+"settings.agents.alwaysOn.noServers" = "メールや Slack を追加するには、設定の「エージェント」>「コネクタ」で MCP サーバーを登録してください。カレンダーはアプリのカレンダー設定を使います。";
 "settings.agents.alwaysOn.editSource" = "イベントソースを編集";
 "settings.agents.alwaysOn.addSource" = "イベントソースを追加";
 "settings.agents.alwaysOn.chooseSource" = "どこから読みますか";

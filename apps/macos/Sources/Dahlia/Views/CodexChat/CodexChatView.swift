@@ -122,7 +122,7 @@ struct CodexChatView: View {
                     if showsWelcome {
                         if dismissedIntegrationsSessionID != session.id {
                             CodexChatAppIntegrationsView(
-                                onOpenSettings: { navigation.openAgentSettings(tab: .mcps) },
+                                onOpenSettings: { navigation.openSettings(category: .mcp) },
                                 onDismiss: { dismissedIntegrationsSessionID = session.id }
                             )
                             .padding(.horizontal, CodexChatDesign.composerHorizontalPadding)

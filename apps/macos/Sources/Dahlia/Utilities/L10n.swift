@@ -2454,13 +2454,16 @@ enum L10n { // swiftlint:disable:this type_body_length
 
     static var account: String { String(localized: "Account", bundle: bundle) }
     static var features: String { String(localized: "settings.group.features", bundle: bundle) }
+    static var agentSettingsGroup: String { String(localized: "settings.group.agent", bundle: bundle) }
+    static var settingsConnectorsIntro: String { String(localized: "settings.connectors.intro", bundle: bundle) }
 
     static var chatGPTSubscription: String { String(localized: "ChatGPT Subscription", bundle: bundle) }
     static var databricks: String { String(localized: "Databricks", bundle: bundle) }
     static var unityGateway: String { String(localized: "Unity Gateway", bundle: bundle) }
     static var dataProtection: String { String(localized: "settings.dataProtection", bundle: bundle) }
     static var settingsDataProtectionIntro: String { String(localized: "settings.dataProtection.intro", bundle: bundle) }
-    static var agents: String { String(localized: "settings.agents", bundle: bundle) }
+    static var agentAdvancedSettings: String { String(localized: "settings.agents", bundle: bundle) }
+    static var settingsModelsIntro: String { String(localized: "settings.models.intro", bundle: bundle) }
     static var settingsAgentsIntro: String { String(localized: "settings.agents.intro", bundle: bundle) }
     static var settingsMeetingsIntro: String { String(localized: "settings.meetings.intro", bundle: bundle) }
     static var settingsDahliaMCPIntro: String { String(localized: "settings.dahliaMCP.intro", bundle: bundle) }
@@ -2693,7 +2696,7 @@ enum L10n { // swiftlint:disable:this type_body_length
         bundle: bundle
     ) }
     static func piExecutableNotFound(_ path: String) -> String { String(
-        localized: "No executable Pi at \(path). Install Pi in Settings > Dahlia AI.",
+        localized: "No executable Pi at \(path). Install Pi in Settings > Agent > Advanced Settings.",
         bundle: bundle
     ) }
     static var codexSignedIn: String { String(localized: "Signed in", bundle: bundle) }

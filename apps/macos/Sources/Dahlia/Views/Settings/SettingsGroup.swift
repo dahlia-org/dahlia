@@ -4,6 +4,7 @@ import Foundation
 enum SettingsGroup: CaseIterable, Identifiable {
     case app
     case features
+    case agent
     case advanced
 
     var id: Self { self }
@@ -12,6 +13,7 @@ enum SettingsGroup: CaseIterable, Identifiable {
         switch self {
         case .app: L10n.thisMac
         case .features: L10n.features
+        case .agent: L10n.agentSettingsGroup
         case .advanced: L10n.advanced
         }
     }
@@ -19,8 +21,9 @@ enum SettingsGroup: CaseIterable, Identifiable {
     var categories: [SettingsCategory] {
         switch self {
         case .app: [.general, .appearance, .permissions, .backups]
-        case .features: [.workspace, .meetings, .providers, .agents, .skills, .memory, .dahliaMCP, .calendar, .meetingLinks]
-        case .advanced: [.search, .audioDiagnostics]
+        case .features: [.workspace, .meetings, .calendar, .meetingLinks]
+        case .agent: [.providers, .modelProvider, .mcp, .skills, .memory, .agents]
+        case .advanced: [.dahliaMCP, .search, .audioDiagnostics]
         }
     }
 }

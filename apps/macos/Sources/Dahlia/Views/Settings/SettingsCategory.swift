@@ -45,7 +45,7 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
         case .accountsAndWorkspaces: L10n.serverConnections
         case .accountPreferences: L10n.accountPreferences
         case .providers: L10n.providerAccounts
-        case .agents: L10n.agents
+        case .agents: L10n.agentAdvancedSettings
         case .skills: L10n.agentSkills
         case .memory: L10n.agentMemory
         case .workspacePreferences: L10n.workspaceSettings
@@ -66,9 +66,9 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
         case .screenshots: L10n.screenshots
         case .calendar: L10n.calendar
         case .meetingLinks: L10n.meetingLinks
-        case .modelProvider: L10n.modelProvider
+        case .modelProvider: L10n.agentModels
         case .aiSummary: L10n.transcriptionAndSummary
-        case .mcp: L10n.mcp
+        case .mcp: L10n.agentMCPs
         case .dahliaMCP: L10n.dahliaMCP
         case .instructions: L10n.instructions
         case .audioDiagnostics: L10n.diagnostics
@@ -80,7 +80,7 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
         case .accountsAndWorkspaces: "brain"
         case .accountPreferences: "text.badge.star"
         case .providers: "person.badge.key"
-        case .agents: "sparkles"
+        case .agents: "slider.horizontal.3"
         case .skills: "book.closed"
         case .memory: "brain.head.profile"
         case .workspacePreferences: "globe"
@@ -101,9 +101,9 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
         case .screenshots: "photo.on.rectangle.angled"
         case .calendar: "calendar"
         case .meetingLinks: "link"
-        case .modelProvider: "sparkles"
+        case .modelProvider: "brain"
         case .aiSummary: "list.bullet.clipboard"
-        case .mcp: "network"
+        case .mcp: "point.3.connected.trianglepath.dotted"
         case .dahliaMCP: "point.3.connected.trianglepath.dotted"
         case .instructions: "list.bullet.clipboard"
         case .audioDiagnostics: "stethoscope"
@@ -148,24 +148,13 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
                 "ChatGPT", "OpenAI", "Anthropic", "Claude", "Databricks", L10n.unityGateway, "Google", L10n.googleCalendar, L10n.googleDrive,
             ]
         case .agents:
-            // The services Unity AI Gateway commonly offers; a workspace lists its own when a server is added.
-            [
-                L10n.unityGatewayMCPs,
-                L10n.mcp,
-                L10n.unityGateway,
-                "Databricks",
-                L10n.useManagedPi,
-                "Pi",
-                L10n.agentProviders,
-                L10n.agentEnvironment,
-                L10n.agentPackages,
-                "npm",
-                "ChatGPT",
-                "OpenAI",
-                "Anthropic",
-                "Claude",
-            ]
+            [L10n.useManagedPi, "Pi", L10n.agentEnvironment, L10n.agentPackages, "npm", L10n.agentSchedules, L10n.agentSecurity]
+        case .modelProvider:
+            [L10n.agentProviders, L10n.unityGateway, "Databricks", "ChatGPT", "OpenAI", "Anthropic", "Claude"]
                 + Self.accountPreferences.searchTerms + Self.macInference.searchTerms
+        case .mcp:
+            // The services Unity AI Gateway commonly offers; a workspace lists its own when a server is added.
+            [L10n.unityGatewayMCPs, L10n.mcp, L10n.unityGateway, "Databricks"]
                 + ["Gmail", "Google Calendar", "Google Drive", "Slack", "GitHub", "Atlassian", "Jira", "Confluence", "Microsoft 365"]
         case .skills:
             [
