@@ -412,7 +412,7 @@ extension PiChatService {
         let head = "- event:\(event.id) "
         let source = event.sourceID.flatMap { sources[$0] } ?? "the app or user"
         return head + "from \(inline(source)), topic \(inline(event.topic)) at \(event.occurredAt.ISO8601Format()):\n"
-            + fenced(event.note + "\nKey: " + (event.key ?? "") + "\nReference: " + (event.ref ?? "null"))
+            + fenced(event.note + "\nKey: " + (event.key ?? "") + "\nReference: " + (event.ref ?? "null") + (event.url.map { "\nLink: " + $0 } ?? ""))
 
     }
 

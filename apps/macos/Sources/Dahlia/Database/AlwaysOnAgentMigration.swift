@@ -46,7 +46,7 @@ enum AlwaysOnAgentMigration {
         CREATE TABLE agent_event_inbox (
             id TEXT PRIMARY KEY NOT NULL, agentID TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
             sourceID TEXT REFERENCES agent_event_sources(id) ON DELETE CASCADE,
-            key TEXT, topic TEXT, note TEXT NOT NULL, ref TEXT, occurredAt DATETIME NOT NULL,
+            key TEXT, topic TEXT, note TEXT NOT NULL, ref TEXT, url TEXT, occurredAt DATETIME NOT NULL,
             taskID TEXT REFERENCES agent_tasks(id) ON DELETE SET NULL, handledAt DATETIME,
             createdAt DATETIME NOT NULL
         );

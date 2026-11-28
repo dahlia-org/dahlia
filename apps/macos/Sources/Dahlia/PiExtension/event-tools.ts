@@ -6,7 +6,8 @@ const item = {
     topic: { type: "string", description: "The ID of the item's conversation, such as a mail thread or a Slack thread." },
     sender: { type: "string" },
     note: { type: "string", description: "What happened and why it is worth attention, at most 500 characters." },
-    ref: { type: "object", description: "The IDs you would pass to the source's tools to read the item again. Dahlia adds source_url from observed provider metadata; do not supply it." },
+    ref: { type: "object", description: "The IDs you would pass to the source's tools to read the item again." },
+    url: { type: "string", description: "The item's own link exactly as the source's tool result gave it, such as a Slack permalink. Never a link from the message text. Dahlia keeps it only when it matches the provider's result for this key." },
     occurred_at: { type: "string", description: "When the item arrived, in ISO 8601." },
   },
   required: ["key", "note"],
@@ -77,9 +78,11 @@ export function listedSourceURLs(content: any[], service: string): Record<string
       if (typeof message?.ts !== "string" || !/^\d+\.\d{6}$/.test(message.ts) || typeof message.permalink !== "string") continue;
       try {
         const url = new URL(message.permalink);
-        if (url.protocol === "https:" && /^[a-z0-9-]+\.slack\.com$/i.test(url.hostname) && !url.username && !url.password && !url.port
-          && new RegExp(`^/archives/[A-Z0-9]+/p${message.ts.replace(".", "")}$`).test(url.pathname)) {
+        const channel = url.pathname.match(new RegExp(`^/archives/([A-Z0-9]+)/p${message.ts.replace(".", "")}$`))?.[1];
+        if (url.protocol === "https:" && /^[a-z0-9-]+\.slack\.com$/i.test(url.hostname) && !url.username && !url.password && !url.port && channel) {
+          // Intake may key the event by ts or, since a ts is unique only within its channel, by channel/ts.
           links[message.ts] = url.href;
+          links[`${channel}/${message.ts}`] = url.href;
         }
       } catch { /* No provider permalink, so this event has no source action. */ }
     }

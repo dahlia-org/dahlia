@@ -15,6 +15,8 @@ struct AgentInboxService: Sendable {
         var topic: String?
         var note: String
         var ref: JSONValue?
+        /// The link intake saw for the item; kept only when it matches the provider link for this key in this run.
+        var url: String?
         var occurredAt: Date?
         /// Used only to enforce the source allowlist; never persisted.
         var sender: String?
@@ -58,6 +60,7 @@ struct AgentInboxService: Sendable {
                 topic: text("topic"),
                 note: note,
                 ref: ref,
+                url: text("url"),
                 occurredAt: text("occurred_at").flatMap { try? Date($0, strategy: .iso8601) },
                 sender: text("sender")
             )
@@ -224,21 +227,12 @@ struct AgentInboxService: Sendable {
                     statuses[item.key] = "limit"
                     continue
                 }
-                var ref = item.ref
-                // Only tool-result observation supplies navigation metadata; the model cannot forge this field.
-                if var fields = ref?.objectValue {
-                    fields.removeValue(forKey: "source_url")
-                    ref = .object(fields)
-                }
-                if let url = sourceURLs[item.key] {
-                    var fields = ref?.objectValue ?? [:]
-                    fields["source_url"] = .string(url.absoluteString)
-                    ref = .object(fields)
-                }
+                // The observed link must belong to this item; a supplied hint cannot point to another observed message.
+                let url = sourceURLs[item.key].flatMap { item.url == nil || item.url == $0.absoluteString ? $0 : nil }
                 let event = try AgentEventRecord(
                     id: UUID.v7().uuidString, agentID: source.agentID, sourceID: sourceID, key: item.key, topic: item.topic,
-                    note: String(item.note.prefix(Self.noteLimit)), ref: ref.map(Self.text), occurredAt: min(item.occurredAt ?? now, now),
-                    taskID: nil, handledAt: nil, createdAt: now
+                    note: String(item.note.prefix(Self.noteLimit)), ref: item.ref.map(Self.text), occurredAt: min(item.occurredAt ?? now, now),
+                    taskID: nil, handledAt: nil, createdAt: now, url: url?.absoluteString
                 )
                 try event.insert(db, onConflict: .ignore)
                 if db.changesCount == 1 { inserted += 1 }

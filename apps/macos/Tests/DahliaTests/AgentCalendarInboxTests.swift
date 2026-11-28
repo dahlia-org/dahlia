@@ -59,8 +59,16 @@
             try service.reconcileCalendar(.init(events: [event()], successfulProviders: ["provider-a"]), now: now)
             let signal = try #require(try service.recentEvents().first)
             #expect(signal.note == L10n.agentCalendarMeetingNote("Meeting") && signal.note.contains("Meeting"))
-            let ref = try JSONDecoder().decode(JSONValue.self, from: Data(try #require(signal.ref).utf8))
-            #expect(ref.objectValue?["source_url"]?.stringValue == "https://www.google.com/calendar/event?eid=event")
+            #expect(signal.url == "https://www.google.com/calendar/event?eid=event")
+        }
+
+        @Test func appleCalendarEventOpensInCalendar() {
+            let event = CalendarEvent(
+                id: "cal::ABC:DEF::1700000000", calendarID: "cal", calendarName: "Calendar", calendarColorHex: nil,
+                platform: CalendarEventPlatform.macOSCalendar, platformId: "ABC:DEF::1700000000", title: "Meeting",
+                description: "", icalUid: nil, startDate: now, endDate: now, isAllDay: false, conferenceURI: nil
+            )
+            #expect(AgentInboxService.pageURL(event) == "ical://ekevent/ABC:DEF?method=show&options=more")
         }
 
         @Test(arguments: [false, true])
