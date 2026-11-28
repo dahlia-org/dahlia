@@ -33,24 +33,20 @@
             let path = try #require(Bundle.appModule.path(forResource: language, ofType: "lproj"))
             let bundle = try #require(Bundle(path: path))
             let keys = [
-                "topic", "lead", "column.feature", "column.chat",
-                "column.agent", "column.task", "column.intake", "column.scheduled",
-                "row.trigger", "row.files", "row.dahlia", "row.connectors",
-                "row.resources", "row.web", "row.skills", "row.memory",
-                "row.threads", "row.approval", "cell.chat.trigger", "cell.agent.trigger",
-                "cell.task.trigger", "cell.intake.trigger", "cell.scheduled.trigger", "cell.chat.files",
-                "cell.agent.files", "cell.chat.dahlia", "cell.chat.connectors", "cell.intake.connectors",
-                "cell.scheduled.tools", "cell.chat.resources", "cell.chat.web", "cell.chat.skills",
-                "cell.intake.skills", "cell.chat.memory", "cell.chat.threads", "cell.agent.threads",
-                "cell.chat.approval", "cell.task.approval", "cell.sameAsChat", "cell.readOnly",
-                "cell.none", "cell.noWrites", "subagent.title", "subagent.body",
-                "other.title", "other.body", "note",
+                "topic", "lead", "map.external", "map.externalCaption", "map.dahliaCaption", "map.read", "map.readOne",
+                "map.readWrite", "map.event", "map.task", "map.result", "map.same", "map.differences",
+                "map.scheduledCaption", "map.intakeCaption", "map.agentCaption", "map.worker", "map.workerCaption",
+                "map.chat", "map.chatCaption", "map.body", "matrix.title", "row.chat", "row.chatCaption", "row.agentCaption",
+                "row.intakeCaption", "row.scheduledCaption", "column.agent", "column.intake",
+                "column.scheduled", "row.files", "row.dahlia", "row.connectors", "row.web", "row.skills", "row.memory",
+                "row.threads", "row.approval", "access.full", "access.partial", "access.none", "other.title",
+                "other.body", "note",
             ]
             for key in keys {
                 let fullKey = "help.howItWorks.modes." + key
                 #expect(bundle.localizedString(forKey: fullKey, value: nil, table: nil) != fullKey, "\(language): \(key)")
             }
-            #expect(HelpModesTable.rows.allSatisfy { $0.cells.count == HelpModesTable.columns.count })
+            #expect(HelpModesMatrix.rows.allSatisfy { $0.access.count == HelpModesMatrix.capabilities.count })
         }
 
         private func scrollViews(in view: NSView) -> [NSScrollView] {
