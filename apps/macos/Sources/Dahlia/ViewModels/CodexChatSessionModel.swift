@@ -10,6 +10,8 @@ final class CodexChatSessionModel: Identifiable {
     private(set) var isReadOnly = false
     private(set) var backendThreadID: String?
     private(set) var parentThread: CodexChatThreadSummary?
+    /// The agent whose Source's intake thread this is; its header names the agent.
+    private(set) var intakeAgent: AgentRecord?
     private(set) var didStartBackendThread = false
     private(set) var title: String
     private(set) var messages: [CodexChatMessage]
@@ -970,6 +972,7 @@ extension CodexChatSessionModel {
         historySynchronizationGeneration += 1
         backendThreadID = thread.id
         parentThread = thread.parentThread
+        intakeAgent = thread.intakeAgent
         isReadOnly = thread.isReadOnly
         title = thread.title
         if !preservingPendingMessages {

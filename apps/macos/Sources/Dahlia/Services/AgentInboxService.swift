@@ -161,11 +161,41 @@ struct AgentInboxService: Sendable {
         }
     }
 
-    /// Deleting a Source removes the events it recorded.
+    /// Deleting a Source removes the events it recorded and its intake thread.
     func deleteSource(id: String) throws {
         try dbQueue.write {
+            try $0.execute(sql: "DELETE FROM chat_threads WHERE id=?", arguments: [id])
             try $0.execute(sql: "DELETE FROM agent_event_sources WHERE id=?", arguments: [id])
         }
+    }
+
+    /// The thread a Source's intake runs show in. It has the Source's ID, so it needs no link of its own; it is its agent's,
+    /// read-only, and out of the history. Each run starts a new Pi session, so no run sees an earlier one.
+    /// The agent whose Source's intake thread this is, if it is one.
+    nonisolated static func intakeAgent(threadID: String, in db: any DatabaseReader) -> AgentRecord? {
+        try? db.read {
+            try AgentRecord.fetchOne(
+                $0, sql: "SELECT a.* FROM agents a JOIN agent_event_sources s ON s.agentID=a.id WHERE s.id=?", arguments: [threadID]
+            )
+        }
+    }
+
+    static func intakeThread(_ source: AgentSourceRecord, now: Date, in db: Database) throws -> String {
+        guard let current = try AgentSourceRecord.fetchOne(db, key: source.id),
+              current.revision == source.revision, current.agentID == source.agentID
+        else { throw Failure(message: "Source configuration changed.") }
+        let title = "intake-" + AgentHome.directoryName(for: current.name, taken: [])
+        if var thread = try ChatThreadRecord.fetchOne(db, key: source.id) {
+            if thread.title != title {
+                thread.title = title
+                try thread.update(db)
+            }
+        } else {
+            try ChatThreadRecord(
+                id: source.id, accountID: AppAccount.key, title: title, createdAt: now, updatedAt: now, agentID: source.agentID
+            ).insert(db)
+        }
+        return source.id
     }
 
     /// The most recently recorded signals for the side panel.
@@ -242,12 +272,17 @@ struct AgentInboxService: Sendable {
         }
     }
 
+    /// The range a first read starts from.
+    static func intakeFloor(_ now: Date) -> String {
+        ISO8601DateFormatter().string(from: now.addingTimeInterval(-86400))
+    }
+
     /// Pins the bootstrap range before the first read, so caps, failures, and crashes all retry the same lower bound.
     func intakeLowerBound(sourceID: String, revision: Int, now: Date) throws -> String {
         try dbQueue.write { db in
             var source = try Self.currentSource(sourceID, revision: revision, in: db)
             if let cursor = source.cursor { return cursor }
-            let lowerBound = ISO8601DateFormatter().string(from: now.addingTimeInterval(-86400))
+            let lowerBound = Self.intakeFloor(now)
             source.cursor = lowerBound
             try source.update(db)
             return lowerBound

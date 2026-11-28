@@ -22,6 +22,7 @@ actor PiChatService: CodexChatServicing {
     /// The always-on agent reads one Source at a time; see `PiChatService+AlwaysOn`.
     var intakeTask: Task<Void, Never>?
     var activeIntake: ActiveIntake?
+    let waitForIntakeTimeout: @Sendable () async throws -> Void
     /// When each Source was last tried, so a failing one waits its interval instead of retrying every minute.
     var intakeAttempts: [String: Date] = [:]
     /// Each agent is one thread; see `PiChatService+DahliaBot`. A failed or incomplete notice waits before its agent, by
@@ -97,6 +98,9 @@ actor PiChatService: CodexChatServicing {
                 Task {
                     await self.closeIdleSession(threadID, processID: processID)
                 }
+            } else if run.origin == "intake" {
+                let processID = sessions[threadID]?.processID
+                Task { await self.closeIdleSession(threadID, processID: processID) }
             } else if run.origin == "bot" {
                 settleBotNotice(threadID: threadID, status: status)
             } else if run.origin == "user" {
@@ -288,7 +292,7 @@ actor PiChatService: CodexChatServicing {
     var waitingParents: Set<String> = []
     var stoppingAccounts: Set<String> = []
     /// Pi reads providers at process start. Keep the revision on each process until it is replaced, even if idle cleanup loses a race.
-    private var providerGeneration = 0
+    var providerGeneration = 0
 
     init(
         runtime: PiRuntimeService = .shared,
@@ -300,6 +304,7 @@ actor PiChatService: CodexChatServicing {
         reviewTriageEnabled: @escaping @Sendable () -> Bool = { AgentAutoReviewSettings.triageEnabled() },
         customInstructions: @escaping @Sendable () -> String = { AgentChatInstructions.load() },
         mcpSettings: @escaping @Sendable () -> AgentMCPSettings = { AgentMCPSettings.load() },
+        waitForIntakeTimeout: @escaping @Sendable () async throws -> Void = { try await Task.sleep(for: .seconds(600)) },
         calendarSnapshot: @escaping @Sendable () async -> AgentCalendarSnapshot = { await AgentCalendarSnapshot.current() },
         fileAccessSettings: @escaping @Sendable () -> PiFileAccessSettings = { PiFileAccessSettings.load() },
         omnigentConnection: @escaping @Sendable () -> UUID? = { OmnigentService.connectionID() },
@@ -315,6 +320,7 @@ actor PiChatService: CodexChatServicing {
         self.initializeAgentHome = initializeAgentHome
         self.mcpExecutableURL = mcpExecutableURL
         self.mcpSettings = mcpSettings
+        self.waitForIntakeTimeout = waitForIntakeTimeout
         self.calendarSnapshot = calendarSnapshot
         self.fileAccessSettings = fileAccessSettings
         self.reviewModel = reviewModel
@@ -406,7 +412,8 @@ actor PiChatService: CodexChatServicing {
                 earlierMessagesCursor: page.earlierCursor,
                 isReadOnly: record.scheduleID != nil || Self.isRetiredBotThread(record.id, in: store.dbQueue),
                 parentThread: parent,
-                lastItemSeq: page.lastItemSeq
+                lastItemSeq: page.lastItemSeq,
+                intakeAgent: AgentInboxService.intakeAgent(threadID: record.id, in: store.dbQueue)
             )
         }.value
     }
@@ -565,6 +572,8 @@ actor PiChatService: CodexChatServicing {
         let previousSequence = try history().freshSessionSequence(threadID: threadID)
         clearingThreads[threadID] = previousSequence
         await closeSession(threadID)
+        // An intake can be the first Pi session ever, before any chat made the sessions folder.
+        _ = try agentLocator.sessionsURL()
         try recoverSessionReset(threadID: threadID)
         guard let file = try? await sessionFile(id: threadID) else { return }
         let retired = file.appendingPathExtension("clearing.\(previousSequence)")
@@ -590,7 +599,11 @@ actor PiChatService: CodexChatServicing {
         guard record.scheduleID == nil || scheduledRuns[threadID]?.origin == "schedule" else {
             throw HermesLearning.failure(L10n.agentScheduleReadOnly)
         }
-        guard try !Self.isRetiredBotThread(threadID, in: history().dbQueue) else { throw HermesLearning.failure(L10n.agentBotRetiredReadOnly) }
+        // An intake thread is read-only like an earlier agent conversation; only its intake runs start in it.
+        let intake = scheduledRuns[threadID].flatMap { $0.origin == "intake" ? $0 : nil }
+        guard try intake != nil || !Self.isRetiredBotThread(threadID, in: history().dbQueue) else {
+            throw HermesLearning.failure(L10n.agentBotRetiredReadOnly)
+        }
         var connection = try await connection(threadID: threadID)
         let session = try live(threadID, connection)
         guard session.turn == nil else { throw PiRuntimeError.rpcError(code: nil, message: "turn already active") }
@@ -645,6 +658,7 @@ actor PiChatService: CodexChatServicing {
         )
         // Every run of the bot's thread is recorded as the bot's, which keeps the thread out of learning for good.
         userRun.profile = launchProfile(threadID).rawValue
+        userRun.origin = intake?.origin ?? userRun.origin
         approvalMethod = try preparedApprovalMethod(threadID: threadID, requested: approvalMethod)
         userRun.approvalMethod = approvalMethod.rawValue
         let preparedRun = scheduledRuns[threadID] ?? userRun
@@ -657,7 +671,8 @@ actor PiChatService: CodexChatServicing {
         }
         userRun.input = try ChatHistoryCodec.encodeInputs(inputs)
         let run: ChatRunRecord
-        let queued = scheduledRuns[threadID]
+        // An intake run is not in the queue: it is saved here with its opening, like a manual one.
+        let queued = intake == nil ? scheduledRuns[threadID] : nil
         if let queued {
             guard let claimed = try history().claimQueuedRun(queued, input: userRun.input) else { throw CancellationError() }
             run = claimed
@@ -937,10 +952,11 @@ actor PiChatService: CodexChatServicing {
                 return try await self.open(threadID: threadID, sessionFile: url, sessionArguments: ["--session", url.path])
             }
             guard let thread = self.newThreads[threadID] else { throw PiRuntimeError.invalidProtocolResponse }
+            let sessionArguments = ["--session-dir", thread.directory.path, "--session-id", threadID]
+            // Intake names its own model when it launches.
+            if self.launchProfile(threadID) == .intake { return try await self.openIntake(threadID: threadID, sessionArguments: sessionArguments) }
             let model = if let chosen = thread.model.nilIfBlank { chosen } else { await self.startingModel(for: record) }
-            let connection = try await self.open(threadID: threadID, sessionArguments: [
-                "--session-dir", thread.directory.path, "--session-id", threadID,
-            ] + (model.isEmpty ? [] : ["--model", model]))
+            let connection = try await self.open(threadID: threadID, sessionArguments: sessionArguments + (model.isEmpty ? [] : ["--model", model]))
             self.sessions[threadID]?.model = model
             return connection
         }
@@ -1162,6 +1178,14 @@ actor PiChatService: CodexChatServicing {
         await closeSession(threadID)
     }
 
+    func expireIntake(_ threadID: String) async {
+        guard activeIntake?.threadID == threadID else { return }
+        activeIntake = nil
+        intakeTask?.cancel()
+        opening[threadID]?.cancel()
+        await closeSession(threadID)
+    }
+
     func closeSession(_ threadID: String) async {
         guard let session = sessions.removeValue(forKey: threadID) else { return }
         finish(session.turn, error: CancellationError())
@@ -1170,7 +1194,7 @@ actor PiChatService: CodexChatServicing {
     }
 
     /// Routes one process's events to its current turn until the process exits.
-    private func pump(threadID: String, processID: UUID, connection: PiRPCConnection) async {
+    func pump(threadID: String, processID: UUID, connection: PiRPCConnection) async {
         do {
             for try await event in connection.events {
                 let settled = event.objectValue?["type"]?.stringValue == "agent_settled"
@@ -1346,6 +1370,12 @@ actor PiChatService: CodexChatServicing {
 
     private func handleToolActivity(_ object: [String: JSONValue], threadID: String) throws {
         if let activity = Self.toolActivity(object) {
+            if activity.status == .running, activeIntake?.threadID == threadID {
+                activeIntake?.toolCalls += 1
+                guard (activeIntake?.toolCalls ?? 0) <= 100 else {
+                    throw PiRuntimeError.turnFailed("Intake tool call limit exceeded.")
+                }
+            }
             if object["type"]?.stringValue == "tool_execution_end", sessions[threadID]?.turn != nil {
                 try history().appendItems(threadID: threadID, items: [ChatHistoryCodec.toolResult([
                     "toolCallId": object["toolCallId"] ?? .null, "toolName": object["toolName"] ?? .null,

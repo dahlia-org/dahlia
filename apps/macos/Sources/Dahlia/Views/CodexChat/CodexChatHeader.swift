@@ -15,6 +15,8 @@ struct CodexChatHeader: View {
     var onOpenParent: (() -> Void)?
     /// An agent's thread reads `Agents / <its icon and name>` instead of `Dahlia AI / <title>`.
     var agent: AgentRecord?
+    /// A thread of the agent other than its conversation, such as an intake thread, adds ` / <title>`.
+    var agentThreadTitle: String?
     @State private var isParentHovered = false
 
     var body: some View {
@@ -44,6 +46,15 @@ struct CodexChatHeader: View {
                     Text(agent.name)
                         .lineLimit(1)
                         .layoutPriority(-1)
+                    if let agentThreadTitle {
+                        Text("/")
+                            .foregroundStyle(DahliaDesign.secondaryTextColor)
+                            .accessibilityHidden(true)
+                        Text(agentThreadTitle)
+                            .foregroundStyle(DahliaDesign.secondaryTextColor)
+                            .lineLimit(1)
+                            .layoutPriority(-1)
+                    }
                 }
                 .font(.dahliaBody)
                 .foregroundStyle(DahliaDesign.primaryTextColor)

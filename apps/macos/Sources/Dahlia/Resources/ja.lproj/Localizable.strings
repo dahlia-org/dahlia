@@ -2224,6 +2224,7 @@
 "settings.agents.alwaysOn.botModelConversation" = "会話と同じ";
 "settings.agents.alwaysOn.botSoul" = "人格";
 "settings.agents.alwaysOn.openTask" = "タスクを開く";
+"settings.agents.alwaysOn.openIntakeThread" = "取り込みのスレッド";
 
 "bots.section" = "エージェント";
 "bots.idle" = "話しかけると、用件を振り分けて進めます";

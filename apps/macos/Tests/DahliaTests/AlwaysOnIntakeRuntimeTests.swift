@@ -33,7 +33,11 @@
                 ending: [JSONValue],
                 service: String = "system.ai.gmail",
                 registryChange: String? = nil,
-                readSucceeded: Bool = true
+                readSucceeded: Bool = true,
+                acknowledgesPrompt: Bool = true,
+                pausesActivation: Bool = false,
+                onMCPSettings: @escaping @Sendable (PiRuntimeContextStore) -> Void = { _ in },
+                waitForIntakeTimeout: @escaping @Sendable () async throws -> Void = { try await Task.sleep(for: .seconds(600)) }
             ) throws -> Fixture {
                 let calls = readSucceeded ? [("intakeSeen", JSONValue.object(["ids": .array([])]))] + calls : calls
                 let provider = AppAccount.key
@@ -50,7 +54,9 @@
                 }
                 if registryChange == "before" { registry.withLock { replaceRegistration(&$0) } }
                 let transports = TestPiTransportLog()
-                let pi = TestPiRuntime { _ in
+                let contextStore = PiRuntimeContextStore()
+                let pi = TestPiRuntime(contextStore: contextStore) { _ in
+                    if pausesActivation { contextStore.beginActivation() }
                     if registryChange == "during" { registry.withLock { replaceRegistration(&$0) } }
                     let transport = TestPiTransport { command in
                         switch command["type"]?.stringValue {
@@ -62,10 +68,10 @@
                         case "get_commands":
                             return [TestPiTransport.response(id: command["id"] ?? .null, data: .object(["commands": .array([])]))]
                         case "prompt":
-                            return [
+                            return acknowledgesPrompt ? [
                                 TestPiTransport.response(id: command["id"] ?? .null),
                                 TestPiTransport.bridgeRequest(id: "r1", method: calls[0].0, payload: calls[0].1),
-                            ]
+                            ] : []
                         default: return command["id"].map { [TestPiTransport.response(id: $0)] } ?? []
                         }
                     }
@@ -84,7 +90,11 @@
                 }
                 let chat = PiChatService(
                     runtime: pi.service, historyStore: ChatThreadStore(dbQueue: db),
-                    agentLocator: PiAgentDirectoryLocator(applicationSupportURL: pi.rootURL), mcpSettings: { registry.withLock { $0 } }
+                    agentLocator: PiAgentDirectoryLocator(applicationSupportURL: pi.rootURL), mcpSettings: {
+                        onMCPSettings(contextStore)
+                        return registry.withLock { $0 }
+                    },
+                    waitForIntakeTimeout: waitForIntakeTimeout
                 )
                 return Fixture(pi: pi, service: chat, db: db, source: source, transports: transports)
             }
@@ -92,6 +102,15 @@
             private func drain(_ fixture: Fixture, at now: Date = .now) async {
                 await fixture.service.drainAlwaysOn(now: now)
                 await fixture.service.intakeTask?.value
+            }
+
+            private func expectTransportClosed(_ transport: TestPiTransport) async throws {
+                let clock = ContinuousClock()
+                let limit = clock.now.advanced(by: .seconds(5))
+                while await !transport.isClosed, clock.now < limit {
+                    try await Task.sleep(for: .milliseconds(1))
+                }
+                #expect(await transport.isClosed)
             }
 
             private func saved(_ fixture: Fixture) async throws -> (AgentSourceRecord, [AgentSystemRunRecord], [AgentEventRecord]) {
@@ -251,6 +270,182 @@
                 #expect(runs.count == 3 + 1 && runs.allSatisfy { $0.status == "failed" })
                 try expectReadPosition(source, runs: runs, complete: false)
                 #expect(events.count == 2)
+            }
+
+            @Test func eachIntakeIsAFreshSessionTurnOfTheSourcesReadOnlyThread() async throws {
+                let fixture = try fixture(calls: [
+                    ("intakeSeen", .object(["ids": .array([.string("m1"), .string("m2")])])), ("eventRecord", Self.twoItems),
+                ], ending: [TestPiTransport.assistantEnd("Recorded."), TestPiTransport.settled()])
+                defer { try? FileManager.default.removeItem(at: fixture.pi.rootURL) }
+                let now = Date.now
+                await drain(fixture, at: now)
+                await drain(fixture, at: now.addingTimeInterval(1200))
+
+                let thread = try await fixture.service.loadThread(id: fixture.source)
+                #expect(thread.title == "intake-mail" && thread.isReadOnly && thread.intakeAgent != nil)
+                // Both runs stay in the one thread, each opening a new Pi session there.
+                #expect(thread.messages.filter { $0.role == .user }.map(\.startsFreshSession) == [true, true])
+                let launches = fixture.pi.launches.all.filter { $0.profile == .intake }
+                #expect(launches.count == 2 && launches.allSatisfy {
+                    $0.arguments.contains("--session-id") && $0.arguments.contains(fixture.source) && !$0.arguments.contains("--no-session")
+                })
+                let runs = try await fixture.db.read {
+                    try ChatRunRecord.fetchAll($0, sql: "SELECT * FROM chat_runs WHERE threadID=?", arguments: [fixture.source])
+                }
+                #expect(runs.count == 2 && runs.allSatisfy { $0.origin == "intake" && $0.profile == "intake" && $0.status == "completed" })
+                #expect(try await fixture.service.listThreads(cursor: nil).threads.isEmpty)
+                await #expect(throws: (any Error).self) {
+                    _ = try await fixture.service.send(threadID: fixture.source, inputs: [.text("Hello")], model: nil, effort: "")
+                }
+
+                try AgentInboxService(dbQueue: fixture.db, agentID: "").deleteSource(id: fixture.source)
+                #expect(try await fixture.db.read { try ChatThreadRecord.fetchOne($0, key: fixture.source) } == nil)
+            }
+
+            @Test func displayReaderOverflowDoesNotEndIntake() async throws {
+                let fixture = try fixture(calls: [("eventRecord", Self.twoItems)], ending: [])
+                defer { try? FileManager.default.removeItem(at: fixture.pi.rootURL) }
+                await fixture.service.drainAlwaysOn()
+                let transport = await fixture.transports.transport(at: 0)
+                _ = await transport.command { $0["type"] == .string("extension_ui_response") && $0["id"] == .string("r2") }
+                await fixture.service.overflowIntakeDisplayReaders(threadID: fixture.source)
+                await transport.emit(TestPiTransport.assistantEnd("Recorded."))
+                await transport.emit(TestPiTransport.settled())
+                await fixture.service.intakeTask?.value
+
+                let (source, runs, events) = try await saved(fixture)
+                #expect(runs.last?.status == "completed" && events.count == 2)
+                try expectReadPosition(source, runs: runs, complete: true)
+            }
+
+            @Test(arguments: [false, true])
+            func intakeDeadlineCoversStartupAndAPromptThatIsNeverAcknowledged(pausesActivation: Bool) async throws {
+                let (deadline, trigger) = AsyncStream<Void>.makeStream(bufferingPolicy: .bufferingNewest(1))
+                defer { trigger.finish() }
+                let fixture = try fixture(calls: [], ending: [], acknowledgesPrompt: false, pausesActivation: pausesActivation, waitForIntakeTimeout: {
+                    for await _ in deadline { return }
+                })
+                defer { try? FileManager.default.removeItem(at: fixture.pi.rootURL) }
+                await fixture.service.drainAlwaysOn()
+                let transport = await fixture.transports.transport(at: 0)
+                _ = await transport.command(pausesActivation ? "get_state" : "prompt")
+                trigger.yield(())
+                await fixture.service.intakeTask?.value
+
+                try await expectTransportClosed(transport)
+                #expect(await fixture.service.intakeTask == nil)
+                fixture.pi.contextStore.apply()
+                if pausesActivation { #expect(await transport.commands.allSatisfy { $0["type"] != .string("prompt") }) }
+                let (source, runs, _) = try await saved(fixture)
+                #expect(runs.last?.status != "running")
+                if pausesActivation { #expect(source.cursor == nil) } else { try expectReadPosition(source, runs: runs, complete: false) }
+            }
+
+            @Test func intakeDeadlineWhileWaitingForSettleIsInterrupted() async throws {
+                let (deadline, trigger) = AsyncStream<Void>.makeStream(bufferingPolicy: .bufferingNewest(1))
+                defer { trigger.finish() }
+                let fixture = try fixture(calls: [], ending: [], waitForIntakeTimeout: {
+                    for await _ in deadline { return }
+                })
+                defer { try? FileManager.default.removeItem(at: fixture.pi.rootURL) }
+                await fixture.service.drainAlwaysOn()
+                let transport = await fixture.transports.transport(at: 0)
+                _ = await transport.command { $0["type"] == .string("extension_ui_response") && $0["id"] == .string("r1") }
+                // Registration proves prompt acknowledgement returned and awaitIntake is consuming state updates.
+                let clock = ContinuousClock()
+                let limit = clock.now.advanced(by: .seconds(5))
+                while await fixture.service.stateReaders.isEmpty, clock.now < limit {
+                    try await Task.sleep(for: .milliseconds(1))
+                }
+                try #require(await !fixture.service.stateReaders.isEmpty)
+                let task = try #require(await fixture.service.intakeTask)
+                let before = try await saved(fixture).0
+                trigger.yield(())
+                await task.value
+
+                let (source, runs, _) = try await saved(fixture)
+                #expect(runs.last?.status == "interrupted")
+                #expect(runs.last?.finishedAt != nil)
+                #expect(source.cursor == before.cursor)
+                try expectReadPosition(source, runs: runs, complete: false)
+                let status = try await fixture.db.read { db in
+                    try String.fetchOne(db, sql: "SELECT status FROM chat_runs WHERE threadID=? ORDER BY createdAt DESC LIMIT 1", arguments: [fixture.source])
+                }
+                #expect(status == "interrupted")
+                #expect(await fixture.service.intakeTask == nil)
+                try await expectTransportClosed(transport)
+            }
+
+            @Test func intakeDeadlineCancelsPreparationBeforeOpeningExists() async throws {
+                let (preparation, paused) = AsyncStream<Void>.makeStream(bufferingPolicy: .bufferingNewest(1))
+                let (deadline, trigger) = AsyncStream<Void>.makeStream(bufferingPolicy: .bufferingNewest(1))
+                defer { paused.finish(); trigger.finish() }
+                let settingsReads = Mutex(0)
+                let fixture = try fixture(calls: [], ending: [], onMCPSettings: { context in
+                    // The third snapshot is the last source validation, before fresh-session preparation.
+                    let pause = settingsReads.withLock { $0 += 1; return $0 == 3 }
+                    if pause {
+                        context.beginActivation()
+                        paused.yield(())
+                    }
+                }, waitForIntakeTimeout: {
+                    for await _ in deadline { return }
+                })
+                defer { try? FileManager.default.removeItem(at: fixture.pi.rootURL) }
+                await fixture.service.drainAlwaysOn()
+                for await _ in preparation { break }
+                let task = try #require(await fixture.service.intakeTask)
+                #expect(fixture.transports.all.isEmpty)
+                trigger.yield(())
+                await task.value
+
+                #expect(await fixture.service.intakeTask == nil)
+                let (source, runs, _) = try await saved(fixture)
+                #expect(runs.last?.status == "interrupted")
+                #expect(runs.last?.finishedAt != nil)
+                #expect(source.cursor == nil)
+                #expect(fixture.transports.all.isEmpty)
+                fixture.pi.contextStore.apply()
+            }
+
+            @Test(arguments: ["sourceDeleted", "agentDeleted", "revisionChanged"])
+            func staleSourceCannotCreateAnIntakeThread(change: String) async throws {
+                let fixture = try fixture(calls: [], ending: [])
+                defer { try? FileManager.default.removeItem(at: fixture.pi.rootURL) }
+                let source = try await fixture.db.read { try #require(try AgentSourceRecord.fetchOne($0, key: fixture.source)) }
+                try await fixture.db.write { db in
+                    switch change {
+                    case "sourceDeleted": _ = try AgentSourceRecord.deleteOne(db, key: source.id)
+                    case "agentDeleted": _ = try AgentRecord.deleteOne(db, key: source.agentID)
+                    default: try db.execute(sql: "UPDATE agent_event_sources SET revision=revision+1 WHERE id=?", arguments: [source.id])
+                    }
+                    #expect(throws: AgentInboxService.Failure.self) { try AgentInboxService.intakeThread(source, now: .now, in: db) }
+                    #expect(try ChatThreadRecord.fetchOne(db, key: source.id) == nil)
+                }
+            }
+
+            @Test func aDisabledSourceStillOpensItsIntakeThread() async throws {
+                let fixture = try fixture(calls: [], ending: [])
+                defer { try? FileManager.default.removeItem(at: fixture.pi.rootURL) }
+                try await fixture.db.write { try $0.execute(sql: "UPDATE agent_event_sources SET enabled=0 WHERE id=?", arguments: [fixture.source]) }
+                #expect(try await fixture.service.intakeThread(sourceID: fixture.source) == fixture.source)
+            }
+
+            @Test func intakeToolLimitClosesTheProcessWithoutWaitingForSettle() async throws {
+                let fixture = try fixture(calls: [], ending: (0 ..< 101).map { index in
+                    .object([
+                        "type": .string("tool_execution_start"), "toolName": .string("mcp__gmail__read"),
+                        "toolCallId": .string("call-\(index)"),
+                    ])
+                })
+                defer { try? FileManager.default.removeItem(at: fixture.pi.rootURL) }
+                await drain(fixture)
+                let transport = await fixture.transports.transport(at: 0)
+                _ = await transport.command { _ in false } // Closing wakes pending command readers.
+                #expect(await transport.isClosed)
+                let (source, runs, _) = try await saved(fixture)
+                #expect(runs.last?.status == "failed")
+                try expectReadPosition(source, runs: runs, complete: false)
             }
 
             @Test func recordingCapSpansBatchesAndTheNextRunDrainsTheRemainder() async throws {
@@ -418,6 +613,14 @@
                 #expect(runs.count == 3 && runs.last?.status == (scenario == "listed" ? "completed" : "failed"))
                 try expectReadPosition(source, runs: runs, complete: scenario == "listed")
                 #expect(source.lastReadCount == (scenario == "listed" ? 3 : 0))
+            }
+        }
+    }
+    extension PiChatService {
+        /// A burst on the service actor prevents a display consumer from draining its bounded buffer between deltas.
+        fileprivate func overflowIntakeDisplayReaders(threadID: String) {
+            for _ in 0 ..< 300 {
+                sessions[threadID]?.turn?.broadcast.yield(.delta(itemID: "burst", text: "x"))
             }
         }
     }

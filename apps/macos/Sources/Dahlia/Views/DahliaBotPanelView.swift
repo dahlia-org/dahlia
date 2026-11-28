@@ -388,6 +388,10 @@ struct DahliaBotPanelView: View {
                 ].joined(separator: " · "))
                     .font(.dahliaSecondary).foregroundStyle(.secondary)
                 Spacer()
+                // Calendar sources record their signals without an intake run.
+                if source.kind != "calendar" {
+                    Button(L10n.agentOpenIntakeThread) { Task { await model.openIntakeThread(source) } }
+                }
                 Button(L10n.edit) { model.edit(source) }
             }
 

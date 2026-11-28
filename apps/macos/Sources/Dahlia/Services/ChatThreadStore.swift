@@ -39,8 +39,9 @@ struct ChatThreadStore: ChatItemStore, Sendable {
         }
     }
 
-    /// SQL for the agents' current threads, which open from the Agents section and stay out of the history.
-    static let agentThreads = "(SELECT threadID FROM agents WHERE threadID IS NOT NULL)"
+    /// SQL for the agents' current threads and their Sources' intake threads, which open from the Agents section and
+    /// stay out of the history.
+    static let agentThreads = "(SELECT threadID FROM agents WHERE threadID IS NOT NULL UNION ALL SELECT id FROM agent_event_sources)"
 
     /// The active threads, or with `settled` the ones the user settled; both newest first.
     func listThreads(accountID: String, cursor: String?, limit: Int = 25, settled: Bool = false) throws -> CodexChatThreadPage {

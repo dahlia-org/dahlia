@@ -37,12 +37,13 @@ struct CodexChatView: View {
                 reservesSidebarToggle: reservesSidebarToggle,
                 reservesWindowControls: reservesWindowControls,
                 leadingInset: headerLeadingInset,
-                showsTitle: !isSidePanel || session.parentThread != nil,
+                showsTitle: !isSidePanel || session.parentThread != nil || session.intakeAgent != nil,
                 parentTitle: session.parentThread.map {
                     CodexChatMeetingReference.displayText(for: $0.title.nilIfBlank ?? L10n.newChat, namesByID: session.meetingNamesByID)
                 },
                 onOpenParent: session.parentThread.map { parent in { openHistoryThread(parent) } },
-                agent: agent
+                agent: agent ?? session.intakeAgent,
+                agentThreadTitle: agent == nil ? session.intakeAgent.map { _ in session.displayTitle } : nil
             )
             .zIndex(1)
 

@@ -2,8 +2,9 @@ import DahliaRuntimeSupport
 import Foundation
 
 /// The agents' clock work: timers, routing, and reading one Source at a time, whichever agent owns it, with its own Pi
-/// process. Intake sees only that Source's read-only MCP tools and `event_record`. The agents' threads are in
-/// `PiChatService+DahliaBot`.
+/// process. Intake sees only that Source's read-only MCP tools and `event_record`. Each intake is a turn of the Source's
+/// intake thread that starts a new Pi session, as `/clear` and T3's `fresh_session` schedules do: the thread keeps every
+/// run, and no run sees an earlier one. The agents' threads are in `PiChatService+DahliaBot`.
 extension PiChatService {
     struct IntakePages {
         // Opaque bridge identities retain byte equality throughout the graph.
@@ -38,14 +39,15 @@ extension PiChatService {
     }
 
     struct ActiveIntake {
-        let sourceID: String
-        let revision: Int
+        let source: AgentSourceRecord
+        let threadID: String
         let account: String
-        let connection: PiRPCConnection
+        let startedAt: Date
         var recorded = 0
         var failedRecords = 0
         var readFailed = false
         var readSucceeded = false
+        var toolCalls = 0
         var seen: Set<String> = []
         var sourceURLs: [String: URL] = [:]
         var pages = IntakePages()
@@ -124,10 +126,10 @@ extension PiChatService {
             let paused = try inbox.isPaused()
             let stop = paused || AgentBackgroundActivity.isRecording || !runtime.isConfigured
             if let activeIntake, try activeIntake.account != account || stop
-                || inbox.source(activeIntake.sourceID).map({
-                    $0.enabled && $0.revision == activeIntake.revision && mcpSettings().connectionID(for: $0.server) == $0.connectionID
+                || inbox.source(activeIntake.source.id).map({
+                    $0.enabled && $0.revision == activeIntake.source.revision && mcpSettings().connectionID(for: $0.server) == $0.connectionID
                 }) != true {
-                await runtime.close(activeIntake.connection)
+                await closeSession(activeIntake.threadID)
             }
             await closeBotRuns(stop: stop)
             guard !stop else { return }
@@ -154,10 +156,22 @@ extension PiChatService {
         return ["--model", choice.model] + (choice.effort.map { ["--thinking", PiRuntimeService.thinkingLevel($0)] } ?? [])
     }
 
+    /// The Source's intake thread, made the first time the user opens it or an intake runs.
+    func intakeThread(sourceID: String) throws -> String {
+        try history().dbQueue.write { db in
+            guard let source = try AgentSourceRecord.fetchOne(db, key: sourceID) else {
+                throw AgentInboxService.Failure(message: "Source not found.")
+            }
+            return try AgentInboxService.intakeThread(source, now: .now, in: db)
+        }
+    }
+
     private func runIntake(_ source: AgentSourceRecord, now: Date) async {
+        var threadID: String?
         defer {
             intakeTask = nil
             activeIntake = nil
+            if let threadID, scheduledRuns[threadID]?.origin == "intake" { scheduledRuns[threadID] = nil }
         }
         let startedAt = now
         var run = AgentSystemRunRecord(
@@ -169,49 +183,34 @@ extension PiChatService {
             try await history().dbQueue.write { try initial.insert($0) }
             try validateBotActivity(source: source)
             let agent = try agent(source.agentID)
-            let servers = mcpSettings().piServers
-            guard servers[source.server] != nil else { throw AgentInboxService.Failure(message: "MCP server \(source.server) is not registered.") }
-            guard let skill = PiBundle.intakeSkillURL() else { throw PiRuntimeError.helperNotBundled }
-            try PiProviderConfiguration.writeMCPServers([:], agentURL: agentLocator.agentURL())
-            let connection = try await runtime.connect(
-                .init(
-                    // Intake is its agent's own work and shows in no history, so it runs in that agent's home.
-                    mode: .chat, cwd: botHome(agent),
-                    arguments: [
-                        "--no-session", "-e", "builtin:mcp", "--tools", "event_record,mcp__\(source.server)__*",
-                        "--system-prompt", Self.intakeSystemPrompt, "--skill", skill.path,
-                    ] + Self.intakeModelArguments(agent.intakeChoice),
-                    // The only server intake may call; the extension blocks the rest and every tool that is not read-only.
-                    environment: [
-                        "DAHLIA_PI_MEMORY_ENABLED": "0", "DAHLIA_PI_MCP_SERVERS": HermesLearning.json([source.server]),
-                        "DAHLIA_PI_INTAKE_SERVICE": source.service,
-                        "DAHLIA_PI_MCP_CONFIG": HermesLearning.json(servers.filter { $0.key == source.server }),
-                    ],
-                    profile: .intake
-                )
-            ) { [weak self] method, payload in
-                guard let self else { throw CancellationError() }
-                return try await self.intakeTool(method, payload: payload, source: source)
+            guard mcpSettings().piServers[source.server] != nil else {
+                throw AgentInboxService.Failure(message: "MCP server \(source.server) is not registered.")
             }
-            activeIntake = ActiveIntake(
-                sourceID: source.id, revision: source.revision, account: AppAccount.key, connection: connection
+            guard PiBundle.intakeSkillURL() != nil else { throw PiRuntimeError.helperNotBundled }
+            let thread = try await history().dbQueue.write { try AgentInboxService.intakeThread(source, now: startedAt, in: $0) }
+            threadID = thread
+            activeIntake = ActiveIntake(source: source, threadID: thread, account: AppAccount.key, startedAt: startedAt)
+            // The app fixes the range, pinned once Pi is ready to read; observed continuation pages must complete before
+            // it advances.
+            let since = source.cursor ?? AgentInboxService.intakeFloor(startedAt)
+            let effort = agent.intakeChoice?.effort ?? ""
+            var intake = ChatRunRecord(
+                id: UUID.v7(), threadID: thread, rootRunID: UUID.v7(), status: "running", input: "", model: nil, effort: effort,
+                approvalMethod: CodexChatApprovalMethod.ask.rawValue, createdAt: startedAt
             )
-            let timeout = Task { try? await Task.sleep(for: .seconds(600))
-                if !Task.isCancelled { await self.runtime.close(connection) }
+            intake.origin = "intake"
+            intake.profile = PiExecutionProfile.intake.rawValue
+            scheduledRuns[thread] = intake
+            try validateBotActivity(source: source)
+            let timeout = Task { try? await self.waitForIntakeTimeout()
+                if !Task.isCancelled { await self.expireIntake(thread) }
             }
             defer { timeout.cancel() }
-            do {
-                // The app fixes the range; observed continuation pages must complete before it advances.
-                try validateBotActivity(source: source)
-                let since = try inboxService().intakeLowerBound(sourceID: source.id, revision: source.revision, now: startedAt)
-                let prompt = AgentSourcePrompt.intake(source, since: since)
-                _ = try await connection.request("prompt", PiRuntimeService.prompt([.text(prompt)]))
-                _ = try await awaitSettled(connection, label: "Intake") { self.activeIntake?.sourceID == source.id }
-                await runtime.close(connection)
-            } catch {
-                await runtime.close(connection)
-                throw error
-            }
+            let handle = try await beginTurn(
+                threadID: thread, inputs: [.text(AgentSourcePrompt.intake(source, since: since))], model: nil, effort: effort,
+                approvalMethod: .ask, startsFreshSession: true
+            )
+            try await awaitIntake(handle, threadID: thread)
             try validateBotActivity(source: source)
             let recorded = activeIntake?.recorded ?? 0
             let complete = activeIntake?.pages.isComplete == true || recorded >= 20
@@ -227,16 +226,79 @@ extension PiChatService {
             run.status = "completed"
             run.summary = L10n.agentIntakeSummary(source: source.name, count: recorded)
         } catch {
+            if let threadID { await closeSession(threadID) }
             run.status = error is CancellationError ? "interrupted" : "failed"
             run.report = error.localizedDescription
         }
         run.finishedAt = .now
-        let finished = run
-        try? await history().dbQueue.write { try finished.update($0) }
+        persistIntakeOutcome(run)
+    }
+
+    /// Persist the terminal state synchronously even when the deadline cancelled the owning task.
+    private func persistIntakeOutcome(_ run: AgentSystemRunRecord) {
+        try? history().dbQueue.write { try run.update($0) }
+    }
+
+    /// Display readers can overflow; only the service's saved run outcome decides whether intake completed.
+    private func awaitIntake(_ handle: CodexChatTurnHandle, threadID: String) async throws {
+        for await _ in await observeThreads() {
+            guard let intake = activeIntake, intake.threadID == threadID else {
+                throw CancellationError()
+            }
+            try validateBotActivity(source: intake.source)
+            guard let run = try history().run(id: handle.id) else { throw CancellationError() }
+            switch run.status {
+            case "completed": return
+            case "interrupted": throw CancellationError()
+            case "failed": throw PiRuntimeError.turnFailed("Intake failed.")
+            default: break
+            }
+        }
+        try Task.checkCancellation()
+        throw PiRuntimeError.processExited(nil)
+    }
+
+    /// The intake thread's process: only the Source's server and `event_record`, in its agent's home, on the thread's new
+    /// session. The intake model follows the session's arguments, since Pi takes the last `--model`.
+    func openIntake(threadID: String, sessionArguments: [String]) async throws -> PiRPCConnection {
+        guard let source = activeIntake?.source, activeIntake?.threadID == threadID else { throw CancellationError() }
+        let processID = UUID.v7()
+        let generation = providerGeneration
+        let agent = try agent(source.agentID)
+        let servers = mcpSettings().piServers
+        guard servers[source.server] != nil else { throw AgentInboxService.Failure(message: "MCP server \(source.server) is not registered.") }
+        guard let skill = PiBundle.intakeSkillURL() else { throw PiRuntimeError.helperNotBundled }
+        try PiProviderConfiguration.writeMCPServers([:], agentURL: agentLocator.agentURL())
+        let connection = try await runtime.connect(
+            .init(
+                mode: .chat, cwd: botHome(agent),
+                arguments: sessionArguments + [
+                    "-e", "builtin:mcp", "--tools", "event_record,mcp__\(source.server)__*",
+                    "--system-prompt", Self.intakeSystemPrompt, "--skill", skill.path,
+                ] + Self.intakeModelArguments(agent.intakeChoice),
+                // The only server intake may call; the extension blocks the rest and every tool that is not read-only.
+                environment: [
+                    "DAHLIA_PI_MEMORY_ENABLED": "0", "DAHLIA_PI_MCP_SERVERS": HermesLearning.json([source.server]),
+                    "DAHLIA_PI_INTAKE_SERVICE": source.service,
+                    "DAHLIA_PI_MCP_CONFIG": HermesLearning.json(servers.filter { $0.key == source.server }),
+                ],
+                profile: .intake
+            )
+        ) { [weak self] method, payload in
+            guard let self else { throw CancellationError() }
+            return try await self.intakeTool(method, payload: payload, source: source)
+        }
+        // The turn's effort is the one the arguments set, so it sends no other.
+        sessions[threadID] = Session(
+            processID: processID, providerGeneration: generation, connection: connection, fileAccess: PiFileAccessSettings(),
+            effort: agent.intakeChoice?.effort ?? "", profile: .intake, memoryEnabled: false
+        )
+        Task { await self.pump(threadID: threadID, processID: processID, connection: connection) }
+        return connection
     }
 
     private func intakeTool(_ method: String, payload: JSONValue, source: AgentSourceRecord) throws -> JSONValue {
-        guard ["eventRecord", "intakeSeen", "intakeReadFailed"].contains(method), activeIntake?.sourceID == source.id,
+        guard ["eventRecord", "intakeSeen", "intakeReadFailed"].contains(method), activeIntake?.source.id == source.id,
               !AgentBackgroundActivity.isRecording
         else { throw CancellationError() }
         try validateBotActivity(source: source)
@@ -280,28 +342,5 @@ extension PiChatService {
             activeIntake?.failedRecords += 1
             return .object(["success": .bool(false), "error": .string(failure.message)])
         }
-    }
-
-    /// Waits for an unattended run to settle and returns its final text. An error or abort, a run with no answer, or
-    /// too many turns fails it, so whatever the run was to change (a read position, a delivery) stays as it was.
-    func awaitSettled(_ connection: PiRPCConnection, label: String, isCurrent: () -> Bool) async throws -> String {
-        var responses = 0
-        var lastMessage: [String: JSONValue]?
-        for try await event in connection.events {
-            guard isCurrent(), !AgentBackgroundActivity.isRecording else { throw CancellationError() }
-            let object = event.objectValue ?? [:]
-            if object["type"]?.stringValue == "message_end", let message = object["message"]?.objectValue,
-               message["role"]?.stringValue == "assistant" {
-                responses += 1
-                lastMessage = message
-                _ = try PiRuntimeService.assistantText(message, allowEmpty: true)
-                guard responses <= 100 else { throw PiRuntimeError.turnFailed("\(label) response limit exceeded.") }
-            }
-            if object["type"]?.stringValue == "agent_settled" {
-                guard object["aborted"] != .bool(true) else { throw CancellationError() }
-                return try PiRuntimeService.assistantText(lastMessage, allowEmpty: true)
-            }
-        }
-        throw PiRuntimeError.processExited(nil)
     }
 }

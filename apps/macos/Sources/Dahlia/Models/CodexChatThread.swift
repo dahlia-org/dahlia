@@ -11,6 +11,8 @@ struct CodexChatThread: Equatable {
     var isReadOnly = false
     var parentThread: CodexChatThreadSummary?
     var lastItemSeq: Int64?
+    /// The agent whose Source's intake thread this is.
+    var intakeAgent: AgentRecord?
 
     init(
         id: String,
@@ -22,8 +24,10 @@ struct CodexChatThread: Equatable {
         earlierMessagesCursor: String? = nil,
         isReadOnly: Bool = false,
         parentThread: CodexChatThreadSummary? = nil,
-        lastItemSeq: Int64? = nil
+        lastItemSeq: Int64? = nil,
+        intakeAgent: AgentRecord? = nil
     ) {
+        self.intakeAgent = intakeAgent
         self.isReadOnly = isReadOnly
         self.parentThread = parentThread
         self.lastItemSeq = lastItemSeq
