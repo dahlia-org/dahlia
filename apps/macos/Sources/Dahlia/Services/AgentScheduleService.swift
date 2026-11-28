@@ -179,7 +179,7 @@ struct AgentScheduleService: Sendable {
                 sql: "SELECT s.allowedTools FROM chat_schedules s JOIN chat_schedule_fires f ON f.scheduleID=s.id WHERE f.runID=? AND s.accountID=?",
                 arguments: [runID, account]
             ) ?? "[]"
-            return try JSONDecoder().decode([String].self, from: Data(text.utf8))
+            return try AgentMCPSettings.currentScheduledToolGrants(JSONDecoder().decode([String].self, from: Data(text.utf8)))
         }
     }
 

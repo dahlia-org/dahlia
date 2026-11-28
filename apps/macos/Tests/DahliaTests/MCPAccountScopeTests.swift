@@ -110,9 +110,16 @@ import GRDB
                 )
             }
             let server = try DahliaMCPServer(databaseURL: fixture.databaseURL, accountScope: .account(accountID), allowsWrites: true)
-            let detail = try server.executeTool(named: "get_meeting", arguments: ["meeting_id": fixture.firstMeetingID.uuidString])
-            #expect(detail["isError"] as? Bool == false)
-            for tool in ["get_meeting", "get_meeting_transcript", "query_screenshots"] {
+            let outside = TypeID.encode(fixture.otherWorkspaceMeetingID, as: .meeting)
+            let detail = try server.executeTool(
+                named: "get_meetings",
+                arguments: ["meeting_ids": [TypeID.encode(fixture.firstMeetingID, as: .meeting), outside]]
+            )
+            let batch = try #require(detail["structuredContent"] as? [String: Any])
+            #expect((batch["meetings"] as? [Any])?.count == 1)
+            let errors = try #require(batch["errors"] as? [[String: Any]])
+            #expect(errors.count == 1 && errors.first?["id"] as? String == outside && errors.first?["code"] as? String == "not_found")
+            for tool in ["get_meeting_transcript", "query_screenshots"] {
                 #expect(throws: MeetingAccessError.workspaceNotFound) {
                     try server.executeTool(named: tool, arguments: ["meeting_id": fixture.otherWorkspaceMeetingID.uuidString])
                 }

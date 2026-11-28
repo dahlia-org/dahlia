@@ -19,15 +19,39 @@ import Synchronization
             #expect(workspaces.count == 2)
             let result = try all.executeTool(named: "query_meetings", arguments: ["limit": 1])
             #expect(((result["structuredContent"] as? [String: Any])?["workspaces"] as? [Any])?.count == 2)
-            let detail = try all.executeTool(named: "get_meeting", arguments: ["meeting_id": fixture.otherWorkspaceMeetingID.uuidString])
-            #expect(detail["isError"] as? Bool == false)
+            let first = TypeID.encode(fixture.firstMeetingID, as: .meeting)
+            let other = TypeID.encode(fixture.otherWorkspaceMeetingID, as: .meeting)
+            let unknown = TypeID.encode(UUID.v7(), as: .meeting)
+            let wrongKind = TypeID.encode(fixture.firstMeetingID, as: .project)
+            func batch(_ server: DahliaMCPServer, _ arguments: [String: Any]) throws -> (meetings: [String], errors: [[String: Any]]) {
+                let result = try #require(server.executeTool(named: "get_meetings", arguments: arguments)["structuredContent"] as? [String: Any])
+                let meetings = try #require(result["meetings"] as? [[String: Any]]).compactMap {
+                    ($0["workspace"] as? [String: Any])?["id"] as? String
+                }
+                return try (meetings, #require(result["errors"] as? [[String: Any]]))
+            }
+            // IDs resolve to their own Workspaces in request order; failures keep their position and the ID as sent.
+            let spanning = try batch(all, ["meeting_ids": [other, "not-an-id", first, unknown, wrongKind]])
+            #expect(spanning.meetings.map { $0.uppercased() } == [fixture.otherWorkspaceID, fixture.primaryWorkspaceID].map(\.uuidString))
+            #expect(spanning.errors.map { $0["index"] as? Int } == [1, 3, 4])
+            #expect(spanning.errors.map { $0["id"] as? String } == ["not-an-id", unknown, wrongKind])
+            #expect(spanning.errors.map { $0["code"] as? String } == ["invalid_id", "not_found", "invalid_id"])
+            let narrowed = try batch(all, ["workspace_id": fixture.primaryWorkspaceID.uuidString, "meeting_ids": [first, other]])
+            #expect(narrowed.meetings.count == 1 && narrowed.errors.map { $0["index"] as? Int } == [1])
+            for invalid: [String: Any] in [
+                ["meeting_ids": []], ["meeting_ids": [first, first]], ["meeting_ids": [1]],
+                ["meeting_ids": Array(repeating: first, count: 6)], ["meeting_ids": [first], "summary_format": "json"],
+            ] {
+                #expect(throws: (any Error).self) { try all.executeTool(named: "get_meetings", arguments: invalid) }
+            }
             let scoped = try DahliaMCPServer(databaseURL: fixture.databaseURL, workspaceID: fixture.primaryWorkspaceID)
             #expect(throws: MeetingAccessError.workspaceNotFound) {
                 try scoped.executeTool(
-                    named: "get_meeting",
-                    arguments: ["workspace_id": fixture.otherWorkspaceID.uuidString, "meeting_id": fixture.otherWorkspaceMeetingID.uuidString]
+                    named: "get_meetings",
+                    arguments: ["workspace_id": fixture.otherWorkspaceID.uuidString, "meeting_ids": [other]]
                 )
             }
+            #expect(try batch(scoped, ["meeting_ids": [other]]).errors.first?["code"] as? String == "not_found")
             #expect(throws: (any Error).self) { try all.executeTool(named: "query_meetings", arguments: ["cursor": "wrong"]) }
             try await fixture.manager.dbQueue.write { try $0.execute(sql: "DELETE FROM workspaces") }
             let empty = try all.executeTool(named: "list_workspaces", arguments: [:])

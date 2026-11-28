@@ -62,6 +62,10 @@ enum PublicMCPIDs {
                 return converted
             }
         }
+        if tool == "get_meetings", let meetings = original["meetings"] {
+            // Each item is a whole meeting detail, not the meeting metadata that `meetings` holds in query results.
+            body["meetings"] = try PublicIDWire.transform(meetings, shape: "array:mcpResult", direction: .encode)
+        }
         if let cursor = original["next_cursor"] as? String {
             body["next_cursor"] = try convertCursor(cursor, tool: tool, direction: .encode)
         }

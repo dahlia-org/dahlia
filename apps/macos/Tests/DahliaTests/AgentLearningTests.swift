@@ -425,6 +425,16 @@
             try store.recoverInterruptedThreads()
             #expect(try store.queuedRuns(accountID: "a").count == 1)
             #expect(try service.allowedTools(runID: queued.id, account: "a") == ["mcp__mail__read"])
+            // A grant saved before get_meeting became get_meetings still permits the renamed tool.
+            try db.write {
+                try $0.execute(sql: "UPDATE chat_schedules SET allowedTools=? WHERE id=?", arguments: [#"["mcp__dahlia__get_meeting"]"#, row.id])
+            }
+            let legacyGrants = try service.allowedTools(runID: queued.id, account: "a")
+            #expect(legacyGrants == ["mcp__dahlia__get_meetings"])
+            #expect(AgentMCPSettings().allowsScheduledTool("mcp__dahlia__get_meetings", grants: Set(legacyGrants)))
+            try db.write {
+                try $0.execute(sql: "UPDATE chat_schedules SET allowedTools=? WHERE id=?", arguments: [#"["mcp__mail__read"]"#, row.id])
+            }
             _ = try service.execute(.object(["action": .string("pause"), "job_id": .string(row.id)]), account: "a", approved: false, tools: [])
             #expect(try !service.validateStart(queued, account: "a"))
             #expect(try store.queuedRuns(accountID: "a").isEmpty)

@@ -136,10 +136,12 @@ public struct MeetingMetadata: Codable, Sendable, Equatable {
 public struct MeetingDetail: Codable, Sendable, Equatable {
     public let workspace: ScopedWorkspace
     public let meeting: MeetingMetadata
-    public let summary: String?
-    public let summaryDocument: JSONValue?
-    /// `update_meeting_summary` に渡す compare-and-swap 用の版。
-    public let summaryDocumentVersion: String?
+    /// 読むための Markdown。`summary_format: structured` では返さない。
+    public var summary: String?
+    /// `update_meeting_summary` が受け取る構造化した要約。`summary_format: structured` のときだけ返す。
+    public var structuredSummary: JSONValue?
+    /// `update_meeting_summary` に渡す compare-and-swap 用の版。`structuredSummary` と組で返す。
+    public var summaryVersion: String?
     public var textContent: TextContentAvailability?
 }
 
@@ -156,7 +158,7 @@ public struct SummaryMutationResult: Codable, Sendable, Equatable {
     }
 
     public let meetingID: UUID
-    public let documentVersion: String
+    public let summaryVersion: String
     public let title: String
     public let description: String
     public let changed: Bool
@@ -415,7 +417,7 @@ public enum MeetingAccessError: Error, LocalizedError, Equatable {
         case .summaryNotFound:
             "The meeting has no summary yet. Generate the summary in Dahlia before updating it."
         case .summaryVersionConflict:
-            "The summary changed after it was read. Call get_meeting again before retrying."
+            "The summary changed after it was read. Call get_meetings with summary_format structured again before retrying."
         case .summaryScreenshotNotFound:
             "An image block references a screenshot that does not belong to this meeting."
         case let .invalidSummaryUpdate(message):

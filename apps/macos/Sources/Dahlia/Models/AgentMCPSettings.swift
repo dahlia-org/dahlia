@@ -237,6 +237,15 @@ struct AgentMCPSettings: Codable, Equatable, Sendable {
         return matches.count == 1 ? matches.first : nil
     }
 
+    /// Dahlia MCP tools renamed after schedules saved grants under the old name. Dahlia's tools carry no connection
+    /// token, so only the bare name is rewritten.
+    static let renamedScheduledTools = ["mcp__dahlia__get_meeting": "mcp__dahlia__get_meetings"]
+
+    /// Saved grants read under the current tool names.
+    static func currentScheduledToolGrants(_ grants: [String]) -> [String] {
+        Array(Set(grants.map { renamedScheduledTools[$0] ?? $0 })).sorted()
+    }
+
     /// Identity tokens stay alongside tool names in the existing schedule grant array.
     static func scheduledToolGrants(_ tools: [String], connections: [String: String], servers: Set<String>) -> [String] {
         let tools = tools.filter { scheduledServer(for: $0, servers: servers) != nil }

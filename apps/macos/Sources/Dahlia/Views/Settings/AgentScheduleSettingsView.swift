@@ -55,7 +55,9 @@ struct AgentScheduleSettingsView: View {
             } }
         } message: {
             if let row = resuming {
-                let tools = (try? JSONDecoder().decode([String].self, from: Data(row.allowedTools.utf8))) ?? []
+                let tools = AgentMCPSettings.currentScheduledToolGrants(
+                    (try? JSONDecoder().decode([String].self, from: Data(row.allowedTools.utf8))) ?? []
+                )
                 Text("\(row.schedule)\n\(row.prompt)\n\(row.skills)\n\(tools.filter { $0.hasPrefix("mcp__") }.joined(separator: ", "))")
             }
         }

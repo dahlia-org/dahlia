@@ -69,7 +69,7 @@ extension MeetingAccessStore {
         func result(staleExports: [String]) -> SummaryMutationResult {
             SummaryMutationResult(
                 meetingID: meetingID,
-                documentVersion: MeetingAccessStore.summaryDocumentVersion(storedDocument),
+                summaryVersion: MeetingAccessStore.summaryDocumentVersion(storedDocument),
                 title: summaryTitle,
                 description: meetingDescription,
                 changed: true,
@@ -138,7 +138,7 @@ extension MeetingAccessStore {
         guard storedDocument != normalizedExistingDocument else {
             return try .unchanged(SummaryMutationResult(
                 meetingID: meetingID,
-                documentVersion: expectedDocumentVersion,
+                summaryVersion: expectedDocumentVersion,
                 title: existingTitle,
                 description: meetingDescription,
                 changed: false,

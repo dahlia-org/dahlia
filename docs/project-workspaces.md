@@ -136,7 +136,7 @@ Read tools:
 - `get_project`
 - `query_meetings`
 - `query_screenshots`
-- `get_meeting`
+- `get_meetings`
 - `get_meeting_transcript`
 - `get_screenshots`
 
@@ -153,6 +153,13 @@ capture order: by elapsed time within `meeting_id`, otherwise by capture time. `
 `to_elapsed_seconds` require `meeting_id`. Results stay individual screenshots with their owning Meeting IDs, elapsed
 time, and `timestamp`. Each carries a `detected_text` excerpt of about 180 characters (around the first match, or the
 beginning without `query`), the full `caption`, and `file_path`; detected text and caption are omitted before analysis.
+
+`get_meetings` returns 1 to 5 Meetings per call, in request order. Each ID resolves to its own Workspace, so one
+call may span Workspaces; `workspace_id` narrows it to one. The summary is Markdown by default; `summary_format:
+"structured"` returns `structured_summary` and `summary_version` instead, for `update_meeting_summary`. An ID that cannot
+be returned is listed in `errors` with its position in `meeting_ids`, the ID as sent, and `invalid_id`, `not_found`,
+`unavailable`, or `unreadable`; the other IDs are still returned. Scheduled-run grants saved under the former
+`get_meeting` name permit `get_meetings`.
 
 `get_screenshots` takes 1 to 10 screenshot IDs from anywhere in the Workspace, such as `query_screenshots` results, and
 returns the stored images unchanged: WebP images whose long edge is at most 1568 px. Each screenshot's metadata includes
@@ -178,9 +185,10 @@ Write tools:
 - `remove_meeting_project_assignment`
 - `update_meeting_summary`
 
-`update_meeting_summary` replaces one Meeting's whole summary document and is described in
-[訂正と export](spec/desktop/summary.md#訂正と-export). It takes the `summary_document` and `summary_document_version`
-that `get_meeting` returned, propagates the document title and description to the Meeting, adds document tags without
+`update_meeting_summary` replaces one Meeting's whole summary and is described in
+[訂正と export](spec/desktop/summary.md#訂正と-export). It takes `meeting_id` and the
+`structured_summary` returned by `get_meetings` for `summary_format: "structured"`; pass the returned `summary_version`
+value as `expected_summary_version`. It propagates the document title and description to the Meeting, adds document tags without
 removing existing ones, and rewrites an already-exported workspace Markdown file in place under its current file name. It
 never creates a summary or a summary file that does not exist, never renames one, and leaves a Google Docs export
 stale.

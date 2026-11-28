@@ -90,7 +90,7 @@ import GRDB
 
             let detail = try fixture.store(workspaceID: fixture.primaryWorkspaceID).meeting(id: fixture.firstMeetingID)
             #expect(detail.summary?.contains("Legacy screenshot caption [Transcript 00:00:09]") == true)
-            guard case let .object(root)? = detail.summaryDocument,
+            guard case let .object(root)? = detail.structuredSummary,
                   case let .array(sections)? = root["sections"],
                   case let .object(section)? = sections.first,
                   case let .array(blocks)? = section["blocks"],
@@ -181,7 +181,7 @@ import GRDB
         private static func firstSummaryBlockID(
             in detail: MeetingDetail
         ) throws -> DahliaMeetingAccess.JSONValue {
-            guard case let .object(document)? = detail.summaryDocument,
+            guard case let .object(document)? = detail.structuredSummary,
                   case let .array(sections)? = document["sections"],
                   case let .object(section)? = sections.first,
                   case let .array(blocks)? = section["blocks"],

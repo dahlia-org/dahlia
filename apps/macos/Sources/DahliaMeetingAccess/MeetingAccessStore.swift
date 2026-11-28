@@ -586,15 +586,15 @@ public final class MeetingAccessStore: Sendable {
             }
             let document = try TextContentAccess.summary(meetingId: id, in: db)?.document
             let summary: String?
-            let summaryDocument: JSONValue?
+            let structuredSummary: JSONValue?
             do {
                 if let document {
                     let decoded = try StoredSummaryDocumentMarkdownRenderer.decode(json: document)
                     summary = StoredSummaryDocumentMarkdownRenderer.render(decoded)
-                    summaryDocument = try StoredSummaryDocumentMarkdownRenderer.toolJSONValue(decoded)
+                    structuredSummary = try StoredSummaryDocumentMarkdownRenderer.toolJSONValue(decoded)
                 } else {
                     summary = nil
-                    summaryDocument = nil
+                    structuredSummary = nil
                 }
             } catch {
                 throw MeetingAccessError.invalidSummaryDocument
@@ -603,8 +603,8 @@ public final class MeetingAccessStore: Sendable {
                 workspace: workspace,
                 meeting: Self.metadata(from: row),
                 summary: summary,
-                summaryDocument: summaryDocument,
-                summaryDocumentVersion: document.map(Self.summaryDocumentVersion),
+                structuredSummary: structuredSummary,
+                summaryVersion: document.map(Self.summaryDocumentVersion),
                 textContent: TextContentAccess.availability(entity: .summary, id: id, in: db)
             )
         }
@@ -1009,7 +1009,7 @@ extension MeetingAccessStore {
             }
         } catch TextContentError.incomplete {
             // Reuse the existing meeting broker operation outside SQLite; image reads also need exact summary references.
-            data = try meeting(id: meetingID).summaryDocument.map { try JSONEncoder().encode($0) }
+            data = try meeting(id: meetingID).structuredSummary.map { try JSONEncoder().encode($0) }
         }
         guard let data, let root = try? JSONSerialization.jsonObject(with: data) else { return [] }
         var ids: Set<UUID> = []

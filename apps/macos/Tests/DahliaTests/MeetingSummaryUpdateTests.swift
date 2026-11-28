@@ -26,7 +26,7 @@ import GRDB
             try fixture.manager.dbQueue.write { db in
                 try db.execute(sql: "UPDATE summary_bodies SET document = ? WHERE meetingId = ?", arguments: [json, fixture.firstMeetingID])
             }
-            let version = try #require(store.meeting(id: fixture.firstMeetingID).summaryDocumentVersion)
+            let version = try #require(store.meeting(id: fixture.firstMeetingID).summaryVersion)
             let unchanged = try store.updateMeetingSummary(meetingID: fixture.firstMeetingID, expectedDocumentVersion: version, document: original)
             #expect(!unchanged.changed)
             #expect(try SummaryDocument.decode(databaseJSON: fixture.storedDocument(meetingID: fixture.firstMeetingID)).metadata != nil)
@@ -42,7 +42,7 @@ import GRDB
                 try db.execute(sql: "UPDATE workspaces SET path = NULL WHERE id = ?", arguments: [fixture.primaryWorkspaceID])
             }
             let store = try fixture.store(workspaceID: fixture.primaryWorkspaceID, allowsWrites: true)
-            let version = try #require(store.meeting(id: fixture.firstMeetingID).summaryDocumentVersion)
+            let version = try #require(store.meeting(id: fixture.firstMeetingID).summaryVersion)
 
             let result = try store.updateMeetingSummary(
                 meetingID: fixture.firstMeetingID,
@@ -59,7 +59,7 @@ import GRDB
             let fixture = try Fixture()
             let store = try fixture.store(workspaceID: fixture.primaryWorkspaceID, allowsWrites: true)
             let before = try store.meeting(id: fixture.firstMeetingID)
-            let version = try #require(before.summaryDocumentVersion)
+            let version = try #require(before.summaryVersion)
             let corrected = Self.document(title: "Corrected planning title", body: "Tanaka approved the plan")
 
             let result = try store.updateMeetingSummary(
@@ -100,15 +100,15 @@ import GRDB
             // 生成日時は再生成でも維持される値なので、更新でも動かさない。
             #expect(summaryCreatedAt == Date(timeIntervalSince1970: 1_800_000_000))
 
-            let reloadedVersion = try #require(store.meeting(id: fixture.firstMeetingID).summaryDocumentVersion)
-            #expect(result.documentVersion == reloadedVersion)
+            let reloadedVersion = try #require(store.meeting(id: fixture.firstMeetingID).summaryVersion)
+            #expect(result.summaryVersion == reloadedVersion)
         }
 
         @Test
         func blankDocumentMetadataClearsMeetingMetadata() throws {
             let fixture = try Fixture()
             let store = try fixture.store(workspaceID: fixture.primaryWorkspaceID, allowsWrites: true)
-            let version = try #require(store.meeting(id: fixture.firstMeetingID).summaryDocumentVersion)
+            let version = try #require(store.meeting(id: fixture.firstMeetingID).summaryVersion)
             var corrected = Self.document(title: "   ", body: "Corrected body")
             corrected.description = "\n"
 
@@ -145,7 +145,7 @@ import GRDB
                     arguments: [fixture.firstMeetingID, db.lastInsertedRowID]
                 )
             }
-            let version = try #require(store.meeting(id: fixture.firstMeetingID).summaryDocumentVersion)
+            let version = try #require(store.meeting(id: fixture.firstMeetingID).summaryVersion)
             var document = Self.document(title: "Tagged", body: "Body")
             document.tags = ["release"]
 
@@ -178,7 +178,7 @@ import GRDB
             try fixture.insertWorkspaceExport(meetingID: fixture.firstMeetingID, relativePath: relativePath)
 
             let store = try fixture.store(workspaceID: fixture.primaryWorkspaceID, allowsWrites: true)
-            let version = try #require(store.meeting(id: fixture.firstMeetingID).summaryDocumentVersion)
+            let version = try #require(store.meeting(id: fixture.firstMeetingID).summaryVersion)
             let corrected = Self.document(title: "Corrected planning title", body: "Tanaka approved the plan")
 
             let result = try store.updateMeetingSummary(
@@ -212,7 +212,7 @@ import GRDB
             try fixture.insertWorkspaceExport(meetingID: fixture.firstMeetingID, relativePath: relativePath)
 
             let store = try fixture.store(workspaceID: fixture.primaryWorkspaceID, allowsWrites: true)
-            let version = try #require(store.meeting(id: fixture.firstMeetingID).summaryDocumentVersion)
+            let version = try #require(store.meeting(id: fixture.firstMeetingID).summaryVersion)
             var document = Self.document(title: "Screenshot summary", body: "Body")
             document.sections[0].blocks.append(.image(screenshotId: fixture.firstScreenshotID, caption: "Shot"))
 
@@ -245,7 +245,7 @@ import GRDB
             let fixture = try Fixture()
             try fixture.insertWorkspaceExport(meetingID: fixture.firstMeetingID, relativePath: "Acme/absent.md")
             let store = try fixture.store(workspaceID: fixture.primaryWorkspaceID, allowsWrites: true)
-            let version = try #require(store.meeting(id: fixture.firstMeetingID).summaryDocumentVersion)
+            let version = try #require(store.meeting(id: fixture.firstMeetingID).summaryVersion)
 
             let result = try store.updateMeetingSummary(
                 meetingID: fixture.firstMeetingID,
@@ -270,7 +270,7 @@ import GRDB
                 )
             }
             let store = try fixture.store(workspaceID: fixture.primaryWorkspaceID, allowsWrites: true)
-            let version = try #require(store.meeting(id: fixture.firstMeetingID).summaryDocumentVersion)
+            let version = try #require(store.meeting(id: fixture.firstMeetingID).summaryVersion)
 
             let result = try store.updateMeetingSummary(
                 meetingID: fixture.firstMeetingID,
@@ -285,7 +285,7 @@ import GRDB
         func includesExportCreatedBetweenPlanningAndCommitInStaleExports() throws {
             let fixture = try Fixture()
             let store = try fixture.store(workspaceID: fixture.primaryWorkspaceID, allowsWrites: true)
-            let version = try #require(store.meeting(id: fixture.firstMeetingID).summaryDocumentVersion)
+            let version = try #require(store.meeting(id: fixture.firstMeetingID).summaryVersion)
             let plan = try store.database.read { db in
                 try store.makeSummaryUpdatePlan(
                     meetingID: fixture.firstMeetingID,
@@ -341,7 +341,7 @@ import GRDB
             try fixture.insertWorkspaceExport(meetingID: fixture.firstMeetingID, relativePath: relativePath)
 
             let store = try fixture.store(workspaceID: fixture.primaryWorkspaceID, allowsWrites: true)
-            let version = try #require(store.meeting(id: fixture.firstMeetingID).summaryDocumentVersion)
+            let version = try #require(store.meeting(id: fixture.firstMeetingID).summaryVersion)
             let corrected = Self.document(title: "Corrected", body: "Planned correction")
             let plan = try store.database.read { db in
                 try store.makeSummaryUpdatePlan(
@@ -373,7 +373,7 @@ import GRDB
             let fixture = try Fixture()
             let store = try fixture.store(workspaceID: fixture.primaryWorkspaceID, allowsWrites: true)
             let detail = try store.meeting(id: fixture.firstMeetingID)
-            let version = try #require(detail.summaryDocumentVersion)
+            let version = try #require(detail.summaryVersion)
             let stored = try fixture.storedDocument(meetingID: fixture.firstMeetingID)
 
             let result = try store.updateMeetingSummary(
@@ -384,7 +384,7 @@ import GRDB
 
             #expect(!result.changed)
             #expect(result.workspaceExport == .unchanged)
-            #expect(result.documentVersion == version)
+            #expect(result.summaryVersion == version)
             let after = try fixture.storedDocument(meetingID: fixture.firstMeetingID)
             #expect(after == stored)
         }
@@ -393,7 +393,7 @@ import GRDB
         func rejectsScreenshotReferencesFromAnotherMeeting() throws {
             let fixture = try Fixture()
             let store = try fixture.store(workspaceID: fixture.primaryWorkspaceID, allowsWrites: true)
-            let version = try #require(store.meeting(id: fixture.firstMeetingID).summaryDocumentVersion)
+            let version = try #require(store.meeting(id: fixture.firstMeetingID).summaryVersion)
             var document = Self.document(title: "Bad reference", body: "Body")
             document.sections[0].blocks.append(.image(screenshotId: fixture.otherWorkspaceScreenshotID, caption: "Shot"))
 
@@ -410,7 +410,7 @@ import GRDB
         func rejectsInvalidTranscriptReferencesFromDirectStoreCallers() throws {
             let fixture = try Fixture()
             let store = try fixture.store(workspaceID: fixture.primaryWorkspaceID, allowsWrites: true)
-            let version = try #require(store.meeting(id: fixture.firstMeetingID).summaryDocumentVersion)
+            let version = try #require(store.meeting(id: fixture.firstMeetingID).summaryVersion)
             var document = Self.document(title: "Bad reference", body: "Body")
             document.sections[0].blocks[0] = .paragraph(
                 "Body",
@@ -430,7 +430,7 @@ import GRDB
         func rejectsDuplicateBlockIDsAndUnsupportedSchemaVersions() throws {
             let fixture = try Fixture()
             let store = try fixture.store(workspaceID: fixture.primaryWorkspaceID, allowsWrites: true)
-            let version = try #require(store.meeting(id: fixture.firstMeetingID).summaryDocumentVersion)
+            let version = try #require(store.meeting(id: fixture.firstMeetingID).summaryVersion)
 
             var duplicated = Self.document(title: "Duplicated", body: "Body")
             let block = duplicated.sections[0].blocks[0]
@@ -597,17 +597,18 @@ import GRDB
             )
             let meetingID = TypeID.encode(fixture.firstMeetingID, as: .meeting)
             let detail = try Self.json(server.handleLine("""
-            {"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"get_meeting","arguments":{"meeting_id":"\(meetingID)"}}}
+            {"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"get_meetings","arguments":{"meeting_ids":["\(meetingID)"],"summary_format":"structured"}}}
             """))
-            let body = try #require((detail["result"] as? [String: Any])?["structuredContent"] as? [String: Any])
-            var document = try #require(body["summary_document"] as? [String: Any])
+            let body = try #require((((detail["result"] as? [String: Any])?["structuredContent"] as? [String: Any])?["meetings"]
+                    as? [[String: Any]])?.first)
+            var document = try #require(body["structured_summary"] as? [String: Any])
             if edited { document["title"] = "Edited with screenshots" }
             let request: [String: Any] = try [
                 "jsonrpc": "2.0", "id": 3, "method": "tools/call",
                 "params": ["name": "update_meeting_summary", "arguments": [
                     "meeting_id": meetingID,
-                    "expected_document_version": #require(body["summary_document_version"] as? String),
-                    "summary_document": document,
+                    "expected_summary_version": #require(body["summary_version"] as? String),
+                    "structured_summary": document,
                 ]],
             ]
             let response = try Self.json(server.handleLine(String(decoding: JSONSerialization.data(withJSONObject: request), as: UTF8.self)))
@@ -619,7 +620,7 @@ import GRDB
             #expect(try SummaryDocument.decode(databaseJSON: fixture.storedDocument(meetingID: fixture.firstMeetingID)) == expected)
         }
 
-        /// `get_meeting` が返した `summary_document` をそのまま返送すると、保存内容がバイト単位で一致する。
+        /// `get_meetings` が返した `structured_summary` をそのまま返送すると、保存内容がバイト単位で一致する。
         @Test(arguments: [false, true])
         func summaryDocumentRoundTripsThroughTheToolSurface(withMetadata: Bool) throws {
             let fixture = try Fixture()
@@ -652,10 +653,12 @@ import GRDB
                 let definitions = try #require((tools["result"] as? [String: Any])?["tools"] as? [[String: Any]])
                 var current = try Self.summaryDocumentFromMeeting(server: server, meetingID: fixture.firstMeetingID)
                 let metadata = try #require(current.document["metadata"] as? [String: Any])
-                for (name, schemaKey) in [("get_meeting", "outputSchema"), ("update_meeting_summary", "inputSchema")] {
-                    let tool = try #require(definitions.first { $0["name"] as? String == name })
-                    let schema = try #require(tool[schemaKey] as? [String: Any])
-                    let documentSchema = try #require((schema["properties"] as? [String: Any])?["summary_document"] as? [String: Any])
+                let getMeetings = try #require(definitions.first { $0["name"] as? String == "get_meetings" })
+                let update = try #require(definitions.first { $0["name"] as? String == "update_meeting_summary" })
+                let meetingsSchema = (((getMeetings["outputSchema"] as? [String: Any])?["properties"] as? [String: Any])?["meetings"]
+                    as? [String: Any])?["items"] as? [String: Any]
+                for schema in try [#require(meetingsSchema), #require(update["inputSchema"] as? [String: Any])] {
+                    let documentSchema = try #require((schema["properties"] as? [String: Any])?["structured_summary"] as? [String: Any])
                     #expect(!(documentSchema["required"] as? [String] ?? []).contains("metadata"))
                     let metadataSchema = try #require((documentSchema["properties"] as? [String: Any])?["metadata"] as? [String: Any])
                     try Self.assertMetadataMatchesSchema(metadata, schema: metadataSchema)
@@ -750,7 +753,7 @@ import GRDB
             }
 
             let store = try fixture.store(workspaceID: fixture.primaryWorkspaceID, allowsWrites: true)
-            let version = try #require(store.meeting(id: fixture.firstMeetingID).summaryDocumentVersion)
+            let version = try #require(store.meeting(id: fixture.firstMeetingID).summaryVersion)
             let corrected = Self.document(title: "Corrected", body: "Database-only update")
             let result = try store.updateMeetingSummary(
                 meetingID: fixture.firstMeetingID,
@@ -874,12 +877,13 @@ import GRDB
             meetingID: UUID
         ) throws -> (document: [String: Any], version: String) {
             let detail = try json(server.handleInternalTestLine(#"""
-            {"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"get_meeting","arguments":{"meeting_id":"\#(meetingID
-                .uuidString)"}}}
+            {"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"get_meetings","arguments":{"meeting_ids":["\#(meetingID
+                .uuidString)"],"summary_format":"structured"}}}
             """#))
-            let structured = try #require((detail["result"] as? [String: Any])?["structuredContent"] as? [String: Any])
-            let document = try #require(structured["summary_document"] as? [String: Any])
-            let version = try #require(structured["summary_document_version"] as? String)
+            let structured = try #require((((detail["result"] as? [String: Any])?["structuredContent"] as? [String: Any])?["meetings"]
+                    as? [[String: Any]])?.first)
+            let document = try #require(structured["structured_summary"] as? [String: Any])
+            let version = try #require(structured["summary_version"] as? String)
             return (document, version)
         }
 
@@ -891,8 +895,8 @@ import GRDB
         ) throws -> String {
             let arguments: [String: Any] = [
                 "meeting_id": meetingID.uuidString,
-                "expected_document_version": version,
-                "summary_document": document,
+                "expected_summary_version": version,
+                "structured_summary": document,
             ]
             let request: [String: Any] = [
                 "jsonrpc": "2.0",
@@ -930,7 +934,7 @@ import GRDB
         private static func updateRequest(id: Int, meetingID: UUID) -> String {
             """
             {"jsonrpc":"2.0","id":\(id),"method":"tools/call","params":{"name":"update_meeting_summary","arguments":\
-            {"meeting_id":"\(meetingID.uuidString)","expected_document_version":"x","summary_document":\
+            {"meeting_id":"\(meetingID.uuidString)","expected_summary_version":"x","structured_summary":\
             {"schema_version":3,"title":"Denied","sections":[]}}}}
             """
         }
