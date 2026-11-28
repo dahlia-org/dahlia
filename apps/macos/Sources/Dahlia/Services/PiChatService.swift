@@ -194,12 +194,12 @@ actor PiChatService: CodexChatServicing {
     When the request needs meeting records, follow the meeting lookup rules below.
 
     # Meeting lookup
-    When relevant context has Type: Meeting, use its meeting_id directly with get_meeting.
-    When context has Type: MeetingDraft, do not call get_meeting for it because it has not been saved.
+    When relevant context has Type: Meeting, use its meeting_id directly with get_meetings.
+    When context has Type: MeetingDraft, do not call get_meetings for it because it has not been saved.
     A standalone meeting:<mtg_TypeID> word directly identifies a meeting selected by the user.
-    When one or more meeting:<mtg_TypeID> words are present, call get_meeting with each meeting TypeID directly and do not call query_meetings first.
+    When one or more meeting:<mtg_TypeID> words are present, deduplicate those meeting TypeIDs and call get_meetings in batches of at most 5 IDs. Do not call query_meetings first.
     For meeting lookup without a meeting:<mtg_TypeID> word or relevant Type: Meeting context, start with query_meetings.
-    Then use get_meeting for a selected meeting's summary.
+    Then use get_meetings for the selected meetings' summaries, several meetings per call.
     Call get_meeting_transcript only when the original wording or detail is needed.
 
     # Skills and file access

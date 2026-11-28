@@ -49,15 +49,26 @@ import Foundation
                   envelope["method"] as? String == "tools/call" else { return handleLine(line) }
             if let arguments = params["arguments"], !(arguments is [String: Any]) { return handleLine(line) }
             let arguments = params["arguments"] as? [String: Any] ?? [:]
-            params["arguments"] = (try? PublicIDWire.transform(arguments, shape: "mcpInput", direction: .encode)) ?? arguments
+            var publicArguments = (try? PublicIDWire.transform(arguments, shape: "mcpInput", direction: .encode)) as? [String: Any] ?? arguments
+            if let ids = arguments["meeting_ids"] as? [String] {
+                // get_meetings decodes each ID itself; anything that is not a UUID stays as sent.
+                publicArguments["meeting_ids"] = ids.map { UUID(uuidString: $0).map { TypeID.encode($0, as: .meeting) } ?? $0 }
+            }
+            params["arguments"] = publicArguments
             envelope["params"] = params
             guard let data = try? JSONSerialization.data(withJSONObject: envelope),
                   let result = handleLine(String(decoding: data, as: UTF8.self)) else { return nil }
             guard var response = try? JSONSerialization.jsonObject(with: Data(result.utf8)) as? [String: Any],
                   var toolResult = response["result"] as? [String: Any],
                   let publicBody = toolResult["structuredContent"],
-                  let internalBody = try? PublicIDWire.transform(publicBody, shape: "mcpResult", direction: .decode)
+                  var internalBody = try? PublicIDWire.transform(publicBody, shape: "mcpResult", direction: .decode)
             else { return result }
+            if params["name"] as? String == "get_meetings", var object = internalBody as? [String: Any],
+               let meetings = (publicBody as? [String: Any])?["meetings"],
+               let decoded = try? PublicIDWire.transform(meetings, shape: "array:mcpResult", direction: .decode) {
+                object["meetings"] = decoded
+                internalBody = object
+            }
             let body = restoreCasing(internalBody, original: publicBody)
             toolResult["structuredContent"] = body
             if var content = toolResult["content"] as? [[String: Any]], !content.isEmpty,

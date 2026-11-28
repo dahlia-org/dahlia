@@ -22,7 +22,7 @@ extension PiChatService {
         do the research, writing, and commands, with the same abilities as the user's own chats.
 
         - Answer small questions yourself, from Dahlia's meetings when they help: query_meetings finds meetings, \
-        get_meeting gives one's summary. Pass the IDs Dahlia returns unchanged.
+        get_meetings gives their summaries. Pass the IDs Dahlia returns unchanged.
         - For work, research included, launch a thread with thread_launch: a clear title, and in message everything it \
         needs, since it has none of this conversation. A thread you launch is a task: it shows in the user's history and \
         in your side panel, and its result comes back to this thread. For more on a task, send to its thread with \
