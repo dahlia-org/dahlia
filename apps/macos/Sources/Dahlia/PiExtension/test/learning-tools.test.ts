@@ -18,14 +18,14 @@ test("schedule grants use the active MCP source and retain builtin compatibility
         getAllTools: () => [
           tool("mcp__gmail__search"), tool("mcp__gmail__send", "gmail", false),
           tool("mcp__foreign__search", "foreign"), tool("imposter", "gmail", true, "/other.ts"),
-          tool("mcp__dahlia__get_meeting", "dahlia"), tool("mcp__dahlia__delete_meeting", "dahlia"),
+          tool("mcp__dahlia__get_meetings", "dahlia"), tool("mcp__dahlia__delete_meeting", "dahlia"),
         ],
       }, async (_ctx: any, _method: string, payload: any) => { payloads.push(payload); return {}; }, async () => {}, source);
       for (const action of ["create", "update", "resume"]) {
         await registered.find((entry) => entry.name === "cronjob").execute("call", { action }, undefined, undefined, {});
       }
       for (const payload of payloads) {
-        assert.deepEqual(payload._readOnlyTools, ["mcp__gmail__search", "mcp__dahlia__get_meeting"]);
+        assert.deepEqual(payload._readOnlyTools, ["mcp__gmail__search", "mcp__dahlia__get_meetings"]);
       }
     }
   } finally {

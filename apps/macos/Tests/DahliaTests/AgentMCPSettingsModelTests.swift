@@ -753,13 +753,13 @@ import os
             try model.saveDirectServer(name: "mail", .init(command: "mcp", env: ["TENANT": "first"]))
             let name = "mcp__mail__read"
             let grants = Set(AgentMCPSettings.scheduledToolGrants(
-                [name, "mcp__dahlia__get_meeting"],
+                [name, "mcp__dahlia__get_meetings"],
                 connections: model.settings.mcpConnectionIDs,
                 servers: model.settings.scheduledServers
             ))
             #expect(model.settings.allowsScheduledTool(name, grants: grants))
             #expect(!model.settings.allowsScheduledTool(name, grants: [name]))
-            #expect(model.settings.allowsScheduledTool("mcp__dahlia__get_meeting", grants: grants))
+            #expect(model.settings.allowsScheduledTool("mcp__dahlia__get_meetings", grants: grants))
             let server = try #require(model.directServers.first)
             model.setDirectServer(server, enabled: false)
             #expect(!model.settings.allowsScheduledTool(name, grants: grants))

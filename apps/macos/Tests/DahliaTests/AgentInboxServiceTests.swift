@@ -405,7 +405,7 @@
             #expect(PiExecutionProfile.intake.allows("event_record"))
             #expect(PiExecutionProfile.intake.allows("mcp__gmail__search_messages", readOnly: true))
             #expect(!PiExecutionProfile.intake.allows("mcp__gmail__send_message"))
-            #expect(!PiExecutionProfile.intake.allows("mcp__dahlia__get_meeting", readOnly: true))
+            #expect(!PiExecutionProfile.intake.allows("mcp__dahlia__get_meetings", readOnly: true))
             #expect(!PiExecutionProfile.intake.allows("read") && PiExecutionProfile.intake.fileTools.isEmpty)
         }
 

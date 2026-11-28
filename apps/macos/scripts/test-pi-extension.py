@@ -81,7 +81,7 @@ for line in sys.stdin:
         result = {"protocolVersion": msg["params"].get("protocolVersion"), "capabilities": {"tools": {}},
                   "serverInfo": {"name": "dahlia", "version": "1"}}
     elif method == "tools/list":
-        result = {"tools": [{"name": name, "inputSchema": {"type": "object"}} for name in ("get_meeting", "update_meeting")]}
+        result = {"tools": [{"name": name, "inputSchema": {"type": "object"}} for name in ("get_meetings", "update_meeting")]}
     elif method == "tools/call":
         result = {"content": [{"type": "text", "text": "MCP_OK"}]}
     sys.stdout.write(json.dumps({"jsonrpc": "2.0", "id": msg["id"], "result": result}) + "\\n")
@@ -726,7 +726,7 @@ def omnigent_approval_regression(pi):
 def schedule_approval_regression(pi):
     """Real Pi must review Dahlia's effective schedule before committing it."""
     effective = {"action": "create", "prompt": "Read saved meetings", "schedule": "30m",
-                 "skills": ["meeting-reviewer"], "approved_read_only_tools": ["mcp__dahlia__get_meeting"], "revision": 2}
+                 "skills": ["meeting-reviewer"], "approved_read_only_tools": ["mcp__dahlia__get_meetings"], "revision": 2}
     challenge = {"request_id": "frozen-schedule", "approval": {
         "kind": "mcpToolCall", "server": "dahlia", "tool": "cronjob", "arguments": effective}}
     for mode, risk, outcome, decision, allowed, asks in [
@@ -878,7 +878,7 @@ def main():
             profile = options.pop("profile", "interactive")
             names = options.pop("tool_names", CHAT_ARGUMENTS[-1])
             isolated = dict(environment, DAHLIA_PI_PROFILE=profile, DAHLIA_PI_MEMORY_ENABLED="1",
-                            DAHLIA_PI_ALLOWED_TOOLS=json.dumps(["mcp__dahlia__get_meeting"]))
+                            DAHLIA_PI_ALLOWED_TOOLS=json.dumps(["mcp__dahlia__get_meetings"]))
             web_access = options.pop("web_access", None)
             return run(pi, "chat", [*steps, {"text": "done"}], [*CHAT_ARGUMENTS[:-2], "--tools", names], isolated,
                        web_access=web_access, **options)
@@ -897,7 +897,7 @@ def main():
         assert any(method == "memory" for method, _ in bridge_calls), (results, bridge_calls)
         _, results, bridge_calls, _ = chat({"tool": "mcp__dahlia__update_meeting"}, profile="scheduled", approval_mode="fullAccess")
         assert "not approved" in results[0] and "MCP_OK" not in results[0], results
-        _, results, bridge_calls, _ = chat({"tool": "mcp__dahlia__get_meeting"}, profile="scheduled", bridge_answers={"scheduledTool": True})
+        _, results, bridge_calls, _ = chat({"tool": "mcp__dahlia__get_meetings"}, profile="scheduled", bridge_answers={"scheduledTool": True})
         assert "MCP_OK" in results[0] and any(method == "scheduledTool" for method, _ in bridge_calls), (results, bridge_calls)
 
         # Budget exhaustion must abort Pi; throwing from a hook alone is logged and ignored by Pi.
@@ -909,7 +909,7 @@ def main():
 
         requests, results, _, _ = chat({"tool": "read", "args": {"path": "inside.txt"}})
         names = [tool.get("name") for tool in requests[0]["body"].get("tools", [])]
-        assert {"read", "ls", "bash", "mcp__dahlia__get_meeting"} <= set(names), names
+        assert {"read", "ls", "bash", "mcp__dahlia__get_meetings"} <= set(names), names
         assert "INSIDE_MARKER" in results[0], results
         # Dahlia's skills are readable, and an image is still recognized when read through the sandbox.
         _, results, _, _ = chat({"tool": "read", "args": {"path": "../skills/SKILL.md"}}, {"tool": "read", "args": {"path": "pixel.png"}})
@@ -968,7 +968,7 @@ def main():
         assert "it's $HOME" in results[0] and "PI_CODING_AGENT_DIR" in results[0], results
         assert "SECRET_MARKER" not in results[0], results
 
-        _, results, bridge, _ = chat({"tool": "mcp__dahlia__get_meeting"})
+        _, results, bridge, _ = chat({"tool": "mcp__dahlia__get_meetings"})
         assert results == ["MCP_OK"] and not any(method == "approval" for method, _ in bridge), (results, bridge)
         _, results, bridge, _ = chat({"tool": "mcp__dahlia__update_meeting", "args": {"title": "x"}})
         approvals = [payload for method, payload in bridge if method == "approval"]

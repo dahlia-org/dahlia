@@ -16,8 +16,8 @@ AST / renderer / file locator は `DahliaRuntimeSupport` で app と helper が�
 
 `--write` の `update_meeting_summary` は既存の1 meeting の document 全体を1回の要求で更新する。人名等の訂正が複数 block にまたがっても1回で整合させる。
 
-- 入力と `get_meeting.summary_document` は同じ schema 定数を共有し、未知 key、ID 省略、重複 ID、schema version、screenshot 所属、サイズを検証する。section / block ID は UUID の大小文字や v4 / v7 の違いで拒否せず、同じ UUID として扱う。既存 ID は保持し、新規 section / block にだけ一意の UUID を付ける。画像の公開 ID を内部 UUID に戻した際の大小文字の差も正規化し、画像を含む document も欠落なく往復できる。
-- 保存済み document 文字列の SHA-256 を `summary_document_version` とし、更新時に expected version を要求する。別 writer の採番漏れを避け、再生成との衝突も検出する。Server transaction revision とは別の local MCP CAS 契約。
+- 入力と `get_meetings` の `structured_summary`（`summary_format: "structured"` のときだけ返す）は同じ schema 定数を共有し、未知 key、ID 省略、重複 ID、schema version、screenshot 所属、サイズを検証する。section / block ID は UUID の大小文字や v4 / v7 の違いで拒否せず、同じ UUID として扱う。既存 ID は保持し、新規 section / block にだけ一意の UUID を付ける。画像の公開 ID を内部 UUID に戻した際の大小文字の差も正規化し、画像を含む document も欠落なく往復できる。
+- 保存済み document 文字列の SHA-256 を `summary_version` とし、更新時に expected version を要求する。別 writer の採番漏れを避け、再生成との衝突も検出する。Server transaction revision とは別の local MCP CAS 契約。
 - Workspace lock / prevalidation の後、既存 `summary_exports` の Workspace path だけを更新する。未 export のファイルは作らず、title が変わっても rename しない。
 - file を先に書き、DB transaction 失敗時は元内容へ補償する。補償失敗は `workspaceRollbackFailed` として表面化する。
 - 過去に書き出した Google Docs は自動更新せず、`stale_exports: google_docs` を返す。app 不在でも Workspace の Markdown は helper が更新し、app は跨 process 通知で summary を再読込する。GRDB observation だけに依存しない。

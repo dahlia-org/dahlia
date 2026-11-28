@@ -7,6 +7,8 @@ import GRDB
 // swiftlint:disable:next type_body_length
 public final class DahliaMCPServer {
     private static let maximumScreenshotCount = 10
+    /// Keeps a Markdown response within Claude Code's default 25,000-token MCP output limit for typical summaries.
+    static let maximumMeetingCount = 5
 
     let store: MeetingAccessStore
     let workspaceScope: UUID?
@@ -104,8 +106,9 @@ public final class DahliaMCPServer {
                 "Read-only access to one configured Dahlia workspace. ")
         let writeInstructions = store.allowsWrites
             ? "Query or get each record before updating it. Record updates require revision. "
-            + "update_meeting_summary replaces one meeting's whole summary document. Call get_meeting first, edit the "
-            + "returned summary_document in place, and send it back with summary_document_version. Keep every section id, "
+            + "update_meeting_summary replaces one meeting's whole summary. Call get_meetings with summary_format "
+            + "structured first, edit the returned structured_summary in place, and send it back with its summary_version "
+            + "as expected_summary_version. Keep every section id, "
             + "block id, screenshot_id, and transcript_ref you are not correcting; a dropped id loses that block's "
             + "identity, and a screenshot_id from another meeting is rejected. A workspace-exported summary is rewritten in "
             + "place under its existing file name, while a Google Docs export is left stale and reported in "
@@ -237,7 +240,7 @@ public final class DahliaMCPServer {
             .write
         }
         let category: MCPUsageTelemetryEvent.Category = switch name {
-        case "query_meetings", "query_screenshots", "get_meeting", "get_meeting_screenshots", "get_meeting_transcript",
+        case "query_meetings", "query_screenshots", "get_meetings", "get_meeting_screenshots", "get_meeting_transcript",
              "update_meeting_summary":
             .meeting
         case "query_projects", "get_project", "create_project", "update_project",
@@ -263,9 +266,6 @@ public final class DahliaMCPServer {
                 "query", "project_id", "created_from", "created_before", "limit", "cursor", "server_cursor",
             ])
             return try toolResult(queryScreenshots(arguments))
-        case "get_meeting":
-            try validate(arguments, allowedKeys: ["meeting_id"])
-            return try toolResult(getMeeting(arguments))
         case "get_meeting_transcript":
             try validate(arguments, allowedKeys: [
                 "meeting_id", "from_elapsed_seconds", "to_elapsed_seconds", "limit", "cursor", "after", "wait",
@@ -357,11 +357,11 @@ public final class DahliaMCPServer {
                 projectID: nil
             ))
         case "update_meeting_summary":
-            try validate(arguments, allowedKeys: ["meeting_id", "expected_document_version", "summary_document"])
+            try validate(arguments, allowedKeys: ["meeting_id", "expected_summary_version", "structured_summary"])
             return try toolResult(store.updateMeetingSummary(
                 meetingID: requiredUUID(arguments, key: "meeting_id"),
-                expectedDocumentVersion: requiredString(arguments, key: "expected_document_version"),
-                document: requiredSummaryDocument(arguments, key: "summary_document")
+                expectedDocumentVersion: requiredString(arguments, key: "expected_summary_version"),
+                document: requiredSummaryDocument(arguments, key: "structured_summary")
             ))
         default:
             throw ParameterError("Unknown tool: \(name)")
@@ -395,10 +395,6 @@ public final class DahliaMCPServer {
             cursor: string(arguments, key: "cursor"),
             serverCursor: string(arguments, key: "server_cursor")
         ))
-    }
-
-    private func getMeeting(_ arguments: [String: Any]) throws -> MeetingDetail {
-        try store.meeting(id: requiredUUID(arguments, key: "meeting_id"))
     }
 
     private func getMeetingTranscript(_ arguments: [String: Any]) throws -> TranscriptPage {
@@ -502,17 +498,17 @@ public final class DahliaMCPServer {
         return value
     }
 
-    /// `get_meeting` が返す `summary_document` と同じ形状を受け取る。
+    /// `get_meetings` が `summary_format: structured` で返す `structured_summary` と同じ形状を受け取る。
     private func requiredSummaryDocument(_ arguments: [String: Any], key: String) throws -> SummaryDocument {
         guard let object = arguments[key] as? [String: Any] else {
-            throw ParameterError("\(key) must be an object matching the summary_document returned by get_meeting")
+            throw ParameterError("\(key) must be an object matching the structured_summary returned by get_meetings")
         }
         do {
             let data = try JSONSerialization.data(withJSONObject: object)
             let value = try JSONDecoder().decode(JSONValue.self, from: data)
             return try StoredSummaryDocumentMarkdownRenderer.decode(toolJSON: value)
         } catch {
-            throw ParameterError("\(key) does not match the summary_document schema")
+            throw ParameterError("\(key) does not match the structured_summary schema")
         }
     }
 
@@ -966,17 +962,32 @@ extension DahliaMCPServer {
         )
     }
 
-    private static var meetingDetailOutputSchema: [String: Any] {
-        objectSchema(
+    private static var meetingsOutputSchema: [String: Any] {
+        let meeting = objectSchema(
             properties: [
                 "workspace": workspaceSchema,
                 "text_content": textContentSchema,
                 "meeting": meetingMetadataSchema,
-                "summary": ["type": "string"],
-                "summary_document": summaryDocumentSchema,
-                "summary_document_version": ["type": "string"],
+                "summary": ["type": "string", "description": "Readable Markdown. Returned for summary_format markdown."],
+                "structured_summary": summaryDocumentSchema,
+                "summary_version": ["type": "string", "description": "Returned with structured_summary."],
             ],
             required: ["workspace", "meeting"]
+        )
+        let error = objectSchema(
+            properties: [
+                "index": ["type": "integer", "minimum": 0, "description": "Position in meeting_ids."],
+                "id": ["type": "string", "description": "The ID exactly as sent."],
+                "code": ["type": "string", "enum": ["invalid_id", "not_found", "unavailable", "unreadable"]],
+            ],
+            required: ["index", "id", "code"]
+        )
+        return objectSchema(
+            properties: [
+                "meetings": ["type": "array", "items": meeting],
+                "errors": ["type": "array", "items": error],
+            ],
+            required: ["meetings", "errors"]
         )
     }
 
@@ -1140,8 +1151,9 @@ extension DahliaMCPServer {
         writeTool(
             "update_meeting_summary",
             "Update meeting summary",
-            "Replace the stored summary document of one meeting. Call get_meeting first and send its summary_document "
-                + "back with only the intended corrections applied, together with the returned summary_document_version. "
+            "Replace the stored summary of one meeting. Call get_meetings with summary_format structured first and send "
+                + "its structured_summary back with only the intended corrections applied, together with the returned "
+                + "summary_version as expected_summary_version. "
                 + "The whole document is replaced, so preserve every section id, block id, screenshot_id, and "
                 + "transcript_ref you do not intend to change. Assign a unique UUID to each new section or block; "
                 + "UUIDv4 and UUIDv7 are accepted in either letter case. The meeting name and description follow the document "
@@ -1150,10 +1162,10 @@ extension DahliaMCPServer {
                 + "is not updated and is reported in stale_exports.",
             [
                 "meeting_id": idSchema(.meeting),
-                "expected_document_version": ["type": "string"],
-                "summary_document": summaryDocumentSchema,
+                "expected_summary_version": ["type": "string"],
+                "structured_summary": summaryDocumentSchema,
             ],
-            required: ["meeting_id", "expected_document_version", "summary_document"],
+            required: ["meeting_id", "expected_summary_version", "structured_summary"],
             outputSchema: summaryMutationOutputSchema,
             destructive: true,
             idempotent: true
@@ -1164,7 +1176,7 @@ extension DahliaMCPServer {
         objectSchema(
             properties: [
                 "meeting_id": idSchema(.meeting),
-                "document_version": ["type": "string"],
+                "summary_version": ["type": "string"],
                 "title": ["type": "string"],
                 "description": ["type": "string"],
                 "changed": ["type": "boolean"],
@@ -1174,7 +1186,7 @@ extension DahliaMCPServer {
                 ],
                 "stale_exports": ["type": "array", "items": ["type": "string"]],
             ],
-            required: ["meeting_id", "document_version", "title", "description", "changed", "workspace_export", "stale_exports"]
+            required: ["meeting_id", "summary_version", "title", "description", "changed", "workspace_export", "stale_exports"]
         )
     }
 
@@ -1378,17 +1390,29 @@ extension DahliaMCPServer {
             "annotations": annotations,
         ],
         [
-            "name": "get_meeting",
-            "title": "Get meeting",
-            "description": "Get meeting metadata, readable Markdown, and the stored structured summary document. "
-                + "Transcript and screenshot references are preserved for evidence exploration.",
+            "name": "get_meetings",
+            "title": "Get meetings",
+            "description": "Get metadata and the summary of 1 to \(maximumMeetingCount) meetings, in request order, across "
+                + "workspaces. The summary is readable Markdown that keeps transcript and screenshot references. Use "
+                + "summary_format structured only for a meeting you will correct with update_meeting_summary; it returns "
+                + "structured_summary and summary_version instead of Markdown. IDs that cannot be returned are listed in "
+                + "errors and do not stop the others. If a response is too large, request fewer meetings.",
             "inputSchema": [
                 "type": "object",
-                "properties": ["meeting_id": idSchema(.meeting)],
-                "required": ["meeting_id"],
+                "properties": [
+                    "meeting_ids": [
+                        "type": "array",
+                        "items": idSchema(.meeting),
+                        "minItems": 1,
+                        "maxItems": maximumMeetingCount,
+                        "uniqueItems": true,
+                    ],
+                    "summary_format": ["type": "string", "enum": ["markdown", "structured"], "default": "markdown"],
+                ],
+                "required": ["meeting_ids"],
                 "additionalProperties": false,
             ],
-            "outputSchema": meetingDetailOutputSchema,
+            "outputSchema": meetingsOutputSchema,
             "annotations": annotations,
         ],
         [

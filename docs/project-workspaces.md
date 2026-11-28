@@ -136,7 +136,7 @@ Read tools:
 - `get_project`
 - `query_meetings`
 - `query_screenshots`
-- `get_meeting`
+- `get_meetings`
 - `get_meeting_transcript`
 - `get_meeting_screenshots`
 
@@ -149,6 +149,13 @@ Meeting metadata instead. Project names and paths are excluded from both text-se
 `query_screenshots` searches detected text and generated image descriptions, and returns screenshots as independent
 results with their owning Meeting IDs. Queries must contain at least two non-whitespace characters.
 
+`get_meetings` returns 1 to 5 Meetings per call, in request order. Each ID resolves to its own Workspace, so one
+call may span Workspaces; `workspace_id` narrows it to one. The summary is Markdown by default; `summary_format:
+"structured"` returns `structured_summary` and `summary_version` instead, for `update_meeting_summary`. An ID that cannot
+be returned is listed in `errors` with its position in `meeting_ids`, the ID as sent, and `invalid_id`, `not_found`,
+`unavailable`, or `unreadable`; the other IDs are still returned. Scheduled-run grants saved under the former
+`get_meeting` name permit `get_meetings`.
+
 `get_meeting_screenshots` returns up to 10 stored screenshots per call unchanged: WebP images whose long edge is at
 most 1568 px. Use individual IDs or range pagination to retrieve more.
 
@@ -160,9 +167,9 @@ Write tools:
 - `remove_meeting_project_assignment`
 - `update_meeting_summary`
 
-`update_meeting_summary` replaces one Meeting's whole summary document and is described in
-[訂正と export](spec/desktop/summary.md#訂正と-export). It takes the `summary_document` and `summary_document_version`
-that `get_meeting` returned, propagates the document title and description to the Meeting, adds document tags without
+`update_meeting_summary` replaces one Meeting's whole summary and is described in
+[訂正と export](spec/desktop/summary.md#訂正と-export). It takes the `structured_summary` and `summary_version` that
+`get_meetings` returned for `summary_format: "structured"`, propagates the document title and description to the Meeting, adds document tags without
 removing existing ones, and rewrites an already-exported workspace Markdown file in place under its current file name. It
 never creates a summary or a summary file that does not exist, never renames one, and leaves a Google Docs export
 stale.

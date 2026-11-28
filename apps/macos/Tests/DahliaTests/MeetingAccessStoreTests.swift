@@ -41,15 +41,17 @@ import ImageIO
             }
             let meetingID = try contextID(.meeting(id: fixture.firstMeetingID, name: "Meeting", calendarEvent: nil), tag: "meeting_id")
             let projectID = try contextID(.project(id: fixture.primaryProjectID, name: "Project", description: ""), tag: "project_id")
-            let detail = try call("get_meeting", ["meeting_id": meetingID])
+            let batch = try call("get_meetings", ["meeting_ids": [meetingID]])
+            #expect((batch["errors"] as? [Any])?.isEmpty == true)
+            let detail = try #require((batch["meetings"] as? [[String: Any]])?.first)
             let meeting = try #require(detail["meeting"] as? [String: Any])
             #expect(meeting["id"] as? String == meetingID)
             #expect(meeting["project_id"] as? String == projectID)
             let mention = CodexChatMeetingReference.serializedText(referenceIDs: [fixture.firstMeetingID], draft: "")
-            #expect(try (call(
-                "get_meeting",
-                ["meeting_id": String(mention.dropFirst("meeting:".count))]
-            )["meeting"] as? [String: Any])?["id"] as? String == meetingID)
+            #expect(try ((call(
+                "get_meetings",
+                ["meeting_ids": [String(mention.dropFirst("meeting:".count))]]
+            )["meetings"] as? [[String: Any]])?.first?["meeting"] as? [String: Any])?["id"] as? String == meetingID)
             let projects = try call("get_project", ["project_id": projectID])
             #expect((projects["projects"] as? [[String: Any]])?.first?["project_id"] as? String == projectID)
             let workspace = try #require(detail["workspace"] as? [String: Any])
@@ -83,11 +85,17 @@ import ImageIO
             )
             #expect((nextScreenshots["screenshots"] as? [[String: Any]])?.first?["id"] as? String != screenshotID)
             #expect((detail["summary"] as? String)?.contains("[Screenshot \(TypeID.encode(fixture.firstScreenshotID, as: .attachment)) at") == true)
-            let document = try #require(detail["summary_document"])
-            let version = try #require(detail["summary_document_version"] as? String)
+            #expect(detail["structured_summary"] == nil && detail["summary_version"] == nil)
+            let structured = try #require((call(
+                "get_meetings",
+                ["meeting_ids": [meetingID], "summary_format": "structured"]
+            )["meetings"] as? [[String: Any]])?.first)
+            #expect(structured["summary"] == nil)
+            let document = try #require(structured["structured_summary"])
+            let version = try #require(structured["summary_version"] as? String)
             let update = try call(
                 "update_meeting_summary",
-                ["meeting_id": meetingID, "expected_document_version": version, "summary_document": document]
+                ["meeting_id": meetingID, "expected_summary_version": version, "structured_summary": document]
             )
             #expect(update["meeting_id"] as? String == meetingID)
             #expect(update["changed"] as? Bool == false)
@@ -137,10 +145,7 @@ import ImageIO
                 return annotations?["destructiveHint"] as? Bool == true
                     && annotations?["idempotentHint"] as? Bool == true
             })
-            for invalid in [fixture.firstMeetingID.uuidString, TypeID.encode(fixture.firstMeetingID, as: .project)] {
-                #expect(try (call("get_meeting", ["meeting_id": invalid])["error"] as? [String: Any])?["code"] as? Int == -32602)
-            }
-            let detail = try body(call("get_meeting", ["meeting_id": meetingID]))
+            let detail = try #require((body(call("get_meetings", ["meeting_ids": [meetingID]]))["meetings"] as? [[String: Any]])?.first)
             #expect((detail["meeting"] as? [String: Any])?["id"] as? String == meetingID)
             #expect((detail["workspace"] as? [String: Any])?["id"] as? String == TypeID.encode(fixture.primaryWorkspaceID, as: .workspace))
             let transcript = try body(call("get_meeting_transcript", ["meeting_id": meetingID, "limit": 1]))
@@ -812,7 +817,7 @@ import ImageIO
             #expect(detail.meeting.calendarTitle == "Roadmap review")
             #expect(detail.summary?.contains("Markdown secret body [Transcript 00:00:15]") == true)
             #expect(detail.summary?.contains("[Screenshot \(TypeID.encode(fixture.firstScreenshotID, as: .attachment)) at 00:00:16]") == true)
-            guard case let .object(document)? = detail.summaryDocument,
+            guard case let .object(document)? = detail.structuredSummary,
                   case let .array(sections)? = document["sections"],
                   case let .object(section)? = sections.first,
                   case let .array(blocks)? = section["blocks"],
@@ -1174,7 +1179,7 @@ import ImageIO
             let tools = try Self.json(server.handleInternalTestLine(#"{"jsonrpc":"2.0","id":3,"method":"tools/list"}"#))
             let definitions = ((tools["result"] as? [String: Any])?["tools"] as? [[String: Any]]) ?? []
             #expect(definitions.map { $0["name"] as? String } == [
-                "list_workspaces", "query_meetings", "query_screenshots", "get_meeting", "get_meeting_transcript", "get_meeting_screenshots",
+                "list_workspaces", "query_meetings", "query_screenshots", "get_meetings", "get_meeting_transcript", "get_meeting_screenshots",
                 "query_projects", "get_project",
             ])
             #expect((definitions.first?["annotations"] as? [String: Any])?["readOnlyHint"] as? Bool == true)
@@ -1205,12 +1210,19 @@ import ImageIO
             #expect((queryResult["structuredContent"] as? [String: Any])?["meetings"] != nil)
 
             let meetingCall = try Self.json(server.handleInternalTestLine(#"""
-            {"jsonrpc":"2.0","id":8,"method":"tools/call","params":{"name":"get_meeting","arguments":{"meeting_id":"\#(fixture.firstMeetingID
-                .uuidString)"}}}
+            {"jsonrpc":"2.0","id":8,"method":"tools/call","params":{"name":"get_meetings","arguments":{"meeting_ids":["\#(fixture
+                .firstMeetingID.uuidString)"]}}}
             """#))
-            let meetingContent = (meetingCall["result"] as? [String: Any])?["structuredContent"] as? [String: Any]
+            let meetingContent = (((meetingCall["result"] as? [String: Any])?["structuredContent"] as? [String: Any])?["meetings"]
+                as? [[String: Any]])?.first
             #expect((meetingContent?["summary"] as? String)?.contains("[Transcript 00:00:15]") == true)
-            let summaryDocument = try #require(meetingContent?["summary_document"] as? [String: Any])
+            let structuredCall = try Self.json(server.handleInternalTestLine(#"""
+            {"jsonrpc":"2.0","id":8,"method":"tools/call","params":{"name":"get_meetings","arguments":{"meeting_ids":["\#(fixture
+                .firstMeetingID.uuidString)"],"summary_format":"structured"}}}
+            """#))
+            let structuredContent = (((structuredCall["result"] as? [String: Any])?["structuredContent"] as? [String: Any])?["meetings"]
+                as? [[String: Any]])?.first
+            let summaryDocument = try #require(structuredContent?["structured_summary"] as? [String: Any])
             #expect(summaryDocument["schema_version"] as? Int == 3)
             #expect(summaryDocument["schemaVersion"] == nil)
             let sections = try #require(summaryDocument["sections"] as? [[String: Any]])

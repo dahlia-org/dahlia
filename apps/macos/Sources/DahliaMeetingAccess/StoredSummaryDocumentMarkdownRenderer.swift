@@ -4,7 +4,7 @@ import Foundation
 /// 保存済みサマリーを MCP が扱う 2 つの形へ変換する。
 ///
 /// - `render`: エージェントがそのまま読める素の Markdown。
-/// - `toolJSONValue` / `decode(toolJSON:)`: `get_meeting` の出力と `update_meeting_summary` の入力で共有する
+/// - `toolJSONValue` / `decode(toolJSON:)`: `get_meetings`（`summary_format: structured`）の出力と `update_meeting_summary` の入力で共有する
 ///   snake_case の構造化表現。この 2 つは必ず逆変換の対でなければならない。
 enum StoredSummaryDocumentMarkdownRenderer {
     /// DB 保存形と MCP 公開形で綴りが異なるキー。ほかのキーは両形で同一。
@@ -34,7 +34,7 @@ enum StoredSummaryDocumentMarkdownRenderer {
         return joined(chunks)
     }
 
-    /// `get_meeting` が返し、`update_meeting_summary` が受け取る snake_case 表現。
+    /// `get_meetings` が返し、`update_meeting_summary` が受け取る snake_case 表現。
     static func toolJSONValue(_ document: SummaryDocument) throws -> JSONValue {
         let data = try JSONEncoder().encode(document)
         let value = try JSONDecoder().decode(JSONValue.self, from: data)
@@ -48,7 +48,7 @@ enum StoredSummaryDocumentMarkdownRenderer {
         guard try addingLegacyDefaults(to: canonicalizingUUIDs(toolJSON)) == toolJSONValue(document) else {
             throw DecodingError.dataCorrupted(.init(
                 codingPath: [],
-                debugDescription: "summary_document contains unknown, missing, or invalid fields"
+                debugDescription: "structured_summary contains unknown, missing, or invalid fields"
             ))
         }
         guard hasValidTranscriptReferences(document) else {
@@ -106,7 +106,7 @@ enum StoredSummaryDocumentMarkdownRenderer {
                 guard rewritten[rewrittenKey] == nil else {
                     throw DecodingError.dataCorrupted(.init(
                         codingPath: [],
-                        debugDescription: "summary_document contains colliding keys"
+                        debugDescription: "structured_summary contains colliding keys"
                     ))
                 }
                 rewritten[rewrittenKey] = try rewritingKeys(element, using: mapping)
