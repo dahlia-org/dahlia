@@ -868,7 +868,7 @@
 "help.howItWorks.modes.lead" = "Dahlia の AI は、きっかけごとに役割を分けて動きます。外部サービスに書き込めるのは、あなたと話す通常のチャットと、エージェントが仕事を任せるワーカーです。この 2 つは基本の作業機能が共通です。";
 "help.howItWorks.modes.map.external" = "外部サービス";
 "help.howItWorks.modes.map.externalCaption" = "メール・Slack・Web などのコネクタ";
-"help.howItWorks.modes.map.dahliaCaption" = "会議データ・予定・メモリー";
+"help.howItWorks.modes.map.dahliaCaption" = "会議データ・メモリー";
 "help.howItWorks.modes.map.read" = "読むだけ";
 "help.howItWorks.modes.map.readOne" = "1つを読むだけ";
 "help.howItWorks.modes.map.readWrite" = "読み書き";

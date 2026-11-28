@@ -868,7 +868,7 @@
 "help.howItWorks.modes.lead" = "Dahlia's AI splits the work into roles by what starts it. The chat you talk to and the workers an agent hands work to can write to other services. They share the same core work capabilities.";
 "help.howItWorks.modes.map.external" = "Other services";
 "help.howItWorks.modes.map.externalCaption" = "Mail, Slack, the web, and other connectors";
-"help.howItWorks.modes.map.dahliaCaption" = "Meetings, calendar, and memory";
+"help.howItWorks.modes.map.dahliaCaption" = "Meetings and memory";
 "help.howItWorks.modes.map.read" = "Read only";
 "help.howItWorks.modes.map.readOne" = "Reads one";
 "help.howItWorks.modes.map.readWrite" = "Read and write";
