@@ -48,22 +48,26 @@ import Synchronization
             #expect(request.query("q")?.contains(#"name = 'Team\'s files'"#) == true)
         }
 
-        @Test
-        func uploadCreatesTheMissingFoldersThenSendsOneResumableSession() async throws {
+        @Test(arguments: ["Dahlia", "Docs+Backups"])
+        func uploadCreatesTheMissingFoldersThenSendsOneResumableSession(folderName: String) async throws {
             let created = Mutex<[String: String]>([:])
             let host = host
-            let (storage, session) = storage { request in
+            let session = StorageStubURLProtocol.session(host: host) { request in
                 let path = request.url!.path
                 switch (request.httpMethod, path) {
                 case ("GET", "/drive/v3/files"):
-                    let query = request.query("q") ?? ""
+                    // Drive decodes queries as form data, where an unescaped plus means a space.
+                    var components = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)!
+                    components.percentEncodedQuery = components.percentEncodedQuery?.replacingOccurrences(of: "+", with: "%20")
+                    let query = components.queryItems?.first { $0.name == "q" }?.value ?? ""
                     let folders = created.withLock { $0 }
-                    if query.contains("'root' in parents and name = 'Dahlia'"), let id = folders["Dahlia"] { return Self.files([(id, "Dahlia")]) }
+                    if query.contains("'root' in parents and name = '\(folderName)'"), let id = folders[folderName] { return Self.files([(id, folderName)]) }
                     if query.contains("name = 'backup'"), let id = folders["backup"] { return Self.files([(id, "backup")]) }
+                    if query.contains("'backupFolder' in parents and mimeType !=") { return Self.files([("uploaded", "Dahlia-copy.tar.gz")]) }
                     return Self.files([])
                 case ("POST", "/drive/v3/files"):
                     let name = request.jsonBody["name"] as? String ?? ""
-                    let id = name == "Dahlia" ? "dahliaFolder" : "backupFolder"
+                    let id = name == folderName ? "dahliaFolder" : "backupFolder"
                     created.withLock { $0[name] = id }
                     return .json(#"{"id":"\#(id)"}"#)
                 case ("POST", "/upload/drive/v3/files"):
@@ -74,6 +78,7 @@ import Synchronization
                     return StorageStubURLProtocol.Response(status: 404)
                 }
             }
+            let storage = GoogleDriveStorage(folderName: folderName, baseURL: URL(string: "https://\(host)/")!, session: session) { "drive-token" }
             defer {
                 session.invalidateAndCancel()
                 StorageStubURLProtocol.reset(host: host)
@@ -82,10 +87,16 @@ import Synchronization
             defer { try? FileManager.default.removeItem(at: file.deletingLastPathComponent()) }
 
             try await storage.upload(file, to: "backup", name: file.lastPathComponent)
+            #expect(try await storage.list(directory: "backup").map(\.id) == ["uploaded"])
 
             let requests = StorageStubURLProtocol.requests(host: host)
             let folderCreations = requests.filter { $0.httpMethod == "POST" && $0.url?.path == "/drive/v3/files" }
-            #expect(folderCreations.map { $0.jsonBody["name"] as? String } == ["Dahlia", "backup"])
+            #expect(folderCreations.map { $0.jsonBody["name"] as? String } == [folderName, "backup"])
+            if folderName.contains("+") {
+                let query = try #require(requests.first?.url?.absoluteString)
+                #expect(query.contains("Docs%2BBackups"))
+                #expect(!query.contains("+"))
+            }
             #expect(folderCreations.map { $0.jsonBody["parents"] as? [String] } == [["root"], ["dahliaFolder"]])
             #expect(folderCreations.allSatisfy { $0.jsonBody["mimeType"] as? String == "application/vnd.google-apps.folder" })
             let start = try #require(requests.first { $0.url?.path == "/upload/drive/v3/files" })
@@ -96,6 +107,25 @@ import Synchronization
             let put = try #require(requests.first { $0.url?.path == "/upload-session/1" })
             #expect(put.httpMethod == "PUT")
             #expect(put.httpBody == Data("twelve bytes".utf8))
+        }
+
+        @Test
+        func paginationPreservesLiteralPlusAndPercentInTokens() async throws {
+            let (storage, session) = storage { request in
+                let query = request.query("q") ?? ""
+                if query.contains("name = 'Dahlia'") { return Self.files([("dahliaFolder", "Dahlia")]) }
+                if query.contains("name = 'backup'") { return Self.files([("backupFolder", "backup")]) }
+                if request.query("pageToken") == nil { return .json(#"{"files":[],"nextPageToken":"next+%2B&="}"#) }
+                return Self.files([("copy", "Dahlia-copy.tar.gz")])
+            }
+            defer {
+                session.invalidateAndCancel()
+                StorageStubURLProtocol.reset(host: host)
+            }
+            #expect(try await storage.list(directory: "backup").map(\.id) == ["copy"])
+            let request = try #require(StorageStubURLProtocol.requests(host: host).last)
+            #expect(request.query("pageToken") == "next+%2B&=")
+            #expect(request.url?.absoluteString.contains("pageToken=next%2B%252B%26%3D") == true)
         }
 
         @Test

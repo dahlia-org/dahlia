@@ -30,6 +30,42 @@
             #expect(requests.first?.query("catalog_name") == (schemas ? "main&shared" : nil))
         }
 
+        @Test(arguments: [false, true])
+        func unsupportedNamesDoNotHideSupportedDestinationsOrStopPagination(schemas: Bool) async throws {
+            let session = StorageStubURLProtocol.session(host: host) { request in
+                let key = schemas ? "schemas" : "catalogs"
+                switch request.query("page_token") {
+                case nil: return .json(#"{"\#(key)":[{"name":"unsupported`name"}],"next_page_token":"mixed"}"#)
+                case "mixed": return .json(#"{"\#(key)":[{"name":"alpha"},{"name":"other`name"}],"next_page_token":"last"}"#)
+                default: return .json(#"{"\#(key)":[{"name":"zebra"},{"name":"alpha"}]}"#)
+                }
+            }
+            defer { session.invalidateAndCancel()
+                StorageStubURLProtocol.reset(host: host)
+            }
+            let client = try DatabricksUnityCatalogClient(
+                host: #require(URL(string: "https://\(host)")), session: session,
+                authorization: ProviderStorageAuthorization(accessToken: "fixed", validate: {})
+            )
+            #expect(try await (schemas ? client.schemas(in: "main") : client.catalogs()) == ["alpha", "zebra"])
+            #expect(StorageStubURLProtocol.requests(host: host).count == 3)
+        }
+
+        @Test(arguments: ["supported", "unsupported`name"])
+        func schemasFromAnotherCatalogRemainInvalid(name: String) async throws {
+            let session = StorageStubURLProtocol.session(host: host) { _ in
+                .json(#"{"schemas":[{"name":"\#(name)","catalog_name":"other"}]}"#)
+            }
+            defer { session.invalidateAndCancel()
+                StorageStubURLProtocol.reset(host: host)
+            }
+            let client = try DatabricksUnityCatalogClient(
+                host: #require(URL(string: "https://\(host)")), session: session,
+                authorization: ProviderStorageAuthorization(accessToken: "fixed", validate: {})
+            )
+            await #expect(throws: ProviderStorageError.invalidResponse) { try await client.schemas(in: "main") }
+        }
+
         @Test
         func createsOnlyASchemaInTheChosenCatalog() async throws {
             let session = StorageStubURLProtocol.session(host: host) { _ in .json(#"{"name":"new_schema","catalog_name":"main"}"#) }

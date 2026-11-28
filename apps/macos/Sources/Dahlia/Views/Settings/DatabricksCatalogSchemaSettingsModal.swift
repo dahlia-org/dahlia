@@ -36,7 +36,7 @@ struct DatabricksCatalogSchemaSettingsModal: View {
                         Section {
                             DahliaMenuPicker(
                                 title: L10n.databricksCatalog,
-                                selection: Binding(get: { model.catalog }, set: model.selectCatalog),
+                                selection: Binding(get: { model.catalog }, set: { model.selectCatalog($0) }),
                                 options: [""] + model.catalogs
                             ) { $0.isEmpty ? L10n.databricksSelectCatalog : $0 }
                                 .disabled(model.isLoadingCatalogs || model.isCreating || model.isSaving)

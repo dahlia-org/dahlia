@@ -83,11 +83,10 @@ struct DatabricksUnityCatalogClient: DatabricksUnityCatalogProviding {
             try validate()
             let page = try JSONDecoder().decode(Page.self, from: data)
             let entries = endpoint == "catalogs" ? page.catalogs ?? [] : page.schemas ?? []
-            guard entries.allSatisfy({ DatabricksCatalogSchema.isValidName($0.name) }),
-                  entries.allSatisfy({ $0.catalogName == nil || $0.catalogName == query["catalog_name"] }) else {
+            guard entries.allSatisfy({ $0.catalogName == nil || $0.catalogName == query["catalog_name"] }) else {
                 throw ProviderStorageError.invalidResponse
             }
-            result += entries.map(\.name)
+            result += entries.map(\.name).filter { DatabricksCatalogSchema.isValidName($0) }
             parameters["page_token"] = page.nextPageToken?.nilIfBlank
             if let token = parameters["page_token"], !visited.insert(token).inserted {
                 throw ProviderStorageError.invalidResponse
