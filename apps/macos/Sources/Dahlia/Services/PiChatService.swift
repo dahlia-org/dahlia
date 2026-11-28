@@ -1181,6 +1181,7 @@ actor PiChatService: CodexChatServicing {
     func expireIntake(_ threadID: String) async {
         guard activeIntake?.threadID == threadID else { return }
         activeIntake = nil
+        intakeTask?.cancel()
         opening[threadID]?.cancel()
         await closeSession(threadID)
     }

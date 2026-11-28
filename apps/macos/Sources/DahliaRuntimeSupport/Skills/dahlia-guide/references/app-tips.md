@@ -152,6 +152,8 @@ Agents can also read upcoming calendar events and invitation status.
 
 Each event source's intake runs in one read-only thread, `intake-<source name>`; open it with Intake thread / 取り込みのスレッド
 on the source in the agent's settings. Every run starts a fresh Pi session there, so it never sees earlier runs.
+Like ordinary chat, its execution history retains model responses and tool results, including email and Slack content
+that was not selected into the event inbox.
 Summaries and image analysis use no tools, MCPs, or skills. While recording, automatic agent runs, intake, and
 scheduled runs do not start. Chat, user messages to an agent, and manually requested summaries remain available.
 

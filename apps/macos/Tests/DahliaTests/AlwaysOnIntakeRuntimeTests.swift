@@ -36,6 +36,7 @@
                 readSucceeded: Bool = true,
                 acknowledgesPrompt: Bool = true,
                 pausesActivation: Bool = false,
+                onMCPSettings: @escaping @Sendable (PiRuntimeContextStore) -> Void = { _ in },
                 waitForIntakeTimeout: @escaping @Sendable () async throws -> Void = { try await Task.sleep(for: .seconds(600)) }
             ) throws -> Fixture {
                 let calls = readSucceeded ? [("intakeSeen", JSONValue.object(["ids": .array([])]))] + calls : calls
@@ -89,7 +90,10 @@
                 }
                 let chat = PiChatService(
                     runtime: pi.service, historyStore: ChatThreadStore(dbQueue: db),
-                    agentLocator: PiAgentDirectoryLocator(applicationSupportURL: pi.rootURL), mcpSettings: { registry.withLock { $0 } },
+                    agentLocator: PiAgentDirectoryLocator(applicationSupportURL: pi.rootURL), mcpSettings: {
+                        onMCPSettings(contextStore)
+                        return registry.withLock { $0 }
+                    },
                     waitForIntakeTimeout: waitForIntakeTimeout
                 )
                 return Fixture(pi: pi, service: chat, db: db, source: source, transports: transports)
@@ -326,6 +330,38 @@
                 let (source, runs, _) = try await saved(fixture)
                 #expect(runs.last?.status != "running")
                 if pausesActivation { #expect(source.cursor == nil) } else { try expectReadPosition(source, runs: runs, complete: false) }
+            }
+
+            @Test func intakeDeadlineCancelsPreparationBeforeOpeningExists() async throws {
+                let (preparation, paused) = AsyncStream<Void>.makeStream(bufferingPolicy: .bufferingNewest(1))
+                let (deadline, trigger) = AsyncStream<Void>.makeStream(bufferingPolicy: .bufferingNewest(1))
+                defer { paused.finish(); trigger.finish() }
+                let settingsReads = Mutex(0)
+                let fixture = try fixture(calls: [], ending: [], onMCPSettings: { context in
+                    // The third snapshot is the last source validation, before fresh-session preparation.
+                    let pause = settingsReads.withLock { $0 += 1; return $0 == 3 }
+                    if pause {
+                        context.beginActivation()
+                        paused.yield(())
+                    }
+                }, waitForIntakeTimeout: {
+                    for await _ in deadline { return }
+                })
+                defer { try? FileManager.default.removeItem(at: fixture.pi.rootURL) }
+                await fixture.service.drainAlwaysOn()
+                for await _ in preparation { break }
+                let task = try #require(await fixture.service.intakeTask)
+                #expect(fixture.transports.all.isEmpty)
+                trigger.yield(())
+                await task.value
+
+                #expect(await fixture.service.intakeTask == nil)
+                let (source, runs, _) = try await saved(fixture)
+                #expect(runs.last?.status == "interrupted")
+                #expect(runs.last?.finishedAt != nil)
+                #expect(source.cursor == nil)
+                #expect(fixture.transports.all.isEmpty)
+                fixture.pi.contextStore.apply()
             }
 
             @Test(arguments: ["sourceDeleted", "agentDeleted", "revisionChanged"])

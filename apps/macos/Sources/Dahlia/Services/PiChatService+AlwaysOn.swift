@@ -231,8 +231,12 @@ extension PiChatService {
             run.report = error.localizedDescription
         }
         run.finishedAt = .now
-        let finished = run
-        try? await history().dbQueue.write { try finished.update($0) }
+        persistIntakeOutcome(run)
+    }
+
+    /// Persist the terminal state synchronously even when the deadline cancelled the owning task.
+    private func persistIntakeOutcome(_ run: AgentSystemRunRecord) {
+        try? history().dbQueue.write { try run.update($0) }
     }
 
     /// Display readers can overflow; only the service's saved run outcome decides whether intake completed.
