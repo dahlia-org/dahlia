@@ -9,6 +9,11 @@ struct DatabricksConnection: Codable, Hashable, Identifiable, Sendable {
     /// The name the user gave the connection, a provider account; nil shows its workspace and email.
     var name: String?
 
+    /// Shared by capabilities of this provider account; saved in the provider account’s settingsJSON, separately from credentials.
+    var catalogSchema: DatabricksCatalogSchema? {
+        get async throws { try await DatabricksCatalogSchema.load(connectionID: id) }
+    }
+
     /// The workspace's host name without the cloud domain, such as `dbc-a5d4177a-49dc`.
     var workspaceName: String {
         let name = URL(string: host)?.host() ?? host

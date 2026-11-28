@@ -28,26 +28,25 @@ enum GoogleOAuthScope {
         "https://www.googleapis.com/auth/calendar.events.readonly",
     ]
 
-    static let drive: Set = ["https://www.googleapis.com/auth/drive.readonly"]
+    /// Only the files Dahlia creates, which is all backups need.
+    static let drive: Set = ["https://www.googleapis.com/auth/drive.file"]
+    /// Read access to every Drive file, granted before backups moved to `drive.file`. A new sign-in drops it.
+    static let retiredDrive: Set = ["https://www.googleapis.com/auth/drive.readonly"]
 
     static func authorizationScopes(for requestedScopes: Set<String>) -> Set<String> {
         base.union(requestedScopes)
     }
 }
 
-/// A service's use of one provider account. Calendar and Drive share that account's credential and generation.
+/// One provider account's Google credential, which Calendar and Drive share with its generation.
 struct GoogleAuthSessionKind: Hashable, Sendable {
-    private enum Service: Sendable { case calendar, drive }
-    private let service: Service
     let accountID: UUID?
-    static let calendar = Self(service: .calendar, accountID: nil)
-    static let drive = Self(service: .drive, accountID: nil)
+    static let calendar = Self(accountID: nil)
     static let keychainKey = "googleProviderAccountSession"
     static let retiredKeychainKeys = ["googleCalendarOAuthSession", "googleDriveBackupReadSession", "googleOAuthSession"]
 
-    func forAccount(_ id: UUID) -> Self { Self(service: service, accountID: id) }
+    func forAccount(_ id: UUID) -> Self { Self(accountID: id) }
     var keychainKey: String { accountID.map { "\(Self.keychainKey).\($0.uuidString)" } ?? Self.keychainKey }
-    var serviceScopes: Set<String> { service == .drive ? GoogleOAuthScope.drive : GoogleOAuthScope.calendar }
     var sessionDidChangeNotification: Notification.Name {
         accountID.map { Notification.Name("GoogleProviderAccountSession.\($0.uuidString)") } ?? .googleSessionDidChange
     }
@@ -190,6 +189,23 @@ final class GoogleSignInAdapter: NSObject, GoogleSignInProviding {
     /// Keychain keys of the retired Google Drive export: the per-account key is `<prefix>.<scope>`.
     private nonisolated static let retiredDriveKeychainKey = "googleDriveOAuthSession"
     private nonisolated static let keychainWorker = GoogleKeychainWorker()
+    private static var storageGenerations: [UUID: UUID] = [:]
+
+    static func storageGeneration(accountID: UUID) -> UUID {
+        if let generation = storageGenerations[accountID] { return generation }
+        let generation = UUID()
+        storageGenerations[accountID] = generation
+        return generation
+    }
+
+    static func invalidateStorageAuthorization(accountID: UUID) {
+        storageGenerations[accountID] = UUID()
+    }
+
+    static func validateStorageGeneration(_ generation: UUID?, accountID: UUID) throws {
+        guard generation == storageGeneration(accountID: accountID) else { throw CancellationError() }
+    }
+
     private nonisolated static let disconnectPendingUserDefaultsKeyPrefix = "googleOAuthDisconnectPending"
     private static let authorizationEndpoint = URL(string: "https://accounts.google.com/o/oauth2/v2/auth")!
     private static let tokenEndpoint = URL(string: "https://oauth2.googleapis.com/token")!
@@ -250,6 +266,7 @@ final class GoogleSignInAdapter: NSObject, GoogleSignInProviding {
     }
 
     func signIn(withPresentingWindow window: NSWindow, requestedScopes: Set<String>) async throws -> GoogleSession {
+        if let id = sessionKind.accountID { Self.invalidateStorageAuthorization(accountID: id) }
         guard let clientID = GoogleCalendarConfiguration.clientID else {
             throw GoogleSignInError.notConfigured
         }
@@ -257,7 +274,7 @@ final class GoogleSignInAdapter: NSObject, GoogleSignInProviding {
         let sessionKind = sessionKind
         let previousSessionSnapshot = await Self.loadStoredSessionSnapshot(sessionKind: sessionKind)
         let previousSessionLookup = isDisconnectPending ? nil : previousSessionSnapshot.lookup
-        let authorizationScopes = authorizationScopesForSignIn(
+        let authorizationScopes = Self.authorizationScopesForSignIn(
             requestedScopes: requestedScopes, held: previousSessionLookup?.session.grantedScopes ?? []
         )
         let clientSecret = await Self.loadClientSecret()
@@ -307,6 +324,8 @@ final class GoogleSignInAdapter: NSObject, GoogleSignInProviding {
         guard await save(session, migrating: previousSessionLookup, generation: previousSessionSnapshot.generation, replacingSession: true) else {
             throw CancellationError()
         }
+        // Also invalidate transfers started while the browser sign-in was pending.
+        if let id = sessionKind.accountID { Self.invalidateStorageAuthorization(accountID: id) }
         clearDisconnectPending()
         guard await Self.keychainWorker.isCurrent(
             for: sessionKind,
@@ -337,6 +356,7 @@ final class GoogleSignInAdapter: NSObject, GoogleSignInProviding {
     }
 
     func disconnect() async throws {
+        if let id = sessionKind.accountID { Self.invalidateStorageAuthorization(accountID: id) }
         Self.markDisconnectPending(for: sessionKind)
         await Self.keychainWorker.beginDisconnect(for: sessionKind)
         let deletionError: Error?
@@ -495,9 +515,10 @@ final class GoogleSignInAdapter: NSObject, GoogleSignInProviding {
         }
     }
 
-    /// A sign-in keeps the scopes the provider account already holds, so asking for Drive never drops Calendar.
-    private func authorizationScopesForSignIn(requestedScopes: Set<String>, held: Set<String>) -> Set<String> {
-        GoogleOAuthScope.authorizationScopes(for: requestedScopes.union(held))
+    /// A sign-in keeps the scopes the provider account already holds, so asking for Drive never drops Calendar. The
+    /// retired Drive scope is not carried over; without `include_granted_scopes` the new token lacks it.
+    nonisolated static func authorizationScopesForSignIn(requestedScopes: Set<String>, held: Set<String>) -> Set<String> {
+        GoogleOAuthScope.authorizationScopes(for: requestedScopes.union(held.subtracting(GoogleOAuthScope.retiredDrive)))
     }
 
     private func refreshedSession(from storedSession: StoredGoogleSession) async throws -> StoredGoogleSession {

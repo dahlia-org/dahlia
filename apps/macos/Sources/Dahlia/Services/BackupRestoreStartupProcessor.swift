@@ -69,7 +69,9 @@ enum BackupRestoreStartupProcessor {
             let combinedURL = restoreDirectoryURL.appending(path: "combined-\(UUID.v7()).sqlite")
             defer { try? fileManager.removeItem(at: combinedURL) }
             let results: [WorkspaceBackupRestoreResult] = if try BackupArchive.isArchive(candidateURL) {
-                try BackupArchive.withExtracted(at: candidateURL) { directory, manifest in
+                try BackupArchive.withExtracted(
+                    at: candidateURL, scratchDirectory: applicationSupportURL.appending(path: BackupService.transferDirectoryName)
+                ) { directory, manifest in
                     guard manifest.metadata == marker.sourceMetadata else { throw BackupServiceError.invalidBackup }
                     return try mergeWorkspaces(
                         marker: marker,
@@ -115,7 +117,9 @@ enum BackupRestoreStartupProcessor {
         applicationSupportURL: URL,
         archiveDirectory: URL? = nil
     ) throws -> [WorkspaceBackupRestoreResult] {
-        let metadata = try BackupService.readAndValidateMetadata(at: sourceURL)
+        let metadata = try BackupService.readAndValidateMetadata(
+            at: sourceURL, scratchDirectory: applicationSupportURL.appending(path: BackupService.transferDirectoryName)
+        )
         let requests = marker.requests
         guard metadata == marker.sourceMetadata,
               !requests.isEmpty,

@@ -61,7 +61,7 @@ enum PiBundle {
 
     /// Dahlia's bundled skills. Like upstream's `.bundled_manifest`, the Curator never archives or consolidates them.
     /// The skills shared with `dahlia-mcp` come first, then the app-only skills in `AgentSkills`.
-    nonisolated static let presetSkillNames = DahliaBundledSkills.names + ["workspace-backup", "skill-creator"]
+    nonisolated static let presetSkillNames = DahliaBundledSkills.names + ["skill-creator"]
 
     /// The app-only skills directory, which the chat sandbox reads alongside the shared skills.
     nonisolated static var appSkillsDirectoryURL: URL? {

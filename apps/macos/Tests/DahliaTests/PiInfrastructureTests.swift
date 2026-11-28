@@ -13,7 +13,7 @@ import Foundation
             let urls = PiBundle.presetSkillURLs()
             #expect(urls.map(\.lastPathComponent) == [
                 "dahlia-guide", "meeting-reviewer", "meeting-search", "projects-optimizer", "summary-editor",
-                "workspace-backup", "skill-creator",
+                "skill-creator",
             ])
             for url in urls {
                 // Skills shared with dahlia-mcp live in the runtime support bundle; the rest stay app-only.

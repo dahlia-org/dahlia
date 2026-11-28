@@ -1644,51 +1644,39 @@ enum L10n { // swiftlint:disable:this type_body_length
     }
 
     static var backupDriveRefresh: String { String(localized: "Refresh Backups", bundle: bundle) }
-    static var backupDriveTitle: String { String(localized: "Google Drive Backups", bundle: bundle) }
     static var backupLocalCopies: String { String(localized: "Local Recovery Copies", bundle: bundle) }
-    static var backupDriveDownload: String { String(localized: "Download for Restore", bundle: bundle) }
-    static var backupDriveDescription: String { String(
-        localized: """
-        Lists backups in My Drive/Dahlia/Backup. Ask Dahlia AI to create and upload a backup using Google Drive MCP. Drive access here is \
-        read-only; downloaded backups are verified before they appear in Local Recovery Copies.
-        """,
-        bundle: bundle
-    ) }
-    static var backupDriveAmbiguousFolder: String { String(
-        localized: "Multiple Dahlia/Backup folders were found in My Drive. Resolve duplicate folder names before loading backups.",
-        bundle: bundle
-    ) }
-    static var backupDriveDownloadFailed: String { String(
-        localized: "Could not download the Google Drive backup. Check the connection and try again.",
-        bundle: bundle
-    ) }
+    static var backupDriveAmbiguousFolder: String { String(localized: "backup.storage.driveAmbiguousFolder", bundle: bundle) }
+    static var backupStorageTitle: String { String(localized: "backup.storage.title", bundle: bundle) }
+    static var backupStorageDestination: String { String(localized: "backup.storage.destination", bundle: bundle) }
+    static var backupStorageThisMacOnly: String { String(localized: "backup.storage.thisMacOnly", bundle: bundle) }
+    static var backupStorageThisMacOnlyDescription: String { String(localized: "backup.storage.thisMacOnlyDescription", bundle: bundle) }
+    static var backupStorageGoogleDescription: String { String(localized: "backup.storage.googleDescription", bundle: bundle) }
+    static var backupStorageDatabricksDescription: String { String(localized: "backup.storage.databricksDescription", bundle: bundle) }
+    static var backupStorageUploaded: String { String(localized: "backup.storage.uploaded", bundle: bundle) }
+    static var backupStorageAlreadyUploaded: String { String(localized: "backup.storage.alreadyUploaded", bundle: bundle) }
+    static var backupStorageDeleted: String { String(localized: "backup.storage.deleted", bundle: bundle) }
+    static var backupStorageDeleteConfirmation: String { String(localized: "backup.storage.deleteConfirmation", bundle: bundle) }
+    static var backupStorageDeleteDescription: String { String(localized: "backup.storage.deleteDescription", bundle: bundle) }
+    static var backupStorageDeleteGoogleDescription: String { String(localized: "backup.storage.deleteGoogleDescription", bundle: bundle) }
+    static var backupStorageAuthorizationRequired: String { String(localized: "backup.storage.authorizationRequired", bundle: bundle) }
+    static var backupStorageFileTooLarge: String { String(localized: "backup.storage.fileTooLarge", bundle: bundle) }
+    static var backupStorageSchemaNotConfigured: String { String(localized: "backup.storage.schemaNotConfigured", bundle: bundle) }
+    static var backupStorageUnsupportedUserID: String { String(localized: "backup.storage.unsupportedUserID", bundle: bundle) }
+    static func backupStorageVolumeNotOwned(_ volume: String, _ owner: String) -> String {
+        String(format: String(localized: "backup.storage.volumeNotOwned", bundle: bundle), volume, owner)
+    }
+
+    static func backupStorageRequestFailed(_ statusCode: Int, _ message: String) -> String {
+        String(format: String(localized: "backup.storage.requestFailed", bundle: bundle), statusCode, message)
+    }
+
+    static var backupStorageInvalidResponse: String { String(localized: "backup.storage.invalidResponse", bundle: bundle) }
     static var googleDriveOAuthDisclosureTitle: String { String(localized: "Connect Google Drive for Backups", bundle: bundle) }
-    static var googleDriveOAuthDisclosureOverview: String { String(
-        localized: "Dahlia reads backups from My Drive/Dahlia/Backup. This connection does not upload or delete files.",
-        bundle: bundle
-    ) }
-    static var googleDriveOAuthDisclosureAccess: String { String(
-        localized: "Google grants read-only access to all Drive files. Dahlia uses metadata to find Dahlia/Backup and downloads only the backups you select.",
-        bundle: bundle
-    ) }
-    static var googleDriveOAuthDisclosureUseAndStorage: String { String(
-        localized: """
-        Downloaded backups are stored on this Mac and validated before restore. \
-        Calendar and Drive share the registered Google account’s Keychain credential.
-        """,
-        bundle: bundle
-    ) }
-    static var googleDriveOAuthDisclosureExternalSharing: String { String(
-        localized: "Listing and downloading send requests to Google Drive. Uploads are a separate action by Dahlia AI through your configured MCP server and follow chat approval settings.",
-        bundle: bundle
-    ) }
-    static var googleDriveOAuthDisclosureDeletion: String { String(
-        localized: """
-        Disconnect stops this read connection. Remove access in your Google Account to revoke the grant. Disconnecting does not delete \
-        local or Drive backups, or disconnect the separate MCP server.
-        """,
-        bundle: bundle
-    ) }
+    static var googleDriveOAuthDisclosureOverview: String { String(localized: "google.driveDisclosure.overview", bundle: bundle) }
+    static var googleDriveOAuthDisclosureAccess: String { String(localized: "google.driveDisclosure.access", bundle: bundle) }
+    static var googleDriveOAuthDisclosureUseAndStorage: String { String(localized: "google.driveDisclosure.useAndStorage", bundle: bundle) }
+    static var googleDriveOAuthDisclosureExternalSharing: String { String(localized: "google.driveDisclosure.externalSharing", bundle: bundle) }
+    static var googleDriveOAuthDisclosureDeletion: String { String(localized: "google.driveDisclosure.deletion", bundle: bundle) }
 
     static var workspaceBackup: String { String(localized: "Workspace Backup", bundle: bundle) }
     static var backupLocalWorkspacesOnly: String { String(localized: "Only workspaces in the Local Account can be backed up.", bundle: bundle) }
@@ -2081,7 +2069,6 @@ enum L10n { // swiftlint:disable:this type_body_length
         localized: "Turn on registered providers to combine their calendars. Add Google accounts in Providers. Each connection keeps its own calendar selection.",
         bundle: bundle
     ) }
-    static var calendarProviderUnassigned: String { String(localized: "No provider selected", bundle: bundle) }
     static var calendarProviders: String { String(localized: "Calendar Providers", bundle: bundle) }
     static var renameProviderAccount: String { String(localized: "Rename Provider Account", bundle: bundle) }
     static var providerAccounts: String { String(localized: "Providers", bundle: bundle) }
@@ -2091,13 +2078,49 @@ enum L10n { // swiftlint:disable:this type_body_length
     ) }
     static var providerAccountSignInToKeep: String { String(localized: "Added earlier · Sign in again", bundle: bundle) }
     static var manageProviders: String { String(localized: "Manage Providers…", bundle: bundle) }
+    static var cloudStorage: String { String(localized: "settings.storage.title", bundle: bundle) }
+    static var storageSettings: String { String(localized: "settings.storage.open", bundle: bundle) }
+    static var storageLocations: String { String(localized: "settings.storage.locations", bundle: bundle) }
+    static var storageNoProviders: String { String(localized: "settings.storage.noProviders", bundle: bundle) }
+    static func storageGoogleDrivePath(_ folder: String) -> String {
+        String(format: String(localized: "settings.storage.googleDrivePath", bundle: bundle), folder)
+    }
+
+    static func storageDatabricksVolumePath(_ catalog: String, _ schema: String) -> String {
+        String(format: String(localized: "settings.storage.databricksVolumePath", bundle: bundle), catalog, schema)
+    }
+
+    static var settingsStorageIntro: String { String(localized: "settings.storage.intro", bundle: bundle) }
+    static var storageLocationChangeDescription: String { String(localized: "settings.storage.locationChangeDescription", bundle: bundle) }
+    static var databricksCatalog: String { String(localized: "settings.providers.catalog", bundle: bundle) }
+    static var databricksSchema: String { String(localized: "settings.providers.schema", bundle: bundle) }
+    static var databricksSelectCatalog: String { String(localized: "settings.providers.selectCatalog", bundle: bundle) }
+    static var databricksSelectSchema: String { String(localized: "settings.providers.selectSchema", bundle: bundle) }
+    static var databricksNoCatalogs: String { String(localized: "settings.providers.noCatalogs", bundle: bundle) }
+    static var databricksNoSchemas: String { String(localized: "settings.providers.noSchemas", bundle: bundle) }
+    static var databricksCreateSchema: String { String(localized: "settings.providers.createSchema", bundle: bundle) }
+    static var databricksSchemaName: String { String(localized: "settings.providers.schemaName", bundle: bundle) }
+    static var databricksClearCatalogSchema: String { String(localized: "settings.providers.clearCatalogSchema", bundle: bundle) }
+    static var databricksCatalogAccountChanged: String { String(localized: "settings.providers.catalogAccountChanged", bundle: bundle) }
+    static func databricksCreateSchemaDescription(_ catalog: String) -> String {
+        String(format: String(localized: "settings.providers.createSchemaDescription", bundle: bundle), catalog)
+    }
+
+    static func databricksSchemaCreated(_ name: String) -> String {
+        String(format: String(localized: "settings.providers.schemaCreated", bundle: bundle), name)
+    }
+
+    static var databricksCatalogSchema: String { String(localized: "settings.providers.catalogSchema", bundle: bundle) }
+    static var databricksCatalogSchemaEdit: String { String(localized: "settings.providers.catalogSchemaEdit", bundle: bundle) }
+    static var databricksCatalogSchemaDescription: String { String(localized: "settings.providers.catalogSchemaDescription", bundle: bundle) }
+    static func databricksCatalogSchemaValue(_ value: String) -> String {
+        String(format: String(localized: "settings.providers.catalogSchemaValue", bundle: bundle), value)
+    }
+
+    static var databricksCatalogSchemaUnset: String { String(localized: "settings.providers.catalogSchemaUnset", bundle: bundle) }
     static var googleDrive: String { String(localized: "Google Drive", bundle: bundle) }
     static var googleProviderAccountMismatch: String { String(
         localized: "Sign in with the same Google account. To use another account, add a provider.",
-        bundle: bundle
-    ) }
-    static var googleDriveChooseProvider: String { String(
-        localized: "Choose a registered provider here to read Google Drive backups. This choice is independent of Calendar.",
         bundle: bundle
     ) }
     static var googleProviderDisconnectPending: String { String(
@@ -2109,7 +2132,7 @@ enum L10n { // swiftlint:disable:this type_body_length
         bundle: bundle
     ) }
     static var googleProviderSignInDescription: String { String(
-        localized: "Allow read-only access to Calendar and all Drive files. Dahlia reads selected Dahlia/Backup backups. Enable each feature in Settings. Drive access is optional.",
+        localized: "Allow read-only Calendar access and manage Drive files Dahlia creates for backups. Enable each feature in Settings. Drive access is optional.",
         bundle: bundle
     ) }
     static var googleProviderAuthorizeBoth: String { String(
@@ -3064,48 +3087,45 @@ enum L10n { // swiftlint:disable:this type_body_length
 
     static var howItWorksModesTopic: String { String(localized: "help.howItWorks.modes.topic", bundle: bundle) }
     static var howItWorksModesLead: String { String(localized: "help.howItWorks.modes.lead", bundle: bundle) }
-    static var howItWorksModesColumnFeature: String { String(localized: "help.howItWorks.modes.column.feature", bundle: bundle) }
-    static var howItWorksModesColumnChat: String { String(localized: "help.howItWorks.modes.column.chat", bundle: bundle) }
+    static var howItWorksModesMapExternal: String { String(localized: "help.howItWorks.modes.map.external", bundle: bundle) }
+    static var howItWorksModesMapExternalCaption: String { String(localized: "help.howItWorks.modes.map.externalCaption", bundle: bundle) }
+    static var howItWorksModesMapDahliaCaption: String { String(localized: "help.howItWorks.modes.map.dahliaCaption", bundle: bundle) }
+    static var howItWorksModesMapRead: String { String(localized: "help.howItWorks.modes.map.read", bundle: bundle) }
+    static var howItWorksModesMapReadOne: String { String(localized: "help.howItWorks.modes.map.readOne", bundle: bundle) }
+    static var howItWorksModesMapReadWrite: String { String(localized: "help.howItWorks.modes.map.readWrite", bundle: bundle) }
+    static var howItWorksModesMapEvent: String { String(localized: "help.howItWorks.modes.map.event", bundle: bundle) }
+    static var howItWorksModesMapTask: String { String(localized: "help.howItWorks.modes.map.task", bundle: bundle) }
+    static var howItWorksModesMapResult: String { String(localized: "help.howItWorks.modes.map.result", bundle: bundle) }
+    static var howItWorksModesMapSame: String { String(localized: "help.howItWorks.modes.map.same", bundle: bundle) }
+    static var howItWorksModesMapDifferences: String { String(localized: "help.howItWorks.modes.map.differences", bundle: bundle) }
+    static var howItWorksModesMapScheduledCaption: String { String(localized: "help.howItWorks.modes.map.scheduledCaption", bundle: bundle) }
+    static var howItWorksModesMapIntakeCaption: String { String(localized: "help.howItWorks.modes.map.intakeCaption", bundle: bundle) }
+    static var howItWorksModesMapAgentCaption: String { String(localized: "help.howItWorks.modes.map.agentCaption", bundle: bundle) }
+    static var howItWorksModesMapWorker: String { String(localized: "help.howItWorks.modes.map.worker", bundle: bundle) }
+    static var howItWorksModesMapWorkerCaption: String { String(localized: "help.howItWorks.modes.map.workerCaption", bundle: bundle) }
+    static var howItWorksModesMapChat: String { String(localized: "help.howItWorks.modes.map.chat", bundle: bundle) }
+    static var howItWorksModesMapChatCaption: String { String(localized: "help.howItWorks.modes.map.chatCaption", bundle: bundle) }
+    static var howItWorksModesMapBody: String { String(localized: "help.howItWorks.modes.map.body", bundle: bundle) }
+    static var howItWorksModesMatrixTitle: String { String(localized: "help.howItWorks.modes.matrix.title", bundle: bundle) }
+    static var howItWorksModesRowChat: String { String(localized: "help.howItWorks.modes.row.chat", bundle: bundle) }
+    static var howItWorksModesRowChatCaption: String { String(localized: "help.howItWorks.modes.row.chatCaption", bundle: bundle) }
+    static var howItWorksModesRowAgentCaption: String { String(localized: "help.howItWorks.modes.row.agentCaption", bundle: bundle) }
+    static var howItWorksModesRowIntakeCaption: String { String(localized: "help.howItWorks.modes.row.intakeCaption", bundle: bundle) }
+    static var howItWorksModesRowScheduledCaption: String { String(localized: "help.howItWorks.modes.row.scheduledCaption", bundle: bundle) }
     static var howItWorksModesColumnAgent: String { String(localized: "help.howItWorks.modes.column.agent", bundle: bundle) }
-    static var howItWorksModesColumnTask: String { String(localized: "help.howItWorks.modes.column.task", bundle: bundle) }
     static var howItWorksModesColumnIntake: String { String(localized: "help.howItWorks.modes.column.intake", bundle: bundle) }
     static var howItWorksModesColumnScheduled: String { String(localized: "help.howItWorks.modes.column.scheduled", bundle: bundle) }
-    static var howItWorksModesRowTrigger: String { String(localized: "help.howItWorks.modes.row.trigger", bundle: bundle) }
     static var howItWorksModesRowFiles: String { String(localized: "help.howItWorks.modes.row.files", bundle: bundle) }
     static var howItWorksModesRowDahlia: String { String(localized: "help.howItWorks.modes.row.dahlia", bundle: bundle) }
     static var howItWorksModesRowConnectors: String { String(localized: "help.howItWorks.modes.row.connectors", bundle: bundle) }
-    static var howItWorksModesRowResources: String { String(localized: "help.howItWorks.modes.row.resources", bundle: bundle) }
     static var howItWorksModesRowWeb: String { String(localized: "help.howItWorks.modes.row.web", bundle: bundle) }
     static var howItWorksModesRowSkills: String { String(localized: "help.howItWorks.modes.row.skills", bundle: bundle) }
     static var howItWorksModesRowMemory: String { String(localized: "help.howItWorks.modes.row.memory", bundle: bundle) }
     static var howItWorksModesRowThreads: String { String(localized: "help.howItWorks.modes.row.threads", bundle: bundle) }
     static var howItWorksModesRowApproval: String { String(localized: "help.howItWorks.modes.row.approval", bundle: bundle) }
-    static var howItWorksModesCellChatTrigger: String { String(localized: "help.howItWorks.modes.cell.chat.trigger", bundle: bundle) }
-    static var howItWorksModesCellAgentTrigger: String { String(localized: "help.howItWorks.modes.cell.agent.trigger", bundle: bundle) }
-    static var howItWorksModesCellTaskTrigger: String { String(localized: "help.howItWorks.modes.cell.task.trigger", bundle: bundle) }
-    static var howItWorksModesCellIntakeTrigger: String { String(localized: "help.howItWorks.modes.cell.intake.trigger", bundle: bundle) }
-    static var howItWorksModesCellScheduledTrigger: String { String(localized: "help.howItWorks.modes.cell.scheduled.trigger", bundle: bundle) }
-    static var howItWorksModesCellChatFiles: String { String(localized: "help.howItWorks.modes.cell.chat.files", bundle: bundle) }
-    static var howItWorksModesCellAgentFiles: String { String(localized: "help.howItWorks.modes.cell.agent.files", bundle: bundle) }
-    static var howItWorksModesCellChatDahlia: String { String(localized: "help.howItWorks.modes.cell.chat.dahlia", bundle: bundle) }
-    static var howItWorksModesCellChatConnectors: String { String(localized: "help.howItWorks.modes.cell.chat.connectors", bundle: bundle) }
-    static var howItWorksModesCellIntakeConnectors: String { String(localized: "help.howItWorks.modes.cell.intake.connectors", bundle: bundle) }
-    static var howItWorksModesCellScheduledTools: String { String(localized: "help.howItWorks.modes.cell.scheduled.tools", bundle: bundle) }
-    static var howItWorksModesCellChatResources: String { String(localized: "help.howItWorks.modes.cell.chat.resources", bundle: bundle) }
-    static var howItWorksModesCellChatWeb: String { String(localized: "help.howItWorks.modes.cell.chat.web", bundle: bundle) }
-    static var howItWorksModesCellChatSkills: String { String(localized: "help.howItWorks.modes.cell.chat.skills", bundle: bundle) }
-    static var howItWorksModesCellIntakeSkills: String { String(localized: "help.howItWorks.modes.cell.intake.skills", bundle: bundle) }
-    static var howItWorksModesCellChatMemory: String { String(localized: "help.howItWorks.modes.cell.chat.memory", bundle: bundle) }
-    static var howItWorksModesCellChatThreads: String { String(localized: "help.howItWorks.modes.cell.chat.threads", bundle: bundle) }
-    static var howItWorksModesCellAgentThreads: String { String(localized: "help.howItWorks.modes.cell.agent.threads", bundle: bundle) }
-    static var howItWorksModesCellChatApproval: String { String(localized: "help.howItWorks.modes.cell.chat.approval", bundle: bundle) }
-    static var howItWorksModesCellTaskApproval: String { String(localized: "help.howItWorks.modes.cell.task.approval", bundle: bundle) }
-    static var howItWorksModesCellSameAsChat: String { String(localized: "help.howItWorks.modes.cell.sameAsChat", bundle: bundle) }
-    static var howItWorksModesCellReadOnly: String { String(localized: "help.howItWorks.modes.cell.readOnly", bundle: bundle) }
-    static var howItWorksModesCellNone: String { String(localized: "help.howItWorks.modes.cell.none", bundle: bundle) }
-    static var howItWorksModesCellNoWrites: String { String(localized: "help.howItWorks.modes.cell.noWrites", bundle: bundle) }
-    static var howItWorksModesSubagentTitle: String { String(localized: "help.howItWorks.modes.subagent.title", bundle: bundle) }
-    static var howItWorksModesSubagentBody: String { String(localized: "help.howItWorks.modes.subagent.body", bundle: bundle) }
+    static var howItWorksModesAccessFull: String { String(localized: "help.howItWorks.modes.access.full", bundle: bundle) }
+    static var howItWorksModesAccessPartial: String { String(localized: "help.howItWorks.modes.access.partial", bundle: bundle) }
+    static var howItWorksModesAccessNone: String { String(localized: "help.howItWorks.modes.access.none", bundle: bundle) }
     static var howItWorksModesOtherTitle: String { String(localized: "help.howItWorks.modes.other.title", bundle: bundle) }
     static var howItWorksModesOtherBody: String { String(localized: "help.howItWorks.modes.other.body", bundle: bundle) }
     static var howItWorksModesNote: String { String(localized: "help.howItWorks.modes.note", bundle: bundle) }

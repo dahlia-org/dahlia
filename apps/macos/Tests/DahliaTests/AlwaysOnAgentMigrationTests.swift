@@ -61,7 +61,10 @@
                 let manual = try #require(try ChatRunRecord.fetchOne(db, key: manualID))
                 #expect(manual.logicalSequence == 3 && manual.executionSequence == 3)
                 #expect(manual.input == "Manual" && manual.status == "running")
-                #expect(try Bool.fetchOne(db, sql: "SELECT EXISTS(SELECT 1 FROM sqlite_schema WHERE type='index' AND name='chat_runs_logical_thread')") == true)
+                #expect(try Bool.fetchOne(
+                    db,
+                    sql: "SELECT EXISTS(SELECT 1 FROM sqlite_schema WHERE type='index' AND name='chat_runs_logical_thread')"
+                ) == true)
                 #expect(try db.tableExists("agent_event_sources"))
                 #expect(try db.tableExists("chat_thread_launches"))
                 #expect(try db.tableExists("agent_tasks") && db.tableExists("agent_user_inbox"))

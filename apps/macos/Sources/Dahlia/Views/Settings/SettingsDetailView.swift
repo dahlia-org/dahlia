@@ -107,6 +107,8 @@ struct SettingsDetailView: View {
             MemorySettingsView()
         case .permissions:
             PermissionSettingsView()
+        case .storage:
+            StorageSettingsView()
         case .backups:
             DataProtectionSettingsView(
                 dbQueue: sidebarViewModel.dbQueue,
@@ -145,6 +147,7 @@ struct SettingsDetailView: View {
         case .meetingLinks: L10n.settingsMeetingLinksIntro
         case .dahliaMCP: L10n.settingsDahliaMCPIntro
         case .workspace: L10n.settingsWorkspaceManagementIntro
+        case .storage: L10n.settingsStorageIntro
         case .backups: L10n.settingsDataProtectionIntro
         default: L10n.thisMacSettingsDescription
         }

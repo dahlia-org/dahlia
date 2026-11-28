@@ -8,6 +8,23 @@ import Foundation
 
     struct SettingsCategoryTests {
         @Test
+        func storageHasItsOwnSearchableAndPersistentPage() throws {
+            #expect(SettingsGroup.features.categories.contains(.storage))
+            #expect(!SettingsGroup.app.categories.contains(.storage))
+            #expect(SettingsCategory.storage.label == L10n.cloudStorage)
+            #expect(SettingsNavigation.visibleSelection(.storage) == .storage)
+            #expect(SettingsCategory.storage.matches("Unity Catalog"))
+            #expect(SettingsCategory.storage.matches("UC Volume"))
+            #expect(SettingsCategory.storage.matches("Google Drive"))
+            #expect(SettingsCategory.storage.matches(L10n.storageLocations))
+            let suite = "StorageSettingsNavigation.\(UUID())"
+            let defaults = try #require(UserDefaults(suiteName: suite))
+            defer { defaults.removePersistentDomain(forName: suite) }
+            SettingsNavigation.saveSelection(.storage, in: defaults)
+            #expect(SettingsNavigation.savedSelection(in: defaults) == .storage)
+        }
+
+        @Test
         func englishConnectorLabelMatchesTheDocumentedSearch() throws {
             let path = try #require(Bundle.appModule.path(forResource: "en", ofType: "lproj"))
             let english = try #require(Bundle(path: path))
@@ -18,7 +35,7 @@ import Foundation
 
         @Test
         func accountAndWorkspacePreferencesHaveSeparateDestinations() {
-            #expect(SettingsGroup.features.categories == [.workspace, .meetings, .calendar, .meetingLinks])
+            #expect(SettingsGroup.features.categories == [.workspace, .meetings, .calendar, .meetingLinks, .storage])
             #expect(SettingsGroup.agent.categories == [.providers, .modelProvider, .mcp, .skills, .memory, .agents])
             #expect(SettingsGroup.advanced.categories == [.dahliaMCP, .search, .audioDiagnostics])
             #expect(SettingsCategory.mcp.matches("Gmail"))

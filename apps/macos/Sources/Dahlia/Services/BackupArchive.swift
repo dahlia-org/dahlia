@@ -73,8 +73,9 @@ enum BackupArchive {
         try withReader(url) { stream in try readManifest(from: stream) }
     }
 
-    static func withExtracted<T>(at url: URL, _ body: (URL, BackupArchiveManifest) throws -> T) throws -> T {
-        let directory = FileManager.default.temporaryDirectory.appending(path: "dahlia-backup-\(UUID.v7())")
+    static func withExtracted<T>(at url: URL, scratchDirectory: URL, _ body: (URL, BackupArchiveManifest) throws -> T) throws -> T {
+        try BackupService.ensureDirectory(scratchDirectory, fileManager: .default)
+        let directory = scratchDirectory.appending(path: "dahlia-backup-\(UUID.v7())")
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: false, attributes: [.posixPermissions: 0o700])
         defer { try? FileManager.default.removeItem(at: directory) }
         let manifest = try withReader(url) { stream in

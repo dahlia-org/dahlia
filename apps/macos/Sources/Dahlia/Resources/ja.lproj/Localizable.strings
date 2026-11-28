@@ -865,49 +865,46 @@
 "help.howItWorks.mcp.accessBody" = "既定の設定では、利用可能なすべての Workspace の会議、要約、確定した文字起こし、スクリーンショット、プロジェクトを読み取れます。設定をコピーする前に、参照先を 1 つの Workspace に絞れます。書き込みを許可すると、会議の情報の更新、保存済みの要約の置き換え、プロジェクトの作成や編集もできるようになります。";
 "help.howItWorks.mcp.notShared" = "音声、メモ、翻訳、確定前の文字起こしは渡しません。";
 "help.howItWorks.modes.topic" = "チャットとエージェントの違い";
-"help.howItWorks.modes.lead" = "Dahlia の AI は、動くきっかけによって使える機能が変わります。あなたが話しかける通常のチャットがいちばん多くのことをでき、自動で動くものほど範囲を絞っています。";
-"help.howItWorks.modes.column.feature" = "機能";
-"help.howItWorks.modes.column.chat" = "通常のチャット";
+"help.howItWorks.modes.lead" = "Dahlia の AI は、きっかけごとに役割を分けて動きます。外部サービスに書き込めるのは、あなたと話す通常のチャットと、エージェントが仕事を任せるワーカーです。この 2 つは基本の作業機能が共通です。";
+"help.howItWorks.modes.map.external" = "外部サービス";
+"help.howItWorks.modes.map.externalCaption" = "メール・Slack・Web などのコネクタ";
+"help.howItWorks.modes.map.dahliaCaption" = "会議データ・メモリー";
+"help.howItWorks.modes.map.read" = "読むだけ";
+"help.howItWorks.modes.map.readOne" = "1つを読むだけ";
+"help.howItWorks.modes.map.readWrite" = "読み書き";
+"help.howItWorks.modes.map.event" = "イベント";
+"help.howItWorks.modes.map.task" = "タスク";
+"help.howItWorks.modes.map.result" = "結果";
+"help.howItWorks.modes.map.same" = "共通の作業機能";
+"help.howItWorks.modes.map.differences" = "承認方式・スレッド操作に違い";
+"help.howItWorks.modes.map.scheduledCaption" = "予定の時刻に調べて届ける";
+"help.howItWorks.modes.map.intakeCaption" = "新着を読んでイベントにする";
+"help.howItWorks.modes.map.agentCaption" = "イベントと依頼を振り分ける";
+"help.howItWorks.modes.map.worker" = "ワーカー";
+"help.howItWorks.modes.map.workerCaption" = "任された仕事をする";
+"help.howItWorks.modes.map.chat" = "チャット";
+"help.howItWorks.modes.map.chatCaption" = "あなたと話す";
+"help.howItWorks.modes.map.body" = "取り込みは新着を読んでイベントにするだけ、エージェントはそれを読んで振り分けるだけで、どちらも外部サービスには書き込みません。実際の作業は、ワーカーが通常のチャットと共通の機能で行います。チャットはそこで選んだ承認方式に従います。ワーカーはエージェントの「ワーカー」で許可した範囲内で動き、作業先のスレッドでさらに厳しい承認方式を選んだ場合はそちらに従います。ワーカーは依頼された作業中、スレッドを読むだけで、さらに子を起動したりほかのスレッドを操作したりできません。チャットが delegate_task で作るサブエージェントも、この制約に従い、承認方式は親より緩くできません。定期実行は、予定の時刻に承認したツールで読み取り、結果を閲覧専用のスレッドに届けます。";
+"help.howItWorks.modes.matrix.title" = "使える機能";
+"help.howItWorks.modes.row.chat" = "チャット・ワーカー";
+"help.howItWorks.modes.row.chatCaption" = "作業機能は共通。Web 検索は Web アクセス導入時、メモリーはオンのとき。書き込みは承認方式に従う。ワーカーのスレッド操作は読み取りのみ";
+"help.howItWorks.modes.row.agentCaption" = "会議データ・予定・メモリーは読み取りのみ。ファイルは自分の home だけで、コマンドなし。仕事はタスクとしてワーカーに任せる";
+"help.howItWorks.modes.row.intakeCaption" = "アプリを開いている間、ソースごとに動く。そのソースの1つを読み取り、取り込みの手順だけ使う";
+"help.howItWorks.modes.row.scheduledCaption" = "予定の時刻に動く（アプリを開いている間）。承認したツールで読み取るだけ";
 "help.howItWorks.modes.column.agent" = "エージェント";
-"help.howItWorks.modes.column.task" = "エージェントのタスク";
 "help.howItWorks.modes.column.intake" = "取り込み";
 "help.howItWorks.modes.column.scheduled" = "定期実行";
-"help.howItWorks.modes.row.trigger" = "動くとき";
-"help.howItWorks.modes.row.files" = "コマンドとファイル";
-"help.howItWorks.modes.row.dahlia" = "Dahlia の会議データ";
-"help.howItWorks.modes.row.connectors" = "コネクタの MCP";
-"help.howItWorks.modes.row.resources" = "MCP のリソース";
+"help.howItWorks.modes.row.files" = "コマンド・ファイル";
+"help.howItWorks.modes.row.dahlia" = "会議データ";
+"help.howItWorks.modes.row.connectors" = "コネクタ";
 "help.howItWorks.modes.row.web" = "Web 検索";
 "help.howItWorks.modes.row.skills" = "スキル";
 "help.howItWorks.modes.row.memory" = "メモリー";
-"help.howItWorks.modes.row.threads" = "スレッドの操作";
+"help.howItWorks.modes.row.threads" = "スレッド操作";
 "help.howItWorks.modes.row.approval" = "外部への書き込み";
-"help.howItWorks.modes.cell.chat.trigger" = "あなたが送信したとき";
-"help.howItWorks.modes.cell.agent.trigger" = "あなたの送信と、イベントが届いたとき";
-"help.howItWorks.modes.cell.task.trigger" = "エージェントが仕事を任せたとき";
-"help.howItWorks.modes.cell.intake.trigger" = "アプリを開いている間、ソースごとに";
-"help.howItWorks.modes.cell.scheduled.trigger" = "予定の時刻（アプリを開いている間）";
-"help.howItWorks.modes.cell.chat.files" = "作業フォルダで読み書きとコマンド実行";
-"help.howItWorks.modes.cell.agent.files" = "自分の home だけ読み書き。コマンドなし";
-"help.howItWorks.modes.cell.chat.dahlia" = "読み書き（変更は承認方式に従う）";
-"help.howItWorks.modes.cell.chat.connectors" = "使える（書き込みは承認方式に従う）";
-"help.howItWorks.modes.cell.intake.connectors" = "そのソースの1つを読み取りのみ";
-"help.howItWorks.modes.cell.scheduled.tools" = "承認したツールで読み取りのみ";
-"help.howItWorks.modes.cell.chat.resources" = "登録した server のリソースを読める";
-"help.howItWorks.modes.cell.chat.web" = "Web アクセスを導入していれば使える";
-"help.howItWorks.modes.cell.chat.skills" = "使える。作成と編集も";
-"help.howItWorks.modes.cell.intake.skills" = "取り込みの手順だけ";
-"help.howItWorks.modes.cell.chat.memory" = "読み書き（メモリーがオンのとき）";
-"help.howItWorks.modes.cell.chat.threads" = "起動・依頼・管理";
-"help.howItWorks.modes.cell.agent.threads" = "起動・依頼・管理（タスクとして記録）";
-"help.howItWorks.modes.cell.chat.approval" = "チャットで選んだ承認方式";
-"help.howItWorks.modes.cell.task.approval" = "エージェントの「ワーカー」の承認方式";
-"help.howItWorks.modes.cell.sameAsChat" = "通常のチャットと同じ";
-"help.howItWorks.modes.cell.readOnly" = "読み取りのみ";
-"help.howItWorks.modes.cell.none" = "なし";
-"help.howItWorks.modes.cell.noWrites" = "しない";
-"help.howItWorks.modes.subagent.title" = "サブエージェント";
-"help.howItWorks.modes.subagent.body" = "チャットが delegate_task で作る子のスレッドは、通常のチャットと同じ機能で動きます。ただし、さらに子を作れず、スレッドの操作は読み取りだけです。承認方式は親より緩くなりません。";
+"help.howItWorks.modes.access.full" = "使える";
+"help.howItWorks.modes.access.partial" = "一部だけ";
+"help.howItWorks.modes.access.none" = "なし";
 "help.howItWorks.modes.other.title" = "そのほかの AI 処理";
 "help.howItWorks.modes.other.body" = "要約と画像解析は、会議の文字起こし・ノート・スクリーンショットなど渡された材料だけで作り、ツール・MCP・スキルを使いません。会話のあとのふり返りは、メモリーとスキルの整理だけを行います。";
 "help.howItWorks.modes.note" = "エージェントが何をするかは、その SOUL.md が決めます。録音中は、エージェントの自動実行・取り込み・定期実行は開始しません。通常のチャットやエージェントへのメッセージ送信は利用できます。";
@@ -1789,29 +1786,80 @@
 "appearance.light" = "ライトモード";
 "appearance.dark" = "ダークモード";
 
-"Google Drive Backups" = "Google Drive のバックアップ";
 
 "Local Recovery Copies" = "ローカルの復元用コピー";
 
-"Download for Restore" = "復元用にダウンロード";
 
-"Lists backups in My Drive/Dahlia/Backup. Ask Dahlia AI to create and upload a backup using Google Drive MCP. Drive access here is read-only; downloaded backups are verified before they appear in Local Recovery Copies." = "マイドライブの Dahlia/Backup のバックアップを表示します。作成とアップロードは Dahlia AI に依頼してください。書き込みには Google Drive MCP を使います。この画面は読み取り専用です。ダウンロードしたバックアップは検証後にローカルの復元用コピーに追加します。";
+"backup.storage.driveAmbiguousFolder" = "設定したGoogle Driveの保存先に、Dahliaが作成した同名フォルダが複数あります。Google Driveでバックアップを1つのフォルダにまとめ、重複するフォルダを削除してください。";
 
-"Multiple Dahlia/Backup folders were found in My Drive. Resolve duplicate folder names before loading backups." = "マイドライブに同名の Dahlia/Backup フォルダが複数あります。重複を解消してから再度読み込んでください。";
+"backup.storage.title" = "バックアップの保存先";
 
-"Could not download the Google Drive backup. Check the connection and try again." = "Google Drive のバックアップをダウンロードできませんでした。接続を確認して再試行してください。";
+"backup.storage.destination" = "保存先";
+
+"backup.storage.thisMacOnly" = "この Mac のみ";
+
+"backup.storage.thisMacOnlyDescription" = "バックアップはこの Mac にだけ保存します。Google または Databricks を選ぶと、バックアップはそちらに保存し、この Mac にはコピーを残しません。";
+
+"backup.storage.googleDescription" = "バックアップはマイドライブの Dahlia/backup に保存します。Dahlia が Drive で見られるのは、自分で作ったフォルダとファイルだけです。復元はダウンロードと検証をしてから行います。";
+
+"backup.storage.databricksDescription" = "バックアップは、このプロバイダーアカウントのカタログとスキーマにある自分の volume（user_data_<利用者 ID>）の backup フォルダに保存します。schema や catalog の所有者と metastore の管理者も読めます。初回は USE CATALOG・USE SCHEMA・CREATE VOLUME、2回目からは USE CATALOG と USE SCHEMA の権限が要ります。1つのバックアップは 5000 MiB までです。";
+
+
+"backup.storage.uploaded" = "バックアップをアップロードしました。";
+
+"backup.storage.alreadyUploaded" = "このバックアップはすでに保存先にあります。";
+
+"backup.storage.deleted" = "保存先からバックアップを削除しました。";
+
+"backup.storage.deleteConfirmation" = "保存先からこのバックアップを削除しますか？";
+
+"backup.storage.deleteDescription" = "Databricks の volume からファイルを削除します。元に戻せません。この Mac のローカルの復元用コピーは残ります。";
+
+"backup.storage.deleteGoogleDescription" = "ファイルを Google ドライブのゴミ箱に移します。この Mac のローカルの復元用コピーは残ります。";
+
+"backup.storage.authorizationRequired" = "このアカウントをバックアップに使うには、Google ドライブを接続してください。";
+
+"backup.storage.fileTooLarge" = "このバックアップは 5000 MiB を超えるため、Databricks の volume にアップロードできません。ワークスペースを減らすか、別の保存先を選んでバックアップを作成し直してください。";
+
+"backup.storage.schemaNotConfigured" = "Databricksプロバイダーアカウントの設定で、既定のカタログとスキーマを選択してください。";
+
+"backup.storage.unsupportedUserID" = "Databricks から返った利用者 ID を volume 名に使えません。";
+
+"backup.storage.volumeNotOwned" = "volume %1$@ はすでにあり、あなたが所有する managed volume ではありません（所有者: %2$@）。Dahlia はこの volume を使いません。所有者か workspace の管理者に削除を依頼してください。";
+
+"backup.storage.requestFailed" = "要求が失敗しました（HTTP %1$d）: %2$@";
+
+"backup.storage.invalidResponse" = "保存先から想定外の応答が返りました。";
+
+"google.driveDisclosure.overview" = "Dahliaは、Google Driveで自分が作成するフォルダにバックアップを置きます。フォルダを作り、作成したバックアップをアップロードし、一覧・ダウンロード・削除を行います。保存場所はクラウドストレージに表示します。";
+
+"google.driveDisclosure.access" = "Google が許可するのは、Dahlia が作ったフォルダとファイルだけです。Drive のほかのファイルは Dahlia から見えません。";
+
+"google.driveDisclosure.useAndStorage" = "バックアップはこの Mac からアップロードし、ダウンロードしたものは復元前に検証します。Calendar と Drive は、登録した Google アカウントのキーチェーン認証情報を共有します。";
+
+"google.driveDisclosure.externalSharing" = "バックアップには、選んだ Workspace の会議・文字起こし・要約・スクリーンショットが入ります。あなたの Google ドライブに保存し、Drive の共有設定の範囲でだけ共有されます。";
+
+"google.driveDisclosure.deletion" = "ここでバックアップを削除すると Drive のゴミ箱に移します。プロバイダーでサインアウトすると Dahlia の利用を止めます。権限の取り消しは Google アカウントで行ってください。サインアウトではローカルや Drive のバックアップを削除しません。";
+
+"settings.providers.catalogSchema" = "カタログ / スキーマ";
+
+"settings.providers.catalogSchemaEdit" = "カタログ / スキーマ…";
+
+"settings.providers.catalogSchemaDescription" = "このDatabricksプロバイダーアカウントの既定のカタログとスキーマを選びます。ストレージなど複数の機能で共通に使う設定です。";
+
+"settings.providers.catalogSchemaValue" = "カタログ / スキーマ: %@";
+
+"settings.providers.catalogSchemaUnset" = "カタログ / スキーマ: 未設定";
+
+
+
 
 "Connect Google Drive for Backups" = "バックアップ用に Google Drive を接続";
 
-"Dahlia reads backups from My Drive/Dahlia/Backup. This connection does not upload or delete files." = "Dahlia はマイドライブの Dahlia/Backup からバックアップを読み取ります。この接続ではアップロードや削除を行いません。";
 
-"Google grants read-only access to all Drive files. Dahlia uses metadata to find Dahlia/Backup and downloads only the backups you select." = "Google Drive 内のすべてのファイルへの読み取り専用権限を取得します。ファイル情報で Dahlia/Backup を検索し、選択したバックアップだけをダウンロードします。";
 
-"Downloaded backups are stored on this Mac and validated before restore. Calendar and Drive share the registered Google account’s Keychain credential." = "ダウンロードしたバックアップはこの Mac に保存し、復元前に検証します。Calendar と Drive は、登録した Google アカウントのキーチェーン認証情報を共有します。";
 
-"Listing and downloading send requests to Google Drive. Uploads are a separate action by Dahlia AI through your configured MCP server and follow chat approval settings." = "一覧取得とダウンロードで Google Drive にリクエストを送信します。アップロードは Dahlia AI が設定済みの MCP サーバーを使う別の操作で、チャットの承認設定に従います。";
 
-"Disconnect stops this read connection. Remove access in your Google Account to revoke the grant. Disconnecting does not delete local or Drive backups, or disconnect the separate MCP server." = "接続を解除すると、この読み取り接続の利用を停止します。権限の取り消しは Google アカウントで行ってください。接続解除ではローカルや Drive のバックアップを削除せず、別途設定した MCP サーバーも切断しません。";
 
 "Refresh Backups" = "バックアップを再読み込み";
 
@@ -2104,14 +2152,12 @@
 
 "settings.agents.optimization.agentLegacyReviewRuns" = "以前の共通履歴";
 
-"Allow read-only access to Calendar and all Drive files. Dahlia reads selected Dahlia/Backup backups. Enable each feature in Settings. Drive access is optional." = "Calendar と Drive の読み取り権限を要求します。Drive の権限は全ファイルが対象ですが、Dahlia は選択した Dahlia/Backup のバックアップを読み取ります。機能の有効化は各設定で行います。Drive を許可しなくてもカレンダーを利用できます。";
+"Allow read-only Calendar access and manage Drive files Dahlia creates for backups. Enable each feature in Settings. Drive access is optional." = "Calendar の読み取り権限と、Dahlia が作成する Drive ファイルへのアクセス権限を要求します。設定したフォルダ内のバックアップをアップロード・一覧・ダウンロード・ゴミ箱へ移動します。機能の有効化は各設定で行います。Drive を許可しなくてもカレンダーを利用できます。";
 
 "Disconnect this Google account from Calendar and Drive in Dahlia? Databricks connections are not affected." = "この Google アカウントを Dahlia のカレンダーと Drive から切断しますか？ Databricks の接続には影響しません。";
 
 "Sign-out incomplete. Retry to remove the saved credential." = "サインアウトが完了していません。保存済みの認証を削除するには再試行してください。";
 "Sign in with the same Google account. To use another account, add a provider." = "同じ Google アカウントでサインインしてください。別のアカウントを使うにはプロバイダーを追加してください。";
-"Choose a registered provider here to read Google Drive backups. This choice is independent of Calendar." = "Google Drive のバックアップを読み取るプロバイダーを選択します。カレンダーの設定とは独立しています。";
-"No provider selected" = "プロバイダー未選択";
 
 "Authorize Calendar and Drive" = "カレンダーと Drive の利用を許可";
 "settings.agents.alwaysOn.help" = "アプリが開いている間、オンのイベントソースを読み、新しいイベントをこのエージェントに知らせます。録音中は読みません。返信などの外部への書き込みは、通常のチャットと同じ承認設定に従います。";
@@ -2266,3 +2312,27 @@
 "settings.agents.mcpDirectJSONInvalid" = "64 KiB 以下の MCP サーバー1件の JSON を入力してください。type、command、args、env、url、headers に対応しています。";
 "settings.agents.mcpDirectJSONNameMismatch" = "登録済みのサーバー名は変更できません。JSON のサーバー名を合わせてください。";
 "settings.agents.mcpDirectJSONTooLarge" = "JSON モードで扱える設定は64 KiBまでです。";
+
+/* Cloud storage settings */
+"settings.storage.title" = "クラウドストレージ";
+"settings.storage.open" = "クラウドストレージ設定…";
+"settings.storage.locations" = "保存場所";
+"settings.storage.noProviders" = "ストレージを使えるプロバイダーがありません。Google か Databricks を追加してください。";
+"settings.storage.googleDrivePath" = "マイドライブ/%@/backup";
+"settings.storage.databricksVolumePath" = "/Volumes/%@/%@/user_data_<利用者 ID>/backup";
+"settings.storage.intro" = "バックアップを置く Google ドライブのフォルダと Databricks の volume を表示します。";
+"settings.storage.locationChangeDescription" = "フォルダと volume は決まった名前で、最初のアップロードのときに作ります。Databricks はカタログとスキーマを設定するまで使えません。";
+
+/* Databricks provider namespace */
+"settings.providers.catalog" = "カタログ";
+"settings.providers.schema" = "スキーマ";
+"settings.providers.selectCatalog" = "カタログを選択";
+"settings.providers.selectSchema" = "スキーマを選択";
+"settings.providers.noCatalogs" = "利用できるカタログがありません。このアカウントのUnity Catalog権限を確認してください。";
+"settings.providers.noSchemas" = "このカタログには利用できるスキーマがありません。権限があれば、新規作成できます。";
+"settings.providers.createSchema" = "新規作成…";
+"settings.providers.schemaName" = "スキーマ名";
+"settings.providers.clearCatalogSchema" = "既定値を解除";
+"settings.providers.catalogAccountChanged" = "プロバイダーアカウントの認証が変わりました。一覧を更新してから操作してください。";
+"settings.providers.createSchemaDescription" = "カタログ %@ に作成します。CREATE SCHEMA権限が必要です。名前に空白・ピリオド・スラッシュは使えません。スキーマはDatabricksにすぐに作成され、この画面をキャンセルしても残ります。";
+"settings.providers.schemaCreated" = "%@ を作成しました。既定値として使うには保存してください。";

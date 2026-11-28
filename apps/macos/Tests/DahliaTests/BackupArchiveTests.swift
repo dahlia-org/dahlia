@@ -38,6 +38,12 @@ import Foundation
             case "unexpected": paths.append("unexpected")
             default: break
             }
+            let scratch = root.appending(path: "scratch")
+            defer {
+                if FileManager.default.fileExists(atPath: scratch.path) {
+                    #expect((try? FileManager.default.contentsOfDirectory(atPath: scratch.path).isEmpty) == true)
+                }
+            }
             let archive = root.appending(path: "test.tar.gz")
             let created = try BackupArchive.create(directory: directory, metadata: metadata, paths: paths, at: archive)
             if kind == "valid" {
@@ -64,10 +70,14 @@ import Foundation
                 try BackupArchive.verify(at: archive, matches: created)
                 let otherManifest = BackupArchiveManifest(metadata: created.metadata, entries: Array(created.entries.prefix(1)))
                 #expect(throws: BackupServiceError.invalidBackup) { try BackupArchive.verify(at: archive, matches: otherManifest) }
-                try BackupArchive.withExtracted(at: archive) { extracted, manifest throws in
+                try BackupArchive.withExtracted(at: archive, scratchDirectory: scratch) { extracted, manifest throws in
+                    #expect(extracted.deletingLastPathComponent().path == scratch.path)
                     #expect(manifest.metadata == metadata)
                     #expect(manifest.entries.count == 2)
                     #expect(try Data(contentsOf: extracted.appending(path: filePath)) == bytes)
+                }
+                #expect(throws: URLError(.cancelled)) {
+                    try BackupArchive.withExtracted(at: archive, scratchDirectory: scratch) { _, _ in throw URLError(.cancelled) }
                 }
                 let complete = try Data(contentsOf: archive)
                 for removedBytes in 1 ... 8 {
@@ -78,10 +88,10 @@ import Foundation
                 var truncated = try Data(contentsOf: archive)
                 truncated.removeLast(min(128, truncated.count / 2))
                 try truncated.write(to: archive)
-                #expect(throws: (any Error).self) { try BackupArchive.withExtracted(at: archive) { _, _ in } }
+                #expect(throws: (any Error).self) { try BackupArchive.withExtracted(at: archive, scratchDirectory: scratch) { _, _ in } }
                 #expect(throws: (any Error).self) { try BackupArchive.verify(at: archive, matches: created) }
             } else {
-                #expect(throws: BackupServiceError.invalidBackup) { try BackupArchive.withExtracted(at: archive) { _, _ in } }
+                #expect(throws: BackupServiceError.invalidBackup) { try BackupArchive.withExtracted(at: archive, scratchDirectory: scratch) { _, _ in } }
                 #expect(try Data(contentsOf: root.appending(path: "outside")) == Data([1]))
             }
         }

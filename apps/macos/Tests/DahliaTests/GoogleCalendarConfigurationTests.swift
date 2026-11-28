@@ -60,14 +60,26 @@ import Security
             }
         }
 
-        /// Google is one provider account: Calendar and Drive share its sign-in, and each hears the other's changes.
         @Test
-        func calendarAndDriveShareOneSignIn() {
-            #expect(GoogleAuthSessionKind.calendar.keychainKey == GoogleAuthSessionKind.drive.keychainKey)
-            #expect(GoogleAuthSessionKind.calendar.sessionDidChangeNotification == GoogleAuthSessionKind.drive.sessionDidChangeNotification)
+        func currentSignInKeyIsNotARetiredOne() {
             #expect(!GoogleAuthSessionKind.retiredKeychainKeys.contains(GoogleAuthSessionKind.keychainKey))
-            #expect(GoogleSignInAdapter.disconnectPendingUserDefaultsKey(for: .calendar)
-                == GoogleSignInAdapter.disconnectPendingUserDefaultsKey(for: .drive))
+        }
+
+        /// A new sign-in keeps Calendar and other held scopes but never carries the retired read-all Drive scope.
+        @Test
+        func signInDropsTheRetiredDriveScope() {
+            let held = GoogleOAuthScope.calendar.union(GoogleOAuthScope.retiredDrive)
+            let scopes = GoogleSignInAdapter.authorizationScopesForSignIn(requestedScopes: GoogleOAuthScope.drive, held: held)
+            #expect(scopes == GoogleOAuthScope.base.union(GoogleOAuthScope.calendar).union(GoogleOAuthScope.drive))
+            let calendarOnly = GoogleSignInAdapter.authorizationScopesForSignIn(requestedScopes: GoogleOAuthScope.calendar, held: held)
+            #expect(calendarOnly.isDisjoint(with: GoogleOAuthScope.retiredDrive))
+            let url = GoogleSignInAdapter.makeAuthorizationURL(
+                clientID: "client", redirectURL: URL(string: "http://127.0.0.1:8020")!, codeChallenge: "challenge", state: "state", scopes: scopes
+            )
+            let requested = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.first { $0.name == "scope" }?.value
+            #expect(requested?.contains("drive.readonly") == false)
+            #expect(requested?.contains("drive.file") == true)
+            #expect(URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.contains { $0.name == "include_granted_scopes" } == false)
         }
 
         @Test
@@ -129,15 +141,14 @@ import Security
         }
 
         @Test
-        func sharedGoogleSignInRejectsAnOlderRefreshFromEitherService() async {
+        func sharedGoogleSignInRejectsAnOlderRefresh() async {
             let worker = GoogleKeychainWorker()
             let (_, previous) = await worker.snapshot(for: .calendar) {}
-            #expect(await worker.performIfCurrent(for: .drive, generation: previous, replacingSession: true) {})
+            #expect(await worker.performIfCurrent(for: .calendar, generation: previous, replacingSession: true) {})
             #expect(await worker.performIfCurrent(for: .calendar, generation: previous) {} == false)
-            #expect(await worker.performIfCurrent(for: .drive, generation: previous) {} == false)
             let (_, current) = await worker.snapshot(for: .calendar) {}
             #expect(await worker.performIfCurrent(for: .calendar, generation: current) {})
-            await worker.beginDisconnect(for: .drive)
+            await worker.beginDisconnect(for: .calendar)
             #expect(await worker.performIfCurrent(for: .calendar, generation: current, replacingSession: true) {} == false)
         }
 
