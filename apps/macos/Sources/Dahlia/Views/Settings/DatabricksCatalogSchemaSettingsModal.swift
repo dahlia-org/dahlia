@@ -41,10 +41,32 @@ struct DatabricksCatalogSchemaSettingsModal: View {
                             ) { $0.isEmpty ? L10n.databricksSelectCatalog : $0 }
                                 .disabled(model.isLoadingCatalogs || model.isCreating || model.isSaving)
 
-                            DahliaMenuPicker(title: L10n.databricksSchema, selection: $model.schema, options: [""] + model.schemas) {
-                                $0.isEmpty ? L10n.databricksSelectSchema : $0
+                            DahliaMenuPicker(
+                                title: L10n.databricksSchema,
+                                selection: Binding<String?>(
+                                    get: { showsNewSchema ? nil : model.schema },
+                                    set: {
+                                        showsNewSchema = $0 == nil
+                                        model.schema = $0 ?? ""
+                                    }
+                                ),
+                                options: ([""] + model.schemas).map(Optional.some) + [nil]
+                            ) { schema in
+                                schema.map { $0.isEmpty ? L10n.databricksSelectSchema : $0 } ?? L10n.databricksCreateSchema
                             }
                             .disabled(model.catalog.isEmpty || model.isLoadingSchemas || model.isCreating || model.isSaving)
+
+                            if showsNewSchema {
+                                TextField(L10n.databricksSchemaName, text: $model.newSchemaName)
+                                    .disabled(model.isCreating || model.isSaving)
+                                Text(L10n.databricksCreateSchemaDescription(model.catalog))
+                                    .font(.dahliaSecondary)
+                                    .foregroundStyle(.secondary)
+                                Button(L10n.create) { creation = Task { await model.createSchema() } }
+                                    .buttonStyle(.dahlia())
+                                    .disabled(!model.canCreate)
+                                if model.isCreating { ProgressView().controlSize(.small) }
+                            }
 
                             if model.isLoadingCatalogs || model.isLoadingSchemas {
                                 ProgressView().controlSize(.small)
@@ -59,20 +81,6 @@ struct DatabricksCatalogSchemaSettingsModal: View {
                                 .disabled(model.isLoadingCatalogs || model.isCreating || model.isSaving)
                         }
 
-                        Section {
-                            DisclosureGroup(L10n.databricksCreateSchema, isExpanded: $showsNewSchema) {
-                                TextField(L10n.databricksSchemaName, text: $model.newSchemaName)
-                                    .disabled(model.isCreating || model.isSaving)
-                                Text(L10n.databricksCreateSchemaDescription(model.catalog))
-                                    .font(.dahliaSecondary)
-                                    .foregroundStyle(.secondary)
-                                Button(L10n.create) { creation = Task { await model.createSchema() } }
-                                    .buttonStyle(.dahlia())
-                                    .disabled(!model.canCreate)
-                                if model.isCreating { ProgressView().controlSize(.small) }
-                            }
-                            .disabled(model.catalog.isEmpty || model.isLoadingSchemas)
-                        }
                     }
                     .formStyle(.grouped)
                     .frame(idealHeight: showsNewSchema ? 340 : 240, maxHeight: showsNewSchema ? 340 : 240)
@@ -108,6 +116,10 @@ struct DatabricksCatalogSchemaSettingsModal: View {
         }
         .task { await model.loadCatalogs() }
         .task(id: model.catalog) { await model.loadSchemas() }
+        .onChange(of: model.catalog) { showsNewSchema = false }
+        .onChange(of: model.schema) {
+            if !model.schema.isEmpty { showsNewSchema = false }
+        }
         .onDisappear { creation?.cancel() }
     }
 

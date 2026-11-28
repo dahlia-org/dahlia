@@ -1644,7 +1644,6 @@ enum L10n { // swiftlint:disable:this type_body_length
 
     static var backupDriveRefresh: String { String(localized: "Refresh Backups", bundle: bundle) }
     static var backupLocalCopies: String { String(localized: "Local Recovery Copies", bundle: bundle) }
-    static var backupDriveDownload: String { String(localized: "Download for Restore", bundle: bundle) }
     static var backupDriveAmbiguousFolder: String { String(localized: "backup.storage.driveAmbiguousFolder", bundle: bundle) }
     static var backupStorageTitle: String { String(localized: "backup.storage.title", bundle: bundle) }
     static var backupStorageDestination: String { String(localized: "backup.storage.destination", bundle: bundle) }
@@ -1652,7 +1651,6 @@ enum L10n { // swiftlint:disable:this type_body_length
     static var backupStorageThisMacOnlyDescription: String { String(localized: "backup.storage.thisMacOnlyDescription", bundle: bundle) }
     static var backupStorageGoogleDescription: String { String(localized: "backup.storage.googleDescription", bundle: bundle) }
     static var backupStorageDatabricksDescription: String { String(localized: "backup.storage.databricksDescription", bundle: bundle) }
-    static var backupStorageUpload: String { String(localized: "backup.storage.upload", bundle: bundle) }
     static var backupStorageUploaded: String { String(localized: "backup.storage.uploaded", bundle: bundle) }
     static var backupStorageAlreadyUploaded: String { String(localized: "backup.storage.alreadyUploaded", bundle: bundle) }
     static var backupStorageDeleted: String { String(localized: "backup.storage.deleted", bundle: bundle) }
@@ -2081,12 +2079,18 @@ enum L10n { // swiftlint:disable:this type_body_length
     static var manageProviders: String { String(localized: "Manage Providers…", bundle: bundle) }
     static var cloudStorage: String { String(localized: "settings.storage.title", bundle: bundle) }
     static var storageSettings: String { String(localized: "settings.storage.open", bundle: bundle) }
-    static var storageDefaultFolder: String { String(localized: "settings.storage.defaultFolder", bundle: bundle) }
+    static var storageLocations: String { String(localized: "settings.storage.locations", bundle: bundle) }
+    static var storageNoProviders: String { String(localized: "settings.storage.noProviders", bundle: bundle) }
+    static func storageGoogleDrivePath(_ folder: String) -> String {
+        String(format: String(localized: "settings.storage.googleDrivePath", bundle: bundle), folder)
+    }
+
+    static func storageDatabricksVolumePath(_ catalog: String, _ schema: String) -> String {
+        String(format: String(localized: "settings.storage.databricksVolumePath", bundle: bundle), catalog, schema)
+    }
+
     static var settingsStorageIntro: String { String(localized: "settings.storage.intro", bundle: bundle) }
     static var storageLocationChangeDescription: String { String(localized: "settings.storage.locationChangeDescription", bundle: bundle) }
-    static var storageFolderInvalid: String { String(localized: "settings.storage.folderInvalid", bundle: bundle) }
-    static var storageGoogleFolderDescription: String { String(localized: "settings.storage.googleFolderDescription", bundle: bundle) }
-    static var storageRestoreDefault: String { String(localized: "settings.storage.restoreDefault", bundle: bundle) }
     static var databricksCatalog: String { String(localized: "settings.providers.catalog", bundle: bundle) }
     static var databricksSchema: String { String(localized: "settings.providers.schema", bundle: bundle) }
     static var databricksSelectCatalog: String { String(localized: "settings.providers.selectCatalog", bundle: bundle) }
@@ -2097,7 +2101,6 @@ enum L10n { // swiftlint:disable:this type_body_length
     static var databricksSchemaName: String { String(localized: "settings.providers.schemaName", bundle: bundle) }
     static var databricksClearCatalogSchema: String { String(localized: "settings.providers.clearCatalogSchema", bundle: bundle) }
     static var databricksCatalogAccountChanged: String { String(localized: "settings.providers.catalogAccountChanged", bundle: bundle) }
-    static var storageDatabricksVolumeDescription: String { String(localized: "settings.storage.databricksVolumeDescription", bundle: bundle) }
     static func databricksCreateSchemaDescription(_ catalog: String) -> String {
         String(format: String(localized: "settings.providers.createSchemaDescription", bundle: bundle), catalog)
     }

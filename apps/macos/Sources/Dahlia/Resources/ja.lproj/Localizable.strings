@@ -1792,7 +1792,6 @@
 
 "Local Recovery Copies" = "ローカルの復元用コピー";
 
-"Download for Restore" = "復元用にダウンロード";
 
 "backup.storage.driveAmbiguousFolder" = "設定したGoogle Driveの保存先に、Dahliaが作成した同名フォルダが複数あります。Google Driveでバックアップを1つのフォルダにまとめ、重複するフォルダを削除してください。";
 
@@ -1802,13 +1801,12 @@
 
 "backup.storage.thisMacOnly" = "この Mac のみ";
 
-"backup.storage.thisMacOnlyDescription" = "バックアップはこの Mac のローカルの復元用コピーにだけ保存します。Google または Databricks のプロバイダーアカウントを選ぶと、そちらにも保存します。";
+"backup.storage.thisMacOnlyDescription" = "バックアップはこの Mac にだけ保存します。Google または Databricks を選ぶと、バックアップはそちらに保存し、この Mac にはコピーを残しません。";
 
-"backup.storage.googleDescription" = "「バックアップを作成」でクラウドストレージ設定のフォルダ（既定はマイドライブ/Dahlia）内の backup にもアップロードします。DahliaがDriveで見られるのは、自分で作ったフォルダとファイルだけです。ダウンロードしたバックアップは検証してからローカルの復元用コピーに追加します。";
+"backup.storage.googleDescription" = "バックアップはマイドライブの Dahlia/backup に保存します。Dahlia が Drive で見られるのは、自分で作ったフォルダとファイルだけです。復元はダウンロードと検証をしてから行います。";
 
-"backup.storage.databricksDescription" = "「バックアップを作成」で、このプロバイダーアカウントの既定のカタログとスキーマにある自分の volume（dahlia_storage_<利用者 ID>）の backup フォルダにもアップロードします。schema や catalog の所有者と metastore の管理者も読めます。初回は USE CATALOG・USE SCHEMA・CREATE VOLUME、2回目からは USE CATALOG と USE SCHEMA の権限が要ります。1つのバックアップは 5000 MiB までです。";
+"backup.storage.databricksDescription" = "バックアップは、このプロバイダーアカウントのカタログとスキーマにある自分の volume（user_data_<利用者 ID>）の backup フォルダに保存します。schema や catalog の所有者と metastore の管理者も読めます。初回は USE CATALOG・USE SCHEMA・CREATE VOLUME、2回目からは USE CATALOG と USE SCHEMA の権限が要ります。1つのバックアップは 5000 MiB までです。";
 
-"backup.storage.upload" = "アップロード";
 
 "backup.storage.uploaded" = "バックアップをアップロードしました。";
 
@@ -1824,7 +1822,7 @@
 
 "backup.storage.authorizationRequired" = "このアカウントをバックアップに使うには、Google ドライブを接続してください。";
 
-"backup.storage.fileTooLarge" = "このバックアップは 5000 MiB を超えるため、Databricks の volume にアップロードできません。この Mac には残ります。";
+"backup.storage.fileTooLarge" = "このバックアップは 5000 MiB を超えるため、Databricks の volume にアップロードできません。ワークスペースを減らすか、別の保存先を選んでバックアップを作成し直してください。";
 
 "backup.storage.schemaNotConfigured" = "Databricksプロバイダーアカウントの設定で、既定のカタログとスキーマを選択してください。";
 
@@ -1836,7 +1834,7 @@
 
 "backup.storage.invalidResponse" = "保存先から想定外の応答が返りました。";
 
-"google.driveDisclosure.overview" = "Dahliaは、クラウドストレージ設定のフォルダ（既定はマイドライブ/Dahlia）内の backup にバックアップを置きます。フォルダを作り、作成したバックアップをアップロードし、一覧・ダウンロード・削除を行います。";
+"google.driveDisclosure.overview" = "Dahliaは、Google Driveで自分が作成するフォルダにバックアップを置きます。フォルダを作り、作成したバックアップをアップロードし、一覧・ダウンロード・削除を行います。保存場所はクラウドストレージに表示します。";
 
 "google.driveDisclosure.access" = "Google が許可するのは、Dahlia が作ったフォルダとファイルだけです。Drive のほかのファイルは Dahlia から見えません。";
 
@@ -2320,12 +2318,12 @@
 /* Cloud storage settings */
 "settings.storage.title" = "クラウドストレージ";
 "settings.storage.open" = "クラウドストレージ設定…";
-"settings.storage.defaultFolder" = "既定のフォルダ";
-"settings.storage.intro" = "Google Driveの保存フォルダと、Databricksのボリュームを設定します。";
-"settings.storage.locationChangeDescription" = "保存先の設定はこのMacに保存します。変更すると進行中の転送を中止します。既存のファイルは移動しません。";
-"settings.storage.folderInvalid" = "スラッシュや改行を含まないフォルダ名を入力してください。";
-"settings.storage.googleFolderDescription" = "マイドライブ直下にこの名前のフォルダを作成し、その中の backup フォルダに保存します。Dahliaが作成したファイルとフォルダだけを利用できます。Driveで手動作成した既存フォルダを選択する設定ではありません。";
-"settings.storage.restoreDefault" = "既定に戻す";
+"settings.storage.locations" = "保存場所";
+"settings.storage.noProviders" = "ストレージを使えるプロバイダーがありません。Google か Databricks を追加してください。";
+"settings.storage.googleDrivePath" = "マイドライブ/%@/backup";
+"settings.storage.databricksVolumePath" = "/Volumes/%@/%@/user_data_<利用者 ID>/backup";
+"settings.storage.intro" = "バックアップを置く Google ドライブのフォルダと Databricks の volume を表示します。";
+"settings.storage.locationChangeDescription" = "フォルダと volume は決まった名前で、最初のアップロードのときに作ります。Databricks はカタログとスキーマを設定するまで使えません。";
 
 /* Databricks provider namespace */
 "settings.providers.catalog" = "カタログ";
@@ -2334,10 +2332,9 @@
 "settings.providers.selectSchema" = "スキーマを選択";
 "settings.providers.noCatalogs" = "利用できるカタログがありません。このアカウントのUnity Catalog権限を確認してください。";
 "settings.providers.noSchemas" = "このカタログには利用できるスキーマがありません。権限があれば、新規作成できます。";
-"settings.providers.createSchema" = "スキーマを新規作成";
+"settings.providers.createSchema" = "新規作成…";
 "settings.providers.schemaName" = "スキーマ名";
 "settings.providers.clearCatalogSchema" = "既定値を解除";
 "settings.providers.catalogAccountChanged" = "プロバイダーアカウントの認証が変わりました。一覧を更新してから操作してください。";
-"settings.storage.databricksVolumeDescription" = "バックアップは自分用のUnity Catalog Volume内の backup フォルダを使います。カタログとスキーマはプロバイダーアカウントの共通設定で選びます。ボリュームは初回のアップロード時に作成します。";
 "settings.providers.createSchemaDescription" = "カタログ %@ に作成します。CREATE SCHEMA権限が必要です。名前に空白・ピリオド・スラッシュは使えません。スキーマはDatabricksにすぐに作成され、この画面をキャンセルしても残ります。";
 "settings.providers.schemaCreated" = "%@ を作成しました。既定値として使うには保存してください。";

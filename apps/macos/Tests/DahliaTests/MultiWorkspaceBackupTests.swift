@@ -281,12 +281,13 @@ import GRDB
             model.selectedWorkspaceIds = [fixture.meeting.workspaceId, second.id]
             await model.refresh()
             await model.createBackup()
-            let metadata = try #require(model.generations.first?.metadata)
+            let generation = try #require(model.generations.first)
+            let metadata = try #require(generation.metadata)
             #expect(metadata.workspaces.count == 2)
             model.selectedWorkspaceIds.removeAll()
             await model.refresh()
             #expect(model.selectedWorkspaceIds.isEmpty)
-            model.beginRestore(metadata)
+            await model.beginRestore(generation, transferCopy: false, revision: model.restoreRevision)
             #expect(model.restoreSelections.allSatisfy { $0.mode == nil })
             #expect(!model.canRestore)
             model.restoreSelections[0].mode = .overwrite

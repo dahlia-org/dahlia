@@ -234,7 +234,7 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
             [L10n.accountPreferences, L10n.macInferencePreferences]
                 + Self.accountPreferences.searchTerms + Self.macInference.searchTerms
         case .storage:
-            [L10n.storageDefaultFolder, L10n.databricksCatalogSchema, "Google Drive", "Databricks", "Unity Catalog", "UC", "Volume", "catalog.schema"]
+            [L10n.storageLocations, L10n.databricksCatalogSchema, "Google Drive", "Databricks", "Unity Catalog", "UC", "Volume", "catalog.schema"]
         case .backups:
             [
                 L10n.backups,

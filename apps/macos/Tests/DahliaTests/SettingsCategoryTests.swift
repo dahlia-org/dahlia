@@ -16,7 +16,7 @@ import Foundation
             #expect(SettingsCategory.storage.matches("Unity Catalog"))
             #expect(SettingsCategory.storage.matches("UC Volume"))
             #expect(SettingsCategory.storage.matches("Google Drive"))
-            #expect(SettingsCategory.storage.matches(L10n.storageDefaultFolder))
+            #expect(SettingsCategory.storage.matches(L10n.storageLocations))
             let suite = "StorageSettingsNavigation.\(UUID())"
             let defaults = try #require(UserDefaults(suiteName: suite))
             defer { defaults.removePersistentDomain(forName: suite) }

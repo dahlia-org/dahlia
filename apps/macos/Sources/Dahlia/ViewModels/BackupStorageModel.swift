@@ -44,6 +44,25 @@ extension ProviderAccount {
     }
 }
 
+extension ProviderAccount {
+    /// Where the account keeps backups, for display. Nil while a Databricks connection has no catalog and schema.
+    /// Without the network, the Databricks volume shows its name pattern instead of the user's ID.
+    @MainActor
+    func backupLocationDescription() async throws -> String? {
+        switch self {
+        case let .google(id):
+            return try await L10n.storageGoogleDrivePath(GoogleDriveStorageLocation.load(accountID: id).folderName)
+        case let .databricks(id):
+            guard let location = try await DatabricksCatalogSchema.load(connectionID: id) else { return nil }
+            let fallback = L10n.storageDatabricksVolumePath(location.catalog, location.schema)
+            guard let storage = try? await storage() as? DatabricksVolumeStorage else { return fallback }
+            return await (try? storage.backupPath()) ?? fallback
+        case .dahlia:
+            return nil
+        }
+    }
+}
+
 struct BackupStorageOption: Identifiable, Equatable {
     let account: ProviderAccount
     let name: String
@@ -170,13 +189,26 @@ final class BackupStorageModel {
     }
 
     /// Owns creation and upload as one operation, so another remote operation cannot consume the upload slot.
-    /// Always create locally first, even if the destination needs configuration or authorization.
-    func createBackup(_ create: @escaping @MainActor () async -> BackupGeneration?) async {
+    /// Always create locally first, even if the destination needs configuration or authorization. With a destination,
+    /// `discard` removes the local copy after the upload attempt, whatever its outcome: the source data stays in the
+    /// database, so a failed backup is made again rather than kept hidden on this Mac.
+    func createBackup(
+        _ create: @escaping @MainActor () async -> BackupGeneration?,
+        discard: @escaping @MainActor (BackupGeneration) async -> Void = { _ in }
+    ) async {
+        let isTransferCopy = destination != nil
         await run(createsLocally: true) {
             guard let generation = await create() else { return nil }
-            try await self.checkOperation()
-            guard self.destination != nil else { return nil }
-            return try await self.uploadGeneration(generation)
+            guard isTransferCopy else { return nil }
+            do {
+                try await self.checkOperation()
+                let message = try await self.uploadGeneration(generation)
+                await discard(generation)
+                return message
+            } catch {
+                await discard(generation)
+                throw error
+            }
         }
     }
 
@@ -197,16 +229,29 @@ final class BackupStorageModel {
         return L10n.backupStorageUploaded
     }
 
-    /// Downloads a listed backup and adds it to the local generations through the normal import validation.
-    func download(_ file: ProviderStorageFile, into service: BackupService) async {
-        guard files.contains(file) else { return }
+    /// Downloads a listed backup through the normal import validation, for the caller to restore from.
+    @discardableResult
+    func download(_ file: ProviderStorageFile, into service: BackupService) async -> BackupGeneration? {
+        guard files.contains(file) else { return nil }
+        let revision = revision
+        var imported: BackupGeneration?
         await run {
             let storage = try await self.requireStorage()
             let url = try await storage.download(file)
             defer { try? FileManager.default.removeItem(at: url) }
             try await self.checkOperation()
-            _ = try await service.importGeneration(from: url)
-            return L10n.backupImported
+            imported = try await service.importGeneration(from: url)
+            return nil
+        }
+        guard let imported else { return nil }
+        do {
+            guard self.revision == revision else { throw CancellationError() }
+            try await checkOperation()
+            guard self.revision == revision else { throw CancellationError() }
+            return imported
+        } catch {
+            try? await service.deleteGeneration(imported)
+            return nil
         }
     }
 

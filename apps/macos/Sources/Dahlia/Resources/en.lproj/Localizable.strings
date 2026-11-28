@@ -1792,7 +1792,6 @@
 
 "Local Recovery Copies" = "Local Recovery Copies";
 
-"Download for Restore" = "Download for Restore";
 
 "backup.storage.driveAmbiguousFolder" = "The configured Google Drive location contains duplicate folders created by Dahlia. Move the backups into one folder in Google Drive and delete the duplicates.";
 
@@ -1802,13 +1801,12 @@
 
 "backup.storage.thisMacOnly" = "This Mac Only";
 
-"backup.storage.thisMacOnlyDescription" = "Backups stay in Local Recovery Copies on this Mac. Choose a Google or Databricks provider account to also keep them there.";
+"backup.storage.thisMacOnlyDescription" = "Backups stay on this Mac only. Choose Google or Databricks to keep backups there instead, without a copy on this Mac.";
 
-"backup.storage.googleDescription" = "Create Backup also uploads to the backup subfolder of the folder configured in Cloud Storage (My Drive/Dahlia by default). Dahlia can see only the folders and files it created in Drive. Downloaded backups are verified before they appear in Local Recovery Copies.";
+"backup.storage.googleDescription" = "Backups are kept in My Drive/Dahlia/backup. Dahlia can see only the folders and files it created in Drive. Restoring downloads and verifies the backup first.";
 
-"backup.storage.databricksDescription" = "Create Backup also uploads to the backup folder of your volume dahlia_storage_<user ID>, in this provider account’s default catalog and schema. Owners of the schema or catalog and metastore admins can also read it. The first upload needs USE CATALOG, USE SCHEMA, and CREATE VOLUME; later ones need USE CATALOG and USE SCHEMA. One backup can be up to 5000 MiB.";
+"backup.storage.databricksDescription" = "Backups are kept in the backup folder of your volume user_data_<user ID>, in this provider account’s catalog and schema. Owners of the schema or catalog and metastore admins can also read it. The first upload needs USE CATALOG, USE SCHEMA, and CREATE VOLUME; later ones need USE CATALOG and USE SCHEMA. One backup can be up to 5000 MiB.";
 
-"backup.storage.upload" = "Upload";
 
 "backup.storage.uploaded" = "Backup uploaded.";
 
@@ -1824,7 +1822,7 @@
 
 "backup.storage.authorizationRequired" = "Connect Google Drive to use this account for backups.";
 
-"backup.storage.fileTooLarge" = "This backup is larger than 5000 MiB, the most a Databricks volume accepts in one upload. It stays on this Mac.";
+"backup.storage.fileTooLarge" = "This backup is larger than 5000 MiB, the most a Databricks volume accepts in one upload. Select fewer workspaces or another destination, then create the backup again.";
 
 "backup.storage.schemaNotConfigured" = "Choose this Databricks provider account’s default catalog and schema in its account settings.";
 
@@ -1836,7 +1834,7 @@
 
 "backup.storage.invalidResponse" = "The destination returned an unexpected response.";
 
-"google.driveDisclosure.overview" = "Dahlia keeps backups in the backup subfolder of the folder configured in Cloud Storage (My Drive/Dahlia by default). It creates these folders, uploads the backups you create, and lists, downloads, and deletes them.";
+"google.driveDisclosure.overview" = "Dahlia manages backups in folders it creates in Google Drive. It creates these folders, uploads the backups you create, and lists, downloads, and deletes them. Cloud Storage shows the destination path.";
 
 "google.driveDisclosure.access" = "Google grants access only to the folders and files Dahlia creates. Dahlia cannot see your other Drive files.";
 
@@ -2320,12 +2318,12 @@
 /* Cloud storage settings */
 "settings.storage.title" = "Cloud Storage";
 "settings.storage.open" = "Cloud Storage Settings…";
-"settings.storage.defaultFolder" = "Default Folder";
-"settings.storage.intro" = "Configure Google Drive folders and Databricks volumes for file storage.";
-"settings.storage.locationChangeDescription" = "Locations are saved on this Mac. Changing one cancels transfers in progress. Existing files stay in their original location.";
-"settings.storage.folderInvalid" = "Enter a folder name without slashes or line breaks.";
-"settings.storage.googleFolderDescription" = "Dahlia creates this folder directly in My Drive and stores backups in its backup subfolder. Only files and folders created by Dahlia are accessible. This does not select an existing folder you created in Drive.";
-"settings.storage.restoreDefault" = "Use Default";
+"settings.storage.locations" = "Storage Locations";
+"settings.storage.noProviders" = "No provider offers storage. Add Google or Databricks.";
+"settings.storage.googleDrivePath" = "My Drive/%@/backup";
+"settings.storage.databricksVolumePath" = "/Volumes/%@/%@/user_data_<user ID>/backup";
+"settings.storage.intro" = "Shows the Google Drive folder and Databricks volume where backups are kept.";
+"settings.storage.locationChangeDescription" = "Folders and volumes have fixed names and are created on the first upload. Databricks needs a catalog and schema before it can be used.";
 
 /* Databricks provider namespace */
 "settings.providers.catalog" = "Catalog";
@@ -2334,10 +2332,9 @@
 "settings.providers.selectSchema" = "Select a schema";
 "settings.providers.noCatalogs" = "No accessible catalogs. Check this account’s Unity Catalog permissions.";
 "settings.providers.noSchemas" = "No accessible schemas in this catalog. You can create one if you have permission.";
-"settings.providers.createSchema" = "Create Schema";
+"settings.providers.createSchema" = "Create new…";
 "settings.providers.schemaName" = "Schema name";
 "settings.providers.clearCatalogSchema" = "Clear Default";
 "settings.providers.catalogAccountChanged" = "The provider account’s sign-in changed. Refresh the list before continuing.";
-"settings.storage.databricksVolumeDescription" = "Backups use the backup folder in your Unity Catalog volume. Configure the catalog and schema in this provider account’s settings. Dahlia creates your managed volume on the first upload.";
 "settings.providers.createSchemaDescription" = "Create in catalog %@. Requires CREATE SCHEMA. Names cannot contain spaces, periods, or slashes. The schema is created immediately in Databricks and remains even if you cancel this dialog.";
 "settings.providers.schemaCreated" = "Created %@. Save to use it as this account’s default.";

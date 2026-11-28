@@ -193,6 +193,56 @@ import GRDB
         }
 
         @Test(arguments: [false, true])
+        func creationDiscardsTheLocalCopyAfterEveryUploadAttempt(uploadFails: Bool) async throws {
+            let account = ProviderAccount.google(connectionID: .v7())
+            let storage = FakeStorage(uploadError: uploadFails ? ProviderStorageError.fileTooLarge : nil)
+            let (model, defaults, _) = try await model([account: storage])
+            defer { defaults.removePersistentDomain(forName: suite) }
+            model.select(account)
+            #expect(await pollUntil { await storage.listCalls > 0 && !model.isBusy })
+            let generation = try generation(named: "Dahlia-hidden.tar.gz")
+            defer { try? FileManager.default.removeItem(at: generation.fileURL.deletingLastPathComponent()) }
+            var discarded: [BackupGeneration] = []
+            await model.createBackup {
+                generation
+            } discard: {
+                discarded.append($0)
+            }
+            #expect(discarded == [generation])
+            #expect(await storage.uploads == (uploadFails ? [] : ["Dahlia-hidden.tar.gz"]))
+            #expect((model.errorMessage != nil) == uploadFails)
+        }
+
+        @Test(arguments: [false, true])
+        func destinationChangesDoNotChangeTheCreatedArchivesOwnership(startsRemote: Bool) async throws {
+            let account = ProviderAccount.google(connectionID: .v7())
+            let storage = FakeStorage()
+            let (model, defaults, _) = try await model([account: storage])
+            defer { defaults.removePersistentDomain(forName: suite) }
+            if startsRemote {
+                model.select(account)
+                #expect(await pollUntil { await storage.listCalls > 0 && !model.isBusy })
+            }
+            let generation = try generation(named: "Dahlia-owned.tar.gz")
+            defer { try? FileManager.default.removeItem(at: generation.fileURL.deletingLastPathComponent()) }
+            var resume: CheckedContinuation<BackupGeneration?, Never>?
+            var discarded: [BackupGeneration] = []
+            let creation = Task {
+                await model.createBackup {
+                    await withCheckedContinuation { resume = $0 }
+                } discard: {
+                    discarded.append($0)
+                }
+            }
+            #expect(await pollUntil { resume != nil })
+            model.select(startsRemote ? nil : account)
+            resume?.resume(returning: generation)
+            await creation.value
+            #expect(discarded == (startsRemote ? [generation] : []))
+            #expect(await storage.uploads.isEmpty)
+        }
+
+        @Test(arguments: [false, true])
         func destinationSetupFailureStillKeepsTheCreatedLocalGeneration(settingsReadFails: Bool) async throws {
             let defaults = try #require(UserDefaults(suiteName: suite))
             defer { defaults.removePersistentDomain(forName: suite) }
@@ -274,8 +324,8 @@ import GRDB
             #expect(model.statusMessage == nil)
         }
 
-        @Test(arguments: Invalidation.allCases)
-        func cancelledDownloadIsNotImported(_ change: Invalidation) async throws {
+        @Test(arguments: Invalidation.allCases, [false, true])
+        func cancelledDownloadIsNotImported(_ change: Invalidation, afterImport: Bool) async throws {
             let root = FileManager.default.temporaryDirectory.appending(path: "cancelled-import-\(UUID())")
             defer { try? FileManager.default.removeItem(at: root) }
             let (generation, service) = try await Task.detached {
@@ -297,9 +347,17 @@ import GRDB
             await storage.setDownload(generation.fileURL)
             let download = Task { await model.download(file, into: service) }
             #expect(await pollUntil { await storage.downloadCalls == 1 })
+            if afterImport {
+                await storage.holdListings()
+                await storage.releaseDownload()
+                #expect(await pollUntil { await storage.listCalls == 2 })
+                #expect(try await service.listGenerations().count == 1)
+            }
             await invalidate(model, by: change, accountID: account.connectionID)
             await storage.releaseDownload()
-            await download.value
+            await storage.release()
+            let result = await download.value
+            #expect(result == nil)
             #expect(try await service.listGenerations().isEmpty)
             #expect(!FileManager.default.fileExists(atPath: generation.fileURL.path))
         }
@@ -543,9 +601,10 @@ import GRDB
             if locationChanges { try await setDatabricksLocationWithoutNotification("main.changed", id: account.connectionID, repository: repository)
             }
             await storage.releaseDownload()
-            await download.value
+            let imported = await download.value
             #expect(try await service.listGenerations().count == (locationChanges ? 0 : 1))
-            #expect(model.statusMessage == (locationChanges ? nil : L10n.backupImported))
+            #expect((imported != nil) == !locationChanges)
+            #expect(model.statusMessage == nil)
             if !locationChanges { #expect(model.errorMessage == URLError(.timedOut).localizedDescription) }
             #expect(!FileManager.default.fileExists(atPath: generation.fileURL.path))
         }

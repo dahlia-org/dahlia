@@ -31,8 +31,8 @@
 | 3 | Pi が過去に置いた Drive 上のバックアップ | アプリの一覧に出さない。Drive からダウンロードして「ファイルから読み込む」で復元する | `drive.file` では他のアプリが作ったファイルが見えない。読み込みの経路は今もある |
 | 4 | Databricks 経由の Google Drive（`system_ai_agent_google_drive` の proxy） | 削除する | Databricks アカウントの storage は Volume になる。proxy は読み取り専用で、書き込めない |
 | 5 | 形式 | 単一 `.tar.gz` のまま | 「形式」の節 |
-| 6 | volume 名と再利用の条件 | `dahlia_storage_<Databricks の利用者 ID>`（2026-11-27 にユーザーが決定）。利用者 ID は数字の部分だけを使う。comment にメールアドレス。すでにある volume は、所有者が自分で `MANAGED` のときだけ使う | メールアドレスの前半から作ると、記号の置換（`a.b` と `a_b`）や別ドメインの同じ前半で他人と衝突する。所有者の確認があるので他人の volume には書かないが、後から来た利用者はストレージを使えなくなる。メールアドレスが変わると別の volume になり、以前のバックアップが一覧から消える。ID は変わらず、偶然には衝突しない。ただし他人が同じ名前の volume を先に作って書き込み権限を付けることはできるので、名前だけでは自分のものと言えない |
-| 7 | ローカルの世代 | 今のまま必ず作り、その後で保存先へアップロードする | 上書き前の安全バックアップとオフライン復元が今の契約にある。アップロードの失敗でバックアップ自体を失わない |
+| 6 | volume 名と再利用の条件 | `user_data_<Databricks の利用者 ID>`。利用者 ID は数字の部分だけを使う。comment にメールアドレス。すでにある volume は、所有者が自分で `MANAGED` のときだけ使う | メールアドレスの前半から作ると、記号の置換（`a.b` と `a_b`）や別ドメインの同じ前半で他人と衝突する。所有者の確認があるので他人の volume には書かないが、後から来た利用者はストレージを使えなくなる。メールアドレスが変わると別の volume になり、以前のバックアップが一覧から消える。ID は変わらず、偶然には衝突しない。ただし他人が同じ名前の volume を先に作って書き込み権限を付けることはできるので、名前だけでは自分のものと言えない |
+| 7 | ローカルの世代 | 「この Mac のみ」では保持する。クラウド向けの作成と復元は転送用の世代を使い、利用者に見せず、転送の完了・失敗・中止後に消す | 保存先を選ぶだけで作成・復元できるようにする。失敗時は元のデータから作り直せる。保持済みのローカル世代と上書き前の安全バックアップは残す |
 | 8 | 保存先の数 | 1つだけ選ぶ（なし＝ローカルのみ） | 複数へ同時に置く要求はまだない |
 | 9 | 暗号化 | 今回は入れない。画面に見える範囲を書く | Volume は schema / catalog の所有者と metastore 管理者が読める。鍵を失うと復元できなくなるため、鍵の管理を決めてから別に扱う |
 | 10 | 自動（定期）バックアップ | 今回は入れない | 依頼に含まれない。アプリがアップロードを持てば後から足せる |
@@ -51,7 +51,7 @@ A を推す。B と C の利点は容量と時間だけで、今それが問題�
 
 - 実装前に、実際の Workspace で世代のサイズを測る（下の「未解決」1）。
 - 圧縮を強めても小さくならない。画像の原本は保存時に WebP へ変換済みで、gzip でも zstd でもほぼ縮まない。縮むのは DB（文字起こしと要約）だけで、これは今の gzip で済んでいる。世代のサイズはほぼ画像の合計で決まる。
-- Databricks は Files API 2.0 の単一 PUT を使う（2026-11-27 にユーザーが決定。一度 3.0 前提としたが同日に 2.0 へ戻した）。1回のアップロードは 5000 MiB まで（[Files API](https://docs.databricks.com/aws/en/volumes/files-api/)、2026-11-27 確認）。これを超える世代は Databricks へのアップロードを断り、理由を出す。ローカルの世代は残る。
+- Databricks は Files API 2.0 の単一 PUT を使う（2026-11-27 にユーザーが決定。一度 3.0 前提としたが同日に 2.0 へ戻した）。1回のアップロードは 5000 MiB まで（[Files API](https://docs.databricks.com/aws/en/volumes/files-api/)、2026-11-27 確認）。これを超える世代は Databricks へのアップロードを断り、対象の Workspace を減らすか別の保存先を選んで作り直すよう案内する。転送用の世代は消す。
 - Files API 3.0 のマルチパートアップロード（5000 MiB 超、1パート 5 MiB〜4000 MiB）は使わない。Beta で、workspace 管理者が Previews で有効にする必要があり、接続先が地域のホスト名（`<workspace-id>.storage.<region>.<domain>`）になり、ネットワークの追加要件もある。5000 MiB を超える世代が実際に出たら、`DatabricksVolumeStorage` の `upload` の中だけを 3.0 に替える（形式と他の実装は変わらない）。
 - Drive の resumable upload は 5 TB まで置けるので、上限は Databricks だけの問題になる。
 
@@ -100,7 +100,7 @@ struct ProviderStorageFile: Identifiable, Equatable, Sendable {
 ### Databricks Volume
 
 - 設定: Databricks プロバイダーアカウント共通の `catalog.schema` として `provider_accounts.settingsJSON` に保存する。「プロバイダー」と「クラウドストレージ」から同じ専用モーダルを開き、既存のカタログ・スキーマを選ぶ。スキーマは新規作成もできる。カラム追加は未リリースの `v67_providerAccounts` に統合し、中間版の設定移行は設けない。接続を削除すると設定も消える。
-- volume: 初回の利用時に `GET /api/2.0/preview/scim/v2/Me` で利用者 ID を取り、`POST /api/2.1/unity-catalog/volumes`（`MANAGED`、名前 `dahlia_storage_<ID>`）で作る。
+- volume: 初回の利用時に `GET /api/2.0/preview/scim/v2/Me` で利用者 ID を取り、`POST /api/2.1/unity-catalog/volumes`（`MANAGED`、名前 `user_data_<ID>`）で作る。
 - 利用者 ID は数字の部分だけを使う。値が `<user_id>@<account_id>` の形なら `@` の前を取る。取り出した結果が数字だけでなければ、volume を作らずにエラーにする（volume 名に `@` などの記号を入れない）。SCIM `Me` の `id` が数字だけで返るか、`@` 付きで返るかは実 workspace で確かめる（「未解決」2）。
 - すでに同じ名前の volume がある場合は、`GET /api/2.1/unity-catalog/volumes/<catalog>.<schema>.<名前>` の `owner` が自分（SCIM `Me` の `userName`）で、`volume_type` が `MANAGED` のときだけ使う。どちらかが違えば、一覧もアップロードもせずに止め、volume 名と所有者を設定画面に出す。確認は保存先を選んで最初に使うときに1回行う（設定画面を開き直すとやり直す）。
 - ファイル: Files API 2.0（workspace の URL の `/api/2.0/fs/files/Volumes/...` の PUT / GET / DELETE、`/api/2.0/fs/directories/...` の一覧）。アップロードは `URLSession.upload(for:fromFile:)` で1回で送る。token は既存の `DatabricksOAuthService`（scope `all-apis`）で足りる。
@@ -110,9 +110,9 @@ struct ProviderStorageFile: Identifiable, Equatable, Sendable {
 ## 画面（設定 → データ保護 → バックアップ）
 
 - 保存先のピッカー: 「この Mac のみ」と、storage を持つプロバイダーアカウント。今の Drive のピッカーはカレンダーの経路（`GoogleCalendarProvider`）を共有しているので、専用の設定 `backupStorageAccount`（接続 UUID）に分ける。
-- 「バックアップを作成」: ローカルに世代を作り、保存先があればアップロードする。アップロードの失敗はローカルの成功と分けて出す。
-- ローカルの世代の行: 今の操作（復元、書き出し、削除）に「アップロード」を足す（失敗後のやり直しと、過去の世代を後から置くため）。
-- 保存先の一覧: 今の Drive の節を保存先の一覧に替える。行に「ダウンロード」（今と同じく import の検証を通してローカルの世代に足す）と「削除」（確認ダイアログ付き）。
+- 「バックアップを作成」: 「この Mac のみ」なら世代を保持する。クラウドなら転送用の世代を作ってアップロードし、成否にかかわらず消す。失敗時は理由を表示する。
+- ローカルの世代の行: 「この Mac のみ」で復元・書き出し・削除を表示する。クラウド選択中はローカルの世代を表示しない。
+- 保存先の一覧: 復元と削除（確認ダイアログ付き）を表示する。復元はダウンロードと import 検証を透過的に行い、直接復元画面を開く。転送用の世代はステージング後、復元中止時、画面終了時に消す。
 - 進行中はスピナーと中止。アップロードは MainActor の外で行い、録音と保存を待たせない。
 - 自動で世代を減らさない点は今のまま。
 
@@ -149,7 +149,7 @@ struct ProviderStorageFile: Identifiable, Equatable, Sendable {
 - Drive: 同名フォルダが2つでエラーになること。同名ファイルが2つ並ぶ一覧で、ダウンロードと削除が選んだ行の file ID だけに届くこと。
 - Databricks: 既存 volume の所有者が他人、または `EXTERNAL` のとき、Files API を1回も呼ばずに止まること。
 - 同じ名前が保存先にあるとき、アップロードを送らないこと（2実装で共通）。
-- 設定のモデル: アップロードの失敗でローカルの世代が残ること、保存先の切り替えで古い一覧の結果を捨てること。
+- 設定のモデル: クラウド作成の転送用世代を成否にかかわらず消すこと、開始時の保存先で保持の扱いを固定すること、保存先の切り替えで古い一覧・復元の結果を捨てること、復元画面の終了後に転送用世代を残さないこと。
 - 既存の `BackupServiceTests`、`BackupArchiveTests`、`WorkspaceBackupTests`、`MultiWorkspaceBackupTests`、`BackupRestoreStartupProcessorTests` は変更なしで通ること（形式を変えていない証拠）。
 - `test-pi-extension.py` と `PiChatServiceTests` から `dah_create_backup` を外す。
 - 実機（`./scripts/run-dev.sh`）: 実際の Google アカウントと Databricks workspace で、作成→アップロード→別の世代としてダウンロード→復元を1回ずつ通す。

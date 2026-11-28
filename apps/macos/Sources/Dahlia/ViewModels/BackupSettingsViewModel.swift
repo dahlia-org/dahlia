@@ -17,6 +17,9 @@ final class BackupSettingsViewModel {
     private(set) var workspaces: [WorkspaceRecord] = []
     var selectedWorkspaceIds: Set<UUID> = []
     var restoreSelections: [BackupRestoreSelection] = []
+    private(set) var restoreGeneration: BackupGeneration?
+    private(set) var restoreRevision = UUID.v7()
+    private var restoreTransferCopy: BackupGeneration?
     private(set) var allPreflightItems: [BackupPreflightItem] = []
     var preflightItems: [BackupPreflightItem] { allPreflightItems.filter { selectedWorkspaceIds.contains($0.workspaceId) } }
     private(set) var hasWorkInProgress = false
@@ -66,23 +69,48 @@ final class BackupSettingsViewModel {
         }
     }
 
-    /// The new generation, for the caller to upload to the selected destination.
+    /// Owns the local slot and the selected workspaces through creation and any cloud transfer.
     @discardableResult
-    func createBackup() async -> BackupGeneration? {
-        guard !selectedWorkspaceIds.isEmpty else { return nil }
+    func createBackup(using storage: BackupStorageModel? = nil) async -> BackupGeneration? {
+        let workspaceIds = selectedWorkspaceIds
+        guard !workspaceIds.isEmpty, storage?.isBusy != true else { return nil }
+        let isTransferCopy = storage?.destination != nil
         var created: BackupGeneration?
         await perform {
-            created = try await requireService().createGeneration(workspaceIds: selectedWorkspaceIds)
-            statusMessage = L10n.backupCreated
+            let create: @MainActor () async -> BackupGeneration? = {
+                do {
+                    created = try await self.requireService().createGeneration(workspaceIds: workspaceIds)
+                    if !isTransferCopy { self.statusMessage = L10n.backupCreated }
+                    return created
+                } catch {
+                    self.errorMessage = error.localizedDescription
+                    return nil
+                }
+            }
+            if let storage {
+                await storage.createBackup(create) { await self.discardTransferCopy($0) }
+            } else {
+                _ = await create()
+            }
         }
         return created
     }
 
-    func importBackup(from url: URL) async {
+    /// The imported generation, for the caller to restore from when backups live in a provider's storage.
+    @discardableResult
+    func importBackup(from url: URL) async -> BackupGeneration? {
+        var imported: BackupGeneration?
         await perform {
-            _ = try await requireService().importGeneration(from: url)
+            imported = try await requireService().importGeneration(from: url)
             statusMessage = L10n.backupImported
         }
+        return imported
+    }
+
+    /// Removes a generation that only carried a backup between this Mac and the destination; the user never sees it.
+    func discardTransferCopy(_ generation: BackupGeneration) async {
+        try? await service?.deleteGeneration(generation)
+        generations.removeAll { $0 == generation }
     }
 
     /// The service the destination imports downloaded backups through.
@@ -115,7 +143,30 @@ final class BackupSettingsViewModel {
         }
     }
 
-    func beginRestore(_ metadata: BackupMetadata) {
+    /// Accepts a restore result only while the settings session that requested it is still current.
+    func beginRestore(_ generation: BackupGeneration, transferCopy: Bool, revision: UUID) async {
+        guard restoreRevision == revision, restoreGeneration == nil, let metadata = generation.metadata else {
+            if transferCopy { await discardTransferCopy(generation) }
+            return
+        }
+        restoreGeneration = generation
+        restoreTransferCopy = transferCopy ? generation : nil
+        beginRestore(metadata)
+    }
+
+    /// Invalidates outstanding downloads/imports as well as the visible restore dialog.
+    @discardableResult
+    func dismissRestore() -> Task<Void, Never> {
+        restoreRevision = .v7()
+        restoreGeneration = nil
+        let copy = restoreTransferCopy
+        restoreTransferCopy = nil
+        return Task {
+            if let copy { await discardTransferCopy(copy) }
+        }
+    }
+
+    private func beginRestore(_ metadata: BackupMetadata) {
         restoreSelections = metadata.workspaces.map { BackupRestoreSelection(workspace: $0, mode: nil, name: L10n.restoredWorkspaceName($0.name)) }
         errorMessage = nil
     }

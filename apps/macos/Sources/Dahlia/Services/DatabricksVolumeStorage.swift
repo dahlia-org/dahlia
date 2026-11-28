@@ -1,6 +1,6 @@
 import Foundation
 
-/// The signed-in user's managed volume `<catalog>.<schema>.dahlia_storage_<user ID>`, through Files API 2.0. Dahlia
+/// The signed-in user's managed volume `<catalog>.<schema>.user_data_<user ID>`, through Files API 2.0. Dahlia
 /// uses an existing volume only when the user owns it, since anyone can create one with that name first.
 actor DatabricksVolumeStorage: ProviderStorage {
     /// Files API 2.0 accepts one upload of up to 5000 MiB (docs.databricks.com, checked 2026-11-27).
@@ -105,7 +105,7 @@ actor DatabricksVolumeStorage: ProviderStorage {
     static func volumeName(userID: String) throws -> String {
         let digits = userID.split(separator: "@", maxSplits: 1, omittingEmptySubsequences: false).first ?? ""
         guard !digits.isEmpty, digits.allSatisfy({ $0.isASCII && $0.isNumber }) else { throw ProviderStorageError.unsupportedUserID }
-        return "dahlia_storage_\(digits)"
+        return "user_data_\(digits)"
     }
 
     /// A listed file's path, which must lie inside this volume.
@@ -120,15 +120,26 @@ actor DatabricksVolumeStorage: ProviderStorage {
         let volumeType: String?
     }
 
+    private struct SCIMUser: Decodable {
+        let id: String
+        let userName: String
+    }
+
+    private func me() async throws -> SCIMUser {
+        let (data, _) = try await http.data(URLRequest(url: host.appending(path: "api/2.0/preview/scim/v2/Me")))
+        return try JSONDecoder().decode(SCIMUser.self, from: data)
+    }
+
+    /// The backup folder's path for display. It does not check whether the volume exists yet.
+    func backupPath() async throws -> String {
+        let name = try await Self.volumeName(userID: me().id)
+        return "/Volumes/\(location.catalog)/\(location.schema)/\(name)/\(BackupStorageDestination.directory)"
+    }
+
     /// Finds the user's volume, creating it when `create` is true. Nil means it does not exist yet.
     private func volumeRoot(create: Bool) async throws -> String? {
         if let root { return root }
-        struct SCIMUser: Decodable {
-            let id: String
-            let userName: String
-        }
-        let (meData, _) = try await http.data(URLRequest(url: host.appending(path: "api/2.0/preview/scim/v2/Me")))
-        let me = try JSONDecoder().decode(SCIMUser.self, from: meData)
+        let me = try await me()
         let name = try Self.volumeName(userID: me.id)
         let fullName = "\(location.catalog).\(location.schema).\(name)"
         var volume = try await fetchVolume(fullName)
