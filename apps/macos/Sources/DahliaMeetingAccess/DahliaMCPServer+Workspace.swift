@@ -56,14 +56,26 @@ extension DahliaMCPServer {
             guard try workspaces().contains(where: { $0.id == id }) else { throw MeetingAccessError.workspaceNotFound }
             return try scopedRead(name: name, arguments: scopedArguments, workspaceID: id)
         }
-        if name.hasPrefix("get_") {
-            let mapping: [String: (String, String)] = [
-                "get_meeting": ("meeting_id", "meetings"),
-                "get_meeting_transcript": ("meeting_id", "meetings"),
-                "get_meeting_screenshots": ("meeting_id", "meetings"),
-                "get_project": ("project_id", "projects"),
-            ]
-            guard let (key, table) = mapping[name] else { throw ParameterError("workspace_id is required for this tool") }
+        if name == "get_screenshots" {
+            let ids = try screenshotIDs(arguments)
+            guard let id = try screenshotWorkspaceID(ids) else {
+                return try screenshotsToolResult(
+                    list: ScreenshotList(workspace: nil, screenshots: [], errors: ids.enumerated().map { index, id in
+                        ScreenshotIDError(index: index, screenshotID: id, error: id == nil ? .invalidID : .notFound)
+                    }),
+                    images: []
+                )
+            }
+            return try scopedRead(name: name, arguments: scopedArguments, workspaceID: id)
+        }
+        let mapping: [String: (String, String)] = [
+            "get_meeting": ("meeting_id", "meetings"),
+            "get_meeting_transcript": ("meeting_id", "meetings"),
+            "get_project": ("project_id", "projects"),
+            // A meeting filter names one workspace, so other workspaces would only report not_found.
+            "query_screenshots": ("meeting_id", "meetings"),
+        ]
+        if let (key, table) = mapping[name], name.hasPrefix("get_") || arguments[key] != nil {
             let entityID = try requiredUUID(arguments, key: key)
             let id = try store.database.read { db in
                 try UUID.fetchOne(db, sql: "SELECT workspace_id FROM \(table) WHERE id = ?", arguments: [entityID])
@@ -71,6 +83,7 @@ extension DahliaMCPServer {
             guard let id, try workspaces().contains(where: { $0.id == id }) else { throw MeetingAccessError.workspaceNotFound }
             return try scopedRead(name: name, arguments: scopedArguments, workspaceID: id)
         }
+        if name.hasPrefix("get_") { throw ParameterError("workspace_id is required for this tool") }
         guard arguments["cursor"] == nil, arguments["server_cursor"] == nil else {
             throw ParameterError("Continue each workspace's page with workspace_id and its cursor")
         }
@@ -103,6 +116,22 @@ extension DahliaMCPServer {
             "structuredContent": object,
             "isError": false,
         ]
+    }
+
+    /// The workspace of the first requested ID that exists in an accessible workspace; IDs elsewhere become not_found.
+    private func screenshotWorkspaceID(_ ids: [UUID?]) throws -> UUID? {
+        let requested = ids.compactMap(\.self)
+        guard !requested.isEmpty else { return nil }
+        let placeholders = Array(repeating: "?", count: requested.count).joined(separator: ", ")
+        let owners = try store.database.read { db in
+            try Dictionary(Row.fetchAll(db, sql: """
+            SELECT meeting_images.id, meetings.workspace_id FROM meeting_images
+            JOIN meetings ON meetings.id = meeting_images.meetingId
+            WHERE meeting_images.id IN (\(placeholders))
+            """, arguments: StatementArguments(requested)).map { ($0["id"] as UUID, $0["workspace_id"] as UUID) }) { first, _ in first }
+        }
+        let accessible = try Set(workspaces().map(\.id))
+        return requested.lazy.compactMap { owners[$0] }.first(where: accessible.contains)
     }
 
     private func workspaceWrite(name: String, arguments: [String: Any]) throws -> [String: Any] {

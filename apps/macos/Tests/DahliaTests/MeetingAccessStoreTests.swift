@@ -68,17 +68,26 @@ import ImageIO
             let next = try call("query_meetings", ["workspace_id": workspaceID, "project_id": projectID, "limit": 1, "cursor": cursor])
             #expect((next["meetings"] as? [[String: Any]])?.count == 1)
             let screenshots = try call(
-                "get_meeting_screenshots",
+                "query_screenshots",
                 ["meeting_id": meetingID, "from_elapsed_seconds": 0, "to_elapsed_seconds": 100, "limit": 1]
             )
             let screenshot = try #require((screenshots["screenshots"] as? [[String: Any]])?.first)
             let screenshotID = try #require(screenshot["id"] as? String)
             #expect(screenshotID.hasPrefix("att_"))
-            let selected = try call("get_meeting_screenshots", ["meeting_id": meetingID, "screenshot_ids": [screenshotID]])
-            #expect((selected["screenshots"] as? [[String: Any]])?.first?["id"] as? String == screenshotID)
+            #expect(screenshot["meeting_id"] as? String == meetingID)
+            let selected = try call("get_screenshots", ["screenshot_ids": [screenshotID, "att_invalid"]])
+            let selectedScreenshot = try #require((selected["screenshots"] as? [[String: Any]])?.first)
+            #expect(selectedScreenshot["id"] as? String == screenshotID)
+            #expect(selectedScreenshot["meeting_id"] as? String == meetingID)
+            // A malformed ID fails alone and is echoed as it was sent.
+            let selectionErrors = try #require(selected["errors"] as? [[String: Any]])
+            #expect(selectionErrors.count == 1)
+            #expect(selectionErrors.first?["index"] as? Int == 1)
+            #expect(selectionErrors.first?["screenshot_id"] as? String == "att_invalid")
+            #expect(selectionErrors.first?["error"] as? String == "invalid_id")
             let screenshotCursor = try #require(screenshots["next_cursor"] as? String)
             let nextScreenshots = try call(
-                "get_meeting_screenshots",
+                "query_screenshots",
                 ["meeting_id": meetingID, "from_elapsed_seconds": 0, "to_elapsed_seconds": 100, "limit": 1, "cursor": screenshotCursor]
             )
             #expect((nextScreenshots["screenshots"] as? [[String: Any]])?.first?["id"] as? String != screenshotID)
@@ -742,12 +751,17 @@ import ImageIO
                     try MeetingCalendarSync(icalUid: event.icalUid, recurrenceId: event.recurrenceId, calendarEvent: snapshot)
                         .save(meetingId: meetingID, in: db)
                 }
-                try db.execute(sql: "UPDATE meetings SET calendar_event_ical_uid = NULL, calendar_event_recurrence_id = NULL WHERE id = ?",
-                               arguments: [fixture.firstMeetingID])
+                try db.execute(
+                    sql: "UPDATE meetings SET calendar_event_ical_uid = NULL, calendar_event_recurrence_id = NULL WHERE id = ?",
+                    arguments: [fixture.firstMeetingID]
+                )
             }
             let store = try fixture.store(workspaceID: fixture.primaryWorkspaceID)
             for attendee in ["élodie", "STRASSE"] {
-                #expect(try store.queryMeetings(MeetingQuery(attendee: attendee)).meetings.map(\.id) == [fixture.firstMeetingID, fixture.recurringMeetingID])
+                #expect(try store.queryMeetings(MeetingQuery(attendee: attendee)).meetings.map(\.id) == [
+                    fixture.firstMeetingID,
+                    fixture.recurringMeetingID,
+                ])
             }
             #expect(try store.queryMeetings(MeetingQuery(attendee: "ELODIE@example")).meetings.map(\.id) == [fixture.firstMeetingID])
             let page = try store.queryMeetings(MeetingQuery(limit: 1))
@@ -903,63 +917,84 @@ import ImageIO
         }
 
         @Test
-        func screenshotsArePagedFilteredAndReturnedOneAtATimeAsResizedImages() throws {
+        func screenshotListingIsPagedAndFilteredWithoutAQuery() throws {
             let fixture = try Fixture()
             let store = try fixture.store(workspaceID: fixture.primaryWorkspaceID)
 
-            let firstPage = try store.screenshots(
-                meetingID: fixture.firstMeetingID,
-                query: ScreenshotQuery(limit: 1)
-            )
+            let firstPage = try store.listScreenshots(meetingID: fixture.firstMeetingID, limit: 1)
             #expect(firstPage.screenshots.count == 1)
-            #expect(firstPage.nextCursor != nil)
-            let secondPage = try store.screenshots(
-                meetingID: fixture.firstMeetingID,
-                query: ScreenshotQuery(limit: 1, cursor: firstPage.nextCursor)
-            )
+            #expect(firstPage.searchScope == nil && firstPage.server == nil)
+            let secondPage = try store.listScreenshots(meetingID: fixture.firstMeetingID, limit: 1, cursor: firstPage.nextCursor)
             #expect(Set((firstPage.screenshots + secondPage.screenshots).map(\.id)) == fixture.primaryScreenshotIDs)
+            // Capture order within a meeting.
+            #expect(firstPage.screenshots[0].elapsedSeconds <= secondPage.screenshots[0].elapsedSeconds)
 
-            let filtered = try store.screenshots(
-                meetingID: fixture.firstMeetingID,
-                query: ScreenshotQuery(fromElapsedSeconds: 15, toElapsedSeconds: 17)
-            )
+            let filtered = try store.listScreenshots(meetingID: fixture.firstMeetingID, from: 15, to: 17)
             #expect(filtered.screenshots.map(\.id) == [fixture.firstScreenshotID])
             #expect(filtered.screenshots.first?.timestamp == "00:00:16")
-            #expect(filtered.screenshots.first?.isReferencedInSummary == true)
-            #expect(try store.screenshots(
-                meetingID: fixture.firstMeetingID,
-                query: ScreenshotQuery(fromElapsedSeconds: 15, toElapsedSeconds: 16)
-            ).screenshots.isEmpty)
+            #expect(try store.listScreenshots(meetingID: fixture.firstMeetingID, from: 15, to: 16).screenshots.isEmpty)
 
-            let rangedPage = try store.screenshots(
-                meetingID: fixture.firstMeetingID,
-                query: ScreenshotQuery(fromElapsedSeconds: 0, toElapsedSeconds: 100, limit: 1)
-            )
+            let rangedPage = try store.listScreenshots(meetingID: fixture.firstMeetingID, from: 0, to: 100, limit: 1)
             let rangedCursor = try #require(rangedPage.nextCursor)
             #expect(throws: MeetingAccessError.invalidCursor) {
-                try store.screenshots(
-                    meetingID: fixture.firstMeetingID,
-                    query: ScreenshotQuery(fromElapsedSeconds: 0, toElapsedSeconds: 99, cursor: rangedCursor)
-                )
+                try store.listScreenshots(meetingID: fixture.firstMeetingID, from: 0, to: 99, cursor: rangedCursor)
             }
+            #expect(throws: MeetingAccessError.meetingNotFound) {
+                try store.listScreenshots(meetingID: fixture.otherWorkspaceMeetingID)
+            }
+            // Without a meeting, the whole workspace is listed.
+            let workspacePage = try store.queryScreenshots(ScreenshotTextQuery())
+            #expect(Set(workspacePage.screenshots.map(\.id)) == fixture.primaryScreenshotIDs)
+        }
 
-            let image = try store.screenshot(
-                meetingID: fixture.firstMeetingID,
-                screenshotID: fixture.firstScreenshotID
-            )
-            #expect(image.imageData == fixture.imageData)
-            #expect(image.mimeType == ImageEncoder.mimeType(for: fixture.imageData))
-            #expect(throws: MeetingAccessError.screenshotNotFound) {
-                try store.screenshot(meetingID: fixture.firstMeetingID, screenshotID: fixture.otherWorkspaceScreenshotID)
+        @Test(arguments: [true, false])
+        func screenshotListingContinuesAfterDeletingThePreviousPage(withinMeeting: Bool) throws {
+            let fixture = try Fixture()
+            let store = try fixture.store(workspaceID: fixture.primaryWorkspaceID)
+            var query = ScreenshotTextQuery(meetingID: withinMeeting ? fixture.firstMeetingID : nil, limit: 1)
+            let first = try store.queryScreenshots(query)
+            let anchor = try #require(first.screenshots.first)
+            query.cursor = try #require(first.nextCursor)
+            try fixture.manager.dbQueue.write { db in
+                try db.execute(sql: "DELETE FROM meeting_attachments WHERE id = ?", arguments: [anchor.id])
             }
+            let next = try store.queryScreenshots(query)
+            #expect(next.screenshots.count == 1)
+            #expect(next.screenshots.first?.id != anchor.id)
+        }
+
+        @Test
+        func screenshotsAreFetchedByIDAndReportFailuresPerID() throws {
+            let fixture = try Fixture()
+            let store = try fixture.store(workspaceID: fixture.primaryWorkspaceID)
+
+            let result = try store.screenshots(ids: [
+                fixture.firstScreenshotID, nil, fixture.otherWorkspaceScreenshotID, fixture.secondScreenshotID,
+            ])
+            #expect(result.list.screenshots.map(\.id) == [fixture.firstScreenshotID, fixture.secondScreenshotID])
+            #expect(result.images.map(\.metadata.id) == [fixture.firstScreenshotID, fixture.secondScreenshotID])
+            #expect(result.list.screenshots.first?.meetingID == fixture.firstMeetingID)
+            #expect(result.list.screenshots.first?.isReferencedInSummary == true)
+            #expect(result.images.first?.imageData == fixture.imageData)
+            #expect(result.images.first?.mimeType == ImageEncoder.mimeType(for: fixture.imageData))
+            #expect(result.list.errors == [
+                ScreenshotIDError(index: 1, screenshotID: nil, error: .invalidID),
+                ScreenshotIDError(index: 2, screenshotID: fixture.otherWorkspaceScreenshotID, error: .notFound),
+            ])
+
+            let metadataOnly = try store.screenshots(ids: [fixture.firstScreenshotID], includeImages: false)
+            #expect(metadataOnly.images.isEmpty)
+            #expect(metadataOnly.list.screenshots.map(\.id) == [fixture.firstScreenshotID])
         }
 
         @Test
         func screenshotTextSearchReturnsImagesWithoutMergingMeetings() async throws {
             let fixture = try Fixture()
             await fixture.manager.searchIndexer.drain()
+            // The match sits past the first 500 characters, so a leading prefix would miss it.
+            let fullText = String(repeating: "filler ", count: 100) + "Screenshot-only architecture needle"
             try await fixture.manager.dbQueue.write { db in
-                let text = "Screenshot-only architecture needle"
+                let text = fullText
                 let caption = "Architecture diagram for the meeting"
                 try db.execute(
                     sql: "UPDATE file_text_bodies SET ocrText = ?, caption = ? WHERE fileId = ?",
@@ -996,9 +1031,21 @@ import ImageIO
 
             #expect(screenshots.screenshots.map(\.id) == [fixture.firstScreenshotID])
             #expect(screenshots.screenshots.first?.meetingID == fixture.firstMeetingID)
-            #expect(screenshots.screenshots.first?.detectedText == "Screenshot-only architecture needle")
+            let excerpt = try #require(screenshots.screenshots.first?.detectedText)
+            #expect(excerpt.hasPrefix("…") && excerpt.hasSuffix("architecture needle") && excerpt.count <= 181)
             #expect(screenshots.screenshots.first?.caption == "Architecture diagram for the meeting")
+            // Legacy BLOB screenshots have no file on disk.
+            #expect(screenshots.screenshots.first?.filePath == nil)
             #expect(meetings.meetings.isEmpty)
+
+            // Without a query, the excerpt is the beginning of the detected text.
+            let listed = try #require(store.listScreenshots(meetingID: fixture.firstMeetingID).screenshots
+                .first { $0.id == fixture.firstScreenshotID })
+            #expect(listed.detectedText?.hasPrefix("filler filler") == true && listed.detectedText?.count == 180)
+            #expect(listed.caption == "Architecture diagram for the meeting")
+            let image = try #require(store.screenshots(ids: [fixture.firstScreenshotID]).images.first)
+            #expect(image.metadata.detectedText == fullText)
+            #expect(image.metadata.caption == "Architecture diagram for the meeting")
         }
 
         @Test
@@ -1020,11 +1067,16 @@ import ImageIO
                     return bytes
                 }
             )
-            #expect(try store.screenshot(meetingID: meetingID, screenshotID: imageID).imageData == bytes)
+            #expect(try store.screenshots(ids: [imageID]).images.first?.imageData == bytes)
             let unavailable = try fixture.store(workspaceID: workspaceID)
-            #expect(throws: MeetingAccessError.screenshotUnavailable) {
-                try unavailable.screenshot(meetingID: meetingID, screenshotID: imageID)
-            }
+            #expect(try unavailable.screenshots(ids: [imageID]).list.errors == [
+                ScreenshotIDError(index: 0, screenshotID: imageID, error: .unavailable),
+            ])
+            // Without images, an unavailable image keeps its metadata and only loses the file path.
+            let metadataOnly = try unavailable.screenshots(ids: [imageID], includeImages: false).list
+            #expect(metadataOnly.errors.isEmpty)
+            #expect(metadataOnly.screenshots.first?.id == imageID)
+            #expect(metadataOnly.screenshots.first?.filePath == nil)
         }
 
         @Test
@@ -1035,21 +1087,14 @@ import ImageIO
             try fixture.updateFirstScreenshot(data: largeData)
             let store = try fixture.store(workspaceID: fixture.primaryWorkspaceID)
 
-            let image = try store.screenshot(meetingID: fixture.firstMeetingID, screenshotID: fixture.firstScreenshotID)
+            let image = try #require(store.screenshots(ids: [fixture.firstScreenshotID]).images.first)
             #expect(image.imageData == largeData)
             #expect(image.mimeType == ImageEncoder.mimeType(for: largeData))
 
             try fixture.updateFirstScreenshot(data: Data("not an image".utf8))
-            #expect(throws: MeetingAccessError.screenshotEncodingFailed) {
-                try store.screenshot(meetingID: fixture.firstMeetingID, screenshotID: fixture.firstScreenshotID)
-            }
-
-            #expect(throws: MeetingAccessError.screenshotEncodingFailed) {
-                try store.screenshotImages(
-                    meetingID: fixture.firstMeetingID,
-                    query: ScreenshotQuery(fromElapsedSeconds: 0, toElapsedSeconds: 100)
-                )
-            }
+            let corrupt = try store.screenshots(ids: [fixture.firstScreenshotID, fixture.secondScreenshotID])
+            #expect(corrupt.list.errors == [ScreenshotIDError(index: 0, screenshotID: fixture.firstScreenshotID, error: .unreadable)])
+            #expect(corrupt.images.map(\.metadata.id) == [fixture.secondScreenshotID])
         }
 
         @Test
@@ -1066,10 +1111,7 @@ import ImageIO
             #expect(transcript.segments.map(\.id) == [inserted.segmentID])
             #expect(transcript.segments.first?.timestamp == "00:00:35")
 
-            let screenshots = try store.screenshots(
-                meetingID: fixture.firstMeetingID,
-                query: ScreenshotQuery(fromElapsedSeconds: 36, toElapsedSeconds: 37)
-            )
+            let screenshots = try store.listScreenshots(meetingID: fixture.firstMeetingID, from: 36, to: 37)
             #expect(screenshots.screenshots.map(\.id) == [inserted.screenshotID])
             #expect(screenshots.screenshots.first?.timestamp == "00:00:36")
         }
@@ -1090,7 +1132,7 @@ import ImageIO
             let transcript = try store.transcript(meetingID: fixture.firstMeetingID)
             let segment = try #require(transcript.segments.first(where: { $0.id == fixture.firstSegmentID }))
             #expect(segment.elapsedSeconds == 0)
-            let screenshots = try store.screenshots(meetingID: fixture.firstMeetingID)
+            let screenshots = try store.listScreenshots(meetingID: fixture.firstMeetingID)
             #expect(screenshots.screenshots.first(where: { $0.id == fixture.firstScreenshotID })?.elapsedSeconds == 0)
         }
 
@@ -1174,7 +1216,7 @@ import ImageIO
             let tools = try Self.json(server.handleInternalTestLine(#"{"jsonrpc":"2.0","id":3,"method":"tools/list"}"#))
             let definitions = ((tools["result"] as? [String: Any])?["tools"] as? [[String: Any]]) ?? []
             #expect(definitions.map { $0["name"] as? String } == [
-                "list_workspaces", "query_meetings", "query_screenshots", "get_meeting", "get_meeting_transcript", "get_meeting_screenshots",
+                "list_workspaces", "query_meetings", "query_screenshots", "get_meeting", "get_meeting_transcript", "get_screenshots",
                 "query_projects", "get_project",
             ])
             #expect((definitions.first?["annotations"] as? [String: Any])?["readOnlyHint"] as? Bool == true)
@@ -1184,7 +1226,7 @@ import ImageIO
                 ($0["outputSchema"] as? [String: Any])?["additionalProperties"] as? Bool == false
             })
             let screenshotDefinition = try #require(
-                definitions.first { $0["name"] as? String == "get_meeting_screenshots" }
+                definitions.first { $0["name"] as? String == "get_screenshots" }
             )
             let screenshotQueryDefinition = try #require(
                 definitions.first { $0["name"] as? String == "query_screenshots" }
@@ -1192,6 +1234,8 @@ import ImageIO
             let screenshotQueryInput = try #require(screenshotQueryDefinition["inputSchema"] as? [String: Any])
             let screenshotQueryProperties = try #require(screenshotQueryInput["properties"] as? [String: Any])
             #expect((screenshotQueryProperties["query"] as? [String: Any])?["minLength"] as? Int == 2)
+            #expect(screenshotQueryInput["required"] == nil)
+            #expect(screenshotQueryProperties["meeting_id"] != nil)
             let screenshotInputSchema = try #require(screenshotDefinition["inputSchema"] as? [String: Any])
             let screenshotInputProperties = try #require(screenshotInputSchema["properties"] as? [String: Any])
             #expect(screenshotInputProperties["image_size"] == nil)
@@ -1228,9 +1272,8 @@ import ImageIO
             #expect(transcriptContent?["next_cursor"] is String)
 
             let screenshotCall = try Self.json(server.handleInternalTestLine(#"""
-            {"jsonrpc":"2.0","id":12,"method":"tools/call","params":{"name":"get_meeting_screenshots","arguments":{"meeting_id":"\#(fixture
-                .firstMeetingID.uuidString)","screenshot_ids":["\#(fixture.firstScreenshotID.uuidString)","\#(fixture.secondScreenshotID
-                .uuidString)"]}}}
+            {"jsonrpc":"2.0","id":12,"method":"tools/call","params":{"name":"get_screenshots","arguments":{"screenshot_ids":["\#(fixture
+                .firstScreenshotID.uuidString)","\#(fixture.secondScreenshotID.uuidString)"]}}}
             """#))
             let screenshotResult = try #require(screenshotCall["result"] as? [String: Any])
             let screenshotContent = try #require(screenshotResult["content"] as? [[String: Any]])
@@ -1243,18 +1286,22 @@ import ImageIO
                 fixture.secondScreenshotID.uuidString,
             ])
 
-            let rangedScreenshotCall = try Self.json(server.handleInternalTestLine(#"""
-            {"jsonrpc":"2.0","id":14,"method":"tools/call","params":{"name":"get_meeting_screenshots","arguments":{"meeting_id":"\#(fixture
+            let metadataOnlyCall = try Self.json(server.handleInternalTestLine(#"""
+            {"jsonrpc":"2.0","id":14,"method":"tools/call","params":{"name":"get_screenshots","arguments":{"screenshot_ids":["\#(fixture
+                .firstScreenshotID.uuidString)"],"include_images":false}}}
+            """#))
+            let metadataOnlyContent = ((metadataOnlyCall["result"] as? [String: Any])?["content"] as? [[String: Any]])
+            #expect(metadataOnlyContent?.map { $0["type"] as? String } == ["text"])
+
+            let rangeWithoutMeeting = try Self.json(server.handleInternalTestLine(#"""
+            {"jsonrpc":"2.0","id":15,"method":"tools/call","params":{"name":"query_screenshots","arguments":{"from_elapsed_seconds":15}}}
+            """#))
+            #expect((rangeWithoutMeeting["error"] as? [String: Any])?["code"] as? Int == -32602)
+            let removedTool = try Self.json(server.handleInternalTestLine(#"""
+            {"jsonrpc":"2.0","id":16,"method":"tools/call","params":{"name":"get_meeting_screenshots","arguments":{"meeting_id":"\#(fixture
                 .firstMeetingID.uuidString)","from_elapsed_seconds":15,"to_elapsed_seconds":17}}}
             """#))
-            let rangedContent = ((rangedScreenshotCall["result"] as? [String: Any])?["content"] as? [[String: Any]])
-            #expect(rangedContent?.map { $0["type"] as? String } == ["text", "text", "image"])
-
-            let missingSelector = try Self.json(server.handleInternalTestLine(#"""
-            {"jsonrpc":"2.0","id":15,"method":"tools/call","params":{"name":"get_meeting_screenshots","arguments":{"meeting_id":"\#(fixture
-                .firstMeetingID.uuidString)"}}}
-            """#))
-            #expect((missingSelector["error"] as? [String: Any])?["code"] as? Int == -32602)
+            #expect((removedTool["error"] as? [String: Any])?["code"] as? Int == -32602)
 
             let invalid = try Self.json(server.handleInternalTestLine(#"""
             {"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"query_meetings","arguments":{"unexpected":true}}}
@@ -1294,22 +1341,15 @@ import ImageIO
                     "jsonrpc": "2.0",
                     "id": id,
                     "method": "tools/call",
-                    "params": ["name": "get_meeting_screenshots", "arguments": arguments],
+                    "params": ["name": "get_screenshots", "arguments": arguments],
                 ]
                 let requestData = try JSONSerialization.data(withJSONObject: request)
                 let requestString = try #require(String(data: requestData, encoding: .utf8))
                 return try Self.json(server.handleInternalTestLine(requestString))
             }
 
-            func screenshotData(selectsByRange: Bool) throws -> Data {
-                var arguments: [String: Any] = ["meeting_id": fixture.firstMeetingID.uuidString]
-                if selectsByRange {
-                    arguments["from_elapsed_seconds"] = 15
-                    arguments["to_elapsed_seconds"] = 17
-                } else {
-                    arguments["screenshot_ids"] = [fixture.firstScreenshotID.uuidString]
-                }
-                let response = try call(arguments: arguments)
+            func screenshotData() throws -> Data {
+                let response = try call(arguments: ["screenshot_ids": [fixture.firstScreenshotID.uuidString]])
                 let result = try #require(response["result"] as? [String: Any])
                 let content = try #require(result["content"] as? [[String: Any]])
                 let image = try #require(content.first { $0["type"] as? String == "image" })
@@ -1317,11 +1357,9 @@ import ImageIO
                 return try #require(Data(base64Encoded: encoded))
             }
 
-            #expect(try screenshotData(selectsByRange: false) == largeData)
-            #expect(try screenshotData(selectsByRange: true) == largeData)
+            #expect(try screenshotData() == largeData)
 
             let removedOption = try call(id: 3, arguments: [
-                "meeting_id": fixture.firstMeetingID.uuidString,
                 "screenshot_ids": [fixture.firstScreenshotID.uuidString],
                 "image_size": "original",
             ])
@@ -1373,8 +1411,8 @@ import ImageIO
             _ = server.handleInternalTestLine(#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}"#)
             _ = server.handleInternalTestLine(#"{"jsonrpc":"2.0","method":"notifications/initialized"}"#)
             let response = try Self.json(server.handleInternalTestLine(#"""
-            {"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"get_meeting_screenshots","arguments":{"meeting_id":"\#(fixture
-                .firstMeetingID.uuidString)","screenshot_ids":["\#(fixture.firstScreenshotID.uuidString)"],"limit":1}}}
+            {"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"get_screenshots","arguments":{"screenshot_ids":["\#(fixture
+                .firstScreenshotID.uuidString)"],"limit":1}}}
             """#))
             #expect((response["error"] as? [String: Any])?["code"] as? Int == -32602)
 
@@ -1384,8 +1422,8 @@ import ImageIO
                     "id": 3,
                     "method": "tools/call",
                     "params": [
-                        "name": "get_meeting_screenshots",
-                        "arguments": ["meeting_id": fixture.firstMeetingID.uuidString, "screenshot_ids": ids],
+                        "name": "get_screenshots",
+                        "arguments": ["screenshot_ids": ids],
                     ],
                 ]
                 let data = try JSONSerialization.data(withJSONObject: request)
@@ -1396,9 +1434,14 @@ import ImageIO
                 call(ids: []),
                 call(ids: [fixture.firstScreenshotID.uuidString, fixture.firstScreenshotID.uuidString]),
                 call(ids: (0 ..< 11).map { _ in UUID.v7().uuidString }),
-                call(ids: ["not-a-uuid"]),
             ]
             #expect(invalidSelections.allSatisfy { ($0["error"] as? [String: Any])?["code"] as? Int == -32602 })
+            // A malformed ID fails alone instead of failing the call. The test client cannot encode a mixed array, so the
+            // valid entry is sent as a TypeID already.
+            let malformed = try call(ids: ["not-a-uuid", TypeID.encode(fixture.firstScreenshotID, as: .attachment)])
+            let malformedResult = try #require((malformed["result"] as? [String: Any])?["structuredContent"] as? [String: Any])
+            #expect((malformedResult["errors"] as? [[String: Any]])?.first?["error"] as? String == "invalid_id")
+            #expect((malformedResult["screenshots"] as? [[String: Any]])?.count == 1)
         }
 
         @Test
@@ -2113,6 +2156,20 @@ import ImageIO
                     arguments: [otherWorkspaceSessionID, firstScreenshotID]
                 )
             }
+        }
+    }
+
+    private extension MeetingAccessStore {
+        func listScreenshots(
+            meetingID: UUID,
+            from: Double? = nil,
+            to: Double? = nil,
+            limit: Int = 20,
+            cursor: String? = nil
+        ) throws -> ScreenshotTextQueryPage {
+            try queryScreenshots(ScreenshotTextQuery(
+                meetingID: meetingID, fromElapsedSeconds: from, toElapsedSeconds: to, limit: limit, cursor: cursor
+            ))
         }
     }
 #endif

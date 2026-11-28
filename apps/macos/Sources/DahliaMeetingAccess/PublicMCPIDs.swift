@@ -5,15 +5,24 @@ import Foundation
 enum PublicMCPIDs {
     static func arguments(_ value: [String: Any], tool: String) throws -> [String: Any] {
         let optionalStringKeys: Set = [
-            "query", "project", "project_id", "ical_uid", "attendee",
+            "query", "project", "project_id", "meeting_id", "ical_uid", "attendee",
             "created_from", "created_before", "cursor", "server_cursor",
         ]
-        let arguments = value.filter { key, value in
-            guard tool == "query_meetings", optionalStringKeys.contains(key), let string = value as? String else { return true }
+        var arguments = value.filter { key, value in
+            guard ["query_meetings", "query_screenshots"].contains(tool), optionalStringKeys.contains(key),
+                  let string = value as? String else { return true }
             return !string.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         }
+        let screenshotIDs = tool == "get_screenshots" ? arguments["screenshot_ids"] as? [Any] : nil
+        if screenshotIDs != nil { arguments.removeValue(forKey: "screenshot_ids") }
         guard var result = try PublicIDWire.transform(arguments, shape: "mcpInput", direction: .decode) as? [String: Any] else {
             throw TypeID.Failure.invalidID
+        }
+        if let screenshotIDs {
+            // Only the malformed entry fails; the tool reports it by position.
+            result["screenshot_ids"] = screenshotIDs.map { id -> Any in
+                (try? PublicIDWire.id(id, kind: .attachment, direction: .decode)) ?? NSNull()
+            }
         }
         for key in ["cursor", "server_cursor"] {
             if let cursor = arguments[key] as? String {
@@ -36,6 +45,16 @@ enum PublicMCPIDs {
                 if let id = group["workspace_id"] { converted["workspace_id"] = try PublicIDWire.id(id, kind: .workspace, direction: .encode) }
                 if let nested = group["result"] as? [String: Any] {
                     converted["result"] = try Self.result(["structuredContent": nested], tool: tool, arguments: arguments)["structuredContent"]
+                }
+                return converted
+            }
+        }
+        if tool == "get_screenshots", let errors = original["errors"] as? [[String: Any]] {
+            let requested = arguments["screenshot_ids"] as? [Any] ?? []
+            body["errors"] = errors.map { error in
+                var converted = error
+                if let index = error["index"] as? Int, requested.indices.contains(index) {
+                    converted["screenshot_id"] = requested[index]
                 }
                 return converted
             }
@@ -93,6 +112,9 @@ enum PublicMCPIDs {
             }
             if let value = object["projectID"] {
                 object["projectID"] = try cursorID(value, kind: .project, direction: direction)
+            }
+            if let value = object["meetingID"] {
+                object["meetingID"] = try cursorID(value, kind: .meeting, direction: direction)
             }
             return try JSONSerialization.data(withJSONObject: object, options: [.sortedKeys]).base64EncodedString()
         }

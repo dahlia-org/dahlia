@@ -164,7 +164,7 @@ public final class DahliaMCPServer {
                 throw ParameterError("Invalid TypeID or cursor")
             }
             let result = try PublicMCPIDs.result(
-                executeTool(named: name, arguments: internalArguments), tool: name, arguments: internalArguments
+                executeTool(named: name, arguments: internalArguments), tool: name, arguments: arguments
             )
             outcome = .completed
             return response(id: id, result: result)
@@ -237,7 +237,7 @@ public final class DahliaMCPServer {
             .write
         }
         let category: MCPUsageTelemetryEvent.Category = switch name {
-        case "query_meetings", "query_screenshots", "get_meeting", "get_meeting_screenshots", "get_meeting_transcript",
+        case "query_meetings", "query_screenshots", "get_meeting", "get_screenshots", "get_meeting_transcript",
              "update_meeting_summary":
             .meeting
         case "query_projects", "get_project", "create_project", "update_project",
@@ -260,7 +260,8 @@ public final class DahliaMCPServer {
             return try toolResult(queryMeetings(arguments))
         case "query_screenshots":
             try validate(arguments, allowedKeys: [
-                "query", "project_id", "created_from", "created_before", "limit", "cursor", "server_cursor",
+                "query", "project_id", "meeting_id", "from_elapsed_seconds", "to_elapsed_seconds",
+                "created_from", "created_before", "limit", "cursor", "server_cursor",
             ])
             return try toolResult(queryScreenshots(arguments))
         case "get_meeting":
@@ -271,12 +272,13 @@ public final class DahliaMCPServer {
                 "meeting_id", "from_elapsed_seconds", "to_elapsed_seconds", "limit", "cursor", "after", "wait",
             ])
             return try toolResult(getMeetingTranscript(arguments))
-        case "get_meeting_screenshots":
-            try validate(arguments, allowedKeys: [
-                "meeting_id", "screenshot_ids", "from_elapsed_seconds", "to_elapsed_seconds", "limit", "cursor",
-            ])
-            let result = try getMeetingScreenshots(arguments)
-            return try screenshotsToolResult(page: result.page, images: result.images)
+        case "get_screenshots":
+            try validate(arguments, allowedKeys: ["screenshot_ids", "include_images"])
+            let result = try store.screenshots(
+                ids: screenshotIDs(arguments),
+                includeImages: boolean(arguments, key: "include_images") ?? true
+            )
+            return try screenshotsToolResult(list: result.list, images: result.images)
         case "query_projects":
             try validate(arguments, allowedKeys: ["query", "project_id", "type"])
             let rawType = try string(arguments, key: "type")
@@ -386,9 +388,18 @@ public final class DahliaMCPServer {
     }
 
     private func queryScreenshots(_ arguments: [String: Any]) throws -> ScreenshotTextQueryPage {
-        try store.queryScreenshots(ScreenshotTextQuery(
-            query: requiredString(arguments, key: "query"),
+        let meetingID = try optionalUUID(arguments, key: "meeting_id")
+        let from = try nonnegativeDouble(arguments, key: "from_elapsed_seconds")
+        let to = try nonnegativeDouble(arguments, key: "to_elapsed_seconds")
+        guard meetingID != nil || (from == nil && to == nil) else {
+            throw ParameterError("from_elapsed_seconds and to_elapsed_seconds require meeting_id")
+        }
+        return try store.queryScreenshots(ScreenshotTextQuery(
+            query: string(arguments, key: "query"),
             projectID: optionalUUID(arguments, key: "project_id"),
+            meetingID: meetingID,
+            fromElapsedSeconds: from,
+            toElapsedSeconds: to,
             createdFrom: date(arguments, key: "created_from"),
             createdBefore: date(arguments, key: "created_before"),
             limit: integer(arguments, key: "limit") ?? 20,
@@ -429,51 +440,6 @@ public final class DahliaMCPServer {
             // The stdio worker owns this bounded wait; no database transaction or UI executor is held.
             Thread.sleep(forTimeInterval: 0.25)
         }
-    }
-
-    private func getMeetingScreenshots(
-        _ arguments: [String: Any]
-    ) throws -> (page: MeetingScreenshotPage, images: [MeetingScreenshotImage]) {
-        let meetingID = try requiredUUID(arguments, key: "meeting_id")
-        let screenshotIDs = try uuidArray(arguments, key: "screenshot_ids")
-        let from = try nonnegativeDouble(arguments, key: "from_elapsed_seconds")
-        let to = try nonnegativeDouble(arguments, key: "to_elapsed_seconds")
-        let hasRange = from != nil || to != nil
-        guard (screenshotIDs != nil) != hasRange else {
-            throw ParameterError("Provide either screenshot_ids or an elapsed-time range")
-        }
-
-        if let screenshotIDs {
-            guard arguments["limit"] == nil, arguments["cursor"] == nil else {
-                throw ParameterError("screenshot_ids cannot be combined with range or pagination parameters")
-            }
-            let images = try store.screenshotImages(meetingID: meetingID, screenshotIDs: screenshotIDs)
-            let page = try MeetingScreenshotPage(
-                workspace: store.scopedWorkspace(),
-                meetingID: meetingID,
-                screenshots: images.map(\.metadata),
-                nextCursor: nil
-            )
-            return (page, images)
-        }
-
-        guard let from, let to else {
-            throw ParameterError("from_elapsed_seconds and to_elapsed_seconds are both required for a range")
-        }
-        try validateTimeRange(from: from, to: to)
-        let limit = try integer(arguments, key: "limit") ?? 1
-        guard (1 ... Self.maximumScreenshotCount).contains(limit) else {
-            throw ParameterError("limit must be between 1 and \(Self.maximumScreenshotCount)")
-        }
-        return try store.screenshotImages(
-            meetingID: meetingID,
-            query: ScreenshotQuery(
-                fromElapsedSeconds: from,
-                toElapsedSeconds: to,
-                limit: limit,
-                cursor: string(arguments, key: "cursor")
-            )
-        )
     }
 
     func requiredUUID(_ arguments: [String: Any], key: String) throws -> UUID {
@@ -547,19 +513,15 @@ public final class DahliaMCPServer {
         return trimmed
     }
 
-    private func uuidArray(_ arguments: [String: Any], key: String) throws -> [UUID]? {
-        guard let value = arguments[key] else { return nil }
+    /// A malformed entry becomes nil so that only that ID fails; the public layer sends NSNull for an invalid TypeID.
+    func screenshotIDs(_ arguments: [String: Any]) throws -> [UUID?] {
         let maximumCount = Self.maximumScreenshotCount
-        guard let values = value as? [Any], (1 ... maximumCount).contains(values.count) else {
-            throw ParameterError("\(key) must be an array containing 1 to \(maximumCount) screenshot TypeID strings")
+        guard let values = arguments["screenshot_ids"] as? [Any], (1 ... maximumCount).contains(values.count) else {
+            throw ParameterError("screenshot_ids must be an array containing 1 to \(maximumCount) screenshot TypeID strings")
         }
-        let ids = try values.map { value -> UUID in
-            guard let value = value as? String, let id = UUID(uuidString: value) else {
-                throw ParameterError("\(key) must contain only screenshot TypeID strings")
-            }
-            return id
-        }
-        guard Set(ids).count == ids.count else { throw ParameterError("\(key) must not contain duplicates") }
+        let ids = values.map { ($0 as? String).flatMap(UUID.init(uuidString:)) }
+        let valid = ids.compactMap(\.self)
+        guard Set(valid).count == valid.count else { throw ParameterError("screenshot_ids must not contain duplicates") }
         return ids
     }
 
@@ -638,11 +600,11 @@ public final class DahliaMCPServer {
         ]
     }
 
-    private func screenshotsToolResult(
-        page: MeetingScreenshotPage,
+    func screenshotsToolResult(
+        list: ScreenshotList,
         images: [MeetingScreenshotImage]
     ) throws -> [String: Any] {
-        let data = try encoded(page)
+        let data = try encoded(list)
         let object = try JSONSerialization.jsonObject(with: data)
         guard let text = String(data: data, encoding: .utf8) else {
             throw ParameterError("Unable to encode the screenshots")
@@ -772,18 +734,30 @@ extension DahliaMCPServer {
         )
     }
 
+    private static var filePathSchema: [String: Any] {
+        [
+            "type": "string",
+            "description": "Absolute path of the stored original image, present only while it is on disk. "
+                + "The file has no extension; use mime_type for its format. It is read-only: copy it before editing.",
+        ]
+    }
+
     private static var screenshotMetadataSchema: [String: Any] {
         objectSchema(
             properties: [
                 "id": idSchema(.attachment),
+                "meeting_id": idSchema(.meeting),
                 "captured_at": ["type": "string", "format": "date-time"],
                 "elapsed_seconds": ["type": "number", "minimum": 0],
                 "timestamp": ["type": "string", "pattern": "^[0-9]{2,}:[0-9]{2}:[0-9]{2}$"],
                 "mime_type": ["type": "string"],
                 "is_referenced_in_summary": ["type": "boolean"],
+                "detected_text": ["type": "string"],
+                "caption": ["type": "string"],
+                "file_path": filePathSchema,
             ],
             required: [
-                "id", "captured_at", "elapsed_seconds", "timestamp", "mime_type", "is_referenced_in_summary",
+                "id", "meeting_id", "captured_at", "elapsed_seconds", "timestamp", "mime_type", "is_referenced_in_summary",
             ]
         )
     }
@@ -992,11 +966,18 @@ extension DahliaMCPServer {
                             "meeting_id": idSchema(.meeting),
                             "meeting_name": ["type": "string"],
                             "captured_at": ["type": "string", "format": "date-time"],
+                            "elapsed_seconds": ["type": "number", "minimum": 0],
+                            "timestamp": ["type": "string", "pattern": "^[0-9]{2,}:[0-9]{2}:[0-9]{2}$"],
                             "mime_type": ["type": "string"],
-                            "detected_text": ["type": "string"],
+                            "detected_text": [
+                                "type": "string",
+                                "description": "Excerpt of the detected text around the first match, or its beginning without a query.",
+                            ],
                             "caption": ["type": "string"],
+                            "file_path": filePathSchema,
                         ],
-                        required: ["id", "meeting_id", "meeting_name", "captured_at", "mime_type", "detected_text", "caption"]
+                        // detected_text and caption are omitted before the screenshot is analyzed.
+                        required: ["id", "meeting_id", "meeting_name", "captured_at", "elapsed_seconds", "timestamp", "mime_type"]
                     ),
                 ],
                 "next_cursor": ["type": "string"],
@@ -1026,11 +1007,25 @@ extension DahliaMCPServer {
         objectSchema(
             properties: [
                 "workspace": workspaceSchema,
-                "meeting_id": idSchema(.meeting),
                 "screenshots": ["type": "array", "items": screenshotMetadataSchema],
-                "next_cursor": ["type": "string"],
+                "errors": [
+                    "type": "array",
+                    "description": "IDs that could not be returned. The other IDs are still returned.",
+                    "items": objectSchema(
+                        properties: [
+                            "index": ["type": "integer", "minimum": 0, "description": "Position in screenshot_ids."],
+                            "screenshot_id": ["type": "string", "description": "The ID as it was requested."],
+                            "error": [
+                                "type": "string",
+                                "enum": ["invalid_id", "not_found", "unavailable", "unreadable"],
+                                "description": "not_found includes IDs outside the resolved workspace.",
+                            ],
+                        ],
+                        required: ["index", "screenshot_id", "error"]
+                    ),
+                ],
             ],
-            required: ["workspace", "meeting_id", "screenshots"]
+            required: ["screenshots", "errors"]
         )
     }
 
@@ -1355,13 +1350,23 @@ extension DahliaMCPServer {
         [
             "name": "query_screenshots",
             "title": "Query screenshots",
-            "description": "Search detected text and generated descriptions for screenshots. Results remain individual screenshots and include "
-                + "their owning meeting IDs; use get_meeting_screenshots to inspect an image.",
+            "description": "Search or list screenshots without returning images. With query, results are ranked by detected text and "
+                + "generated descriptions; without it, screenshots are listed in capture order (elapsed time within meeting_id). "
+                + "Each result includes its meeting ID, elapsed time, a detected-text excerpt, the caption, and the original's "
+                + "file_path when it is on disk. Process images through file_path; pass the IDs to get_screenshots to view "
+                + "images or read the full detected text.",
             "inputSchema": [
                 "type": "object",
                 "properties": [
                     "query": ["type": "string", "minLength": 2, "maxLength": 1024],
                     "project_id": idSchema(.project),
+                    "meeting_id": idSchema(.meeting),
+                    "from_elapsed_seconds": [
+                        "type": "number", "minimum": 0, "description": "Inclusive elapsed time in meeting_id. Requires meeting_id.",
+                    ],
+                    "to_elapsed_seconds": [
+                        "type": "number", "exclusiveMinimum": 0, "description": "Exclusive elapsed time in meeting_id. Requires meeting_id.",
+                    ],
                     "created_from": ["type": "string", "format": "date-time"],
                     "created_before": ["type": "string", "format": "date-time"],
                     "limit": ["type": "integer", "minimum": 1, "maximum": 100, "default": 20],
@@ -1371,7 +1376,6 @@ extension DahliaMCPServer {
                         "description": "Continue server results using server.next_cursor. Local cursor is independent.",
                     ],
                 ],
-                "required": ["query"],
                 "additionalProperties": false,
             ],
             "outputSchema": screenshotTextQueryOutputSchema,
@@ -1417,49 +1421,26 @@ extension DahliaMCPServer {
             "annotations": annotations,
         ],
         [
-            "name": "get_meeting_screenshots",
-            "title": "Get meeting screenshots",
-            "description": "Fetch images and metadata either for 1 to \(maximumScreenshotCount) screenshot IDs "
-                + "or for a paginated elapsed-time range when visual evidence is needed.",
+            "name": "get_screenshots",
+            "title": "Get screenshots",
+            "description": "Fetch 1 to \(maximumScreenshotCount) screenshots by ID from anywhere in the workspace, such as IDs from "
+                + "query_screenshots. Returns images plus metadata with the full detected text, the AI-generated caption once "
+                + "analyzed, and the original's file_path when it is on disk. An ID that cannot be returned is listed in errors "
+                + "without failing the others. To only process the files, set include_images to false and use file_path.",
             "inputSchema": [
                 "type": "object",
                 "properties": [
-                    "meeting_id": idSchema(.meeting),
                     "screenshot_ids": [
                         "type": "array",
-                        "items": idSchema(.attachment),
+                        // No TypeID pattern: a malformed ID is reported in errors instead of rejecting the call.
+                        "items": ["type": "string", "description": "Screenshot TypeID"],
                         "minItems": 1,
                         "maxItems": maximumScreenshotCount,
                         "uniqueItems": true,
                     ],
-                    "from_elapsed_seconds": ["type": "number", "minimum": 0],
-                    "to_elapsed_seconds": ["type": "number", "exclusiveMinimum": 0],
-                    "limit": [
-                        "type": "integer",
-                        "minimum": 1,
-                        "maximum": maximumScreenshotCount,
-                        "default": 1,
-                    ],
-                    "cursor": ["type": "string"],
+                    "include_images": ["type": "boolean", "default": true],
                 ],
-                "required": ["meeting_id"],
-                "oneOf": [
-                    [
-                        "required": ["screenshot_ids"],
-                        "not": [
-                            "anyOf": [
-                                ["required": ["from_elapsed_seconds"]],
-                                ["required": ["to_elapsed_seconds"]],
-                                ["required": ["limit"]],
-                                ["required": ["cursor"]],
-                            ],
-                        ],
-                    ],
-                    [
-                        "required": ["from_elapsed_seconds", "to_elapsed_seconds"],
-                        "not": ["required": ["screenshot_ids"]],
-                    ],
-                ],
+                "required": ["screenshot_ids"],
                 "additionalProperties": false,
             ],
             "outputSchema": screenshotsOutputSchema,

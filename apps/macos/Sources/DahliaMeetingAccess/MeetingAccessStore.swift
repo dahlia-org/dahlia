@@ -198,22 +198,30 @@ public final class MeetingAccessStore: Sendable {
 
     public func queryScreenshots(_ query: ScreenshotTextQuery) throws -> ScreenshotTextQueryPage {
         var result = try cachedQueryScreenshots(query)
+        guard let text = query.query else { return result }
         result.searchScope = "device_retained_text"
         result.server = remoteSearch(
-            query: query.query,
+            query: text,
             kind: .screenshot,
             cursor: query.serverCursor,
-            scope: screenshotCursorScope(text: query.query, query: query),
+            scope: screenshotCursorScope(text: text, query: query),
             limit: query.limit
         ) { hits, db in
             try hits.filter { hit in
                 guard let row = try Row.fetchOne(db, sql: """
-                SELECT m.projectId, s.capturedAt FROM meeting_images s JOIN meetings m ON m.id = s.meetingId
-                WHERE s.id = ? AND m.id = ? AND m.workspace_id = ?
+                SELECT meetings.projectId, s.capturedAt,
+                       \(Self.elapsedSecondsSQL(timestampColumn: "s.capturedAt")) AS elapsedSeconds
+                FROM meeting_images s JOIN meetings ON meetings.id = s.meetingId
+                LEFT JOIN recording_sessions AS sessions ON sessions.id = s.sessionId AND sessions.meetingId = s.meetingId
+                WHERE s.id = ? AND meetings.id = ? AND meetings.workspace_id = ?
                 """, arguments: [hit.id, hit.meetingId, self.workspaceID]) else { throw TextContentError.changed }
                 let projectId: UUID? = row["projectId"]
                 let date: Date = row["capturedAt"]
+                let elapsed: Double = row["elapsedSeconds"]
                 return (query.projectID == nil || query.projectID == projectId)
+                    && (query.meetingID == nil || query.meetingID == hit.meetingId)
+                    && (query.fromElapsedSeconds.map { elapsed >= $0 } ?? true)
+                    && (query.toElapsedSeconds.map { elapsed < $0 } ?? true)
                     && (query.createdFrom == nil || date >= query.createdFrom!)
                     && (query.createdBefore == nil || date < query.createdBefore!)
             }
@@ -221,37 +229,74 @@ public final class MeetingAccessStore: Sendable {
         return result
     }
 
+    // swiftlint:disable:next function_body_length
     private func cachedQueryScreenshots(_ query: ScreenshotTextQuery) throws -> ScreenshotTextQueryPage {
         guard (1 ... 100).contains(query.limit) else {
             throw MeetingAccessError.invalidLimit(maximum: 100)
         }
-        let text = query.query.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard text.count >= 2 else {
-            throw MeetingAccessError.searchQueryTooShort(minimum: 2)
+        let text = query.query?.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let text {
+            guard text.count >= 2 else {
+                throw MeetingAccessError.searchQueryTooShort(minimum: 2)
+            }
+            guard text.count <= Self.maximumSearchQueryLength else {
+                throw MeetingAccessError.invalidSearchQuery(maximum: Self.maximumSearchQueryLength)
+            }
         }
-        guard text.count <= Self.maximumSearchQueryLength else {
-            throw MeetingAccessError.invalidSearchQuery(maximum: Self.maximumSearchQueryLength)
-        }
+        try validateTimeRange(from: query.fromElapsedSeconds, to: query.toElapsedSeconds)
         return try database.read { db in
             let workspace = try fetchWorkspace(in: db)
-            return try withSearchDeadline(enabled: true, in: db) {
-                let revision = try fullTextIndexRevision(in: db)
+            if let meetingID = query.meetingID, try !meetingExists(id: meetingID, in: db) {
+                throw MeetingAccessError.meetingNotFound
+            }
+            return try withSearchDeadline(enabled: text != nil, in: db) {
+                // A listing continues by capture position independently of full-text index rebuilds.
+                let revision = try text == nil ? 0 : fullTextIndexRevision(in: db)
                 let scope = screenshotCursorScope(text: text, query: query)
                 let cursor = try query.cursor.map {
                     try ScreenshotTextCursor.decode($0, workspaceID: workspaceID, revision: revision, scope: scope)
                 }
-                guard let fullTextQuery = try fullTextQuery(text, in: db) else {
-                    return ScreenshotTextQueryPage(workspace: workspace, screenshots: [], nextCursor: nil)
+                let elapsedSQL = Self.elapsedSecondsSQL(timestampColumn: "meeting_images.capturedAt")
+                var source = """
+                FROM meeting_images
+                JOIN meetings ON meetings.id = meeting_images.meetingId
+                """
+                var conditions = ["meetings.workspace_id = ?"]
+                var arguments: StatementArguments = [workspaceID]
+                var order = query.meetingID == nil
+                    ? "meeting_images.capturedAt, meeting_images.id"
+                    : "elapsedSeconds, meeting_images.id"
+                var tokens: [String] = []
+                if let text {
+                    guard let fullTextQuery = try fullTextQuery(text, in: db) else {
+                        return ScreenshotTextQueryPage(workspace: workspace, screenshots: [], nextCursor: nil)
+                    }
+                    tokens = try SearchFTS5Tokenizer.queryTokens(for: text, in: db)
+                    source = """
+                    FROM search_documents
+                    JOIN search_documents_fts ON search_documents_fts.rowid = search_documents.id
+                    JOIN meeting_images ON meeting_images.id = search_documents.sourceId
+                    JOIN meetings ON meetings.id = meeting_images.meetingId
+                    """
+                    conditions += ["search_documents.kind = 'screenshot'", "search_documents.workspace_id = ?", "search_documents_fts MATCH ?"]
+                    arguments += [workspaceID, "{ocr caption} : (\(fullTextQuery))"]
+                    order = "\(SearchFTS5Tokenizer.screenshotRankingSQL), meeting_images.capturedAt DESC, meeting_images.id"
                 }
-                var conditions = [
-                    "search_documents.kind = 'screenshot'",
-                    "search_documents.workspace_id = ?",
-                    "search_documents_fts MATCH ?",
-                ]
-                var arguments: StatementArguments = [workspaceID, "{ocr caption} : (\(fullTextQuery))"]
                 if let projectID = query.projectID {
                     conditions.append("meetings.projectId = ?")
                     arguments += [projectID]
+                }
+                if let meetingID = query.meetingID {
+                    conditions.append("meeting_images.meetingId = ?")
+                    arguments += [meetingID]
+                }
+                if let from = query.fromElapsedSeconds {
+                    conditions.append("\(elapsedSQL) >= ?")
+                    arguments += [from]
+                }
+                if let to = query.toElapsedSeconds {
+                    conditions.append("\(elapsedSQL) < ?")
+                    arguments += [to]
                 }
                 if let createdFrom = query.createdFrom {
                     conditions.append("meeting_images.capturedAt >= ?")
@@ -261,19 +306,32 @@ public final class MeetingAccessStore: Sendable {
                     conditions.append("meeting_images.capturedAt < ?")
                     arguments += [createdBefore]
                 }
-                arguments += [query.limit + 1, cursor?.offset ?? 0]
+                if text == nil, let cursor {
+                    guard let id = cursor.screenshotID, let capturedAt = cursor.capturedAt,
+                          let elapsed = cursor.elapsedSeconds else { throw MeetingAccessError.invalidCursor }
+                    if query.meetingID != nil {
+                        conditions.append("(\(elapsedSQL), meeting_images.id) > (?, ?)")
+                        arguments += [elapsed, id]
+                    } else {
+                        conditions.append("(meeting_images.capturedAt, meeting_images.id) > (?, ?)")
+                        arguments += [capturedAt, id]
+                    }
+                }
+                arguments += [query.limit + 1, text == nil ? 0 : cursor?.offset ?? 0]
+                let referenceSelection = try Self.screenshotReferenceSelection(in: db)
                 var rows = try Row.fetchAll(
                     db,
                     sql: """
                     SELECT meeting_images.id, meeting_images.meetingId, meetings.name AS meetingName,
                            meeting_images.capturedAt, meeting_images.mimeType,
-                           meeting_images.ocrText AS detectedText, meeting_images.caption
-                    FROM search_documents
-                    JOIN search_documents_fts ON search_documents_fts.rowid = search_documents.id
-                    JOIN meeting_images ON meeting_images.id = search_documents.sourceId
-                    JOIN meetings ON meetings.id = meeting_images.meetingId
+                           meeting_images.ocrText AS detectedText, meeting_images.caption,
+                           meeting_images.fileId, \(referenceSelection), \(elapsedSQL) AS elapsedSeconds
+                    \(source)
+                    LEFT JOIN recording_sessions AS sessions
+                      ON sessions.id = meeting_images.sessionId
+                     AND sessions.meetingId = meeting_images.meetingId
                     WHERE \(conditions.joined(separator: " AND "))
-                    ORDER BY \(SearchFTS5Tokenizer.screenshotRankingSQL), meeting_images.capturedAt DESC, meeting_images.id
+                    ORDER BY \(order)
                     LIMIT ? OFFSET ?
                     """,
                     arguments: arguments
@@ -281,22 +339,31 @@ public final class MeetingAccessStore: Sendable {
                 let hasMore = rows.count > query.limit
                 if hasMore { rows.removeLast() }
                 let screenshots = rows.map { row in
-                    ScreenshotTextMetadata(
+                    let elapsed: Double = row["elapsedSeconds"]
+                    return ScreenshotTextMetadata(
                         id: row["id"],
                         meetingID: row["meetingId"],
                         meetingName: row["meetingName"],
                         capturedAt: row["capturedAt"],
+                        elapsedSeconds: elapsed,
+                        timestamp: Self.timestamp(elapsedSeconds: elapsed),
                         mimeType: row["mimeType"],
-                        detectedText: String((row["detectedText"] as String? ?? "").prefix(500)),
-                        caption: row["caption"]
+                        // Without query tokens this is the leading excerpt of the same length.
+                        detectedText: (row["detectedText"] as String?).map { SearchFTS5Tokenizer.snippet($0, matching: tokens) },
+                        caption: row["caption"],
+                        filePath: originalFilePath(reference: row["remoteReference"], fileId: row["fileId"])
                     )
                 }
+                let last = text == nil ? screenshots.last : nil
                 let nextCursor = hasMore
                     ? ScreenshotTextCursor(
                         workspaceID: workspaceID,
                         revision: revision,
                         scope: scope,
-                        offset: (cursor?.offset ?? 0) + screenshots.count
+                        offset: text == nil ? 0 : (cursor?.offset ?? 0) + screenshots.count,
+                        capturedAt: last?.capturedAt,
+                        elapsedSeconds: last?.elapsedSeconds,
+                        screenshotID: last?.id
                     ).encoded()
                     : nil
                 return ScreenshotTextQueryPage(workspace: workspace, screenshots: screenshots, nextCursor: nextCursor)
@@ -419,10 +486,13 @@ public final class MeetingAccessStore: Sendable {
         return data.base64EncodedString()
     }
 
-    private func screenshotCursorScope(text: String, query: ScreenshotTextQuery) -> String {
+    private func screenshotCursorScope(text: String?, query: ScreenshotTextQuery) -> String {
         let components = ScreenshotTextCursorFilterScope(
             query: text,
             projectID: query.projectID,
+            meetingID: query.meetingID,
+            fromElapsedSeconds: query.fromElapsedSeconds,
+            toElapsedSeconds: query.toElapsedSeconds,
             createdFrom: query.createdFrom,
             createdBefore: query.createdBefore
         )
@@ -767,138 +837,63 @@ private struct MeetingCursorFilterScope: Codable {
 }
 
 extension MeetingAccessStore {
+    /// IDs may belong to different meetings of this workspace. An ID that fails is reported in `errors` without
+    /// failing the others; nil marks an ID the caller sent in an invalid form. Without `includeImages`, the image is
+    /// still resolved from this Mac, but an unavailable image only omits its file path.
     public func screenshots(
-        meetingID: UUID,
-        query: ScreenshotQuery = ScreenshotQuery()
-    ) throws -> MeetingScreenshotPage {
-        try screenshotPageData(meetingID: meetingID, query: query, includeImageData: false).page
-    }
-
-    public func screenshotImages(
-        meetingID: UUID,
-        query: ScreenshotQuery
-    ) throws -> (page: MeetingScreenshotPage, images: [MeetingScreenshotImage]) {
-        let result = try screenshotPageData(meetingID: meetingID, query: query, includeImageData: true)
-        let images = try result.payloads.map { try encodedScreenshot($0, meetingID: meetingID) }
-        return (
-            MeetingScreenshotPage(
-                workspace: result.page.workspace,
-                meetingID: result.page.meetingID,
-                screenshots: images.map(\.metadata),
-                nextCursor: result.page.nextCursor
-            ),
-            images
-        )
-    }
-
-    private func screenshotPageData(
-        meetingID: UUID,
-        query: ScreenshotQuery,
-        includeImageData: Bool
-    ) throws -> ScreenshotPageData {
-        guard (1 ... 100).contains(query.limit) else {
-            throw MeetingAccessError.invalidLimit(maximum: 100)
-        }
-        try validateTimeRange(from: query.fromElapsedSeconds, to: query.toElapsedSeconds)
-        let decodedCursor = try query.cursor.map {
-            try ScreenshotCursor.decode(
-                $0,
-                workspaceID: workspaceID,
-                meetingID: meetingID,
-                fromElapsedSeconds: query.fromElapsedSeconds,
-                toElapsedSeconds: query.toElapsedSeconds
-            )
-        }
-
-        let referencedIDs = try referencedScreenshotIDs(meetingID: meetingID)
-        return try database.read { db in
+        ids screenshotIDs: [UUID?],
+        includeImages: Bool = true
+    ) throws -> (list: ScreenshotList, images: [MeetingScreenshotImage]) {
+        let requested = Array(Set(screenshotIDs.compactMap(\.self)))
+        let (workspace, rows) = try database.read { db in
             let workspace = try fetchWorkspace(in: db)
-            guard try meetingExists(id: meetingID, in: db) else {
-                throw MeetingAccessError.meetingNotFound
+            return try (workspace, requested.isEmpty ? [] : screenshotImageRows(screenshotIDs: requested, in: db))
+        }
+        let rowsByID = Dictionary(uniqueKeysWithValues: rows.map { ($0["id"] as UUID, $0) })
+        var referencedIDsByMeeting: [UUID: Set<UUID>] = [:]
+        for meetingID in Set(rows.map { $0["meetingId"] as UUID }) {
+            referencedIDsByMeeting[meetingID] = try? referencedScreenshotIDs(meetingID: meetingID)
+        }
+        var screenshots: [MeetingScreenshotMetadata] = []
+        var images: [MeetingScreenshotImage] = []
+        var errors: [ScreenshotIDError] = []
+        for (index, id) in screenshotIDs.enumerated() {
+            guard let id else {
+                errors.append(ScreenshotIDError(index: index, screenshotID: nil, error: .invalidID))
+                continue
             }
-            let rows = try screenshotRows(
-                meetingID: meetingID,
-                query: query,
-                cursor: decodedCursor,
-                includeImageData: includeImageData,
-                in: db
+            guard let row = rowsByID[id] else {
+                errors.append(ScreenshotIDError(index: index, screenshotID: id, error: .notFound))
+                continue
+            }
+            let meetingID: UUID = row["meetingId"]
+            guard let referencedIDs = referencedIDsByMeeting[meetingID] else {
+                errors.append(ScreenshotIDError(index: index, screenshotID: id, error: .unavailable))
+                continue
+            }
+            let metadata = screenshotMetadata(from: row, referencedIDs: referencedIDs)
+            let payload = ScreenshotPayload(
+                fileId: row["fileId"], metadata: metadata, imageData: row["imageData"], remoteReference: row["remoteReference"]
             )
-            let hasMore = rows.count > query.limit
-            let pageRows = hasMore ? Array(rows.prefix(query.limit)) : rows
-            let screenshots = pageRows.map { Self.screenshotMetadata(from: $0, referencedIDs: referencedIDs) }
-            let nextCursor = hasMore ? screenshots.last.map {
-                ScreenshotCursor(
-                    workspaceID: workspaceID,
-                    meetingID: meetingID,
-                    elapsedSeconds: $0.elapsedSeconds,
-                    screenshotID: $0.id,
-                    fromElapsedSeconds: query.fromElapsedSeconds,
-                    toElapsedSeconds: query.toElapsedSeconds
-                ).encoded()
-            } : nil
-            let payloads = includeImageData ? zip(pageRows, screenshots).map {
-                ScreenshotPayload(fileId: $0.0["fileId"], metadata: $0.1, imageData: $0.0["imageData"], remoteReference: $0.0["remoteReference"])
-            } : []
-            return ScreenshotPageData(
-                page: MeetingScreenshotPage(
-                    workspace: workspace,
-                    meetingID: meetingID,
-                    screenshots: screenshots,
-                    nextCursor: nextCursor
-                ),
-                payloads: payloads
-            )
-        }
-    }
-
-    public func screenshot(
-        meetingID: UUID,
-        screenshotID: UUID
-    ) throws -> MeetingScreenshotImage {
-        guard let image = try screenshotImages(meetingID: meetingID, screenshotIDs: [screenshotID]).first else {
-            throw MeetingAccessError.screenshotNotFound
-        }
-        return image
-    }
-
-    public func screenshotImages(
-        meetingID: UUID,
-        screenshotIDs: [UUID]
-    ) throws -> [MeetingScreenshotImage] {
-        guard !screenshotIDs.isEmpty, screenshotIDs.count <= 10, Set(screenshotIDs).count == screenshotIDs.count else {
-            throw MeetingAccessError.screenshotNotFound
-        }
-        let referencedIDs = try referencedScreenshotIDs(meetingID: meetingID)
-        let payloads: [ScreenshotPayload] = try database.read { db in
-            _ = try fetchWorkspace(in: db)
-            guard try meetingExists(id: meetingID, in: db) else {
-                throw MeetingAccessError.meetingNotFound
-            }
-            let rows = try screenshotImageRows(meetingID: meetingID, screenshotIDs: screenshotIDs, in: db)
-            guard rows.count == screenshotIDs.count else {
-                throw MeetingAccessError.screenshotNotFound
-            }
-            let payloadsByID = Dictionary(uniqueKeysWithValues: rows.map { row in
-                let metadata = Self.screenshotMetadata(from: row, referencedIDs: referencedIDs)
-                return (
-                    metadata.id,
-                    ScreenshotPayload(fileId: row["fileId"], metadata: metadata, imageData: row["imageData"], remoteReference: row["remoteReference"])
-                )
-            })
-            return try screenshotIDs.map { id in
-                guard let payload = payloadsByID[id] else { throw MeetingAccessError.screenshotNotFound }
-                return payload
+            do {
+                let image = try encodedScreenshot(payload)
+                screenshots.append(image.metadata)
+                if includeImages { images.append(image) }
+            } catch let error as MeetingAccessError where error == .screenshotUnavailable || error == .screenshotEncodingFailed {
+                guard includeImages else {
+                    screenshots.append(metadata)
+                    continue
+                }
+                errors.append(ScreenshotIDError(
+                    index: index, screenshotID: id, error: error == .screenshotUnavailable ? .unavailable : .unreadable
+                ))
             }
         }
-        return try payloads.map { payload in
-            try encodedScreenshot(payload, meetingID: meetingID)
-        }
+        return (ScreenshotList(workspace: workspace, screenshots: screenshots, errors: errors), images)
     }
 
-    private func encodedScreenshot(
-        _ payload: ScreenshotPayload,
-        meetingID: UUID
-    ) throws -> MeetingScreenshotImage {
+    private func encodedScreenshot(_ payload: ScreenshotPayload) throws -> MeetingScreenshotImage {
+        let meetingID = payload.metadata.meetingID
         var imageData = payload.imageData
         if imageData == nil, let json = payload.remoteReference,
            let source = try? JSONDecoder().decode(ScreenshotRemoteReference.self, from: Data(json.utf8)),
@@ -915,11 +910,16 @@ extension MeetingAccessStore {
         }
         let metadata = MeetingScreenshotMetadata(
             id: payload.metadata.id,
+            meetingID: meetingID,
             capturedAt: payload.metadata.capturedAt,
             elapsedSeconds: payload.metadata.elapsedSeconds,
             timestamp: payload.metadata.timestamp,
             mimeType: mimeType,
-            isReferencedInSummary: payload.metadata.isReferencedInSummary
+            isReferencedInSummary: payload.metadata.isReferencedInSummary,
+            detectedText: payload.metadata.detectedText,
+            caption: payload.metadata.caption,
+            // The app may have migrated a legacy image into the file store while resolving it.
+            filePath: payload.metadata.filePath ?? originalFilePath(reference: payload.remoteReference, fileId: payload.fileId)
         )
         return MeetingScreenshotImage(metadata: metadata, imageData: imageData, mimeType: mimeType)
     }
@@ -932,102 +932,70 @@ extension MeetingAccessStore {
         ) == true
     }
 
-    private func screenshotRows(
-        meetingID: UUID,
-        query: ScreenshotQuery,
-        cursor: ScreenshotCursor?,
-        includeImageData: Bool,
-        in db: Database
-    ) throws -> [Row] {
-        var predicates: [String] = []
-        var arguments: StatementArguments = [meetingID, workspaceID]
-        if let from = query.fromElapsedSeconds {
-            predicates.append("elapsedSeconds >= ?")
-            arguments += [from]
-        }
-        if let to = query.toElapsedSeconds {
-            predicates.append("elapsedSeconds < ?")
-            arguments += [to]
-        }
-        if let cursor {
-            predicates.append("(elapsedSeconds > ? OR (elapsedSeconds = ? AND id > ?))")
-            arguments += [cursor.elapsedSeconds, cursor.elapsedSeconds, cursor.screenshotID]
-        }
-        let filtering = predicates.isEmpty ? "" : "WHERE \(predicates.joined(separator: " AND "))"
-        let columns = try db.columns(in: "meeting_images").map(\.name)
-        let remoteSelection = columns.contains("localReference")
-            ? "coalesce(meeting_images.localReference, meeting_images.remoteReference) AS remoteReference"
-            : columns.contains("remoteReference") ? "meeting_images.remoteReference" : "NULL AS remoteReference"
-        let imageDataSelection = includeImageData ? "meeting_images.fileId, meeting_images.imageData, \(remoteSelection)," : ""
-        arguments += [query.limit + 1]
-        return try Row.fetchAll(
-            db,
-            sql: """
-            WITH candidates AS (
-                SELECT
-                    meeting_images.id,
-                    meeting_images.capturedAt,
-                    meeting_images.mimeType,
-                    \(imageDataSelection)
-                    \(Self.elapsedSecondsSQL(timestampColumn: "meeting_images.capturedAt")) AS elapsedSeconds
-                FROM meeting_images
-                JOIN meetings ON meetings.id = meeting_images.meetingId
-                LEFT JOIN recording_sessions AS sessions
-                  ON sessions.id = meeting_images.sessionId
-                 AND sessions.meetingId = meeting_images.meetingId
-                WHERE meeting_images.meetingId = ? AND meetings.workspace_id = ?
-            )
-            SELECT * FROM candidates
-            \(filtering)
-            ORDER BY elapsedSeconds ASC, id ASC
-            LIMIT ?
-            """,
-            arguments: arguments
-        )
-    }
-
-    private func screenshotImageRows(meetingID: UUID, screenshotIDs: [UUID], in db: Database) throws -> [Row] {
-        let columns = try db.columns(in: "meeting_images").map(\.name)
-        let remoteSelection = columns.contains("localReference")
-            ? "coalesce(meeting_images.localReference, meeting_images.remoteReference) AS remoteReference"
-            : columns.contains("remoteReference") ? "meeting_images.remoteReference" : "NULL AS remoteReference"
+    private func screenshotImageRows(screenshotIDs: [UUID], in db: Database) throws -> [Row] {
+        let referenceSelection = try Self.screenshotReferenceSelection(in: db)
         let placeholders = Array(repeating: "?", count: screenshotIDs.count).joined(separator: ", ")
-        var arguments: StatementArguments = [meetingID, workspaceID]
+        var arguments: StatementArguments = [workspaceID]
         arguments += StatementArguments(screenshotIDs)
         return try Row.fetchAll(
             db,
             sql: """
             SELECT
                 meeting_images.id,
+                meeting_images.meetingId,
                 meeting_images.capturedAt,
                 meeting_images.mimeType,
+                meeting_images.ocrText,
+                meeting_images.caption,
                 meeting_images.fileId,
                 meeting_images.imageData,
-                \(remoteSelection),
+                \(referenceSelection),
                 \(Self.elapsedSecondsSQL(timestampColumn: "meeting_images.capturedAt")) AS elapsedSeconds
             FROM meeting_images
             JOIN meetings ON meetings.id = meeting_images.meetingId
             LEFT JOIN recording_sessions AS sessions
               ON sessions.id = meeting_images.sessionId
              AND sessions.meetingId = meeting_images.meetingId
-            WHERE meeting_images.meetingId = ? AND meetings.workspace_id = ?
-              AND meeting_images.id IN (\(placeholders))
+            WHERE meetings.workspace_id = ? AND meeting_images.id IN (\(placeholders))
             """,
             arguments: arguments
         )
     }
 
-    private static func screenshotMetadata(from row: Row, referencedIDs: Set<UUID>) -> MeetingScreenshotMetadata {
-        let capturedAt: Date = row["capturedAt"]
+    private static func screenshotReferenceSelection(in db: Database) throws -> String {
+        let columns = try db.columns(in: "meeting_images").map(\.name)
+        return columns.contains("localReference")
+            ? "coalesce(meeting_images.localReference, meeting_images.remoteReference) AS remoteReference"
+            : columns.contains("remoteReference") ? "meeting_images.remoteReference" : "NULL AS remoteReference"
+    }
+
+    private func originalFilePath(reference: String?, fileId: UUID?) -> String? {
+        guard let reference,
+              let source = try? JSONDecoder().decode(ScreenshotRemoteReference.self, from: Data(reference.utf8)),
+              source.fileId == fileId else { return nil }
+        if let screenshotCache { return screenshotCache.existingOriginalFileURL(for: source)?.path }
+        // The helper can start before the first capture creates the file index.
+        guard database.path != ":memory:" else { return nil }
+        let directory = URL(filePath: database.path).deletingLastPathComponent().appending(path: "FileStore")
+        let url = directory.appending(path: source.cacheKey(variant: .original))
+        guard FileManager.default.fileExists(atPath: url.path) else { return nil }
+        return url.path
+    }
+
+    private func screenshotMetadata(from row: Row, referencedIDs: Set<UUID>) -> MeetingScreenshotMetadata {
         let elapsed: Double = row["elapsedSeconds"]
         let id: UUID = row["id"]
         return MeetingScreenshotMetadata(
             id: id,
-            capturedAt: capturedAt,
+            meetingID: row["meetingId"],
+            capturedAt: row["capturedAt"],
             elapsedSeconds: elapsed,
-            timestamp: timestamp(elapsedSeconds: elapsed),
+            timestamp: Self.timestamp(elapsedSeconds: elapsed),
             mimeType: row["mimeType"],
-            isReferencedInSummary: referencedIDs.contains(id)
+            isReferencedInSummary: referencedIDs.contains(id),
+            detectedText: row["ocrText"],
+            caption: row["caption"],
+            filePath: originalFilePath(reference: row["remoteReference"], fileId: row["fileId"])
         )
     }
 
@@ -1187,11 +1155,6 @@ private struct ScreenshotPayload {
     let remoteReference: String?
 }
 
-private struct ScreenshotPageData {
-    let page: MeetingScreenshotPage
-    let payloads: [ScreenshotPayload]
-}
-
 private struct QueryComponents {
     var predicates: [String]
     var arguments: StatementArguments
@@ -1284,39 +1247,14 @@ private struct TranscriptCursor: Codable {
     }
 }
 
-private struct ScreenshotCursor: Codable {
-    let workspaceID: UUID
-    let meetingID: UUID
-    let elapsedSeconds: Double
-    let screenshotID: UUID
-    let fromElapsedSeconds: Double?
-    let toElapsedSeconds: Double?
-
-    func encoded() -> String {
-        AccessCursorCodec.encode(self)
-    }
-
-    static func decode(
-        _ value: String,
-        workspaceID: UUID,
-        meetingID: UUID,
-        fromElapsedSeconds: Double?,
-        toElapsedSeconds: Double?
-    ) throws -> Self {
-        try AccessCursorCodec.decode(Self.self, from: value) { cursor in
-            cursor.workspaceID == workspaceID
-                && cursor.meetingID == meetingID
-                && cursor.fromElapsedSeconds == fromElapsedSeconds
-                && cursor.toElapsedSeconds == toElapsedSeconds
-        }
-    }
-}
-
 private struct ScreenshotTextCursor: Codable {
     let workspaceID: UUID
     let revision: Int
     let scope: String
     let offset: Int
+    let capturedAt: Date?
+    let elapsedSeconds: Double?
+    let screenshotID: UUID?
 
     func encoded() -> String { AccessCursorCodec.encode(self) }
 
@@ -1328,8 +1266,11 @@ private struct ScreenshotTextCursor: Codable {
 }
 
 private struct ScreenshotTextCursorFilterScope: Codable {
-    let query: String
+    let query: String?
     let projectID: UUID?
+    let meetingID: UUID?
+    let fromElapsedSeconds: Double?
+    let toElapsedSeconds: Double?
     let createdFrom: Date?
     let createdBefore: Date?
 }
