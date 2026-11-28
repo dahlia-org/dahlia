@@ -6,7 +6,6 @@
     import Testing
     @testable import Dahlia
 
-    @MainActor
     struct ReleaseSchemaMigrationTests {
         /// Migration identifiers shipped through v1.8.0, in registration order.
         /// Release preparation appends newly shipped identifiers. Never edit existing entries to make this pass:
@@ -570,7 +569,7 @@
                 VALUES ('agent', 'Agent', 'agent', 'mascot:E1', '#000000', ?, ?, ?)
                 """, arguments: [id, Date.now, Date.now])
                 let agent = try #require(try AgentRecord.fetchOne(db, key: "agent"))
-                #expect(!agent.smartRouting && agent.threadID == id)
+                #expect(!agent.smartRouting && agent.workerApprovalMethod == .autoReview && agent.threadID == id)
                 #expect(try Row.fetchAll(db, sql: "PRAGMA foreign_key_check").isEmpty)
                 #expect(try AppDatabaseManager.hasExpectedCurrentSchema(db))
             }

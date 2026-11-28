@@ -663,7 +663,14 @@ extension PiChatService {
         run.suppressAutomaticNotification = !notifiesCaller
         // Super Agent's delegated tasks are its own work, recorded as its, so they stay out of learning too.
         run.profile = launchProfile(targetID).rawValue
-        let queued = try history().enqueueRun(run, updating: updating)
+        let runID = run.id
+        let queued = try history().enqueueRun(run) { db in
+            try updating(db)
+            // The handoff creates a new Task before its current worker policy is resolved in the same transaction.
+            if let worker = try Self.workerApprovalMethod(requester: caller.id, thread: targetID, in: db) {
+                try db.execute(sql: "UPDATE chat_runs SET approvalMethod=? WHERE id=?", arguments: [worker.rawValue, runID])
+            }
+        }
         publishStates()
         return queued
     }

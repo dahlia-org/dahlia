@@ -70,11 +70,12 @@ struct MainSidebarBotsSection: View {
                                 .lineLimit(1)
                         }
                     }
-                    Text(summary.openItems > 0
-                        ? L10n.agentBotNeedsAttention(summary.openItems)
+                    let openItems = agents.openItems[agent.id, default: 0]
+                    Text(openItems > 0
+                        ? L10n.agentBotNeedsAttention(openItems)
                         : summary.preview?.nilIfBlank ?? L10n.agentBotIdle)
                         .font(.dahliaSecondary)
-                        .foregroundStyle(summary.openItems > 0 ? Color.accentColor : DahliaDesign.sidebarSecondaryTextColor)
+                        .foregroundStyle(openItems > 0 ? Color.accentColor : DahliaDesign.sidebarSecondaryTextColor)
                         .lineLimit(1)
                 }
             }

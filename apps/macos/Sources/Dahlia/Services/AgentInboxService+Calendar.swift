@@ -3,6 +3,16 @@ import Foundation
 import GRDB
 
 extension AgentInboxService {
+    /// Google gives the event's web page. Apple Calendar has none, so its event opens in Calendar through the
+    /// undocumented `ical://ekevent/` scheme (approved by the user, 2026-11-28).
+    static func pageURL(_ event: CalendarEvent) -> String? {
+        guard event.platform == CalendarEventPlatform.macOSCalendar else { return event.url?.absoluteString }
+        // platformId is "<eventIdentifier>::<occurrence seconds>".
+        // Calendar expects the identifier unescaped, as in "ical://ekevent/<calendar UUID>:<event UUID>".
+        guard let range = event.platformId.range(of: "::", options: .backwards) else { return nil }
+        return URL(string: "ical://ekevent/\(event.platformId[..<range.lowerBound])?method=show&options=more")?.absoluteString
+    }
+
     /// Deselected providers cancel pending signals; selected providers retain theirs across temporary fetch failures.
     func reconcileCalendar(_ snapshot: AgentCalendarSnapshot, now: Date = .now, calendar: Calendar = .current) throws {
         let successful = snapshot.successfulProviders.intersection(snapshot.selectedProviders ?? snapshot.successfulProviders)
@@ -27,6 +37,7 @@ extension AgentInboxService {
             // Eligibility applies to retained signals even when generation is paused.
             let sources = try AgentSourceRecord.fetchAll(db, sql: "SELECT * FROM agent_event_sources WHERE kind='calendar'")
             for var source in sources {
+                try Self.refreshAgendaNotes(source, in: db)
                 let options = source.sourceOptions
                 var agendas: [AgentEventRecord] = []
                 var meetings: [AgentEventRecord] = []
@@ -62,14 +73,16 @@ extension AgentInboxService {
                     meetingKeys.insert(key)
                     // Turning off notifications preserves arrived signals for meetings that are still valid.
                     guard source.enabled, let lead = source.leadHours else { continue }
-                    let ref = JSONValue.object([
+                    let fields: [String: JSONValue] = [
                         "provider": .string(AgentCalendarSnapshot.provider(for: event)), "calendar_id": .string(event.calendarID),
                         "event_id": .string(event.platformId), "start": .string(event.startDate.ISO8601Format()),
-                    ])
+                    ]
+                    let ref = JSONValue.object(fields)
                     try meetings.append(AgentEventRecord(
                         id: UUID.v7().uuidString, agentID: source.agentID, sourceID: source.id, key: key, topic: nil,
-                        note: L10n.agentCalendarMeetingNote, ref: String(decoding: JSONEncoder().encode(ref), as: UTF8.self),
-                        occurredAt: event.startDate.addingTimeInterval(-lead * 3600), taskID: nil, handledAt: nil, createdAt: now
+                        note: L10n.agentCalendarMeetingNote(event.title), ref: String(decoding: JSONEncoder().encode(ref), as: UTF8.self),
+                        occurredAt: event.startDate.addingTimeInterval(-lead * 3600), taskID: nil, handledAt: nil, createdAt: now,
+                        url: Self.pageURL(event)
                     ))
                 }
                 let pending = try AgentEventRecord.fetchAll(db, sql: """
@@ -95,6 +108,7 @@ extension AgentInboxService {
                         if existing.handledAt == nil {
                             existing.occurredAt = event.occurredAt
                             existing.ref = event.ref
+                            existing.url = event.url
                             existing.note = event.note
                             try existing.update(db)
                         }
@@ -114,6 +128,17 @@ extension AgentInboxService {
     }
 
     /// Only future reservations follow the current local schedule; arrived decisions and handled history are durable.
+    /// Retained agendas can predate today and must reflect current wording even without a provider refresh.
+    static func refreshAgendaNotes(_ source: AgentSourceRecord, in db: Database) throws {
+        let daily = AgentSourcePrompt.dailyNote(source)
+        let weekly = AgentSourcePrompt.weeklyNote(source)
+        try db.execute(sql: """
+        UPDATE agent_event_inbox SET note = CASE WHEN key LIKE 'daily:%' THEN ? ELSE ? END
+        WHERE sourceID=? AND handledAt IS NULL
+        AND ((key LIKE 'daily:%' AND note<>?) OR (key LIKE 'weekly:%' AND note<>?))
+        """, arguments: [daily, weekly, source.id, daily, weekly])
+    }
+
     private static func reconcileAgendaReservations(_ candidates: [AgentEventRecord], sourceID: String, now: Date, db: Database) throws -> Int {
         let reservations = try AgentEventRecord.fetchAll(db, sql: """
         SELECT * FROM agent_event_inbox WHERE sourceID=? AND handledAt IS NULL AND occurredAt>?

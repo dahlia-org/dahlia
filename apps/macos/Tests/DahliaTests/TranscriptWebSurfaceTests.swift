@@ -216,10 +216,11 @@
             for width in [ContentWidth.comfortable, .wide, .full] {
                 harness.show(segments, maxWidth: width.maxWidth, scrollRequest: (1, .bottom), onFollowChange: follow)
                 #expect(await pollUntil {
-                    let actual = try? await harness.webView.evaluateJavaScript(
-                        "document.getElementById('rows').getBoundingClientRect().width"
-                    ) as? Double
-                    return actual.map { abs($0 - min(1400, width.maxWidth)) < 2 } == true
+                    // An always-visible scrollbar takes part of the 1400-point window.
+                    let widths = try? await harness.webView.evaluateJavaScript(
+                        "[document.getElementById('rows').getBoundingClientRect().width, document.documentElement.clientWidth]"
+                    ) as? [Double]
+                    return widths.map { abs($0[0] - min($0[1], width.maxWidth)) < 2 } == true
                 })
                 if following {
                     #expect(await harness.isAtBottom())
@@ -292,7 +293,7 @@
             }
             #expect(await pollUntil {
                 await (try? harness.webView.evaluateJavaScript("""
-                document.getElementById('rows').getBoundingClientRect().width === 1400 &&
+                document.getElementById('rows').getBoundingClientRect().width === document.documentElement.clientWidth &&
                 (typeof window.beforeDeepRecovery === 'undefined' || !\(recovering))
                 """) as? Bool) == true
             })

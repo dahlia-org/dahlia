@@ -10,6 +10,18 @@
 
 発見は compact metadata と [summary 本文の検索](search.md)、詳細は保存済み summary、原文 transcript のページング、保存済み screenshot（長辺1568px以下）を返す。保存済み取得では音声、note、翻訳、未確定 transcript と transcript 全文検索は対象外。未確定文を MCP へ公開しない。Notes（Documents）は MCP の対象外とする。summary schema v3 の description と meeting metadata の更新は [サマリー](summary.md) に従う。
 
+## 同梱 skill
+
+`dahlia-mcp` は MCP Skills extension（`io.modelcontextprotocol/skills`、SEP-2640）を MCP `2026-07-28` の `server/discover` の capabilities に宣言し、`skills/list`・`skills/get`・`resources/list`・`resources/read` で skill を配布する。正本は `DahliaRuntimeSupport` の `Skills/` で、skill directory 内の全ファイルを `skill://dahlia/<name>/<path>` として公開し、manifest に SHA-256 digest と byte 長を載せる。アプリ内チャットの Pi は同じファイルを `--skill` で preset として読む（Pi 1.5.2 の MCP client は Skills extension に対応しないため）。modern request は毎回 `params._meta` の protocolVersion と clientCapabilities を検証し、初期化 handshake なしで処理する。discovery・一覧・resource read は cache field を返す。従来の `2025-06-18` initialize と resource 応答も維持するが、そちらには beta extension を宣言しない。extension 非対応の client 向けに、instructions にも `SKILL.md` の URI を列挙する。read-only では書き込みで完結する skill（`summary-editor`）を一覧・取得から除く。`projects-optimizer` は read-only では調査と提案までとし、適用済みと報告しない。skill は公開 tool の使い方だけを書き、新しいデータ経路を持たない。
+
+| Skill | 担当 |
+| --- | --- |
+| dahlia-guide | 要約の入力・スクリーンショット選別・プロンプトの仕組みと、アプリの使い方・設定の案内 |
+| meeting-reviewer | 1件の会議を目的に照らして振り返り、タイムスタンプ付きで改善点を示す |
+| meeting-search | 検索パラメーター（`ical_uid`・`attendee`・Project・期間）の使い分けと検索シナリオ |
+| projects-optimizer | Project 構成、meeting assignment、description の改善と Project の分け方 |
+| summary-editor | 指示による訂正と、文字起こし・スクリーンショットを確認した見直し。証拠の判断基準を含む |
+
 Thread は任意の Project だけに関連付ける。Project から Workspace を解決しない。Workspace 切替では会話を維持する。
 chat の Dahlia helper は `--account` を付けずに起動し、Project の有無にかかわらずすべての Workspace を参照する。
 start / resume とも Dahlia helper を使い、要約は全 MCP を無効にする。外部 client の登録範囲は chat の選択と独立する。

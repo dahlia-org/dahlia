@@ -78,6 +78,13 @@ extension PiChatService {
         try history().dbQueue.write { try $0.execute(sql: "UPDATE agents SET smartRouting=? WHERE id=?", arguments: [enabled, id]) }
     }
 
+    /// Applies to new Task runs and caps each tool call of a running Task.
+    func setAgentWorkerApprovalMethod(_ id: String, _ method: CodexChatApprovalMethod) throws {
+        try history().dbQueue.write {
+            try $0.execute(sql: "UPDATE agents SET workerApprovalMethod=? WHERE id=?", arguments: [method.rawValue, id])
+        }
+    }
+
     /// Deletes the agent with its sources, events, Tasks, and Items, and moves its home to the Trash. Its conversation
     /// stays in the history, read-only; the threads it launched stay as ordinary chats and keep running.
     func deleteAgent(_ id: String) async throws {

@@ -12,6 +12,17 @@ extension DahliaMCPServer {
         let freshness: String
     }
 
+    struct MeetingBatch: Encodable {
+        struct Failure: Encodable {
+            let index: Int
+            let id: String
+            let code: String
+        }
+
+        let meetings: [MeetingDetail]
+        let errors: [Failure]
+    }
+
     private func workspaces() throws -> [WorkspaceAccess] {
         try store.database.read { db in
             try store.accountScope?.validate(in: db)
@@ -41,6 +52,7 @@ extension DahliaMCPServer {
             try validate(arguments, allowedKeys: [])
             return try toolResult(["workspaces": workspaces()])
         }
+        if name == "get_meetings" { return try toolResult(getMeetings(arguments)) }
         let definitions = Self.readOnlyToolDefinitions
         guard let definition = definitions.first(where: { $0["name"] as? String == name }) else {
             return try workspaceWrite(name: name, arguments: arguments)
@@ -48,6 +60,7 @@ extension DahliaMCPServer {
         let schema = definition["inputSchema"] as? [String: Any]
         let keys = (schema?["properties"] as? [String: Any])?.keys.map(\.self) ?? []
         try validate(arguments, allowedKeys: Set(keys + ["workspace_id"]))
+        if name == "get_screenshots" { _ = try boolean(arguments, key: "include_images") }
         var scopedArguments = arguments
         let requestedWorkspace = try optionalUUID(arguments, key: "workspace_id")
         scopedArguments.removeValue(forKey: "workspace_id")
@@ -56,14 +69,25 @@ extension DahliaMCPServer {
             guard try workspaces().contains(where: { $0.id == id }) else { throw MeetingAccessError.workspaceNotFound }
             return try scopedRead(name: name, arguments: scopedArguments, workspaceID: id)
         }
-        if name.hasPrefix("get_") {
-            let mapping: [String: (String, String)] = [
-                "get_meeting": ("meeting_id", "meetings"),
-                "get_meeting_transcript": ("meeting_id", "meetings"),
-                "get_meeting_screenshots": ("meeting_id", "meetings"),
-                "get_project": ("project_id", "projects"),
-            ]
-            guard let (key, table) = mapping[name] else { throw ParameterError("workspace_id is required for this tool") }
+        if name == "get_screenshots" {
+            let ids = try screenshotIDs(arguments)
+            guard let id = try screenshotWorkspaceID(ids) else {
+                return try screenshotsToolResult(
+                    list: ScreenshotList(workspace: nil, screenshots: [], errors: ids.enumerated().map { index, id in
+                        ScreenshotIDError(index: index, screenshotID: id, error: id == nil ? .invalidID : .notFound)
+                    }),
+                    images: []
+                )
+            }
+            return try scopedRead(name: name, arguments: scopedArguments, workspaceID: id)
+        }
+        let mapping: [String: (String, String)] = [
+            "get_meeting_transcript": ("meeting_id", "meetings"),
+            "get_project": ("project_id", "projects"),
+            // A meeting filter names one workspace, so other workspaces would only report not_found.
+            "query_screenshots": ("meeting_id", "meetings"),
+        ]
+        if let (key, table) = mapping[name], name.hasPrefix("get_") || arguments[key] != nil {
             let entityID = try requiredUUID(arguments, key: key)
             let id = try store.database.read { db in
                 try UUID.fetchOne(db, sql: "SELECT workspace_id FROM \(table) WHERE id = ?", arguments: [entityID])
@@ -71,6 +95,7 @@ extension DahliaMCPServer {
             guard let id, try workspaces().contains(where: { $0.id == id }) else { throw MeetingAccessError.workspaceNotFound }
             return try scopedRead(name: name, arguments: scopedArguments, workspaceID: id)
         }
+        if name.hasPrefix("get_") { throw ParameterError("workspace_id is required for this tool") }
         guard arguments["cursor"] == nil, arguments["server_cursor"] == nil else {
             throw ParameterError("Continue each workspace's page with workspace_id and its cursor")
         }
@@ -103,6 +128,81 @@ extension DahliaMCPServer {
             "structuredContent": object,
             "isError": false,
         ]
+    }
+
+    /// The workspace of the first requested ID that exists in an accessible workspace; IDs elsewhere become not_found.
+    private func screenshotWorkspaceID(_ ids: [UUID?]) throws -> UUID? {
+        let requested = ids.compactMap(\.self)
+        guard !requested.isEmpty else { return nil }
+        let placeholders = Array(repeating: "?", count: requested.count).joined(separator: ", ")
+        let owners = try store.database.read { db in
+            try Dictionary(Row.fetchAll(db, sql: """
+            SELECT meeting_images.id, meetings.workspace_id FROM meeting_images
+            JOIN meetings ON meetings.id = meeting_images.meetingId
+            WHERE meeting_images.id IN (\(placeholders))
+            """, arguments: StatementArguments(requested)).map { ($0["id"] as UUID, $0["workspace_id"] as UUID) }) { first, _ in first }
+        }
+        let accessible = try Set(workspaces().map(\.id))
+        return requested.lazy.compactMap { owners[$0] }.first(where: accessible.contains)
+    }
+
+    /// Each ID resolves to its own Workspace, so one call may span Workspaces. `workspace_id` or the configured scope
+    /// narrows the call; IDs outside it are reported as not_found.
+    private func getMeetings(_ arguments: [String: Any]) throws -> MeetingBatch {
+        try validate(arguments, allowedKeys: ["meeting_ids", "summary_format", "workspace_id"])
+        let requestedWorkspace = try optionalUUID(arguments, key: "workspace_id")
+        if let workspaceScope, let requestedWorkspace, workspaceScope != requestedWorkspace { throw MeetingAccessError.workspaceNotFound }
+        let structured = switch try string(arguments, key: "summary_format") ?? "markdown" {
+        case "markdown": false
+        case "structured": true
+        default: throw ParameterError("summary_format must be markdown or structured")
+        }
+        guard let ids = arguments["meeting_ids"] as? [Any], (1 ... Self.maximumMeetingCount).contains(ids.count),
+              let rawIDs = ids as? [String] else {
+            throw ParameterError("meeting_ids must be an array of 1 to \(Self.maximumMeetingCount) meeting TypeID strings")
+        }
+        guard Set(rawIDs).count == rawIDs.count else { throw ParameterError("meeting_ids must not contain duplicates") }
+        var visible = try Set(workspaces().map(\.id))
+        if let requestedWorkspace {
+            guard visible.contains(requestedWorkspace) else { throw MeetingAccessError.workspaceNotFound }
+            visible = [requestedWorkspace]
+        }
+
+        var meetings: [MeetingDetail] = []
+        var errors: [MeetingBatch.Failure] = []
+        for (index, rawID) in rawIDs.enumerated() {
+            let code: String
+            // meeting_ids stay as sent through PublicMCPIDs so one invalid ID is reported here instead of failing the call.
+            if let meetingID = try? TypeID.decode(rawID, as: .meeting) {
+                do {
+                    let workspaceID = try store.database.read { db in
+                        try UUID.fetchOne(db, sql: "SELECT workspace_id FROM meetings WHERE id = ?", arguments: [meetingID])
+                    }
+                    guard let workspaceID, visible.contains(workspaceID) else { throw MeetingAccessError.meetingNotFound }
+                    var detail = try store.scoped(to: workspaceID).meeting(id: meetingID)
+                    if structured {
+                        detail.summary = nil
+                    } else {
+                        detail.structuredSummary = nil
+                        detail.summaryVersion = nil
+                    }
+                    meetings.append(detail)
+                    continue
+                } catch MeetingAccessError.invalidSummaryDocument {
+                    code = "unreadable"
+                } catch let error as MeetingAccessError where error.reasonCode == "not_found" {
+                    code = "not_found"
+                } catch let error as DatabaseError {
+                    throw error
+                } catch {
+                    code = "unavailable"
+                }
+            } else {
+                code = "invalid_id"
+            }
+            errors.append(.init(index: index, id: rawID, code: code))
+        }
+        return MeetingBatch(meetings: meetings, errors: errors)
     }
 
     private func workspaceWrite(name: String, arguments: [String: Any]) throws -> [String: Any] {

@@ -50,6 +50,58 @@ import Foundation
         }
 
         @Test
+        func screenshotSelectionRejectsNonStringEntries() throws {
+            let valid = TypeID.encode(UUID(), as: .attachment)
+            for invalid in [42, ["id": valid], NSNull(), [valid]] as [Any] {
+                #expect(throws: TypeID.Failure.self) {
+                    try PublicMCPIDs.arguments(["screenshot_ids": [valid, invalid]], tool: "get_screenshots")
+                }
+            }
+        }
+
+        @Test
+        func screenshotSelectionKeepsMalformedIDsAndEchoesThemInErrors() throws {
+            let valid = UUID()
+            let requested = [TypeID.encode(valid, as: .attachment), "att_malformed"]
+            let input = try PublicMCPIDs.arguments(["screenshot_ids": requested], tool: "get_screenshots")
+            let ids = try #require(input["screenshot_ids"] as? [Any])
+            #expect(ids.first as? String == valid.uuidString.lowercased())
+            #expect(ids.last is NSNull)
+
+            let source: [String: Any] = ["structuredContent": [
+                "screenshots": [["id": valid.uuidString, "meeting_id": UUID().uuidString]],
+                "errors": [["index": 1, "error": "invalid_id"]],
+            ]]
+            let result = try PublicMCPIDs.result(source, tool: "get_screenshots", arguments: ["screenshot_ids": requested])
+            let body = try #require(result["structuredContent"] as? [String: Any])
+            #expect((body["screenshots"] as? [[String: Any]])?.first?["id"] as? String == requested[0])
+            #expect((body["errors"] as? [[String: Any]])?.first?["screenshot_id"] as? String == "att_malformed")
+        }
+
+        @Test
+        func screenshotListingCursorScopeCarriesTheMeetingID() throws {
+            let workspaceID = UUID(), meetingID = UUID()
+            let scope = try JSONSerialization.data(withJSONObject: ["meetingID": meetingID.uuidString], options: [.sortedKeys])
+                .base64EncodedString()
+            let cursor = try JSONSerialization.data(withJSONObject: [
+                "workspaceID": workspaceID.uuidString, "revision": 0, "scope": scope, "offset": 1,
+            ]).base64EncodedString()
+            let source: [String: Any] = ["structuredContent": ["screenshots": [], "next_cursor": cursor]]
+            let result = try PublicMCPIDs.result(source, tool: "query_screenshots", arguments: [:])
+            let body = try #require(result["structuredContent"] as? [String: Any])
+            let encoded = try #require(body["next_cursor"] as? String)
+            // The public cursor carries a TypeID, and decoding restores the internal UUID.
+            let input = try PublicMCPIDs.arguments(["cursor": encoded], tool: "query_screenshots")
+            let decoded = try #require(input["cursor"] as? String)
+            let cursorData = try #require(Data(base64Encoded: decoded))
+            let object = try #require(JSONSerialization.jsonObject(with: cursorData) as? [String: Any])
+            let scopeString = try #require(object["scope"] as? String)
+            let decodedScope = try #require(Data(base64Encoded: scopeString))
+            let scopeObject = try JSONSerialization.jsonObject(with: decodedScope) as? [String: String]
+            #expect(scopeObject?["meetingID"] == meetingID.uuidString)
+        }
+
+        @Test
         func summaryScreenshotMarkersUseTypeIDsWithoutRewritingUserText() {
             let id = UUID()
             let userText = "User wrote " + id.uuidString

@@ -196,12 +196,12 @@ import Synchronization
             let schedules = AgentScheduleService(dbQueue: fixture.store.dbQueue)
             let prepared = try await fixture.chat.learningTool("cronjob", payload: .object([
                 "action": .string("create"), "prompt": .string("Read the meeting"), "schedule": .string("30m"),
-                "_readOnlyTools": .array([.string("mcp__dahlia__get_meeting")]),
+                "_readOnlyTools": .array([.string("mcp__dahlia__get_meetings")]),
             ]), threadID: thread.id, processID: process)
             let id = try #require(prepared.objectValue?["request_id"]?.stringValue)
             let arguments = prepared.objectValue?["approval"]?.objectValue?["arguments"]?.objectValue
             #expect(arguments?["prompt"] == .string("Read the meeting"))
-            #expect(arguments?["approved_read_only_tools"] == .array([.string("mcp__dahlia__get_meeting")]))
+            #expect(arguments?["approved_read_only_tools"] == .array([.string("mcp__dahlia__get_meetings")]))
             #expect(arguments?["_readOnlyTools"] == nil)
             #expect(try schedules.list(account: "local").isEmpty)
             #expect(await fixture.chat.sessions[thread.id]?.turn?.pendingApprovals.isEmpty == true)
@@ -212,7 +212,7 @@ import Synchronization
             _ = try await fixture.chat.learningTool("cronjobCommit", payload: commit, threadID: thread.id, processID: process)
             let saved = try #require(try schedules.list(account: "local").first)
             #expect(saved.prompt == "Read the meeting")
-            #expect(saved.allowedTools == "[\"mcp__dahlia__get_meeting\"]")
+            #expect(saved.allowedTools == "[\"mcp__dahlia__get_meetings\"]")
             await #expect(throws: (any Error).self) {
                 try await fixture.chat.learningTool("cronjobCommit", payload: commit, threadID: thread.id, processID: process)
             }
@@ -1116,7 +1116,7 @@ import Synchronization
             #expect(launch.arguments
                 .contains(
                     "read,ls,write,edit,bash,skills_list,skill_view,skill_manage,cronjob,skill_optimize,memory,thread_list,thread_search,thread_read,"
-                        + "thread_launch,delegate_task,task_status,task_cancel,thread_send,thread_wait,thread_interrupt,thread_update,mcp__dahlia__*"
+                        + "thread_launch,delegate_task,task_status,task_cancel,thread_send,thread_wait,thread_interrupt,thread_update,mcp__dahlia__*,list_mcp_resources,read_mcp_resource"
                 ))
             let work = fixture.pi.rootURL.appending(path: "work")
             #expect(launch.cwd == work)
@@ -1530,7 +1530,8 @@ import Synchronization
             #expect(withGmail.arguments
                 .contains(
                     "read,ls,write,edit,bash,skills_list,skill_view,skill_manage,cronjob,skill_optimize,memory,thread_list,thread_search,thread_read,"
-                        + "thread_launch,delegate_task,task_status,task_cancel,thread_send,thread_wait,thread_interrupt,thread_update,mcp__dahlia__*,mcp__gmail__*,mcp__notion__*"
+                        + "thread_launch,delegate_task,task_status,task_cancel,thread_send,thread_wait,thread_interrupt,thread_update,mcp__dahlia__*,mcp__gmail__*,mcp__notion__*,"
+                        + "list_mcp_resources,read_mcp_resource"
                 ))
             // Dahlia's extension registers the sign-ins mcp.json names in every process; none loads the provider file on its own.
             #expect(pi.launches.all.allSatisfy { !$0.arguments.contains { $0.hasSuffix("databricks-provider.ts") } })

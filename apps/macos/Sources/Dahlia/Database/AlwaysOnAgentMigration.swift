@@ -17,7 +17,7 @@ enum AlwaysOnAgentMigration {
             avatar TEXT NOT NULL, color TEXT NOT NULL,
             threadID TEXT UNIQUE REFERENCES chat_threads(id) ON DELETE SET NULL,
             intakeModel TEXT, intakeEffort TEXT, unattendedModel TEXT, unattendedEffort TEXT,
-            smartRouting BOOLEAN NOT NULL DEFAULT 0,
+            smartRouting BOOLEAN NOT NULL DEFAULT 0, workerApprovalMethod TEXT NOT NULL DEFAULT 'autoReview',
             createdAt DATETIME NOT NULL, updatedAt DATETIME NOT NULL
         );
         -- Not a foreign key: a thread stays its agent's, read-only, after the agent is deleted.
@@ -46,7 +46,7 @@ enum AlwaysOnAgentMigration {
         CREATE TABLE agent_event_inbox (
             id TEXT PRIMARY KEY NOT NULL, agentID TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
             sourceID TEXT REFERENCES agent_event_sources(id) ON DELETE CASCADE,
-            key TEXT, topic TEXT, note TEXT NOT NULL, ref TEXT, occurredAt DATETIME NOT NULL,
+            key TEXT, topic TEXT, note TEXT NOT NULL, ref TEXT, url TEXT, occurredAt DATETIME NOT NULL,
             taskID TEXT REFERENCES agent_tasks(id) ON DELETE SET NULL, handledAt DATETIME,
             createdAt DATETIME NOT NULL
         );

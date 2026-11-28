@@ -25,6 +25,8 @@ struct AgentRecord: Codable, FetchableRecord, PersistableRecord, Identifiable, S
     var unattendedEffort: String?
     /// Whether it picks each launched thread's model and effort from the task (`PiChatService.smartRoutingPrompt`).
     var smartRouting = false
+    /// The approval method of the threads it launches; also the ceiling of what it sends to them later.
+    var workerApprovalMethod = CodexChatApprovalMethod.autoReview
     var createdAt: Date
     var updatedAt: Date
 

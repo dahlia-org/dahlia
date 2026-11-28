@@ -47,6 +47,7 @@ extension PiChatService {
         var readFailed = false
         var readSucceeded = false
         var seen: Set<String> = []
+        var sourceURLs: [String: URL] = [:]
         var pages = IntakePages()
     }
 
@@ -86,16 +87,6 @@ extension PiChatService {
     func loadAlwaysOnSettings(_ agentID: String) throws -> ([AgentSourceRecord], [AgentEventRecord], Bool) {
         let inbox = try inboxService(agentID)
         return try (inbox.sources(), inbox.recentEvents(), inbox.isPaused())
-    }
-
-    /// The agent's open Items, and the Thread of each Task they belong to, so the inbox can open a Task's work.
-    func loadBotInbox(_ agentID: String) throws -> ([AgentItemRecord], [String: String]) {
-        let inbox = try inboxService(agentID)
-        let items = try inbox.items()
-        let threads = try Dictionary(uniqueKeysWithValues: Set(items.compactMap(\.taskID)).compactMap { id in
-            try inbox.task(id)?.threadID.map { (id, $0) }
-        })
-        return (items, threads)
     }
 
     func updateAlwaysOnSettings(_ agentID: String, change: @Sendable (AgentInboxService) throws -> Void) throws {
@@ -193,6 +184,7 @@ extension PiChatService {
                     // The only server intake may call; the extension blocks the rest and every tool that is not read-only.
                     environment: [
                         "DAHLIA_PI_MEMORY_ENABLED": "0", "DAHLIA_PI_MCP_SERVERS": HermesLearning.json([source.server]),
+                        "DAHLIA_PI_INTAKE_SERVICE": source.service,
                         "DAHLIA_PI_MCP_CONFIG": HermesLearning.json(servers.filter { $0.key == source.server }),
                     ],
                     profile: .intake
@@ -256,6 +248,10 @@ extension PiChatService {
             activeIntake?.readSucceeded = true
             let ids = payload.objectValue?["ids"]?.arrayValue?.compactMap(\.stringValue) ?? []
             activeIntake?.seen.formUnion(ids.prefix(1000))
+            for (id, value) in payload.objectValue?["links"]?.objectValue ?? [:] where ids.contains(String(id.split(separator: "/").last ?? "")) {
+                guard let text = value.stringValue, let url = URL(string: text), url.scheme == "https", url.host() != nil else { continue }
+                activeIntake?.sourceURLs[id] = url
+            }
             for page in payload.objectValue?["pages"]?.arrayValue ?? [] {
                 guard let fields = page.objectValue, let request = fields["requestKey"]?.stringValue,
                       let next = fields["nextRequestKey"]?.stringValue, case let .bool(root)? = fields["root"]
@@ -271,7 +267,8 @@ extension PiChatService {
             let items = try AgentInboxService.items(from: payload)
             let statuses = try inboxService().record(
                 items,
-                caller: .intake(sourceID: source.id, revision: source.revision), remaining: 20 - (activeIntake?.recorded ?? 0)
+                caller: .intake(sourceID: source.id, revision: source.revision), remaining: 20 - (activeIntake?.recorded ?? 0),
+                sourceURLs: activeIntake?.sourceURLs ?? [:]
             )
             activeIntake?.recorded += statuses.values.count { $0 == "recorded" }
             return .object([

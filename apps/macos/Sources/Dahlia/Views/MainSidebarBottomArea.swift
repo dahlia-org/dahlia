@@ -12,8 +12,6 @@ struct MainSidebarBottomArea: View {
     var body: some View {
         ZStack(alignment: .bottom) {
             MainSidebarFooterView(
-                workspaces: sidebarViewModel.allWorkspaces,
-                currentWorkspace: sidebarViewModel.currentWorkspace,
                 updateController: updateController,
                 unprocessedRecordingCount: sidebarViewModel.unprocessedRecordingItems.count,
                 onShowUnprocessedRecordings: onShowUnprocessedRecordings

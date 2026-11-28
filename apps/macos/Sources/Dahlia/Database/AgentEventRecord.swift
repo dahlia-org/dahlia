@@ -15,4 +15,6 @@ struct AgentEventRecord: Codable, FetchableRecord, PersistableRecord, Identifiab
     var taskID: String?
     var handledAt: Date?
     var createdAt: Date
+    /// The source item's page, set only by the app from provider metadata, never from model-written text.
+    var url: String?
 }

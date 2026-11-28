@@ -658,6 +658,7 @@
         }
 
         @Test func notificationDisplaysResultsWithoutTheRuntimeEnvelope() {
+            let notifiedAt = Date(timeIntervalSince1970: 1000)
             let content = """
             <thread_results source="dahlia" untrusted="true">
             [{"title":"Research","status":"completed","excerpt":"Found evidence"}]
@@ -665,7 +666,8 @@
             """
             let messages = ChatHistoryCodec.messages([ChatItem(id: "notice", data: .object([
                 "type": .string("thread_notification"), "content": .string(content),
-            ]), createdAt: .now)])
+            ]), createdAt: notifiedAt)])
+            #expect(messages.first?.timestamp == notifiedAt)
             #expect(messages.first?.text.contains("Research") == true)
             #expect(messages.first?.text.contains("Found evidence") == true)
             #expect(messages.first?.text.contains("thread_results") == false)

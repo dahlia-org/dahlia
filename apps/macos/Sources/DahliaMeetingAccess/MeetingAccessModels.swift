@@ -50,8 +50,12 @@ public struct MeetingQueryPage: Codable, Sendable, Equatable {
 }
 
 public struct ScreenshotTextQuery: Sendable, Equatable {
-    public var query: String
+    /// nil は全文検索せず撮影順に一覧する。
+    public var query: String?
     public var projectID: UUID?
+    public var meetingID: UUID?
+    public var fromElapsedSeconds: Double?
+    public var toElapsedSeconds: Double?
     public var createdFrom: Date?
     public var createdBefore: Date?
     public var limit: Int
@@ -59,8 +63,11 @@ public struct ScreenshotTextQuery: Sendable, Equatable {
     public var serverCursor: String?
 
     public init(
-        query: String,
+        query: String? = nil,
         projectID: UUID? = nil,
+        meetingID: UUID? = nil,
+        fromElapsedSeconds: Double? = nil,
+        toElapsedSeconds: Double? = nil,
         createdFrom: Date? = nil,
         createdBefore: Date? = nil,
         limit: Int = 20,
@@ -69,6 +76,9 @@ public struct ScreenshotTextQuery: Sendable, Equatable {
     ) {
         self.query = query
         self.projectID = projectID
+        self.meetingID = meetingID
+        self.fromElapsedSeconds = fromElapsedSeconds
+        self.toElapsedSeconds = toElapsedSeconds
         self.createdFrom = createdFrom
         self.createdBefore = createdBefore
         self.limit = limit
@@ -90,9 +100,14 @@ public struct ScreenshotTextMetadata: Codable, Sendable, Equatable {
     public let meetingID: UUID
     public let meetingName: String
     public let capturedAt: Date
+    public let elapsedSeconds: Double
+    public let timestamp: String
     public let mimeType: String
-    public let detectedText: String
-    public let caption: String
+    /// 検索語の周辺、検索語がなければ先頭を短く切り出したもの。解析前は nil。
+    public let detectedText: String?
+    /// 解析前は nil。
+    public let caption: String?
+    public let filePath: String?
 }
 
 public struct ScopedWorkspace: Codable, Sendable, Equatable {
@@ -121,10 +136,12 @@ public struct MeetingMetadata: Codable, Sendable, Equatable {
 public struct MeetingDetail: Codable, Sendable, Equatable {
     public let workspace: ScopedWorkspace
     public let meeting: MeetingMetadata
-    public let summary: String?
-    public let summaryDocument: JSONValue?
-    /// `update_meeting_summary` に渡す compare-and-swap 用の版。
-    public let summaryDocumentVersion: String?
+    /// 読むための Markdown。`summary_format: structured` では返さない。
+    public var summary: String?
+    /// `update_meeting_summary` が受け取る構造化した要約。`summary_format: structured` のときだけ返す。
+    public var structuredSummary: JSONValue?
+    /// `update_meeting_summary` に渡す compare-and-swap 用の版。`structuredSummary` と組で返す。
+    public var summaryVersion: String?
     public var textContent: TextContentAvailability?
 }
 
@@ -141,7 +158,7 @@ public struct SummaryMutationResult: Codable, Sendable, Equatable {
     }
 
     public let meetingID: UUID
-    public let documentVersion: String
+    public let summaryVersion: String
     public let title: String
     public let description: String
     public let changed: Bool
@@ -171,39 +188,42 @@ public struct TranscriptEntry: Codable, Sendable, Equatable {
     public let timestamp: String
 }
 
-public struct ScreenshotQuery: Sendable, Equatable {
-    public var fromElapsedSeconds: Double?
-    public var toElapsedSeconds: Double?
-    public var limit: Int
-    public var cursor: String?
-
-    public init(
-        fromElapsedSeconds: Double? = nil,
-        toElapsedSeconds: Double? = nil,
-        limit: Int = 20,
-        cursor: String? = nil
-    ) {
-        self.fromElapsedSeconds = fromElapsedSeconds
-        self.toElapsedSeconds = toElapsedSeconds
-        self.limit = limit
-        self.cursor = cursor
-    }
+public struct ScreenshotList: Codable, Sendable, Equatable {
+    /// ID がどの Workspace にも見つからなかったときは nil。
+    public let workspace: ScopedWorkspace?
+    public let screenshots: [MeetingScreenshotMetadata]
+    /// 取得できなかった ID。他の ID の取得は止めない。
+    public let errors: [ScreenshotIDError]
 }
 
-public struct MeetingScreenshotPage: Codable, Sendable, Equatable {
-    public let workspace: ScopedWorkspace
-    public let meetingID: UUID
-    public let screenshots: [MeetingScreenshotMetadata]
-    public let nextCursor: String?
+public struct ScreenshotIDError: Codable, Sendable, Equatable {
+    public enum Code: String, Codable, Sendable {
+        case invalidID = "invalid_id"
+        case notFound = "not_found"
+        case unavailable
+        case unreadable
+    }
+
+    /// 要求した screenshot_ids の位置。
+    public let index: Int
+    public let screenshotID: UUID?
+    public let error: Code
 }
 
 public struct MeetingScreenshotMetadata: Codable, Sendable, Equatable {
     public let id: UUID
+    public let meetingID: UUID
     public let capturedAt: Date
     public let elapsedSeconds: Double
     public let timestamp: String
     public let mimeType: String
     public let isReferencedInSummary: Bool
+    /// 解析前は nil。
+    public let detectedText: String?
+    /// AI 生成の説明。解析前は nil。
+    public let caption: String?
+    /// ディスク上に原本があるときだけ入る。
+    public let filePath: String?
 }
 
 public struct MeetingScreenshotImage: Sendable, Equatable {
@@ -397,7 +417,7 @@ public enum MeetingAccessError: Error, LocalizedError, Equatable {
         case .summaryNotFound:
             "The meeting has no summary yet. Generate the summary in Dahlia before updating it."
         case .summaryVersionConflict:
-            "The summary changed after it was read. Call get_meeting again before retrying."
+            "The summary changed after it was read. Call get_meetings with summary_format structured again before retrying."
         case .summaryScreenshotNotFound:
             "An image block references a screenshot that does not belong to this meeting."
         case let .invalidSummaryUpdate(message):

@@ -187,12 +187,12 @@ actor PiChatService: CodexChatServicing {
     When the request needs meeting records, follow the meeting lookup rules below.
 
     # Meeting lookup
-    When relevant context has Type: Meeting, use its meeting_id directly with get_meeting.
-    When context has Type: MeetingDraft, do not call get_meeting for it because it has not been saved.
+    When relevant context has Type: Meeting, use its meeting_id directly with get_meetings.
+    When context has Type: MeetingDraft, do not call get_meetings for it because it has not been saved.
     A standalone meeting:<mtg_TypeID> word directly identifies a meeting selected by the user.
-    When one or more meeting:<mtg_TypeID> words are present, call get_meeting with each meeting TypeID directly and do not call query_meetings first.
+    When one or more meeting:<mtg_TypeID> words are present, deduplicate those meeting TypeIDs and call get_meetings in batches of at most 5 IDs. Do not call query_meetings first.
     For meeting lookup without a meeting:<mtg_TypeID> word or relevant Type: Meeting context, start with query_meetings.
-    Then use get_meeting for a selected meeting's summary.
+    Then use get_meetings for the selected meetings' summaries, several meetings per call.
     Call get_meeting_transcript only when the original wording or detail is needed.
 
     # Skills and file access
@@ -546,9 +546,11 @@ actor PiChatService: CodexChatServicing {
         if let scheduled = scheduledRuns[threadID] {
             let parentID = try history().thread(id: threadID, accountID: AppAccount.key).parentThreadID
             let isRequestersChild = parentID != nil && parentID == scheduled.requestedByThreadID
-            let ceiling = scheduled.requestedByThreadID.flatMap(chosenApprovalMethod).map { Self.stricterApproval(requested, $0) }
-                ?? requested
-            let own = chosenApprovalMethod(threadID) ?? (isRequestersChild ? ceiling : .autoReview)
+            let requester = scheduled.requestedByThreadID
+            let worker = requester.flatMap { workerApprovalMethod(requester: $0, thread: threadID) }
+            let ceiling = (worker ?? requester.flatMap(chosenApprovalMethod)).map { Self.stricterApproval(requested, $0) } ?? requested
+            // An agent's Task starts at its worker setting, as a child starts at its parent's.
+            let own = chosenApprovalMethods[threadID] ?? (isRequestersChild || worker != nil ? ceiling : .autoReview)
             method = Self.stricterApproval(ceiling, own)
         } else {
             chosenApprovalMethods[threadID] = requested
@@ -1039,6 +1041,8 @@ actor PiChatService: CodexChatServicing {
             // Super Agent's delegated task is a helper: it only reads threads, like any child.
             + (profile == .bot ? (isChild ? Self.readThreadTools : PiExecutionProfile.botTools + Self.readThreadTools + Self.manageThreadTools) : [])
             + (webAccess ? AgentWebAccessSettings.toolNames : []) + serverNames.map { "mcp__\($0)__*" }
+            // Pi's resource tools, such as reading Dahlia MCP's skill:// files; dahlia.ts limits them to these servers.
+            + (profile == .interactive ? Self.mcpResourceToolNames : [])
         // The extension registers the sign-ins named by this process snapshot.
         let agentName = agent(ofThread: threadID)?.name ?? ""
         var arguments = sessionArguments + [
@@ -1462,6 +1466,8 @@ actor PiChatService: CodexChatServicing {
     }
 
     /// Reads every workspace on this Mac: they all belong to the app's one account.
+    nonisolated static let mcpResourceToolNames = ["list_mcp_resources", "read_mcp_resource"]
+
     nonisolated static func mcpCommand(executableURL: URL) -> [String] {
         let launch = switch DahliaApplicationSupport.profile() {
         case .production: [executableURL.path]

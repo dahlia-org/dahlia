@@ -407,6 +407,119 @@ import Foundation
         }
 
         @Test
+        func agentChatHeadsSteplessAndStreamingRuns() {
+            let runID = UUID.v7()
+            let start = Date(timeIntervalSince1970: 1000)
+            let question = CodexChatMessage(id: "question", role: .user, text: "Hi", runID: runID, timestamp: start)
+            let answer = CodexChatMessage(
+                id: "answer", role: .assistant, text: "Hello", runID: runID, timestamp: start.addingTimeInterval(13)
+            )
+            #expect(CodexChatConversationItem.build(from: [question, answer]) == [.message(question), .message(answer)])
+            #expect(CodexChatConversationItem.build(from: [question, answer], showsRunHeaders: true) == [
+                .message(question), .work(id: answer.id, messages: [], duration: 13), .message(answer),
+            ])
+            var streaming = answer
+            streaming.isStreaming = true
+            #expect(CodexChatConversationItem.build(from: [question, streaming]) == [.message(question), .message(streaming)])
+            #expect(CodexChatConversationItem.build(from: [question, streaming], showsRunHeaders: true) == [
+                .message(question), .running(id: runID.uuidString, startedAt: start), .message(streaming),
+            ])
+        }
+
+        @Test
+        func agentRunTimingSurvivesInterleavedNotices() {
+            let runID = UUID.v7()
+            let start = Date(timeIntervalSince1970: 1000)
+            let request = CodexChatMessage(role: .user, text: "Hi", runID: runID, timestamp: start)
+            let notification = CodexChatMessage(role: .notice(.info), text: "Task result", runID: runID, timestamp: start)
+            let notice = CodexChatMessage(role: .notice(.info), text: "Pi notice")
+            let laterNotice = CodexChatMessage(role: .notice(.warning), text: "Another Pi notice")
+            let compaction = CodexChatMessage(role: .compaction(nil), text: "", runID: runID, timestamp: start.addingTimeInterval(5))
+            let answer = CodexChatMessage(role: .assistant, text: "Hello", runID: runID, timestamp: start.addingTimeInterval(13))
+            for opener in [request, notification] {
+                for interleaved in [[notice], [notice, compaction, laterNotice]] {
+                    let prefix = [opener] + interleaved
+                    let completed = CodexChatConversationItem.build(from: prefix + [answer], showsRunHeaders: true)
+                    #expect(completed == prefix.map { .message($0) } + [
+                        .work(id: answer.id, messages: [], duration: 13), .message(answer),
+                    ])
+                    var streaming = answer
+                    streaming.isStreaming = true
+                    let running = CodexChatConversationItem.build(from: prefix + [streaming], showsRunHeaders: true)
+                    #expect(running == prefix.map { .message($0) } + [
+                        .running(id: runID.uuidString, startedAt: start), .message(streaming),
+                    ])
+                }
+            }
+        }
+
+        @Test
+        func agentRunWithoutMatchingOpenerKeepsUnknownDuration() {
+            let start = Date(timeIntervalSince1970: 1000)
+            let otherRequest = CodexChatMessage(role: .user, text: "Earlier", runID: .v7(), timestamp: start)
+            let answer = CodexChatMessage(role: .assistant, text: "Hello", runID: .v7(), timestamp: start.addingTimeInterval(13))
+            #expect(CodexChatConversationItem.build(from: [otherRequest, answer], showsRunHeaders: true) == [
+                .message(otherRequest), .work(id: answer.id, messages: [], duration: nil), .message(answer),
+            ])
+        }
+
+        @Test(arguments: [false, true])
+        func pagedRunNeverUsesCompactionOrOutputTimeAsItsStart(streaming: Bool) {
+            let runID = UUID.v7()
+            let start = Date(timeIntervalSince1970: 1000)
+            let request = CodexChatMessage(role: .user, text: "Hi", runID: runID, timestamp: start)
+            let notice = CodexChatMessage(role: .notice(.info), text: "Pi notice")
+            let compaction = CodexChatMessage(
+                role: .compaction(.init(tokensBefore: 100, tokensAfter: 50)), text: "", runID: runID,
+                timestamp: start.addingTimeInterval(30)
+            )
+            let laterNotice = CodexChatMessage(role: .notice(.warning), text: "Another Pi notice")
+            let answer = CodexChatMessage(
+                role: .assistant, text: "Hello", isStreaming: streaming, runID: runID, timestamp: start.addingTimeInterval(35)
+            )
+            let earlier = (0 ..< 39).map { CodexChatMessage(id: "earlier-\($0)", role: .notice(.info), text: "Earlier") }
+            let messages = earlier + [request, notice, compaction, laterNotice, answer]
+            let pages = CodexChatConversationWindow.pageRanges(in: messages)
+            let visible = CodexChatConversationWindow().visibleRange(in: pages)
+            #expect(visible.lowerBound == 40)
+            let items = CodexChatConversationItem.build(from: Array(messages[visible]), showsRunHeaders: true)
+            let prefix: [CodexChatConversationItem] = [.message(notice), .message(compaction), .message(laterNotice)]
+            #expect(items == prefix + [
+                streaming ? .running(id: runID.uuidString, startedAt: nil) : .work(id: answer.id, messages: [], duration: nil),
+                .message(answer),
+            ])
+            let restored = CodexChatConversationItem.build(from: [request, notice, compaction, laterNotice, answer], showsRunHeaders: true)
+            #expect(restored == [.message(request)] + prefix + [
+                streaming ? .running(id: runID.uuidString, startedAt: start) : .work(id: answer.id, messages: [], duration: 35),
+                .message(answer),
+            ])
+        }
+
+        @Test(arguments: [false, true])
+        func agentRunningHeaderReplacesThinkingWhilePreparationKeepsIt(reasoning: Bool) {
+            let runID = UUID.v7()
+            let start = Date(timeIntervalSince1970: 1000)
+            let request = CodexChatMessage(role: .user, text: "Hi", runID: runID, timestamp: start)
+            let response = CodexChatMessage(
+                role: .assistant, text: "", reasoning: reasoning ? "Checking" : "", isStreaming: true, runID: runID
+            )
+            let thread = CodexChatThreadSummary(id: "child", title: "Research", updatedAt: start)
+            for waitingForOutput in [false, true] {
+                let items = CodexChatConversationItem.build(
+                    from: [request, response], showsStandaloneThinking: waitingForOutput, showsRunHeaders: true,
+                    relatedThreadsByMessageID: [request.id: [thread]]
+                )
+                #expect(items.contains(.running(id: runID.uuidString, startedAt: start)))
+                #expect(!items.contains(.thinking))
+                #expect(items.contains(.relatedThreads(messageID: request.id, threads: [thread])))
+            }
+            #expect(CodexChatConversationItem.build(from: [], showsStandaloneThinking: true, showsRunHeaders: true) == [.thinking])
+            #expect(CodexChatConversationItem.build(from: [request], showsStandaloneThinking: true, showsRunHeaders: true) == [
+                .message(request), .thinking,
+            ])
+        }
+
+        @Test
         func toolEndingRunsRemainExpandedIncludingRestoredToolsAndTrailingSteers() {
             let runID = UUID.v7()
             let question = CodexChatMessage(role: .user, text: "Fix it", runID: runID)

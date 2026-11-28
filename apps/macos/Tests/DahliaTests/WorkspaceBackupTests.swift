@@ -7,7 +7,6 @@ import GRDB
 #if canImport(Testing)
     import Testing
 
-    @MainActor
     struct WorkspaceBackupTests {
         @Test
         func portableWorkspaceUsesLocalGenerationAndPreservesPreferences() {
@@ -225,28 +224,6 @@ import GRDB
         }
 
         @Test
-        func settingsSelectionEmptyErrorAndOverwriteAvailability() async throws {
-            let fixture = try BatchAudioTestFixture(name: "BackupSettings")
-            defer { fixture.removeFiles() }
-            let unavailable = BackupSettingsViewModel(dbQueue: nil, applicationSupportURL: fixture.testRootURL)
-            await unavailable.refresh()
-            #expect(unavailable.workspaces.isEmpty)
-            #expect(unavailable.selectedWorkspaceIds.isEmpty)
-            let model = BackupSettingsViewModel(dbQueue: fixture.database.dbQueue, applicationSupportURL: fixture.testRootURL)
-            model.selectedWorkspaceIds = [fixture.meeting.workspaceId]
-            await model.refresh()
-            #expect(model.generations.isEmpty)
-            #expect(model.selectedWorkspaceIds == [fixture.meeting.workspaceId])
-            await model.createBackup()
-            let metadata = try #require(model.generations.first?.metadata)
-            #expect(model.canOverwrite(workspaceId: metadata.workspaces[0].id))
-            #expect(!model.isBusy)
-            await model.importBackup(from: fixture.testRootURL.appending(path: "missing.sqlite"))
-            #expect(model.errorMessage != nil)
-            #expect(!model.isBusy)
-        }
-
-        @Test
         func corruptHierarchyCannotSilentlyOmitProjects() async throws {
             let fixture = try BatchAudioTestFixture(name: "CorruptHierarchy")
             defer { fixture.removeFiles() }
@@ -381,6 +358,31 @@ import GRDB
                     arguments: [fixture.meeting.id]
                 )
             }
+        }
+    }
+
+    @MainActor
+    struct WorkspaceBackupSettingsTests {
+        @Test
+        func settingsSelectionEmptyErrorAndOverwriteAvailability() async throws {
+            let fixture = try BatchAudioTestFixture(name: "BackupSettings")
+            defer { fixture.removeFiles() }
+            let unavailable = BackupSettingsViewModel(dbQueue: nil, applicationSupportURL: fixture.testRootURL)
+            await unavailable.refresh()
+            #expect(unavailable.workspaces.isEmpty)
+            #expect(unavailable.selectedWorkspaceIds.isEmpty)
+            let model = BackupSettingsViewModel(dbQueue: fixture.database.dbQueue, applicationSupportURL: fixture.testRootURL)
+            model.selectedWorkspaceIds = [fixture.meeting.workspaceId]
+            await model.refresh()
+            #expect(model.generations.isEmpty)
+            #expect(model.selectedWorkspaceIds == [fixture.meeting.workspaceId])
+            await model.createBackup()
+            let metadata = try #require(model.generations.first?.metadata)
+            #expect(model.canOverwrite(workspaceId: metadata.workspaces[0].id))
+            #expect(!model.isBusy)
+            await model.importBackup(from: fixture.testRootURL.appending(path: "missing.sqlite"))
+            #expect(model.errorMessage != nil)
+            #expect(!model.isBusy)
         }
     }
 #endif

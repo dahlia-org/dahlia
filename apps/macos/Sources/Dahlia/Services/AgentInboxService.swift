@@ -15,6 +15,8 @@ struct AgentInboxService: Sendable {
         var topic: String?
         var note: String
         var ref: JSONValue?
+        /// The link intake saw for the item; kept only when it matches the provider link for this key in this run.
+        var url: String?
         var occurredAt: Date?
         /// Used only to enforce the source allowlist; never persisted.
         var sender: String?
@@ -58,6 +60,7 @@ struct AgentInboxService: Sendable {
                 topic: text("topic"),
                 note: note,
                 ref: ref,
+                url: text("url"),
                 occurredAt: text("occurred_at").flatMap { try? Date($0, strategy: .iso8601) },
                 sender: text("sender")
             )
@@ -124,11 +127,7 @@ struct AgentInboxService: Sendable {
             }
             try source.save(db)
             if source.kind == "calendar" {
-                // Retained agendas can predate today and must reflect settings even without a provider refresh.
-                try db.execute(sql: """
-                UPDATE agent_event_inbox SET note = CASE WHEN key LIKE 'daily:%' THEN ? ELSE ? END
-                WHERE sourceID=? AND handledAt IS NULL AND (key LIKE 'daily:%' OR key LIKE 'weekly:%')
-                """, arguments: [AgentSourcePrompt.dailyNote(source), AgentSourcePrompt.weeklyNote(source), source.id])
+                try Self.refreshAgendaNotes(source, in: db)
                 // Schedule changes cancel future reservations; arrived agendas remain decisions with their original time.
                 if !source.enabled {
                     try db.execute(
@@ -196,7 +195,13 @@ struct AgentInboxService: Sendable {
 
     /// Records selected signals. Duplicates keep their first row; blocked senders leave no row.
     @discardableResult
-    func record(_ items: [IntakeItem], caller: Caller, remaining: Int = 20, now: Date = .now) throws -> [String: String] {
+    func record(
+        _ items: [IntakeItem],
+        caller: Caller,
+        remaining: Int = 20,
+        sourceURLs: [String: URL] = [:],
+        now: Date = .now
+    ) throws -> [String: String] {
         guard case let .intake(sourceID, revision) = caller else { throw Failure(message: "Only an intake run records items.") }
         return try dbQueue.write { db in
             let source = try Self.currentSource(sourceID, revision: revision, in: db)
@@ -222,10 +227,12 @@ struct AgentInboxService: Sendable {
                     statuses[item.key] = "limit"
                     continue
                 }
+                // The observed link must belong to this item; a supplied hint cannot point to another observed message.
+                let url = sourceURLs[item.key].flatMap { item.url == nil || item.url == $0.absoluteString ? $0 : nil }
                 let event = try AgentEventRecord(
                     id: UUID.v7().uuidString, agentID: source.agentID, sourceID: sourceID, key: item.key, topic: item.topic,
                     note: String(item.note.prefix(Self.noteLimit)), ref: item.ref.map(Self.text), occurredAt: min(item.occurredAt ?? now, now),
-                    taskID: nil, handledAt: nil, createdAt: now
+                    taskID: nil, handledAt: nil, createdAt: now, url: url?.absoluteString
                 )
                 try event.insert(db, onConflict: .ignore)
                 if db.changesCount == 1 { inserted += 1 }
@@ -461,13 +468,44 @@ struct AgentInboxService: Sendable {
 
     // MARK: - Items
 
+    /// What the side panel shows of one agent's inbox, read in one snapshot so the panel can observe it.
+    struct PanelSnapshot: Equatable, Sendable {
+        var items: [AgentItemRecord]
+        /// Each Task's Thread, by Task, for the Items that belong to one.
+        var taskThreads: [String: String]
+    }
+
     func items() throws -> [AgentItemRecord] {
-        try dbQueue.read {
-            try AgentItemRecord.fetchAll(
-                $0, sql: "SELECT * FROM agent_user_inbox WHERE agentID=? AND status='open' ORDER BY createdAt DESC, id DESC",
-                arguments: [agentID]
-            )
-        }
+        let agentID = agentID
+        return try dbQueue.read { try Self.openItems(agentID: agentID, in: $0) }
+    }
+
+    static func openItems(agentID: String, limit: Int = -1, in db: Database) throws -> [AgentItemRecord] {
+        try AgentItemRecord.fetchAll(
+            db, sql: "SELECT * FROM agent_user_inbox WHERE agentID=? AND status='open' ORDER BY createdAt DESC, id DESC LIMIT ?",
+            arguments: [agentID, limit]
+        )
+    }
+
+    /// Indexed and bounded reads only: with the single-connection fallback, an observation fetches on the writer.
+    static func panelSnapshot(agentID: String, limit: Int, in db: Database) throws -> PanelSnapshot {
+        let items = try openItems(agentID: agentID, limit: limit, in: db)
+        let threads = try Dictionary(uniqueKeysWithValues: Row.fetchAll(db, sql: """
+        SELECT id, threadID FROM agent_tasks WHERE threadID IS NOT NULL AND id IN (
+            SELECT taskID FROM agent_user_inbox WHERE agentID=? AND status='open'
+            ORDER BY createdAt DESC, id DESC LIMIT ?
+        )
+        """, arguments: [agentID, limit]).map { ($0["id"] as String, $0["threadID"] as String) })
+        return PanelSnapshot(items: items, taskThreads: threads)
+    }
+
+    /// Each agent's open Item count, for the sidebar's rows.
+    static func openItemCounts(in db: Database) throws -> [String: Int] {
+        try Dictionary(uniqueKeysWithValues: Row.fetchAll(
+            db, sql: """
+            SELECT id, (SELECT COUNT(*) FROM agent_user_inbox WHERE agentID=agents.id AND status='open') AS count FROM agents
+            """
+        ).map { ($0["id"], $0["count"]) })
     }
 
     /// Shows the user a question, a report, or a suggestion. A suggestion the user dismissed in the last 30 days is not

@@ -8,6 +8,38 @@ import os
 #if canImport(Testing)
     import Testing
 
+    struct EmptyFileDatabaseTests {
+        @Test(arguments: [false, true])
+        func fileInitializationPreservesDataAndMigrationCallbacks(usesPool: Bool) throws {
+            let directory = FileManager.default.temporaryDirectory.appending(path: "dahlia-empty-database-\(UUID.v7())")
+            defer { try? FileManager.default.removeItem(at: directory) }
+            let path = directory.appending(path: "database.sqlite").path
+            let database = try AppDatabaseManager(path: path, usesDatabasePool: usesPool)
+            try database.dbQueue.read { db throws in
+                #expect(try AppDatabaseManager.hasExpectedCurrentSchema(db))
+                #expect(try AppDatabaseManager.migrator.hasCompletedMigrations(db))
+                #expect(try Row.fetchAll(db, sql: "PRAGMA foreign_key_check").isEmpty)
+            }
+            let workspace = WorkspaceRecord(id: .v7(), path: nil, name: "Preserved", createdAt: .now, lastOpenedAt: .now)
+            try database.dbQueue.write { db in try workspace.insert(db) }
+            let saved = try database.dbQueue.read { db in try WorkspaceRecord.fetchOne(db, key: workspace.id) }
+            try database.close()
+            let withoutCallback = try AppDatabaseManager(path: path, usesDatabasePool: usesPool)
+            #expect(try withoutCallback.dbQueue.read { db in try WorkspaceRecord.fetchOne(db, key: workspace.id) } == saved)
+            try withoutCallback.close()
+            let calls = OSAllocatedUnfairLock(initialState: 0)
+            let reopened = try AppDatabaseManager(path: path, usesDatabasePool: usesPool, onMigration: { calls.withLock { $0 += 1 } })
+            #expect(calls.withLock { $0 } == 0)
+            #expect(try reopened.dbQueue.read { db in try WorkspaceRecord.fetchOne(db, key: workspace.id) } == saved)
+            try reopened.close()
+            let freshPath = directory.appending(path: "with-callback.sqlite").path
+            let migrated = try AppDatabaseManager(path: freshPath, usesDatabasePool: usesPool, onMigration: { calls.withLock { $0 += 1 } })
+            #expect(calls.withLock { $0 } == 1)
+            #expect(try migrated.dbQueue.read { db in try AppDatabaseManager.hasExpectedCurrentSchema(db) })
+            try migrated.close()
+        }
+    }
+
     @MainActor
     // Migration coverage is intentionally kept in one suite so schema versions remain easy to audit together.
     // swiftlint:disable:next type_body_length

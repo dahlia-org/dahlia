@@ -27,6 +27,8 @@ struct DahliaBotPanelView: View {
     let model: DahliaBotPanelModel
     let agents: AgentsModel
     @State private var tab = Tab.inbox
+    /// Only one event shows its whole note at a time.
+    @State private var expandedEventID: String?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -55,6 +57,8 @@ struct DahliaBotPanelView: View {
                 }
             }
             .formStyle(.grouped).toggleStyle(.dahliaSwitch).buttonStyle(.dahlia()).font(.dahliaBody).disabled(model.isBusy)
+            // The header's background is clear, so rows scrolled past the Form's top would show through the tabs.
+            .clipped()
         }
         .task(id: model.agentID) {
             while !Task.isCancelled {
@@ -69,6 +73,9 @@ struct DahliaBotPanelView: View {
         Section {
             if model.items.isEmpty { Text(L10n.agentBotInboxEmpty).foregroundStyle(.secondary) }
             ForEach(model.items) { item in itemRow(item) }
+            if model.hasMoreItems {
+                Button(L10n.loadMore) { model.loadMoreItems() }
+            }
         } header: {
             AgentSectionHeader(title: L10n.agentBotInbox) { EmptyView() }
         }
@@ -149,6 +156,20 @@ struct DahliaBotPanelView: View {
                 }
             }
             .toggleStyle(.dahliaSwitch)
+            LabeledContent {
+                Picker(L10n.agentBotWorkerApproval, selection: Binding(
+                    get: { model.workerApprovalMethod }, set: { model.setWorkerApprovalMethod($0) }
+                )) {
+                    ForEach(CodexChatApprovalMethod.allCases) { Label($0.title, systemImage: $0.systemImage).font(.dahliaBody).tag($0) }
+                }
+                .labelsHidden()
+                .fixedSize()
+            } label: {
+                HStack {
+                    Text(L10n.agentBotWorkerApproval)
+                    SettingsInfoButton(help: L10n.agentBotWorkerApprovalHelp)
+                }
+            }
         } header: {
             AgentSectionHeader(title: L10n.agentBotWorkers) { EmptyView() }
         }
@@ -375,7 +396,9 @@ struct DahliaBotPanelView: View {
     }
 
     private func eventRow(_ event: AgentEventRecord) -> some View {
-        DahliaBotEventRow(event: event, icon: eventIcon(event))
+        DahliaBotEventRow(event: event, icon: eventIcon(event), isExpanded: expandedEventID == event.id) {
+            expandedEventID = expandedEventID == event.id ? nil : event.id
+        }
     }
 
     /// The source's logo; an answer the user gave in this panel has no source.
@@ -386,48 +409,103 @@ struct DahliaBotPanelView: View {
     }
 }
 
-/// One recorded event: its source's icon, time, and note. Clicking it shows the whole note, and clicking again folds it.
-private struct DahliaBotEventRow: View {
+/// One recorded event, limited to two lines. Clicking it shows the whole note; a linked event opens its source item
+/// from the link under its icon and time.
+struct DahliaBotEventRow: View {
     let event: AgentEventRecord
     let icon: Image
-    @State private var isExpanded = false
+    let isExpanded: Bool
+    let toggle: () -> Void
     @State private var isHovered = false
 
+    /// Calendar's `ical` scheme opens Apple Calendar events; every other link is a provider's web page.
+    private var url: URL? {
+        guard let url = event.url.flatMap(URL.init(string:)) else { return nil }
+        switch url.scheme?.lowercased() {
+        case "https": return url.host() != nil ? url : nil
+        case "ical": return url
+        default: return nil
+        }
+    }
+
     var body: some View {
-        Button { isExpanded.toggle() } label: {
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
-                icon
-                    .resizable()
-                    .scaledToFit()
-                    .frame(width: 16, height: 16)
-                    // A handled event gets a dot on its icon, so the row's layout never changes with its state.
-                    .overlay(alignment: .bottomTrailing) {
-                        if event.handledAt != nil {
-                            Circle().fill(.green)
-                                .frame(width: 6, height: 6)
-                                .overlay { Circle().strokeBorder(Color(nsColor: .windowBackgroundColor), lineWidth: 1) }
-                                .offset(x: 2, y: 2)
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    icon
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: 16, height: 16)
+                        // A handled event gets a dot on its icon, so the row's layout never changes with its state.
+                        .overlay(alignment: .bottomTrailing) {
+                            if event.handledAt != nil {
+                                Circle().fill(.green)
+                                    .frame(width: 6, height: 6)
+                                    .overlay { Circle().strokeBorder(Color(nsColor: .windowBackgroundColor), lineWidth: 1) }
+                                    .offset(x: 2, y: 2)
+                            }
                         }
-                    }
-                    .alignmentGuide(.firstTextBaseline) { $0[.bottom] - 3 }
-                    .accessibilityHidden(true)
-                Text(event.occurredAt, format: .dateTime.hour().minute())
-                    .font(.dahliaSecondary).foregroundStyle(.secondary).monospacedDigit()
+                        .alignmentGuide(.firstTextBaseline) { $0[.bottom] - 3 }
+                        .accessibilityHidden(true)
+                    Text(event.occurredAt, format: .dateTime.hour().minute())
+                        .font(.dahliaSecondary).foregroundStyle(.secondary).monospacedDigit()
+                }
+                if let url { DahliaBotEventLink(url: url) }
+            }
+            Button(action: toggle) {
                 Text(event.note)
-                    .lineLimit(isExpanded ? nil : 3)
+                    .lineLimit(isExpanded ? nil : 2)
+                    .truncationMode(.tail)
                     .multilineTextAlignment(.leading)
                     .fixedSize(horizontal: false, vertical: true)
-                Spacer(minLength: 0)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(.rect)
             }
-            .padding(.vertical, 2)
-            .padding(.horizontal, 4)
-            .contentShape(.rect)
-            .background(isHovered ? DahliaDesign.contentHighlightColor : .clear, in: .rect(cornerRadius: 6))
+            .buttonStyle(.plain)
+            .focusable()
+            .onKeyPress(keys: [.space, .return], phases: .down) { _ in
+                toggle()
+                return .handled
+            }
+            .accessibilityHint(isExpanded ? L10n.collapse : L10n.expand)
+        }
+        .padding(.vertical, 2)
+        .padding(.horizontal, 4)
+        .contentShape(.rect)
+        .background(isHovered ? DahliaDesign.contentHighlightColor : .clear, in: .rect(cornerRadius: 6))
+        .onHover { isHovered = $0 }
+        // The note and Open are sibling buttons; clicking elsewhere in the row also toggles its note.
+        .onTapGesture(perform: toggle)
+        .accessibilityElement(children: .contain)
+        .accessibilityValue(event.handledAt == nil ? L10n.agentAlwaysOnEventUnassigned : L10n.agentAlwaysOnEventProcessed)
+    }
+}
+
+/// Text-only link to an event's source item. Its hover is stronger than the row's, so it shows inside a hovered row.
+private struct DahliaBotEventLink: View {
+    let url: URL
+    @State private var isHovered = false
+    @Environment(\.openURL) private var openURL
+
+    var body: some View {
+        Button { openURL(url) } label: {
+            Label(L10n.open, systemImage: "arrow.up.right")
+                .font(.dahliaSecondary)
+                .foregroundStyle(isHovered ? .primary : .secondary)
+                .padding(.horizontal, 4)
+                .padding(.vertical, 1)
+                .background(isHovered ? DahliaDesign.chipHoverColor : .clear, in: .rect(cornerRadius: 4))
+                .contentShape(.rect)
         }
         .buttonStyle(.plain)
+        .focusable()
+        .onKeyPress(keys: [.space, .return], phases: .down) { _ in
+            openURL(url)
+            return .handled
+        }
         .onHover { isHovered = $0 }
-        .accessibilityValue(event.handledAt == nil ? L10n.agentAlwaysOnEventUnassigned : L10n.agentAlwaysOnEventProcessed)
-        .accessibilityHint(isExpanded ? L10n.collapse : L10n.expand)
+        // Aligns the link's text with the icon above it, not its padding.
+        .padding(.leading, -4)
     }
 }
 

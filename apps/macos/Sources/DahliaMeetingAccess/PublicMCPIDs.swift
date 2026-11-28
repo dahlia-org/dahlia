@@ -5,15 +5,27 @@ import Foundation
 enum PublicMCPIDs {
     static func arguments(_ value: [String: Any], tool: String) throws -> [String: Any] {
         let optionalStringKeys: Set = [
-            "query", "project", "project_id", "ical_uid", "attendee",
+            "query", "project", "project_id", "meeting_id", "ical_uid", "attendee",
             "created_from", "created_before", "cursor", "server_cursor",
         ]
-        let arguments = value.filter { key, value in
-            guard tool == "query_meetings", optionalStringKeys.contains(key), let string = value as? String else { return true }
+        var arguments = value.filter { key, value in
+            guard ["query_meetings", "query_screenshots"].contains(tool), optionalStringKeys.contains(key),
+                  let string = value as? String else { return true }
             return !string.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        }
+        let screenshotIDs = tool == "get_screenshots" ? arguments["screenshot_ids"] as? [Any] : nil
+        if let screenshotIDs {
+            guard screenshotIDs.allSatisfy({ $0 is String }) else { throw TypeID.Failure.invalidID }
+            arguments.removeValue(forKey: "screenshot_ids")
         }
         guard var result = try PublicIDWire.transform(arguments, shape: "mcpInput", direction: .decode) as? [String: Any] else {
             throw TypeID.Failure.invalidID
+        }
+        if let screenshotIDs {
+            // Only the malformed entry fails; the tool reports it by position.
+            result["screenshot_ids"] = screenshotIDs.map { id -> Any in
+                (try? PublicIDWire.id(id, kind: .attachment, direction: .decode)) ?? NSNull()
+            }
         }
         for key in ["cursor", "server_cursor"] {
             if let cursor = arguments[key] as? String {
@@ -39,6 +51,20 @@ enum PublicMCPIDs {
                 }
                 return converted
             }
+        }
+        if tool == "get_screenshots", let errors = original["errors"] as? [[String: Any]] {
+            let requested = arguments["screenshot_ids"] as? [String] ?? []
+            body["errors"] = errors.map { error in
+                var converted = error
+                if let index = error["index"] as? Int, requested.indices.contains(index) {
+                    converted["screenshot_id"] = requested[index]
+                }
+                return converted
+            }
+        }
+        if tool == "get_meetings", let meetings = original["meetings"] {
+            // Each item is a whole meeting detail, not the meeting metadata that `meetings` holds in query results.
+            body["meetings"] = try PublicIDWire.transform(meetings, shape: "array:mcpResult", direction: .encode)
         }
         if let cursor = original["next_cursor"] as? String {
             body["next_cursor"] = try convertCursor(cursor, tool: tool, direction: .encode)
@@ -93,6 +119,9 @@ enum PublicMCPIDs {
             }
             if let value = object["projectID"] {
                 object["projectID"] = try cursorID(value, kind: .project, direction: direction)
+            }
+            if let value = object["meetingID"] {
+                object["meetingID"] = try cursorID(value, kind: .meeting, direction: direction)
             }
             return try JSONSerialization.data(withJSONObject: object, options: [.sortedKeys]).base64EncodedString()
         }

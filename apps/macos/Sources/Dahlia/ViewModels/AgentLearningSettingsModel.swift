@@ -149,7 +149,7 @@ final class AgentLearningSettingsModel {
         await perform {
             let service = try await PiChatService.shared.scheduleService()
             let account = AppAccount.key
-            let tools = try JSONDecoder().decode([String].self, from: Data(row.allowedTools.utf8))
+            let tools = try AgentMCPSettings.currentScheduledToolGrants(JSONDecoder().decode([String].self, from: Data(row.allowedTools.utf8)))
             _ = try await Task.detached {
                 try service.execute(
                     .object(["action": .string(action), "job_id": .string(row.id)]),

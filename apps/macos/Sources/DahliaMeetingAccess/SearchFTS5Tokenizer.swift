@@ -83,6 +83,19 @@ public final class SearchFTS5Tokenizer: FTS5CustomTokenizer {
         return try Array(tokenizer.tokenize(query: query).prefix(16).map(\.token))
     }
 
+    /// 最初に一致したクエリトークンの前後を切り出す。search_documents_fts は contentless なので FTS5 の snippet() は使えない。
+    public static func snippet(_ text: String, matching tokens: [String]) -> String {
+        let maximumLength = 180
+        guard text.count > maximumLength else { return text }
+        guard let match = tokens.lazy.compactMap({ token in
+            text.range(of: token, options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
+        }).min(by: { $0.lowerBound < $1.lowerBound })
+        else { return String(text.prefix(maximumLength)) }
+        let start = text.index(match.lowerBound, offsetBy: -60, limitedBy: text.startIndex) ?? text.startIndex
+        let end = text.index(start, offsetBy: maximumLength, limitedBy: text.endIndex) ?? text.endIndex
+        return "\(start == text.startIndex ? "" : "…")\(text[start ..< end])\(end == text.endIndex ? "" : "…")"
+    }
+
     public static func quotedQueryToken(_ token: String, isPrefix: Bool) -> String {
         "\"\(token.replacingOccurrences(of: "\"", with: "\"\""))\"\(isPrefix ? "*" : "")"
     }

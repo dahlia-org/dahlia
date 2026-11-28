@@ -107,6 +107,8 @@ struct CodexChatConversationView: View {
     let onLoadEarlierMessages: () async -> Void
     let parentThreadID: String?
     let currentRunID: UUID?
+    /// The agent whose thread this is; its runs get a header with its avatar.
+    var agent: AgentRecord?
     @Bindable var coordinator: CodexChatCoordinator
     let onOpenThread: (CodexChatThreadSummary) -> Void
 
@@ -143,6 +145,7 @@ struct CodexChatConversationView: View {
         let items = CodexChatConversationItem.build(
             from: Array(messages[visibleRange]),
             showsStandaloneThinking: showsStandaloneThinking && !hasLaterMessages,
+            showsRunHeaders: agent != nil,
             previousUserContext: previousUserMessage?.context,
             hasPreviousUserMessage: previousUserMessage != nil,
             relatedThreadsByMessageID: relatedThreadAnchors
@@ -207,9 +210,12 @@ struct CodexChatConversationView: View {
                         CodexChatWorkLogView(
                             steps: steps,
                             duration: duration,
+                            agent: agent,
                             meetingNamesByID: meetingNamesByID,
                             meetingReferencesByID: meetingReferencesByID
                         )
+                    case let .running(_, startedAt):
+                        CodexChatRunningHeaderView(startedAt: startedAt, agent: agent)
                     case let .relatedThreads(_, threads):
                         CodexChatRelatedThreadsView(threads: threads, coordinator: coordinator, onOpen: onOpenThread)
                     }

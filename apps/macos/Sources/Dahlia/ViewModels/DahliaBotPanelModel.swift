@@ -1,5 +1,6 @@
 import AppKit
 import Foundation
+import GRDB
 import Observation
 
 /// An agent's side panel and its event source editor: the Items that need the user, its Tasks, the Sources intake
@@ -38,6 +39,16 @@ final class DahliaBotPanelModel {
     /// The calendar Source's default name, in English like a connector's.
     static let calendarName = "Calendar"
     static let taskPage = 30
+    static let inboxPage = 30
+
+    struct InboxObservationID: Hashable {
+        var agentID: String?
+        var limit: Int
+    }
+
+    var inboxObservationID: InboxObservationID { InboxObservationID(agentID: agentID, limit: itemLimit) }
+    private(set) var itemLimit = inboxPage
+    private(set) var hasMoreItems = false
 
     var sources: [AgentSourceRecord] = []
     var events: [AgentEventRecord] = []
@@ -68,6 +79,8 @@ final class DahliaBotPanelModel {
     private(set) var unattendedEffort = ""
     /// Whether the agent picks each launched thread's model and effort. Saved on the agent.
     private(set) var smartRouting = false
+    /// The approval method of the threads the agent launches. Saved on the agent.
+    private(set) var workerApprovalMethod = CodexChatApprovalMethod.autoReview
 
     /// The text being edited, while the user edits `SOUL.md`.
     var soulDraft: String?
@@ -90,6 +103,9 @@ final class DahliaBotPanelModel {
         saveSmartRouting: @escaping @Sendable (String, Bool) async throws -> Void = {
             try await PiChatService.shared.setAgentSmartRouting($0, $1)
         },
+        saveWorkerApprovalMethod: @escaping @Sendable (String, CodexChatApprovalMethod) async throws -> Void = {
+            try await PiChatService.shared.setAgentWorkerApprovalMethod($0, $1)
+        },
         saveSoulFile: @escaping @Sendable (String, String) async throws -> Void = {
             try await PiChatService.shared.saveBotSoul($0, $1)
         },
@@ -103,6 +119,7 @@ final class DahliaBotPanelModel {
         self.loadAgent = loadAgent
         self.saveAgentModel = saveAgentModel
         self.saveSmartRouting = saveSmartRouting
+        self.saveWorkerApprovalMethod = saveWorkerApprovalMethod
         self.saveSoulFile = saveSoulFile
         self.loadTasks = loadTasks
         self.loadConnectorSettings = loadConnectorSettings
@@ -111,6 +128,7 @@ final class DahliaBotPanelModel {
     private let loadAgent: @Sendable (String) async throws -> AgentRecord
     private let saveAgentModel: @Sendable (String, AgentRecord.ModelUse, String, String) async throws -> Void
     private let saveSmartRouting: @Sendable (String, Bool) async throws -> Void
+    private let saveWorkerApprovalMethod: @Sendable (String, CodexChatApprovalMethod) async throws -> Void
     private var modelSettingsRevision = 0
     private var pendingModelSaves = 0
     private var taskGeneration = 0
@@ -130,11 +148,14 @@ final class DahliaBotPanelModel {
         isBusy = false
         isLoadingFinishedTasks = false
         finishedTaskLimit = Self.taskPage
+        itemLimit = Self.inboxPage
+        hasMoreItems = false
         (sources, events, items, taskThreads, answers) = ([], [], [], [:], [:])
         (activeTasks, finishedTasks, hasMoreFinishedTasks) = ([], [], false)
         (soul, soulDraft, draft, error) = ("", nil, nil, nil)
         (intakeModel, intakeEffort, unattendedModel, unattendedEffort) = ("", "", "", "")
         smartRouting = false
+        workerApprovalMethod = .autoReview
     }
 
     /// A model and its effort are one choice: following the default clears the effort, and a model takes its own default
@@ -171,6 +192,12 @@ final class DahliaBotPanelModel {
         saveModelSetting { [saveSmartRouting] in try await saveSmartRouting(agentID, enabled) }
     }
 
+    func setWorkerApprovalMethod(_ method: CodexChatApprovalMethod) {
+        guard areModelSettingsLoaded, let agentID else { return }
+        workerApprovalMethod = method
+        saveModelSetting { [saveWorkerApprovalMethod] in try await saveWorkerApprovalMethod(agentID, method) }
+    }
+
     private func saveModel(_ use: AgentRecord.ModelUse) {
         guard let agentID else { return }
         let (model, effort) = switch use {
@@ -205,6 +232,7 @@ final class DahliaBotPanelModel {
         (intakeModel, intakeEffort) = (agent.intakeModel ?? "", agent.intakeEffort ?? "")
         (unattendedModel, unattendedEffort) = (agent.unattendedModel ?? "", agent.unattendedEffort ?? "")
         smartRouting = agent.smartRouting
+        workerApprovalMethod = agent.workerApprovalMethod
         areModelSettingsLoaded = true
     }
 
@@ -254,7 +282,7 @@ final class DahliaBotPanelModel {
 
     /// Every request reads the entire visible range, so newer refreshes preserve pending pagination and saved changes.
     func refreshTasks() async throws {
-        guard let agentID else { return }
+        guard let agentID, !Task.isCancelled else { return }
         taskGeneration += 1
         let generation = taskGeneration
         let limit = max(finishedTaskLimit, finishedTasks.count)
@@ -262,10 +290,10 @@ final class DahliaBotPanelModel {
         do {
             tasks = try await loadTasks(agentID, limit)
         } catch {
-            guard generation == taskGeneration else { return }
+            guard generation == taskGeneration, !Task.isCancelled else { return }
             throw error
         }
-        guard generation == taskGeneration else { return }
+        guard generation == taskGeneration, !Task.isCancelled else { return }
         activeTasks = tasks.active
         finishedTasks = tasks.finished
         hasMoreFinishedTasks = tasks.finished.count == limit
@@ -295,11 +323,9 @@ final class DahliaBotPanelModel {
             try await refreshModelSettings()
             guard generation == agentGeneration else { return }
             let loaded = try await PiChatService.shared.loadAlwaysOnSettings(agentID)
-            let inbox = try await PiChatService.shared.loadBotInbox(agentID)
             // The window may have moved to another agent while this one loaded.
             guard generation == agentGeneration else { return }
             (sources, events, paused) = loaded
-            (items, taskThreads) = inbox
             try await refreshTasks()
             guard generation == agentGeneration else { return }
             if soulDraft == nil {
@@ -313,6 +339,54 @@ final class DahliaBotPanelModel {
             await refreshConnectors()
         } catch {
             guard generation == agentGeneration else { return }
+            self.error = error.localizedDescription
+        }
+    }
+
+    /// The Items come only from here, so a slower periodic read can never put back an Item already answered. GRDB
+    /// fetches off MainActor after each commit to the inbox or the Tasks; runs until cancelled or another agent is shown.
+    func observeInbox(in dbQueue: any DatabaseWriter) async {
+        guard let agentID else { return }
+        let generation = agentGeneration
+        let limit = itemLimit
+        // Even registration catch-up fetches only a signal; projection SELECTs always use an explicit async read.
+        let observation = ValueObservation.tracking(region: AgentItemRecord.all(), AgentTaskRecord.all(), fetch: { _ in () })
+        do {
+            for try await _ in observation.values(in: dbQueue, bufferingPolicy: .bufferingNewest(1)) {
+                let snapshot = try await dbQueue.read {
+                    try AgentInboxService.panelSnapshot(agentID: agentID, limit: limit + 1, in: $0)
+                }
+                guard generation == agentGeneration, limit == itemLimit, !Task.isCancelled else { return }
+                let visibleItems = Array(snapshot.items.prefix(limit))
+                if items != visibleItems { items = visibleItems }
+                if taskThreads != snapshot.taskThreads { taskThreads = snapshot.taskThreads }
+                hasMoreItems = snapshot.items.count > limit
+            }
+        } catch {
+            guard generation == agentGeneration, !Task.isCancelled else { return }
+            self.error = error.localizedDescription
+        }
+    }
+
+    func loadMoreItems() {
+        itemLimit += Self.inboxPage
+    }
+
+    /// Task invalidations coalesce while pages load without holding up the independent Item stream.
+    func observeTasks(in dbQueue: any DatabaseWriter) async {
+        guard agentID != nil else { return }
+        let generation = agentGeneration
+        let observation = ValueObservation.tracking(region: AgentTaskRecord.all(), fetch: { _ in () })
+        do {
+            for try await _ in observation.values(in: dbQueue, bufferingPolicy: .bufferingNewest(1)) {
+                guard generation == agentGeneration, !Task.isCancelled else { return }
+                do { try await refreshTasks() } catch {
+                    guard generation == agentGeneration, !Task.isCancelled else { return }
+                    self.error = error.localizedDescription
+                }
+            }
+        } catch {
+            guard generation == agentGeneration, !Task.isCancelled else { return }
             self.error = error.localizedDescription
         }
     }

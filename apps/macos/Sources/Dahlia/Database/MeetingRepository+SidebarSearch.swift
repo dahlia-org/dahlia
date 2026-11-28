@@ -470,12 +470,12 @@ extension MeetingRepository {
         case .description:
             return try .init(
                 kind: .description,
-                text: snippet(meetingText("description", meetingID: meetingID, in: db), matching: tokens)
+                text: SearchFTS5Tokenizer.snippet(meetingText("description", meetingID: meetingID, in: db), matching: tokens)
             )
         case .summary:
             return try .init(
                 kind: .summary,
-                text: snippet(summaryBodyText(meetingID: meetingID, in: db), matching: tokens)
+                text: SearchFTS5Tokenizer.snippet(summaryBodyText(meetingID: meetingID, in: db), matching: tokens)
             )
         case .calendar:
             let calendar = try Row.fetchOne(
@@ -522,18 +522,6 @@ extension MeetingRepository {
     private nonisolated static func summaryBodyText(meetingID: UUID, in db: Database) throws -> String {
         try TextContentAccess.cachedSummary(meetingId: meetingID, in: db)
             .flatMap { try? $0.loadDocument().searchableBodyText } ?? ""
-    }
-
-    private nonisolated static func snippet(_ text: String, matching tokens: [String]) -> String {
-        let maximumLength = 180
-        guard text.count > maximumLength else { return text }
-        guard let match = tokens.lazy.compactMap({ token in
-            text.range(of: token, options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
-        }).min(by: { $0.lowerBound < $1.lowerBound })
-        else { return String(text.prefix(maximumLength)) }
-        let start = text.index(match.lowerBound, offsetBy: -60, limitedBy: text.startIndex) ?? text.startIndex
-        let end = text.index(start, offsetBy: maximumLength, limitedBy: text.endIndex) ?? text.endIndex
-        return "\(start == text.startIndex ? "" : "…")\(text[start ..< end])\(end == text.endIndex ? "" : "…")"
     }
 
     private nonisolated static func searchPlaceholders(_ count: Int) -> String {

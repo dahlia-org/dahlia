@@ -22,7 +22,7 @@ extension PiChatService {
         do the research, writing, and commands, with the same abilities as the user's own chats.
 
         - Answer small questions yourself, from Dahlia's meetings when they help: query_meetings finds meetings, \
-        get_meeting gives one's summary. Pass the IDs Dahlia returns unchanged.
+        get_meetings gives their summaries. Pass the IDs Dahlia returns unchanged.
         - For work, research included, launch a thread with thread_launch: a clear title, and in message everything it \
         needs, since it has none of this conversation. A thread you launch is a task: it shows in the user's history and \
         in your side panel, and its result comes back to this thread. For more on a task, send to its thread with \
@@ -33,9 +33,13 @@ extension PiChatService {
         every event, its note and reference, and the open tasks before you act.
         - When a task needs nothing more, finish it with task_finish. A thread that stopped is not a finished task: it \
         may wait for the user or for an answer.
-        - Make an Item (item_create) only when the user must decide or answer, or would want to know: one decision per \
-        question, with options when there are choices. Their answer comes back to you. When there is nothing the user \
-        needs to hear now, write nothing.
+        - Whatever needs the user's decision, approval, or answer goes in an Item (item_create), never only in your \
+        reply: the user answers from the inbox, and a question in this thread's text gets missed. This holds for a \
+        task's draft waiting for approval too. One decision per Item, with options when there are choices and thread_id \
+        when it is about a task. Their answer comes back to you as an event. inbox_read lists the open Items: do not \
+        ask the same thing twice, and do not repeat open Items in your reply. The only exception is missing information \
+        needed to understand the user's current request; ask for that in your reply. Also make an Item for what the user \
+        would want to know. When there is nothing the user needs to hear now, write nothing.
         - delegate_task is not for the user's work: its helper shows nowhere and can only read meetings and your home's \
         files. Use it only to split up your own reading. When thread_launch fails, tell the user the error; do not fall \
         back to delegate_task.
@@ -167,6 +171,19 @@ extension PiChatService {
         try? history().dbQueue.read { try AgentRecord.fetchOne($0, sql: "SELECT * FROM agents WHERE threadID=?", arguments: [threadID]) }
     }
 
+    /// The approval method the user chose for an agent's workers, when `threadID` is a Task of the agent whose current
+    /// thread is `requester`. It stands in for the agent thread's own method, which a notice turn sets to ask.
+    func workerApprovalMethod(requester: String, thread threadID: String) -> CodexChatApprovalMethod? {
+        try? history().dbQueue.read { try Self.workerApprovalMethod(requester: requester, thread: threadID, in: $0) }
+    }
+
+    nonisolated static func workerApprovalMethod(requester: String, thread threadID: String, in db: Database) throws -> CodexChatApprovalMethod? {
+        let raw = try String.fetchOne(db, sql: """
+        SELECT a.workerApprovalMethod FROM agents a JOIN agent_tasks t ON t.agentID=a.id WHERE a.threadID=? AND t.threadID=?
+        """, arguments: [requester, threadID])
+        return raw.flatMap(CodexChatApprovalMethod.init(rawValue:))
+    }
+
     /// The agent a thread belongs to: its current conversation, an earlier one, or a task it delegated.
     func agent(ofThread threadID: String) -> AgentRecord? {
         try? history().dbQueue.read {
@@ -288,7 +305,6 @@ extension PiChatService {
         var agent: AgentRecord
         var updatedAt: Date?
         var preview: String?
-        var openItems = 0
         var id: String { agent.id }
     }
 
@@ -296,12 +312,7 @@ extension PiChatService {
     func agentSummaries() throws -> [AgentSummary] {
         try history().dbQueue.read { db in
             try AgentRecord.fetchAll(db, sql: "SELECT * FROM agents ORDER BY createdAt, id").map { agent in
-                var summary = try AgentSummary(
-                    agent: agent,
-                    openItems: Int.fetchOne(
-                        db, sql: "SELECT COUNT(*) FROM agent_user_inbox WHERE agentID=? AND status='open'", arguments: [agent.id]
-                    ) ?? 0
-                )
+                var summary = AgentSummary(agent: agent)
                 guard let threadID = agent.threadID, let thread = try ChatThreadRecord.fetchOne(db, key: threadID) else { return summary }
                 summary.updatedAt = thread.updatedAt
                 summary.preview = try String.fetchOne(db, sql: """
@@ -401,7 +412,7 @@ extension PiChatService {
         let head = "- event:\(event.id) "
         let source = event.sourceID.flatMap { sources[$0] } ?? "the app or user"
         return head + "from \(inline(source)), topic \(inline(event.topic)) at \(event.occurredAt.ISO8601Format()):\n"
-            + fenced(event.note + "\nKey: " + (event.key ?? "") + "\nReference: " + (event.ref ?? "null"))
+            + fenced(event.note + "\nKey: " + (event.key ?? "") + "\nReference: " + (event.ref ?? "null") + (event.url.map { "\nLink: " + $0 } ?? ""))
 
     }
 

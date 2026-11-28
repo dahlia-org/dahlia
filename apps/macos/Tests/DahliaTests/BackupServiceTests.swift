@@ -7,7 +7,6 @@ import GRDB
 #if canImport(Testing)
     import Testing
 
-    @MainActor
     struct BackupServiceTests {
         @Test(arguments: [false, true])
         func incompleteSourceTranscriptCannotBecomeAnEmptyBackup(hasResidentSegment: Bool) async throws {

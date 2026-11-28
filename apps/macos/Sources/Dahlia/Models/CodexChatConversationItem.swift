@@ -7,6 +7,8 @@ enum CodexChatConversationItem: Identifiable, Equatable {
     case thinking
     /// The steps of a finished run before its final answer, shown collapsed.
     case work(id: String, messages: [CodexChatMessage], duration: TimeInterval?)
+    /// The header of a run still streaming, shown in an agent's chat.
+    case running(id: String, startedAt: Date?)
 
     var id: String {
         switch self {
@@ -20,12 +22,15 @@ enum CodexChatConversationItem: Identifiable, Equatable {
             "thinking"
         case let .work(id, _, _):
             "work-\(id)"
+        case let .running(id, _):
+            "running-\(id)"
         }
     }
 
     static func build(
         from messages: [CodexChatMessage],
         showsStandaloneThinking: Bool = false,
+        showsRunHeaders: Bool = false,
         previousUserContext initialPreviousUserContext: CodexChatContext? = nil,
         hasPreviousUserMessage initialHasPreviousUserMessage: Bool = false,
         relatedThreadsByMessageID: [String: [CodexChatThreadSummary]] = [:]
@@ -34,7 +39,7 @@ enum CodexChatConversationItem: Identifiable, Equatable {
         var previousUserContext = initialPreviousUserContext
         var hasPreviousUserMessage = initialHasPreviousUserMessage
 
-        for segment in collapsingFinishedRuns(messages) {
+        for segment in collapsingFinishedRuns(messages, showsRunHeaders: showsRunHeaders) {
             guard case let .message(message) = segment else {
                 if case let .work(_, steps, _) = segment,
                    let steer = steps.last(where: { $0.role == .user }) {
@@ -76,14 +81,17 @@ enum CodexChatConversationItem: Identifiable, Equatable {
             guard let messageID = messageIDs.last, !threads.isEmpty else { return [item] }
             return [item, .relatedThreads(messageID: messageID, threads: threads)]
         }
-        if showsStandaloneThinking || hasStreamingReasoning { items.append(.thinking) }
+        let hasRunningHeader = items.contains { if case .running = $0 { true } else { false } }
+        if showsStandaloneThinking || hasStreamingReasoning, !hasRunningHeader { items.append(.thinking) }
         return items
     }
 
     /// Splits each finished run into its opening message, collapsed steps, and final answer.
     /// A run still streaming, or one that ended without an answer, stays expanded.
-    private static func collapsingFinishedRuns(_ messages: [CodexChatMessage]) -> [Self] {
+    /// With `showsRunHeaders`, a streaming run and a finished run without steps get a header too.
+    private static func collapsingFinishedRuns(_ messages: [CodexChatMessage], showsRunHeaders: Bool) -> [Self] {
         var segments: [Self] = []
+        var runStartTimes: [UUID: Date] = [:]
         var start = messages.startIndex
         while start < messages.endIndex {
             let head = messages[start]
@@ -97,6 +105,11 @@ enum CodexChatConversationItem: Identifiable, Equatable {
             start = end
             // A request or notification opens the run and stays outside its steps.
             let bodyStart = run.startIndex + (head.role != .assistant && !head.isSteer ? 1 : 0)
+            // Live notices can split one run into several display segments.
+            if let runID = head.runID, isRunOpener(head), let timestamp = head.timestamp, runStartTimes[runID] == nil {
+                runStartTimes[runID] = timestamp
+            }
+            let startedAt = head.runID.flatMap { runStartTimes[$0] }
             guard head.runID != nil,
                   !run.contains(where: \.isStreaming),
                   let finalIndex = run[bodyStart...].lastIndex(where: { !$0.isSteer }),
@@ -104,7 +117,11 @@ enum CodexChatConversationItem: Identifiable, Equatable {
                   !messages[finalIndex].text.isEmpty,
                   !messages[finalIndex].endsWithToolActivity
             else {
-                segments += run.map { .message($0) }
+                segments += messages[run.startIndex ..< bodyStart].map { .message($0) }
+                if showsRunHeaders, let runID = head.runID, run.contains(where: \.isStreaming) {
+                    segments.append(.running(id: runID.uuidString, startedAt: startedAt))
+                }
+                segments += messages[bodyStart ..< run.endIndex].map { .message($0) }
                 continue
             }
             let answer = messages[finalIndex]
@@ -118,10 +135,10 @@ enum CodexChatConversationItem: Identifiable, Equatable {
             let trailing = messages[(finalIndex + 1) ..< run.endIndex]
             steps += trailing.filter(\.isSteer)
             segments += messages[run.startIndex ..< bodyStart].map { .message($0) }
-            if steps.isEmpty {
+            if steps.isEmpty, !showsRunHeaders {
                 segments.append(.message(answer))
             } else {
-                let duration = (bodyStart > run.startIndex ? head.timestamp : nil).flatMap { startedAt in
+                let duration = startedAt.flatMap { startedAt in
                     answer.timestamp.map { $0.timeIntervalSince(startedAt) }
                 }
                 var finalAnswer = answer
@@ -136,6 +153,11 @@ enum CodexChatConversationItem: Identifiable, Equatable {
 
     private static func isRequest(_ message: CodexChatMessage) -> Bool {
         message.role == .user && !message.isSteer
+    }
+
+    private static func isRunOpener(_ message: CodexChatMessage) -> Bool {
+        if case .notice = message.role { return true }
+        return isRequest(message)
     }
 
     static func relatedThreadAnchors(

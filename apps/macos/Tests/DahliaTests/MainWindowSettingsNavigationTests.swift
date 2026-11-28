@@ -5,6 +5,41 @@
 
     @MainActor
     struct MainWindowSettingsNavigationTests {
+        @Test
+        func helpCanCloseAndReopenWithoutChangingLocation() throws {
+            let suite = "MainWindowSettingsNavigationTests.\(UUID())"
+            let defaults = try #require(UserDefaults(suiteName: suite))
+            defer { defaults.removePersistentDomain(forName: suite) }
+            let navigation = MainWindowNavigation(openMainWindow: {}, initialSettingsCategory: .general, settingsDefaults: defaults)
+            navigation.recordNavigation(to: .projects)
+
+            navigation.presentHelp()
+            #expect(navigation.isShowingHelp)
+            #expect(navigation.currentLocation == .projects)
+            navigation.dismissHelp()
+            #expect(!navigation.isShowingHelp)
+            navigation.presentHelp()
+            #expect(navigation.isShowingHelp)
+            #expect(navigation.currentLocation == .projects)
+        }
+
+        @Test
+        func settingsLinkClosesHelpAndPreservesLocation() throws {
+            let suite = "MainWindowSettingsNavigationTests.\(UUID())"
+            let defaults = try #require(UserDefaults(suiteName: suite))
+            defer { defaults.removePersistentDomain(forName: suite) }
+            let navigation = MainWindowNavigation(openMainWindow: {}, initialSettingsCategory: .general, settingsDefaults: defaults)
+            navigation.recordNavigation(to: .projects)
+            navigation.presentHelp()
+
+            navigation.openSettings(category: .dahliaMCP)
+
+            #expect(!navigation.isShowingHelp)
+            #expect(navigation.isShowingSettings)
+            #expect(navigation.settingsCategory == .dahliaMCP)
+            #expect(navigation.currentLocation == .projects)
+        }
+
         @Test(arguments: [PiRuntimeError.piCommandNotFound(nil), .piCommandNotFound("/missing/pi")])
         func missingPiRecoveryOpensInstallationControls(error: PiRuntimeError) throws {
             let suite = "MainWindowSettingsNavigationTests.\(UUID())"

@@ -58,6 +58,9 @@ findings list を返し、prose や追加 field を要求しない。文章を�
 - 依頼された挙動以外の recording、transcription、settings、schema、MCP、backup 契約を変えていないか。
 - ユーザーが到達できる挙動の変更が、ルート `AGENTS.md` の Definition of Done に挙げた該当 surface（client、account、入口、MCP、
   逆方向の操作）で揃っているか。意図的に対象外とした surface は除き、別の surface から到達できる欠落を指摘する。
+- macOS app の挙動、設定、既定値、UI 名、要約の入力・スクリーンショット選別・プロンプト、Local MCP の tool を変える変更が、
+  `apps/macos/Sources/DahliaRuntimeSupport/Skills/` の同梱 skill（`dahlia-guide` の references など）の該当記述も更新しているか。
+  古い記述は AI がユーザーへ誤った手順や仕組みを案内する原因になるため、残っていれば finding にする。
 - 新しい coordinator、store、repository、worker が既存 owner と責務を重複していないか。
 - target state と異なる実装を、現在の実装例だけを根拠に正当化していないか。
 - 依存の追加または更新、設定項目の既定値の変更、telemetry field または SDK 呼び出しの追加が依頼範囲に含まれ、PR 本文の `Key decisions` で説明されているか。依頼に含まれない場合は finding にする。設定を持たない UI の初期状態（初期スクロール位置や余白など）は既定値の変更に含まない。

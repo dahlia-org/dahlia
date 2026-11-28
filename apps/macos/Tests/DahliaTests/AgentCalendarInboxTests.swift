@@ -49,8 +49,63 @@
                 isAllDay: false,
                 isAttending: accepted,
                 responseStatus: accepted ? .accepted : .tentative,
-                conferenceURI: nil
+                conferenceURI: nil,
+                url: URL(string: "https://www.google.com/calendar/event?eid=\(id)")
             ).scoped(to: provider)
+        }
+
+        @Test func meetingSignalNamesTheMeetingAndKeepsItsWebLink() throws {
+            let (service, _) = try service()
+            try service.reconcileCalendar(.init(events: [event()], successfulProviders: ["provider-a"]), now: now)
+            let signal = try #require(try service.recentEvents().first)
+            #expect(signal.note == L10n.agentCalendarMeetingNote("Meeting") && signal.note.contains("Meeting"))
+            #expect(signal.url == "https://www.google.com/calendar/event?eid=event")
+        }
+
+        @Test func appleCalendarEventOpensInCalendar() {
+            let event = CalendarEvent(
+                id: "cal::ABC:DEF::1700000000", calendarID: "cal", calendarName: "Calendar", calendarColorHex: nil,
+                platform: CalendarEventPlatform.macOSCalendar, platformId: "ABC:DEF::1700000000", title: "Meeting",
+                description: "", icalUid: nil, startDate: now, endDate: now, isAllDay: false, conferenceURI: nil
+            )
+            #expect(AgentInboxService.pageURL(event) == "ical://ekevent/ABC:DEF?method=show&options=more")
+        }
+
+        @Test(arguments: [false, true])
+        func reconciliationRefreshesPendingAgendaWordingWithoutChangingHistory(paused: Bool) throws {
+            let (service, sourceID) = try service()
+            var source = try #require(try service.sources().first)
+            source.enabled = !paused
+            try service.saveSource(source, now: now)
+            let originals = [
+                ("daily:old", -3600.0, false), ("weekly:old", 3600.0, false), ("daily:done", -7200.0, true),
+            ].map { key, offset, handled in
+                AgentEventRecord(
+                    id: UUID.v7().uuidString, agentID: service.agentID, sourceID: sourceID, key: key, topic: nil,
+                    note: "Use calendar_read", ref: "{\"date\":\"retained\"}", occurredAt: now.addingTimeInterval(offset),
+                    taskID: nil, handledAt: handled ? now : nil, createdAt: now
+                )
+            }
+            try service.dbQueue.write { db in
+                for original in originals { try original.insert(db) }
+            }
+            try service.reconcileCalendar(.init(selectedProviders: ["provider-a"]), now: now)
+            let events = try service.recentEvents()
+            #expect(events.count == originals.count)
+            for original in originals {
+                let refreshed = try #require(events.first { $0.id == original.id })
+                #expect(refreshed.occurredAt == original.occurredAt && refreshed.ref == original.ref && refreshed.handledAt == original.handledAt)
+                let expected: String
+                if original.handledAt != nil {
+                    expected = original.note
+                } else if original.key?.hasPrefix("daily:") == true {
+                    expected = AgentSourcePrompt.dailyNote(source)
+                } else {
+                    expected = AgentSourcePrompt.weeklyNote(source)
+                }
+                #expect(refreshed.note == expected)
+                if original.handledAt == nil { #expect(!refreshed.note.contains("calendar_read")) }
+            }
         }
 
         @Test func duplicateMovedDeletedAndStartedMeetingsReconcileEvenAfterTheSignalIsDue() throws {

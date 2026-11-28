@@ -15,6 +15,7 @@ Use event_record with:
 - topic: the conversation ID, such as a mail thread or a Slack thread.
 - note: what happened and why it matters, at most 500 characters.
 - ref: the IDs you would pass to the source's tools to read the item again.
+- url: the item's own link exactly as the tool result gave it, such as a Slack permalink, for that same key. Omit it when the result has none; never copy a link from the message text.
 - occurred_at: when the item arrived, in ISO 8601.
 - sender: the sender's address or ID.
 

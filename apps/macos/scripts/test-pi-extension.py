@@ -65,7 +65,8 @@ def sandbox(root):
     parameters = {"WORK": root / "workspace", "TMP": root / "tmp", "PI_TMP": root / "pi-tmp", "AGENT": root / "agent",
                   "APP_SUPPORT": root / "support", "RELEASED_APP_SUPPORT": root / "released", "RELEASED_AGENT": root / "released-agent", "PI": root / "pi",
                   "RESOURCES": EXTENSION.parent, "AGENTS": root / "agents", "RELEASED_AGENTS": root / "released-agents",
-                  "SKILLS": root / "skills", "FILE_STORE": root / "FileStore", "DATABASE": root / "dahlia.sqlite"}
+                  "SKILLS": root / "skills", "SHARED_SKILLS": root / "shared-skills",
+                  "FILE_STORE": root / "FileStore", "DATABASE": root / "dahlia.sqlite"}
     defines = [arg for key, value in parameters.items() for arg in ("-D", f"{key}={os.path.realpath(value)}")]
     return ["/usr/bin/sandbox-exec", "-f", str(SANDBOX), *defines]
 # A stand-in for dahlia-mcp with one read-only and one changing tool.
@@ -81,7 +82,7 @@ for line in sys.stdin:
         result = {"protocolVersion": msg["params"].get("protocolVersion"), "capabilities": {"tools": {}},
                   "serverInfo": {"name": "dahlia", "version": "1"}}
     elif method == "tools/list":
-        result = {"tools": [{"name": name, "inputSchema": {"type": "object"}} for name in ("get_meeting", "update_meeting")]}
+        result = {"tools": [{"name": name, "inputSchema": {"type": "object"}} for name in ("get_meetings", "update_meeting")]}
     elif method == "tools/call":
         result = {"content": [{"type": "text", "text": "MCP_OK"}]}
     sys.stdout.write(json.dumps({"jsonrpc": "2.0", "id": msg["id"], "result": result}) + "\\n")
@@ -89,7 +90,7 @@ for line in sys.stdin:
 """
 
 
-def http_mcp(authorizations):
+def http_mcp(authorizations, extra_read_tools=()):
     """A streamable HTTP stand-in for a Unity AI Gateway MCP with one read-only and one changing tool."""
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, *_):
@@ -117,7 +118,8 @@ def http_mcp(authorizations):
                     {"name": "send_message", "inputSchema": {"type": "object"}},
                     {"name": "post_message", "inputSchema": {"type": "object", "required": ["message"], "properties": {
                         "message": {"type": "string"}, "thread_ts": {"type": "string"}, "broadcast": {"type": "boolean"}, "parent": {"type": ["string", "null"]}}}},
-                ]}
+                ] + [{"name": name, "inputSchema": {"type": "object"}, "annotations": {"readOnlyHint": True}}
+                     for name in extra_read_tools]}
             elif method == "tools/call" and msg["params"]["name"] == "post_message":
                 result = {"content": [{"type": "text", "text": "POSTED " + json.dumps(msg["params"].get("arguments", {}), sort_keys=True)}]}
             elif method == "tools/call":
@@ -136,6 +138,11 @@ def http_mcp(authorizations):
                         items, next_cursor = messages, ""
                 text = json.dumps({"items": items, "nextCursor": next_cursor,
                                    "has_more": bool(next_cursor)}) if items is not None else "GATEWAY_OK"
+                if args.get("probe_case") == "slack_csv":
+                    text = "MsgID,Text,Permalink,Cursor\r\n"
+                    if not args.get("cursor"):
+                        text += ('1700000000.123456,"Text, ""quoted""\nhttps://unrelated.example",'
+                                 'https://team.slack.com/archives/C123/p1700000000123456,csv-next\r\n')
                 result = {"content": [{"type": "text", "text": text}]}
                 if msg["params"].get("arguments", {}).get("probe_error"):
                     result = {"isError": True, "content": [{"type": "text", "text": "Source page failed"}]}
@@ -394,7 +401,8 @@ def gateway(script, requests, triage=False):
 
 
 def run(pi, mode, script, arguments, environment, approval="accept", approval_mode="ask", api="openai-responses", mcp_servers=None,
-        compat=None, auth=None, triage=False, prompts=1, bridge_answers=None, steer_message=None, web_access=None):
+        compat=None, auth=None, triage=False, prompts=1, bridge_answers=None, steer_message=None, web_access=None,
+        project_mcp_servers=None):
     """Runs prompts; returns gateway requests, tool results, bridge calls, and whether ../outside.txt exists."""
     requests, tool_results, bridge = [], [], []
     server = gateway(script, requests, triage=triage)
@@ -411,10 +419,11 @@ def run(pi, mode, script, arguments, environment, approval="accept", approval_mo
             (root / "workspace" / protected).write_text("PROTECTED_MARKER")
         (root / "workspace/pixel.png").write_bytes(base64.b64decode(
             "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="))
-        # Project-local Pi configuration that chat could have written must never start anything.
+        # Untrusted project-local configuration must not start anything; the resource regression supplies a trusted fixture.
         (root / "workspace/.pi").mkdir()
         (root / "workspace/.pi/mcp.json").write_text(json.dumps(
-            {"mcpServers": {"planted": {"command": "/usr/bin/touch", "args": [str(root / "outside.txt")]}}}))
+            {"mcpServers": project_mcp_servers if project_mcp_servers is not None else
+             {"planted": {"command": "/usr/bin/touch", "args": [str(root / "outside.txt")]}}}))
         for folder in ("tmp", "pi-tmp", "skills"):
             (root / folder).mkdir()
         (root / "skills/SKILL.md").write_text("SKILL_MARKER")
@@ -720,7 +729,7 @@ def omnigent_approval_regression(pi):
 def schedule_approval_regression(pi):
     """Real Pi must review Dahlia's effective schedule before committing it."""
     effective = {"action": "create", "prompt": "Read saved meetings", "schedule": "30m",
-                 "skills": ["meeting-reviewer"], "approved_read_only_tools": ["mcp__dahlia__get_meeting"], "revision": 2}
+                 "skills": ["meeting-reviewer"], "approved_read_only_tools": ["mcp__dahlia__get_meetings"], "revision": 2}
     challenge = {"request_id": "frozen-schedule", "approval": {
         "kind": "mcpToolCall", "server": "dahlia", "tool": "cronjob", "arguments": effective}}
     for mode, risk, outcome, decision, allowed, asks in [
@@ -786,6 +795,43 @@ for line in sys.stdin:
     print("PASS: invalid connector does not disable native MCP, sandbox environment or approval hooks; no unrelated server starts")
 
 
+def scoped_mcp_resources(pi):
+    # A trusted project can add a connected server independently of Dahlia's registered-server snapshot.
+    with tempfile.TemporaryDirectory() as temporary:
+        selected, foreign = Path(temporary) / "selected.log", Path(temporary) / "foreign.log"
+        script = """import json,sys
+from pathlib import Path
+for line in sys.stdin:
+    request=json.loads(line)
+    if 'id' not in request: continue
+    method=request['method']
+    with Path(sys.argv[1]).open('a') as log: log.write(method+'\\n')
+    result={}
+    if method=='initialize': result={'protocolVersion':'2024-11-05','capabilities':{'resources':{},'tools':{}},'serverInfo':{'name':'fixture','version':'1'}}
+    if method=='tools/list': result={'tools':[]}
+    if method=='resources/list': result={'resources':[{'uri':'fixture://one','name':'RESOURCE_MARKER'}]}
+    if method=='resources/read': result={'contents':[{'uri':'fixture://one','text':'CONTENT_MARKER'}]}
+    print(json.dumps({'jsonrpc':'2.0','id':request['id'],'result':result}),flush=True)
+"""
+        config = lambda log: {"command": sys.executable, "args": ["-c", script, str(log)], "exposure": "direct"}
+        _, results, bridge, _ = run(pi, "chat", [
+            {"tool": "list_mcp_resources", "args": {}},
+            {"tool": "list_mcp_resources", "args": {"server": "foreign"}},
+            {"tool": "read_mcp_resource", "args": {"server": "foreign", "uri": "fixture://one"}},
+            {"tool": "list_mcp_resources", "args": {"server": "selected"}},
+            {"tool": "read_mcp_resource", "args": {"server": "selected", "uri": "fixture://one"}},
+            {"text": "done"}], ["--no-session", "--approve", *CHAT_EXTENSIONS, "--tools", "list_mcp_resources,read_mcp_resource"],
+            {"DAHLIA_PI_MCP_SERVERS": '["selected"]'}, mcp_servers={"selected": config(selected)},
+            project_mcp_servers={"foreign": config(foreign)})
+        assert len(results) == 5 and all("explicit server" in result for result in results[:3]), results
+        assert "RESOURCE_MARKER" in results[3] and "CONTENT_MARKER" in results[4], results
+        assert foreign.exists() and "initialize" in foreign.read_text(), "Foreign server was not actually connected"
+        assert "resources/list" not in foreign.read_text() and "resources/read" not in foreign.read_text(), foreign.read_text()
+        assert "resources/list" in selected.read_text() and "resources/read" in selected.read_text(), selected.read_text()
+        assert not any(method == "approval" for method, _ in bridge), bridge
+    print("PASS: resource tools require an explicit registered server even with a connected trusted-project MCP")
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--pi", default="pi")
@@ -798,6 +844,7 @@ def main():
     web_access_package = args.web_access_package
     os.environ.setdefault("DAHLIA_PI_AUTO_REVIEW", str(ROOT / "apps/macos/Sources/Dahlia/PiExtension/pi-auto-review/index.ts"))
     scoped_mcp_startup(pi)
+    scoped_mcp_resources(pi)
     if args.only_mcp_config:
         return
     if args.only_web_access:
@@ -866,7 +913,7 @@ def main():
             profile = options.pop("profile", "interactive")
             names = options.pop("tool_names", CHAT_ARGUMENTS[-1])
             isolated = dict(environment, DAHLIA_PI_PROFILE=profile, DAHLIA_PI_MEMORY_ENABLED="1",
-                            DAHLIA_PI_ALLOWED_TOOLS=json.dumps(["mcp__dahlia__get_meeting"]))
+                            DAHLIA_PI_ALLOWED_TOOLS=json.dumps(["mcp__dahlia__get_meetings"]))
             web_access = options.pop("web_access", None)
             return run(pi, "chat", [*steps, {"text": "done"}], [*CHAT_ARGUMENTS[:-2], "--tools", names], isolated,
                        web_access=web_access, **options)
@@ -885,7 +932,7 @@ def main():
         assert any(method == "memory" for method, _ in bridge_calls), (results, bridge_calls)
         _, results, bridge_calls, _ = chat({"tool": "mcp__dahlia__update_meeting"}, profile="scheduled", approval_mode="fullAccess")
         assert "not approved" in results[0] and "MCP_OK" not in results[0], results
-        _, results, bridge_calls, _ = chat({"tool": "mcp__dahlia__get_meeting"}, profile="scheduled", bridge_answers={"scheduledTool": True})
+        _, results, bridge_calls, _ = chat({"tool": "mcp__dahlia__get_meetings"}, profile="scheduled", bridge_answers={"scheduledTool": True})
         assert "MCP_OK" in results[0] and any(method == "scheduledTool" for method, _ in bridge_calls), (results, bridge_calls)
 
         # Budget exhaustion must abort Pi; throwing from a hook alone is logged and ignored by Pi.
@@ -897,7 +944,7 @@ def main():
 
         requests, results, _, _ = chat({"tool": "read", "args": {"path": "inside.txt"}})
         names = [tool.get("name") for tool in requests[0]["body"].get("tools", [])]
-        assert {"read", "ls", "bash", "mcp__dahlia__get_meeting"} <= set(names), names
+        assert {"read", "ls", "bash", "mcp__dahlia__get_meetings"} <= set(names), names
         assert "INSIDE_MARKER" in results[0], results
         # Dahlia's skills are readable, and an image is still recognized when read through the sandbox.
         _, results, _, _ = chat({"tool": "read", "args": {"path": "../skills/SKILL.md"}}, {"tool": "read", "args": {"path": "pixel.png"}})
@@ -956,7 +1003,7 @@ def main():
         assert "it's $HOME" in results[0] and "PI_CODING_AGENT_DIR" in results[0], results
         assert "SECRET_MARKER" not in results[0], results
 
-        _, results, bridge, _ = chat({"tool": "mcp__dahlia__get_meeting"})
+        _, results, bridge, _ = chat({"tool": "mcp__dahlia__get_meetings"})
         assert results == ["MCP_OK"] and not any(method == "approval" for method, _ in bridge), (results, bridge)
         _, results, bridge, _ = chat({"tool": "mcp__dahlia__update_meeting", "args": {"title": "x"}})
         approvals = [payload for method, payload in bridge if method == "approval"]
@@ -1231,6 +1278,52 @@ def main():
             {"DAHLIA_PI_MCP_SERVERS": json.dumps(["gmail"]), "DAHLIA_PI_PROFILE": profile}, mcp_servers=mcp_servers, auth=auth,
             bridge_answers={"intakeSeen": True})
         assert [call for call in bridge if call[0] == "intakeSeen"] == expected, (profile, bridge)
+
+    # Only observed provider IDs, not message body links, become source navigation metadata.
+    link_listing = {"probe_items": [{"id": "19abc", "threadId": "19abc", "body": "https://unrelated.example"}]}
+    _, _, bridge, _ = run(
+        pi, "chat", [{"tool": "mcp__gmail__search_messages", "args": link_listing}, {"text": "done"}],
+        ["--no-session", *CHAT_EXTENSIONS, "--tools", "event_record,mcp__gmail__*"],
+        {"DAHLIA_PI_MCP_SERVERS": json.dumps(["gmail"]), "DAHLIA_PI_PROFILE": "intake", "DAHLIA_PI_INTAKE_SERVICE": "mail"},
+        mcp_servers=mcp_servers, auth=auth, bridge_answers={"intakeSeen": True})
+    observed = [payload for method, payload in bridge if method == "intakeSeen"]
+    assert len(observed) == 1 and observed[0]["links"] == {"19abc": "https://mail.google.com/mail/u/0/#all/19abc"}, bridge
+
+    # Slack CSV preserves same-row message IDs/permalinks and the continuation until an empty final page.
+    csv_query = {"probe_case": "slack_csv", "query": "new messages"}
+    _, _, bridge, _ = run(
+        pi, "chat", [{"tool": "mcp__gmail__search_messages", "args": csv_query},
+                     {"tool": "mcp__gmail__search_messages", "args": dict(csv_query, cursor="csv-next")}, {"text": "done"}],
+        ["--no-session", *CHAT_EXTENSIONS, "--tools", "event_record,mcp__gmail__*"],
+        {"DAHLIA_PI_MCP_SERVERS": json.dumps(["gmail"]), "DAHLIA_PI_PROFILE": "intake", "DAHLIA_PI_INTAKE_SERVICE": "slack"},
+        mcp_servers=mcp_servers, auth=auth, bridge_answers={"intakeSeen": True})
+    observed = [payload for method, payload in bridge if method == "intakeSeen"]
+    assert len(observed) == 2 and observed[0]["ids"] == ["1700000000.123456"] and observed[1]["ids"] == [], bridge
+    assert observed[0]["links"] == {"1700000000.123456": "https://team.slack.com/archives/C123/p1700000000123456"}, bridge
+    assert observed[0]["pages"][0]["nextRequestKey"] == observed[1]["pages"][0]["requestKey"], bridge
+    assert observed[1]["pages"][0]["nextRequestKey"] == "" and not observed[1]["pages"][0]["hasMore"], bridge
+
+    # This connector requires limit to be cleared for history/reply cursors, while channel/thread scope remains.
+    slack_tools = ["conversations_history", "conversations_replies"]
+    slack_server = http_mcp([], slack_tools)
+    try:
+        for tool in slack_tools:
+            scope = {"probe_case": "slack_csv", "channel_id": "C123", "include_activity_messages": False}
+            if tool == "conversations_replies":
+                scope["thread_ts"] = "1700000000.123456"
+            _, _, bridge, _ = run(
+                pi, "chat", [{"tool": f"mcp__slack__{tool}", "args": dict(scope, limit="50")},
+                             {"tool": f"mcp__slack__{tool}", "args": dict(scope, cursor="csv-next")}, {"text": "done"}],
+                ["--no-session", *CHAT_EXTENSIONS, "--tools", "event_record,mcp__slack__*"],
+                {"DAHLIA_PI_MCP_SERVERS": json.dumps(["slack"]), "DAHLIA_PI_PROFILE": "intake", "DAHLIA_PI_INTAKE_SERVICE": "slack"},
+                mcp_servers={"slack": {"url": f"http://127.0.0.1:{slack_server.server_port}/mcp", "exposure": "direct"}},
+                auth={}, bridge_answers={"intakeSeen": True})
+            pages = [page for method, payload in bridge if method == "intakeSeen" for page in payload["pages"]]
+            assert len(pages) == 2 and pages[0]["root"] and not pages[1]["root"], bridge
+            assert pages[0]["nextRequestKey"] == pages[1]["requestKey"] and pages[1]["nextRequestKey"] == "", pages
+            assert json.loads(pages[1]["requestKey"])[1] == dict(scope, cursor="csv-next"), pages
+    finally:
+        slack_server.shutdown()
 
     # An MCP error followed by a normal assistant ending must still reach the native cursor gate. A later success
     # does not erase the earlier failure: the native run retries the whole range.

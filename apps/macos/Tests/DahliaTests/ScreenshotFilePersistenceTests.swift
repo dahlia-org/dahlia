@@ -81,9 +81,75 @@
                     return Data("{}".utf8)
                 }
             )
-            #expect(try helper.screenshot(meetingID: fixture.image.meetingId, screenshotID: fixture.image.id).imageData == fixture
-                .bytes)
+            #expect(try helper.screenshots(ids: [fixture.image.id]).images.first?.imageData == fixture.bytes)
             #expect(calls.withLock { $0 } == 1)
+        }
+
+        @Test
+        func metadataOnlyScreenshotReadSkipsImageResolutionOnCacheMiss() async throws {
+            let fixture = try Fixture()
+            defer { fixture.removeFiles() }
+            try await fixture.provider.persistCapture(fixture.image, dbQueue: fixture.database.dbQueue)
+            try FileManager.default.removeItem(at: fixture.imageURL)
+            let imageReads = Mutex(0)
+            let touches = Mutex(0)
+            let bytes = fixture.bytes
+            let store = try MeetingAccessStore(
+                databaseURL: fixture.databaseURL, workspaceID: fixture.workspace.id,
+                screenshotCache: ScreenshotFileStore(directory: fixture.directory, readOnly: true),
+                imageResolver: { _, _, _ in
+                    imageReads.withLock { $0 += 1 }
+                    return bytes
+                },
+                textResolver: { _, _ in
+                    touches.withLock { $0 += 1 }
+                    return Data("{}".utf8)
+                }
+            )
+            let result = try store.screenshots(ids: [fixture.image.id], includeImages: false)
+            #expect(result.list.screenshots.first?.id == fixture.image.id)
+            #expect(result.list.screenshots.first?.filePath == nil)
+            #expect(result.list.errors.isEmpty && result.images.isEmpty)
+            #expect(imageReads.withLock { $0 } == 0)
+            #expect(touches.withLock { $0 } == 0)
+        }
+
+        @Test
+        func meetingAccessFindsOriginalsCreatedAfterTheHelperStarts() async throws {
+            let fixture = try Fixture()
+            defer { fixture.removeFiles() }
+            let bytes = fixture.bytes
+            let store = try MeetingAccessStore(
+                databaseURL: fixture.databaseURL, workspaceID: fixture.workspace.id,
+                imageResolver: { _, _, _ in bytes }
+            )
+            let listing = ScreenshotTextQuery(meetingID: fixture.image.meetingId)
+            #expect(try store.queryScreenshots(listing).screenshots.isEmpty)
+            try await fixture.provider.persistCapture(fixture.image, dbQueue: fixture.database.dbQueue)
+            #expect(try store.queryScreenshots(listing).screenshots.first?.filePath == fixture.imageURL.path)
+            #expect(try store.screenshots(ids: [fixture.image.id]).list.screenshots.first?.filePath == fixture.imageURL.path)
+            try FileManager.default.removeItem(at: fixture.imageURL)
+            #expect(try store.queryScreenshots(listing).screenshots.first?.filePath == nil)
+        }
+
+        @Test
+        func meetingAccessReturnsTheOriginalPathOnlyWhileItIsOnDisk() async throws {
+            let fixture = try Fixture()
+            defer { fixture.removeFiles() }
+            try await fixture.provider.persistCapture(fixture.image, dbQueue: fixture.database.dbQueue)
+            let store = try MeetingAccessStore(
+                databaseURL: fixture.databaseURL, workspaceID: fixture.workspace.id,
+                screenshotCache: ScreenshotFileStore(directory: fixture.directory, readOnly: true),
+                imageResolver: { _, _, _ in throw ScreenshotContentError.unavailable },
+                textResolver: { _, _ in Data("{}".utf8) }
+            )
+            let meetingID = fixture.image.meetingId
+            #expect(try store.screenshots(ids: [fixture.image.id]).list.screenshots.first?.filePath == fixture.imageURL.path)
+            let listing = ScreenshotTextQuery(meetingID: meetingID)
+            #expect(try store.queryScreenshots(listing).screenshots.first?.filePath == fixture.imageURL.path)
+
+            try FileManager.default.removeItem(at: fixture.imageURL)
+            #expect(try store.queryScreenshots(listing).screenshots.first?.filePath == nil)
         }
 
         @Test

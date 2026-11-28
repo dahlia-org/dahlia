@@ -63,9 +63,11 @@
                 replies: CommandLog? = nil,
                 // Launched threads keep working, so their results do not start more notices while a test looks at one.
                 holdsLaunched: Bool = true,
+                modelTransport: TestPiTransport? = nil,
                 calendarSnapshot: @escaping @Sendable () async -> AgentCalendarSnapshot = { .init() }
             ) throws -> Fixture {
                 let pi = TestPiRuntime { options in
+                    if options.mode == .control, let modelTransport { return modelTransport }
                     let script = calls[options.profile] ?? []
                     return TestPiTransport { command in
                         switch command["type"]?.stringValue {
@@ -1126,6 +1128,8 @@
                 let store = ChatThreadStore(dbQueue: db)
                 let original = try await firstRun(fixture, thread: launched)
                 _ = try await fixture.service.updateApprovalMethod(threadID: launched, approvalMethod: .fullAccess)
+                // The agent's worker setting caps its Task; once the agent is gone, its retired thread's own choice does.
+                try await fixture.service.setAgentWorkerApprovalMethod(fixture.agentID, .ask)
                 _ = try await fixture.service.updateApprovalMethod(threadID: botThread, approvalMethod: .ask)
                 #expect(await fixture.service.effectiveApprovalMethod(launched) == .ask)
                 let queuedThread = UUID.v7().uuidString
@@ -1164,6 +1168,132 @@
                 AgentBackgroundActivity.setRecording(false)
                 await fixture.service.drainAlwaysOn()
                 #expect(try await botRuns(fixture).count == 1)
+            }
+
+            /// A Task follows its agent's worker setting, Auto review by default, not the method of the turn that launched it:
+            /// a notice turn asks, yet its Task reviews with AI. Tightening the setting reaches the running Task.
+            @Test func tasksFollowTheAgentsWorkerApproval() async throws {
+                let db = try AppDatabaseManager(path: ":memory:").dbQueue
+                let fixture = try fixture(db: db, provider: AppAccount.key, calls: [.bot: [
+                    threadCall("thread_launch", [
+                        "title": .string("Work"), "message": .string("Do it"), "client_request_id": .string("w1"),
+                    ]),
+                ]])
+                defer { cleanUp(fixture) }
+                #expect(try await fixture.service.agent(fixture.agentID).workerApprovalMethod == .autoReview)
+                _ = try recordMail(fixture, excerpt: "Hello")
+                try await notify(fixture)
+                #expect(try await botRuns(fixture).last?.approvalMethod == "ask")
+                let launched = try #require(try tasks(fixture).first?.threadID)
+                #expect(try await firstRun(fixture, thread: launched).approvalMethod == "autoReview")
+                #expect(await pollUntil { await fixture.service.effectiveApprovalMethod(launched) == .autoReview })
+
+                try await fixture.service.setAgentWorkerApprovalMethod(fixture.agentID, .ask)
+                #expect(await fixture.service.effectiveApprovalMethod(launched) == .ask)
+                #expect(try await fixture.service.agent(fixture.agentID).workerApprovalMethod == .ask)
+                try await fixture.service.setAgentWorkerApprovalMethod(fixture.agentID, .fullAccess)
+                #expect(await fixture.service.effectiveApprovalMethod(launched) == .autoReview)
+            }
+
+            @Test(arguments: ["thread_launch", "thread_send", "delegate_task"])
+            func workerApprovalOnlyAppliesToAgentTasks(method: String) async throws {
+                let db = try AppDatabaseManager(path: ":memory:").dbQueue
+                let store = ChatThreadStore(dbQueue: db)
+                let target = UUID.v7().uuidString
+                try store.createThread(ChatThreadRecord(id: target, accountID: AppAccount.key, title: "Chat", createdAt: .now, updatedAt: .now))
+                let replies = CommandLog()
+                let fixture = try fixture(db: db, provider: AppAccount.key, calls: [.bot: [
+                    threadCall(method, [
+                        "thread_id": .string(target), "title": .string("Work"), "message": .string("Do it"),
+                        "task": .string("Do it"), "client_request_id": .string("approval"), "mode": .string("queue"),
+                    ]),
+                ]], replies: replies)
+                defer { cleanUp(fixture) }
+                try await fixture.service.setAgentWorkerApprovalMethod(fixture.agentID, .ask)
+                _ = try await fixture.service.updateApprovalMethod(threadID: target, approvalMethod: .fullAccess)
+                let bot = try await fixture.service.botThread(fixture.agentID)
+                let handle = try await fixture.service.beginTurn(
+                    threadID: bot, inputs: [.text("Do it")], model: nil, effort: "medium", approvalMethod: .fullAccess
+                )
+                for try await _ in handle.events {}
+                let result = try #require(answers(replies).first?.objectValue)
+                let rawRunID = try #require(result["run_id"]?.stringValue)
+                let runID = try #require(UUID(uuidString: rawRunID))
+                let run = try #require(try store.run(id: runID))
+                #expect(run.approvalMethod == (method == "thread_launch" ? "ask" : "fullAccess"))
+            }
+
+            @Test(arguments: [false, true], [false, true])
+            func existingTasksUseCurrentWorkerApprovalForNewRuns(keepsProcess: Bool, explicitOverride: Bool) async throws {
+                let db = try AppDatabaseManager(path: ":memory:").dbQueue
+                let store = ChatThreadStore(dbQueue: db)
+                let target = UUID.v7().uuidString
+                try store.createThread(ChatThreadRecord(id: target, accountID: AppAccount.key, title: "Task", createdAt: .now, updatedAt: .now))
+                let replies = CommandLog()
+                let fixture = try fixture(db: db, provider: AppAccount.key, calls: [.bot: [
+                    threadCall("thread_send", [
+                        "thread_id": .string(target), "message": .string("Do it"),
+                        "client_request_id": .string("send"), "mode": .string("queue"),
+                    ]),
+                ]], replies: replies, holdsLaunched: false)
+                defer { cleanUp(fixture) }
+                try fixture.inbox.setPaused(true)
+                try fixture.inbox.openTask(threadID: target, title: "Task", instructions: "Work", eventIDs: [])
+                if explicitOverride {
+                    _ = try await fixture.service.updateApprovalMethod(threadID: target, approvalMethod: .autoReview)
+                }
+                let lease = await fixture.service.acquireThreadLease(threadID: target)
+                var processID: UUID?
+                let bot = try await fixture.service.botThread(fixture.agentID)
+                for method in [CodexChatApprovalMethod.ask, .fullAccess] {
+                    try await fixture.service.setAgentWorkerApprovalMethod(fixture.agentID, method)
+                    let handle = try await fixture.service.beginTurn(
+                        threadID: bot, inputs: [.text("Do it")], model: nil, effort: "medium", approvalMethod: .ask
+                    )
+                    for try await _ in handle.events {}
+                    let rawRunID = try #require(answers(replies).last?.objectValue?["run_id"]?.stringValue)
+                    let runID = try #require(UUID(uuidString: rawRunID))
+                    #expect(try store.run(id: runID)?.approvalMethod == method.rawValue)
+                    try #require(await pollUntil { (try? store.run(id: runID)?.status) == "completed" })
+                    let current = try #require(await fixture.service.sessions[target]?.processID)
+                    if keepsProcess, let processID { #expect(current == processID) }
+                    processID = current
+                    let expected = explicitOverride ? PiChatService.stricterApproval(method, .autoReview) : method
+                    #expect(await fixture.service.effectiveApprovalMethod(target) == expected)
+                    if !keepsProcess { await fixture.service.closeSession(target) }
+                }
+                await fixture.service.releaseThreadLease(threadID: target, leaseID: lease)
+            }
+
+            @Test func taskLaunchReadsWorkerApprovalAfterModelDiscovery() async throws {
+                let db = try AppDatabaseManager(path: ":memory:").dbQueue
+                let listing = TestPiTransport { command in
+                    command["type"]?.stringValue == "get_available_models" ? [] : TestPiTransport.acknowledge(command)
+                }
+                let fixture = try fixture(db: db, provider: AppAccount.key, calls: [.bot: [
+                    threadCall("thread_launch", [
+                        "title": .string("Work"), "message": .string("Do it"), "client_request_id": .string("launch"),
+                    ]),
+                ]], modelTransport: listing)
+                defer { cleanUp(fixture) }
+                let bot = try await fixture.service.botThread(fixture.agentID)
+                // The agent already has a model; only its Task launch needs discovery.
+                try ChatThreadStore(dbQueue: db).updateThread(id: bot, model: "openai/gpt-test")
+                try await fixture.service.setAgentWorkerApprovalMethod(fixture.agentID, .ask)
+                let sending = Task {
+                    let handle = try await fixture.service.beginTurn(
+                        threadID: bot, inputs: [.text("Do it")], model: nil, effort: "medium", approvalMethod: .ask
+                    )
+                    for try await _ in handle.events {}
+                }
+                let command = await listing.command("get_available_models")
+                try await fixture.service.setAgentWorkerApprovalMethod(fixture.agentID, .autoReview)
+                await listing.emit(TestPiTransport.response(id: command["id"] ?? .null, data: .object([
+                    "models": .array([TestPiTransport.model(provider: "openai", id: "gpt-test")]),
+                ])))
+                try await sending.value
+                let launched = try #require(try tasks(fixture).first?.threadID)
+                #expect(try await firstRun(fixture, thread: launched).approvalMethod == "autoReview")
             }
 
             @Test func untrustedTextCannotCloseItsFenceOrPassForDahliasLines() {

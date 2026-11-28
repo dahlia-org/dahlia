@@ -534,7 +534,7 @@
       "screenshots": "array:mcpScreenshot",
       "segments": "array:mcpSegment",
       "transcript": "mcpTranscript",
-      "summary_document": "document",
+      "structured_summary": "document",
       "text_content": "mcpTextContent",
       "server": "mcpServerSearch",
       "recent_meetings": "array:mcpMeeting",
@@ -559,7 +559,7 @@
       "screenshot_id": "id:attachment",
       "file_id": "id:file",
       "document": "document",
-      "summary_document": "document",
+      "structured_summary": "document",
       "screenshot_ids": "array:id:attachment",
       "expected_project_id": "id:project"
     },

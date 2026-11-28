@@ -148,11 +148,18 @@ struct DahliaApp: App {
                         }
                     }
                 }
-                .disabled(mainWindowNavigation.settingsModal != nil)
-                .accessibilityHidden(mainWindowNavigation.settingsModal != nil)
+                .disabled(mainWindowNavigation.settingsModal != nil || mainWindowNavigation.isShowingHelp)
+                .accessibilityHidden(mainWindowNavigation.settingsModal != nil || mainWindowNavigation.isShowingHelp)
 
                 if let settingsModal = mainWindowNavigation.settingsModal {
                     settingsModal
+                }
+
+                if mainWindowNavigation.isShowingHelp {
+                    HelpModalView(
+                        onClose: mainWindowNavigation.dismissHelp,
+                        onOpenSettings: { mainWindowNavigation.openSettings(category: $0) }
+                    )
                 }
             }
             .modifier(DatabricksSignOutPresentation())
