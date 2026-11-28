@@ -181,7 +181,10 @@ struct AgentInboxService: Sendable {
     }
 
     static func intakeThread(_ source: AgentSourceRecord, now: Date, in db: Database) throws -> String {
-        let title = "intake-" + AgentHome.directoryName(for: source.name, taken: [])
+        guard let current = try AgentSourceRecord.fetchOne(db, key: source.id),
+              current.revision == source.revision, current.agentID == source.agentID
+        else { throw Failure(message: "Source configuration changed.") }
+        let title = "intake-" + AgentHome.directoryName(for: current.name, taken: [])
         if var thread = try ChatThreadRecord.fetchOne(db, key: source.id) {
             if thread.title != title {
                 thread.title = title

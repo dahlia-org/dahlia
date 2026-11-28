@@ -1178,6 +1178,13 @@ actor PiChatService: CodexChatServicing {
         await closeSession(threadID)
     }
 
+    func expireIntake(_ threadID: String) async {
+        guard activeIntake?.threadID == threadID else { return }
+        activeIntake = nil
+        opening[threadID]?.cancel()
+        await closeSession(threadID)
+    }
+
     func closeSession(_ threadID: String) async {
         guard let session = sessions.removeValue(forKey: threadID) else { return }
         finish(session.turn, error: CancellationError())

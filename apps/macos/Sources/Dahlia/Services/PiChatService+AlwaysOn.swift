@@ -203,7 +203,7 @@ extension PiChatService {
             scheduledRuns[thread] = intake
             try validateBotActivity(source: source)
             let timeout = Task { try? await self.waitForIntakeTimeout()
-                if !Task.isCancelled { await self.closeSession(thread) }
+                if !Task.isCancelled { await self.expireIntake(thread) }
             }
             defer { timeout.cancel() }
             let handle = try await beginTurn(
