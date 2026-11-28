@@ -91,9 +91,9 @@
             }
             try queue.close()
             if tampered {
-                #expect(throws: BackupServiceError.invalidBackup) { try BackupService.readAndValidateMetadata(at: url) }
+                #expect(throws: BackupServiceError.invalidBackup) { try BackupService.readAndValidateMetadata(at: url, scratchDirectory: url.deletingLastPathComponent()) }
             } else {
-                #expect(try BackupService.readAndValidateMetadata(at: url).migrationIdentifier == version)
+                #expect(try BackupService.readAndValidateMetadata(at: url, scratchDirectory: url.deletingLastPathComponent()).migrationIdentifier == version)
             }
         }
 

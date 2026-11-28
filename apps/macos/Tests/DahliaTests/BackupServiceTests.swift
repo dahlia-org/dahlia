@@ -8,6 +8,68 @@ import GRDB
     import Testing
 
     struct BackupServiceTests {
+        @Test
+        func startupRemovesInterruptedTransfersAndPreservesRetainedAndConfirmedRestore() async throws {
+            let root = FileManager.default.temporaryDirectory.appending(path: "transfer-startup-\(UUID())")
+            defer { try? FileManager.default.removeItem(at: root) }
+            let databaseURL = root.appending(path: "live.sqlite")
+            let database = try AppDatabaseManager(path: databaseURL.path)
+            let workspace = makeWorkspace(name: "Original", path: root.appending(path: "Workspace").path)
+            try await database.dbQueue.write { try workspace.insert($0) }
+            let service = BackupService(dbQueue: database.dbQueue, applicationSupportURL: root)
+            let retained = try await service.createGeneration(workspaceIds: [workspace.id])
+            let safety = try await service.createGeneration(workspaceIds: [workspace.id], reason: .beforeRestore)
+            let upload = try await service.createGeneration(workspaceIds: [workspace.id], transferCopy: true)
+            let download = try await service.importGeneration(from: retained.fileURL, transferCopy: true)
+            #expect(try await service.listGenerations().count == 2)
+            #expect(upload.fileURL.deletingLastPathComponent().lastPathComponent == BackupService.transferDirectoryName)
+            await #expect(throws: BackupServiceError.generationNotFound) { try await service.deleteGeneration(upload) }
+            await #expect(throws: BackupServiceError.generationNotFound) { try await service.discardTransferCopy(retained) }
+            let restoredID = UUID.v7()
+            let marker = try await service.prepareRestore(from: download, requests: [WorkspaceBackupRestoreRequest(
+                sourceWorkspaceId: workspace.id, targetWorkspaceId: restoredID, mode: .newWorkspace, name: "Restored"
+            )])
+            let staged = root.appending(path: BackupService.restoreDirectoryName).appending(path: marker.stagedFilename)
+            let interruptedWork = upload.fileURL.deletingLastPathComponent().appending(path: ".interrupted.tmp.sqlite")
+            try Data("unfinished snapshot".utf8).write(to: interruptedWork)
+            let abandonedExtraction = upload.fileURL.deletingLastPathComponent().appending(path: "abandoned-extraction")
+            try BackupArchive.withExtracted(at: download.fileURL, scratchDirectory: abandonedExtraction.deletingLastPathComponent()) { directory, _ in
+                #expect(directory.deletingLastPathComponent() == abandonedExtraction.deletingLastPathComponent())
+                #expect(FileManager.default.fileExists(atPath: directory.appending(path: "database.sqlite").path))
+                // Preserve the actual extraction past defer, reproducing files left by process death.
+                try FileManager.default.moveItem(at: directory, to: abandonedExtraction)
+            }
+            #expect(FileManager.default.fileExists(atPath: abandonedExtraction.appending(path: "database.sqlite").path))
+            #expect(FileManager.default.fileExists(atPath: staged.path))
+            try database.close()
+
+            // Simulate process death: no model dismissal or transfer cleanup runs before launch.
+            let (reopened, outcome) = try await AppStartupModel.prepareDatabase(
+                applicationSupportURL: root, databaseURL: databaseURL, onPhase: { _ in }
+            )
+            defer { try? reopened.close() }
+            #expect(outcome == .completed([WorkspaceBackupRestoreResult(request: marker.requests[0], error: nil)]))
+            #expect(try FileManager.default.contentsOfDirectory(atPath: upload.fileURL.deletingLastPathComponent().path).isEmpty)
+            #expect(FileManager.default.fileExists(atPath: retained.fileURL.path))
+            #expect(FileManager.default.fileExists(atPath: safety.fileURL.path))
+            #expect(try await reopened.dbQueue.read { try WorkspaceRecord.fetchOne($0, key: restoredID)?.name } == "Restored")
+        }
+
+        @Test
+        func abandonedTransferCleanupDoesNotFollowDirectorySymlinks() throws {
+            let root = FileManager.default.temporaryDirectory.appending(path: "transfer-symlink-\(UUID())")
+            defer { try? FileManager.default.removeItem(at: root) }
+            let outside = root.appending(path: "preserved")
+            try FileManager.default.createDirectory(at: outside, withIntermediateDirectories: true)
+            let file = outside.appending(path: "backup.tar.gz")
+            try Data("preserved".utf8).write(to: file)
+            let transfers = root.appending(path: BackupService.transferDirectoryName)
+            try FileManager.default.createSymbolicLink(at: transfers, withDestinationURL: outside)
+            try BackupService.removeAbandonedTransfers(applicationSupportURL: root)
+            #expect(FileManager.default.fileExists(atPath: file.path))
+            #expect(!FileManager.default.fileExists(atPath: transfers.path))
+        }
+
         @Test(arguments: [false, true])
         func incompleteSourceTranscriptCannotBecomeAnEmptyBackup(hasResidentSegment: Bool) async throws {
             let root = FileManager.default.temporaryDirectory.appending(path: "incomplete-backup-\(UUID())")

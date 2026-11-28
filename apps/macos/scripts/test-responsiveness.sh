@@ -36,7 +36,7 @@ suites=(
     CodexChatSlashCommandTests            # bounded slash command candidate projection
     GoogleCalendarConnectionTests         # disabled connections reject late transport completions
     CalendarProviderCollectionTests       # a blocked or removed provider cannot gate healthy calendar projections
-    GoogleDriveBackupModelTests           # account switches discard stale cloud backup lists
+    BackupStorageModelTests               # destination switches discard stale backup lists
     ScreenshotImageLoaderTests            # interactive decode never waits behind cacheable decode
     TranscriptWebSurfaceTests             # transcript rows render out of process and recover from a stalled page
     MainActorHangMonitorTests             # stall reports carry only fixed tags

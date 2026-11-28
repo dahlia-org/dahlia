@@ -11,13 +11,11 @@ enum BackupFileFormat {
 
 struct BackupSettingsView: View {
     @Environment(MainWindowNavigation.self) private var navigation
-    @State private var drive = GoogleDriveBackupModel()
-    @ObservedObject private var providers = CalendarProviderCollection.shared
-    @State private var driveProvider = GoogleCalendarProvider.current()
+    @State private var storage = BackupStorageModel()
+    @State private var pendingDeleteStorageFile: ProviderStorageFile?
     @State private var googleConsent = GoogleOAuthConsentState()
     @State private var model: BackupSettingsViewModel
     @State private var pendingDeleteGeneration: BackupGeneration?
-    @State private var pendingRestoreGeneration: BackupGeneration?
 
     private let dbQueue: (any DatabaseWriter)?
     private let onShowUnprocessedRecordings: (UUID) -> Void
@@ -37,7 +35,7 @@ struct BackupSettingsView: View {
 
     var body: some View {
         Form {
-            driveSection
+            storageSection
             if !model.preflightItems.isEmpty {
                 unresolvedAudioSection
             }
@@ -68,11 +66,10 @@ struct BackupSettingsView: View {
                     .disabled(model.isBusy)
                 }
                 HStack {
-                    Button(L10n.createBackup) {
-                        Task { await model.createBackup() }
-                    }
-                    .buttonStyle(.dahlia(.primary))
-                    .disabled(dbQueue == nil || model.selectedWorkspaceIds.isEmpty || model.isBusy || !model.preflightItems.isEmpty)
+                    Button(L10n.createBackup) { Task { await model.createBackup(using: storage) } }
+                        .buttonStyle(.dahlia(.primary))
+                        .disabled(dbQueue == nil || model.selectedWorkspaceIds.isEmpty || model.isBusy || storage.isBusy || !model.preflightItems
+                            .isEmpty)
 
                     Button(L10n.importBackup) {
                         importBackup()
@@ -99,27 +96,22 @@ struct BackupSettingsView: View {
                 Text(L10n.workspaceBackupDescription + "\n" + L10n.backupLocalWorkspacesOnly)
             }
 
-            Section {
-                if model.generations.isEmpty {
-                    ContentUnavailableView(
-                        L10n.noBackups,
-                        systemImage: "externaldrive.badge.timemachine",
-                        description: Text(L10n.noBackupsDescription)
-                    )
-                } else {
-                    ForEach(model.generations) { generation in
-                        generationRow(generation)
-                    }
-                }
-            } header: {
-                Text(L10n.backupLocalCopies)
-                    .font(.dahliaSectionHeader)
+            if storage.destination != nil {
+                remoteBackupsSection
+            } else {
+                localBackupsSection
             }
         }
+        .onDisappear {
+            storage.cancel()
+            model.dismissRestore()
+        }
+        .onChange(of: storage.destination) { _, _ in model.dismissRestore() }
         .formStyle(.grouped)
         .font(.dahliaBody)
         .task {
-            await drive.refresh()
+            await storage.reloadOptions()
+            await storage.refresh()
         }
         .overlay {
             if let disclosure = googleConsent.pendingDisclosure {
@@ -157,106 +149,136 @@ struct BackupSettingsView: View {
         } message: {
             Text(L10n.deleteBackupDescription)
         }
+        .confirmationDialog(
+            L10n.backupStorageDeleteConfirmation,
+            isPresented: Binding(
+                get: { pendingDeleteStorageFile != nil },
+                set: { if !$0 { pendingDeleteStorageFile = nil } }
+            ),
+            titleVisibility: .visible
+        ) {
+            Button(L10n.deleteBackup, role: .destructive) {
+                guard let file = pendingDeleteStorageFile else { return }
+                pendingDeleteStorageFile = nil
+                Task { await storage.delete(file) }
+            }
+            Button(L10n.cancel, role: .cancel) { pendingDeleteStorageFile = nil }
+        } message: {
+            Text(storage.destination?.databricksConnectionID == nil ? L10n.backupStorageDeleteGoogleDescription : L10n.backupStorageDeleteDescription)
+        }
         .overlay {
-            if let generation = pendingRestoreGeneration {
+            if let generation = model.restoreGeneration {
                 restoreDialog(generation)
             }
+        }
+    }
+
+    private var localBackupsSection: some View {
+        Section {
+            if model.generations.isEmpty {
+                ContentUnavailableView(
+                    L10n.noBackups,
+                    systemImage: "externaldrive.badge.timemachine",
+                    description: Text(L10n.noBackupsDescription)
+                )
+            } else {
+                ForEach(model.generations) { generation in
+                    generationRow(generation)
+                }
+            }
+        } header: {
+            Text(L10n.backupLocalCopies)
+                .font(.dahliaSectionHeader)
         }
     }
 
     private func closeGoogleConsent() {
         googleConsent.pendingDisclosure = nil
         guard googleConsent.consumeConsent() else { return }
-        Task { await drive.refresh(connect: true) }
+        Task { await storage.authorize() }
     }
 
-    private var driveSection: some View {
+    private var storageSection: some View {
         Section {
-            Picker(L10n.providerAccounts, selection: Binding(
-                get: { driveProvider },
-                set: { route in
-                    googleConsent.pendingDisclosure = nil
-                    driveProvider = route
-                    drive.reset()
-                    GoogleCalendarProvider.save(route)
+            BackupDestinationPicker(options: storage.options, selection: storage.destination) { storage.select($0) }
+            HStack {
+                if storage.options.isEmpty {
+                    Button(L10n.manageProviders) { navigation.openSettings(category: .providers) }.buttonStyle(.dahlia())
                 }
-            )) {
-                Text(L10n.calendarProviderUnassigned).font(.dahliaBody).tag(GoogleCalendarProvider.unassigned)
-                ForEach(providers.connections) { connection in
-                    if let route = connection.googleRoute {
-                        Text(connection.displayName).font(.dahliaBody).tag(route)
-                    }
-                }
+                Button(L10n.storageSettings) { navigation.openSettings(category: .storage) }.buttonStyle(.dahlia())
             }
-            .task { await providers.reloadConnections() }
-            .onReceive(NotificationCenter.default.publisher(for: GoogleCalendarProvider.didChange)) { _ in
-                driveProvider = GoogleCalendarProvider.current()
+        } header: {
+            Text(L10n.backupStorageTitle).font(.dahliaSectionHeader)
+        } footer: {
+            switch storage.destination {
+            case .google: Text(L10n.backupStorageGoogleDescription)
+            case .databricks: Text(L10n.backupStorageDatabricksDescription)
+            case .dahlia, nil: Text(L10n.backupStorageThisMacOnlyDescription)
             }
-            LabeledContent("Google Drive") {
-                HStack {
-                    if let account = drive.account { Text(account.displayName) }
-                    if drive.isBusy { ProgressView().controlSize(.small) }
-                    if drive.isAuthorized {
-                        Button(L10n.backupDriveRefresh) { Task { await drive.refresh() } }
-                            .buttonStyle(.dahlia())
-                    }
-                    if !drive.isAuthorized {
-                        Button(L10n.googleCalendarConnect) {
-                            if drive.usesDatabricksProxy {
-                                Task { await drive.refresh(connect: true) }
-                            } else {
-                                googleConsent.request(.drive)
-                            }
-                        }
-                        .buttonStyle(.dahlia())
-                        .disabled(!drive.isConfigured || drive.isBusy)
-                    }
-                    if drive.hasConnection {
-                        Button(L10n.googleCalendarDisconnect) { Task { await drive.disconnect() } }
-                            .buttonStyle(.dahlia())
-                            .disabled(drive.isBusy)
-                    }
-                }
-            }
-            if driveProvider == .unassigned {
-                Text(L10n.googleDriveChooseProvider).foregroundStyle(.secondary)
-                Button(L10n.manageProviders) { navigation.openSettings(category: .providers) }.buttonStyle(.dahlia())
-            } else if !drive.isConfigured {
-                Text(L10n.googleAccountClientIDMissingMessage).foregroundStyle(.secondary)
-            }
-            if let error = drive.errorMessage {
-                SettingsStatusMessage(text: error, systemImage: "exclamationmark.triangle", tint: .orange)
-                if let url = drive.connectionPageURL {
-                    Link(L10n.googleCalendarOpenDatabricksConnectionPage, destination: url)
-                }
-            }
-            if drive.isAuthorized, drive.files.isEmpty { Text(L10n.noBackups).foregroundStyle(.secondary) }
-            ForEach(drive.files) { file in
-                LabeledContent {
-                    Button(L10n.backupDriveDownload) {
-                        Task { await model.importDriveBackup(file, drive: drive) }
-                    }
+        }
+    }
+
+    /// Backups in the destination. Creating and restoring move them through this Mac without showing a local copy.
+    private var remoteBackupsSection: some View {
+        Section {
+            HStack {
+                Button(L10n.backupDriveRefresh) { Task { await storage.refresh() } }
                     .buttonStyle(.dahlia())
-                    .disabled(drive.isBusy || model.isBusy)
+                    .disabled(storage.isBusy)
+                if storage.needsAuthorization {
+                    Button(L10n.googleCalendarConnect) { googleConsent.request(.drive) }
+                        .buttonStyle(.dahlia())
+                        .disabled(storage.isBusy)
+                }
+                if storage.isBusy {
+                    ProgressView().controlSize(.small)
+                    Button(L10n.cancel) { storage.cancel() }.buttonStyle(.dahlia())
+                }
+            }
+            if let status = storage.statusMessage {
+                SettingsStatusMessage(text: status, systemImage: "checkmark.circle", tint: .green)
+            }
+            if let error = storage.errorMessage {
+                SettingsStatusMessage(text: error, systemImage: "exclamationmark.triangle", tint: .orange)
+            }
+            if storage.files.isEmpty, !storage.isBusy, storage.errorMessage == nil {
+                Text(L10n.noBackups).foregroundStyle(.secondary)
+            }
+            ForEach(storage.files) { file in
+                LabeledContent {
+                    HStack {
+                        Button(L10n.restoreBackup) { Task { await restore(file) } }
+                            .buttonStyle(.dahlia())
+                            .disabled(!captionViewModel.canSwitchWorkspace || model.hasWorkInProgress)
+                        Button(L10n.delete, role: .destructive) { pendingDeleteStorageFile = file }
+                            .buttonStyle(.dahlia(.destructive))
+                    }
+                    .disabled(storage.isBusy || model.isBusy)
                 } label: {
                     Text(file.name)
-                    if let size = file.size.flatMap(Int64.init) {
-                        Text(ByteCountFormatter.string(fromByteCount: size, countStyle: .file)).foregroundStyle(.secondary)
-                    }
+                    Text([
+                        file.modifiedAt?.formatted(date: .abbreviated, time: .standard),
+                        file.size.map { ByteCountFormatter.string(fromByteCount: $0, countStyle: .file) },
+                    ].compactMap(\.self).joined(separator: " · "))
+                        .foregroundStyle(.secondary)
                 }
             }
         } header: {
-            Text(L10n.backupDriveTitle).font(.dahliaSectionHeader)
-        } footer: {
-            Text(L10n.backupDriveDescription)
+            Text(L10n.backups).font(.dahliaSectionHeader)
         }
+    }
+
+    private func restore(_ file: ProviderStorageFile) async {
+        let revision = model.restoreRevision
+        guard let service = model.backupService, let generation = await storage.download(file, into: service) else { return }
+        await model.beginRestore(generation, transferCopy: true, revision: revision)
     }
 
     private func restoreDialog(_ generation: BackupGeneration) -> some View {
         ZStack {
             Color.black.opacity(0.3)
                 .ignoresSafeArea()
-                .onTapGesture { if !model.isBusy { pendingRestoreGeneration = nil } }
+                .onTapGesture { if !model.isBusy { model.dismissRestore() } }
             VStack(alignment: .leading, spacing: 16) {
                 Text(L10n.restoreBackupConfirmation).font(.dahliaHeadline)
                 ScrollView {
@@ -274,13 +296,15 @@ struct BackupSettingsView: View {
                 }
                 HStack {
                     Spacer()
-                    Button(L10n.cancel) { pendingRestoreGeneration = nil }
+                    Button(L10n.cancel) { model.dismissRestore() }
                         .buttonStyle(.dahlia())
                         .keyboardShortcut(.cancelAction)
                     Button(L10n.restoreBackup) {
                         Task {
                             guard captionViewModel.canSwitchWorkspace else { return }
                             if await model.prepareRestore(generation) {
+                                // The restore works from its own staged copy.
+                                await model.dismissRestore().value
                                 BackupRelaunchCoordinator.relaunchAfterTermination()
                             }
                         }
@@ -377,9 +401,8 @@ struct BackupSettingsView: View {
                     .buttonStyle(.dahlia())
                     .disabled(!generation.isValid || model.isBusy)
                 Button(L10n.restoreBackup) {
-                    guard let metadata = generation.metadata else { return }
-                    model.beginRestore(metadata)
-                    pendingRestoreGeneration = generation
+                    let revision = model.restoreRevision
+                    Task { await model.beginRestore(generation, transferCopy: false, revision: revision) }
                 }
                 .buttonStyle(.dahlia())
                 .disabled(
@@ -418,6 +441,8 @@ struct BackupSettingsView: View {
         panel.canChooseDirectories = false
         panel.allowsMultipleSelection = false
         panel.allowedContentTypes = [BackupFileFormat.contentType]
+        let isTransferCopy = storage.destination != nil
+        let revision = model.restoreRevision
         panel.begin { response in
             guard response == .OK, let url = panel.url else { return }
             Task {
@@ -427,7 +452,10 @@ struct BackupSettingsView: View {
                         url.stopAccessingSecurityScopedResource()
                     }
                 }
-                await model.importBackup(from: url)
+                // With a destination, a file from disk is only something to restore from, so go straight to restoring.
+                guard let generation = await model.importBackup(from: url, transferCopy: isTransferCopy), isTransferCopy else { return }
+                model.statusMessage = nil
+                await model.beginRestore(generation, transferCopy: true, revision: revision)
             }
         }
     }

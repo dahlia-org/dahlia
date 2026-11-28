@@ -18,6 +18,7 @@ struct DahliaAccountConnectionRecord: Codable, FetchableRecord, PersistableRecor
     var workspaceID: String?
     /// The name the user gave this connection; nil shows its host and email.
     var name: String?
+    var settingsJSON = "{}"
 
     static var dahliaServers: QueryInterfaceRequest<Self> { filter(Column("kind") == dahliaKind) }
     static var databricksWorkspaces: QueryInterfaceRequest<Self> { filter(Column("kind") == databricksKind) }

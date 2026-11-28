@@ -137,7 +137,7 @@ actor PiRuntimeService {
                     throw PiRuntimeError.providerAuthenticationFailed(error.localizedDescription)
                 }
             case "memory", "skills_list", "skill_view", "skill_manage", "cronjob", "cronjobCommit", "scheduledTool",
-                 "reviewTriage", "approvalCheck", "createBackup", "thread_list", "thread_search", "thread_read",
+                 "reviewTriage", "approvalCheck", "thread_list", "thread_search", "thread_read",
                  "thread_launch", "delegate_task", "task_status", "task_cancel", "thread_send", "thread_wait", "thread_interrupt",
                  "thread_update",
                  "omni_list_agents", "omni_list_sessions", "omni_create_session", "omni_get_session",

@@ -1786,29 +1786,80 @@
 "appearance.light" = "Light Mode";
 "appearance.dark" = "Dark Mode";
 
-"Google Drive Backups" = "Google Drive Backups";
 
 "Local Recovery Copies" = "Local Recovery Copies";
 
-"Download for Restore" = "Download for Restore";
 
-"Lists backups in My Drive/Dahlia/Backup. Ask Dahlia AI to create and upload a backup using Google Drive MCP. Drive access here is read-only; downloaded backups are verified before they appear in Local Recovery Copies." = "Lists backups in My Drive/Dahlia/Backup. Ask Dahlia AI to create and upload a backup using Google Drive MCP. Drive access here is read-only; downloaded backups are verified before they appear in Local Recovery Copies.";
+"backup.storage.driveAmbiguousFolder" = "The configured Google Drive location contains duplicate folders created by Dahlia. Move the backups into one folder in Google Drive and delete the duplicates.";
 
-"Multiple Dahlia/Backup folders were found in My Drive. Resolve duplicate folder names before loading backups." = "Multiple Dahlia/Backup folders were found in My Drive. Resolve duplicate folder names before loading backups.";
+"backup.storage.title" = "Backup Destination";
 
-"Could not download the Google Drive backup. Check the connection and try again." = "Could not download the Google Drive backup. Check the connection and try again.";
+"backup.storage.destination" = "Destination";
+
+"backup.storage.thisMacOnly" = "This Mac Only";
+
+"backup.storage.thisMacOnlyDescription" = "Backups stay on this Mac only. Choose Google or Databricks to keep backups there instead, without a copy on this Mac.";
+
+"backup.storage.googleDescription" = "Backups are kept in My Drive/Dahlia/backup. Dahlia can see only the folders and files it created in Drive. Restoring downloads and verifies the backup first.";
+
+"backup.storage.databricksDescription" = "Backups are kept in the backup folder of your volume user_data_<user ID>, in this provider account’s catalog and schema. Owners of the schema or catalog and metastore admins can also read it. The first upload needs USE CATALOG, USE SCHEMA, and CREATE VOLUME; later ones need USE CATALOG and USE SCHEMA. One backup can be up to 5000 MiB.";
+
+
+"backup.storage.uploaded" = "Backup uploaded.";
+
+"backup.storage.alreadyUploaded" = "This backup is already in the destination.";
+
+"backup.storage.deleted" = "Backup deleted from the destination.";
+
+"backup.storage.deleteConfirmation" = "Delete this backup from the destination?";
+
+"backup.storage.deleteDescription" = "The file is deleted from the Databricks volume and cannot be recovered. Local Recovery Copies on this Mac are not affected.";
+
+"backup.storage.deleteGoogleDescription" = "The file moves to the Google Drive trash. Local Recovery Copies on this Mac are not affected.";
+
+"backup.storage.authorizationRequired" = "Connect Google Drive to use this account for backups.";
+
+"backup.storage.fileTooLarge" = "This backup is larger than 5000 MiB, the most a Databricks volume accepts in one upload. Select fewer workspaces or another destination, then create the backup again.";
+
+"backup.storage.schemaNotConfigured" = "Choose this Databricks provider account’s default catalog and schema in its account settings.";
+
+"backup.storage.unsupportedUserID" = "Databricks returned a user ID that cannot be used in a volume name.";
+
+"backup.storage.volumeNotOwned" = "The volume %1$@ already exists and is not a managed volume you own (owner: %2$@). Dahlia does not use it. Ask its owner or a workspace admin to remove it.";
+
+"backup.storage.requestFailed" = "The request failed (HTTP %1$d): %2$@";
+
+"backup.storage.invalidResponse" = "The destination returned an unexpected response.";
+
+"google.driveDisclosure.overview" = "Dahlia manages backups in folders it creates in Google Drive. It creates these folders, uploads the backups you create, and lists, downloads, and deletes them. Cloud Storage shows the destination path.";
+
+"google.driveDisclosure.access" = "Google grants access only to the folders and files Dahlia creates. Dahlia cannot see your other Drive files.";
+
+"google.driveDisclosure.useAndStorage" = "Backups are uploaded from this Mac, and downloaded backups are validated before restore. Calendar and Drive share the registered Google account’s Keychain credential.";
+
+"google.driveDisclosure.externalSharing" = "A backup contains the selected workspaces’ meetings, transcripts, summaries, and screenshots. It is stored in your Google Drive and shared only as your Drive settings allow.";
+
+"google.driveDisclosure.deletion" = "Deleting a backup here moves it to the Drive trash. Signing out in Providers stops Dahlia’s access; remove access in your Google Account to revoke the grant. Signing out does not delete local or Drive backups.";
+
+"settings.providers.catalogSchema" = "Catalog / Schema";
+
+"settings.providers.catalogSchemaEdit" = "Catalog / Schema…";
+
+"settings.providers.catalogSchemaDescription" = "Choose this Databricks provider account’s default catalog and schema. This setting is shared by features such as storage.";
+
+"settings.providers.catalogSchemaValue" = "Catalog / Schema: %@";
+
+"settings.providers.catalogSchemaUnset" = "Catalog / Schema: not set";
+
+
+
 
 "Connect Google Drive for Backups" = "Connect Google Drive for Backups";
 
-"Dahlia reads backups from My Drive/Dahlia/Backup. This connection does not upload or delete files." = "Dahlia reads backups from My Drive/Dahlia/Backup. This connection does not upload or delete files.";
 
-"Google grants read-only access to all Drive files. Dahlia uses metadata to find Dahlia/Backup and downloads only the backups you select." = "Google grants read-only access to all Drive files. Dahlia uses metadata to find Dahlia/Backup and downloads only the backups you select.";
 
-"Downloaded backups are stored on this Mac and validated before restore. Calendar and Drive share the registered Google account’s Keychain credential." = "Downloaded backups are stored on this Mac and validated before restore. Calendar and Drive share the registered Google account’s Keychain credential.";
 
-"Listing and downloading send requests to Google Drive. Uploads are a separate action by Dahlia AI through your configured MCP server and follow chat approval settings." = "Listing and downloading send requests to Google Drive. Uploads are a separate action by Dahlia AI through your configured MCP server and follow chat approval settings.";
 
-"Disconnect stops this read connection. Remove access in your Google Account to revoke the grant. Disconnecting does not delete local or Drive backups, or disconnect the separate MCP server." = "Disconnect stops this read connection. Remove access in your Google Account to revoke the grant. Disconnecting does not delete local or Drive backups, or disconnect the separate MCP server.";
 
 "Refresh Backups" = "Refresh Backups";
 
@@ -2101,14 +2152,12 @@
 
 "settings.agents.optimization.agentLegacyReviewRuns" = "Earlier shared review history";
 
-"Allow read-only access to Calendar and all Drive files. Dahlia reads selected Dahlia/Backup backups. Enable each feature in Settings. Drive access is optional." = "Allow read-only access to Calendar and all Drive files. Dahlia reads selected Dahlia/Backup backups. Enable each feature in Settings. Drive access is optional.";
+"Allow read-only Calendar access and manage Drive files Dahlia creates for backups. Enable each feature in Settings. Drive access is optional." = "Allow read-only Calendar access and manage Drive files Dahlia creates for backups. Enable each feature in Settings. Drive access is optional.";
 
 "Disconnect this Google account from Calendar and Drive in Dahlia? Databricks connections are not affected." = "Disconnect this Google account from Calendar and Drive in Dahlia? Databricks connections are not affected.";
 
 "Sign-out incomplete. Retry to remove the saved credential." = "Sign-out incomplete. Retry to remove the saved credential.";
 "Sign in with the same Google account. To use another account, add a provider." = "Sign in with the same Google account. To use another account, add a provider.";
-"Choose a registered provider here to read Google Drive backups. This choice is independent of Calendar." = "Choose a registered provider here to read Google Drive backups. This choice is independent of Calendar.";
-"No provider selected" = "No provider selected";
 
 "Authorize Calendar and Drive" = "Authorize Calendar and Drive";
 "settings.agents.alwaysOn.help" = "While the app is open, Dahlia reads the event sources that are on and tells this agent about new events. Nothing is read while recording. Writes to other services, such as replies, follow the same approval settings as your chats.";
@@ -2262,3 +2311,27 @@
 "settings.agents.mcpDirectJSONInvalid" = "Enter JSON for one MCP server, up to 64 KiB. Supported fields: type, command, args, env, url, headers.";
 "settings.agents.mcpDirectJSONNameMismatch" = "An existing server cannot be renamed. Use its current name in the JSON.";
 "settings.agents.mcpDirectJSONTooLarge" = "JSON mode supports configurations up to 64 KiB.";
+
+/* Cloud storage settings */
+"settings.storage.title" = "Cloud Storage";
+"settings.storage.open" = "Cloud Storage Settings…";
+"settings.storage.locations" = "Storage Locations";
+"settings.storage.noProviders" = "No provider offers storage. Add Google or Databricks.";
+"settings.storage.googleDrivePath" = "My Drive/%@/backup";
+"settings.storage.databricksVolumePath" = "/Volumes/%@/%@/user_data_<user ID>/backup";
+"settings.storage.intro" = "Shows the Google Drive folder and Databricks volume where backups are kept.";
+"settings.storage.locationChangeDescription" = "Folders and volumes have fixed names and are created on the first upload. Databricks needs a catalog and schema before it can be used.";
+
+/* Databricks provider namespace */
+"settings.providers.catalog" = "Catalog";
+"settings.providers.schema" = "Schema";
+"settings.providers.selectCatalog" = "Select a catalog";
+"settings.providers.selectSchema" = "Select a schema";
+"settings.providers.noCatalogs" = "No accessible catalogs. Check this account’s Unity Catalog permissions.";
+"settings.providers.noSchemas" = "No accessible schemas in this catalog. You can create one if you have permission.";
+"settings.providers.createSchema" = "Create new…";
+"settings.providers.schemaName" = "Schema name";
+"settings.providers.clearCatalogSchema" = "Clear Default";
+"settings.providers.catalogAccountChanged" = "The provider account’s sign-in changed. Refresh the list before continuing.";
+"settings.providers.createSchemaDescription" = "Create in catalog %@. Requires CREATE SCHEMA. Names cannot contain spaces, periods, or slashes. The schema is created immediately in Databricks and remains even if you cancel this dialog.";
+"settings.providers.schemaCreated" = "Created %@. Save to use it as this account’s default.";

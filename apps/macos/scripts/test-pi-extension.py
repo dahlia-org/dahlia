@@ -491,7 +491,7 @@ def run(pi, mode, script, arguments, environment, approval="accept", approval_mo
                 bridge.append((method, json.loads(record["placeholder"])))
                 classifier = {"model": "system.ai.openjev-qwen35-4b", "provider": "databricks",
                               "endpoint": f"http://127.0.0.1:{server.server_port}/systemone"} if triage else None
-                answers = {"token": "synthetic-token", "approvalMode": approval_mode, "reviewModel": "", "reviewTriage": classifier, "approvalCheck": True, "approval": approval, "createBackup": {"path": "/tmp/Dahlia-Backup-test.tar.gz"}}
+                answers = {"token": "synthetic-token", "approvalMode": approval_mode, "reviewModel": "", "reviewTriage": classifier, "approvalCheck": True, "approval": approval}
                 answers.update(bridge_answers or {})
                 send({"type": "extension_ui_response", "id": record["id"], "value": json.dumps(answers[method])})
             elif record.get("type") == "tool_execution_end":
@@ -858,12 +858,6 @@ def main():
     triage_denial_regression(pi)
     package_resources(pi)
     curator_store_snapshots(pi)
-    _, results, bridge, _ = run(
-        pi, "chat", [{"tool": "dah_create_backup", "args": {"workspace_id": "ws_test"}}, {"text": "done"}],
-        ["--no-session", "--tools", "dah_create_backup"], {})
-    assert ("createBackup", {"workspace_id": "ws_test"}) in bridge, bridge
-    assert json.loads(results[0])["path"] == "/tmp/Dahlia-Backup-test.tar.gz", results
-
     # Keywords Claude or Gemini cannot take, and a property named like one, which must stay.
     full_schema = {"type": "object", "additionalProperties": False, "required": ["a", "pattern"], "properties": {
         "a": {"type": "string", "minLength": 1, "maxLength": 5, "pattern": "^x+$"},

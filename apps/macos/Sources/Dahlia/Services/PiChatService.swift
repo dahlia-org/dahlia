@@ -31,8 +31,6 @@ actor PiChatService: CodexChatServicing {
     var botSoulGiven: [String: String] = [:]
     /// Upstream measures Curator idleness from process start as well as from the latest chat activity.
     let launchedAt = Date()
-    private var backupService: BackupService?
-    private var backupDBQueue: (any DatabaseWriter)?
     private var historyStore: ChatThreadStore?
 
     func configureHistory(dbQueue: any DatabaseWriter) async throws {
@@ -136,11 +134,6 @@ actor PiChatService: CodexChatServicing {
     private func endTurn(of session: Session, threadID: String, status: String) {
         guard let turn = session.turn else { return publishStates() }
         endRun(turn.id, threadID: threadID, accountID: AppAccount.key, status: status, undelivered: turn.pendingSteers)
-    }
-
-    func configureBackup(dbQueue: any DatabaseWriter, applicationSupportURL: URL = DahliaApplicationSupport.currentDirectoryURL) {
-        backupService = BackupService(dbQueue: dbQueue, applicationSupportURL: applicationSupportURL)
-        backupDBQueue = dbQueue
     }
 
     nonisolated static let systemPrompt = """
@@ -1044,7 +1037,7 @@ actor PiChatService: CodexChatServicing {
             && FileManager.default.fileExists(atPath: webAccessURL.path) && (try? AgentWebAccessSettings.writeDefault(agentURL: agentURL)) != nil
         // pi-mcp-elicitation always replaces Pi's MCP extension; Dahlia's extension knows MCP tools by it.
         let mcpExtension = (try? AgentMCPElicitationSettings.entryURL().path) ?? "builtin:mcp"
-        let tools = profile.fileTools + learningTools + (profile == .interactive ? ["dah_create_backup"] + threadTools : [])
+        let tools = profile.fileTools + learningTools + (profile == .interactive ? threadTools : [])
             // Super Agent's delegated task is a helper: it only reads threads, like any child.
             + (profile == .bot ? (isChild ? Self.readThreadTools : PiExecutionProfile.botTools + Self.readThreadTools + Self.manageThreadTools) : [])
             + (webAccess ? AgentWebAccessSettings.toolNames : []) + serverNames.map { "mcp__\($0)__*" }
@@ -1134,10 +1127,6 @@ actor PiChatService: CodexChatServicing {
                     } catch is CancellationError {
                         throw CancellationError()
                     } catch { return .object(["error": .string(error.localizedDescription)]) }
-                }
-                if method == "createBackup" {
-                    guard await self.sessions[threadID]?.profile == .interactive else { throw CancellationError() }
-                    return try await self.createBackup(threadID: threadID, processID: processID, payload: payload, directory: workURL)
                 }
                 return await self.answer(method, payload: payload, threadID: threadID, processID: processID)
             }
@@ -1366,19 +1355,6 @@ actor PiChatService: CodexChatServicing {
             }
             sessions[threadID]?.turn?.broadcast.yield(.toolActivity(activity))
         }
-    }
-
-    private func createBackup(threadID: String, processID: UUID, payload: JSONValue, directory: URL) async throws -> JSONValue {
-        guard sessions[threadID]?.processID == processID, let backupService, let backupDBQueue,
-              let rawID = payload.objectValue?["workspace_id"]?.stringValue else { throw BackupServiceError.invalidBackup }
-        let workspaceID = try TypeID.decode(rawID, as: .workspace)
-        let exists = try await backupDBQueue.read { db in try WorkspaceRecord.exists(db, key: workspaceID) }
-        guard exists else { throw BackupServiceError.invalidBackup }
-        let generation = try await backupService.createGeneration(workspaceIds: [workspaceID])
-        guard sessions[threadID]?.processID == processID else { throw CancellationError() }
-        let destination = directory.appending(path: generation.fileURL.lastPathComponent)
-        try await backupService.exportGeneration(generation, to: destination)
-        return .object(["path": .string(destination.path), "workspace_id": .string(TypeID.encode(workspaceID, as: .workspace))])
     }
 
     private func answer(_ method: String, payload: JSONValue, threadID: String, processID: UUID) async -> JSONValue {

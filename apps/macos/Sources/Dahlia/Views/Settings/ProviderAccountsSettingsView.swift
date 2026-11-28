@@ -156,14 +156,16 @@ struct ProviderAccountsSettingsView: View {
         AgentProviderRow(
             title: connection.displayName,
             icon: .databricksLogo,
-            uses: [L10n.agentProviderModels, L10n.mcp, L10n.calendar]
+            uses: [L10n.agentProviderModels, L10n.mcp, L10n.calendar, L10n.agentProviderStorage]
         ) {
             Text(connection.hostName).foregroundStyle(.secondary)
+            DatabricksCatalogSchemaLabel(connectionID: connection.id)
             AgentProviderActions {
                 Button(L10n.rename) {
                     proposedName = connection.name ?? ""
                     pendingRename = .databricks(connection)
                 }
+                Button(L10n.databricksCatalogSchemaEdit) { navigation.editDatabricksCatalogSchema(for: connection) }
                 Button(L10n.signInAgain) {
                     Task { _ = await databricks.signIn(workspaceURL: connection.host) }
                 }
@@ -198,6 +200,7 @@ struct ProviderAccountsSettingsView: View {
                     pendingRename = .google(google)
                 }
                 .disabled(google.isDisconnectPending && google.account == nil)
+                Button(L10n.agentProviderStorage) { navigation.openSettings(category: .storage) }
                 Button(L10n.googleProviderAuthorizeBoth) { Task { _ = await google.signIn() } }
                 Button(google.isDisconnectPending ? L10n.googleCalendarRetry : L10n.signOut) { pendingGoogleSignOut = google }
             }

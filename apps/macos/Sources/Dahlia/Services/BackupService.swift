@@ -49,11 +49,13 @@ struct PendingDatabaseRestore: Codable, Equatable, Sendable {
 actor BackupService {
     static let metadataTableName = "dahlia_backup_metadata"
     static let backupDirectoryName = "Backups"
+    static let transferDirectoryName = "BackupTransfers"
     static let restoreDirectoryName = "Restore"
     static let pendingRestoreFilename = "pending-restore.json"
 
     private let dbQueue: any DatabaseWriter
     private let backupDirectoryURL: URL
+    private let transferDirectoryURL: URL
     private let restoreDirectoryURL: URL
     private let fileManager: FileManager
     private let appVersion: String
@@ -68,6 +70,7 @@ actor BackupService {
     ) {
         self.dbQueue = dbQueue
         backupDirectoryURL = applicationSupportURL.appending(path: Self.backupDirectoryName, directoryHint: .isDirectory)
+        transferDirectoryURL = applicationSupportURL.appending(path: Self.transferDirectoryName, directoryHint: .isDirectory)
         restoreDirectoryURL = applicationSupportURL.appending(path: Self.restoreDirectoryName, directoryHint: .isDirectory)
         self.fileManager = fileManager
         self.appVersion = appVersion
@@ -86,7 +89,7 @@ actor BackupService {
             let values = try? url.resourceValues(forKeys: [.fileSizeKey, .isRegularFileKey, .isSymbolicLinkKey])
             guard values?.isRegularFile == true, values?.isSymbolicLink != true else { return nil }
             do {
-                let metadata = try Self.readMetadata(at: url, validateIntegrity: false)
+                let metadata = try Self.readMetadata(at: url, validateIntegrity: false, scratchDirectory: transferDirectoryURL)
                 return BackupGeneration(
                     fileURL: url,
                     metadata: metadata,
@@ -213,11 +216,13 @@ actor BackupService {
         }
     }
 
-    func createGeneration(workspaceIds: Set<UUID>, reason: BackupMetadata.Reason = .manual) throws -> BackupGeneration {
+    func createGeneration(
+        workspaceIds: Set<UUID>, reason: BackupMetadata.Reason = .manual, transferCopy: Bool = false
+    ) throws -> BackupGeneration {
         try Self.createGeneration(
             workspaceIds: workspaceIds,
             dbQueue: dbQueue,
-            directoryURL: backupDirectoryURL,
+            directoryURL: transferCopy ? transferDirectoryURL : backupDirectoryURL,
             reason: reason,
             appVersion: appVersion,
             appBuild: appBuild,
@@ -335,7 +340,7 @@ actor BackupService {
         try manager.moveItem(at: temporaryURL, to: databaseURL)
         let temporaryArchive = directoryURL.appending(path: ".\(generationID).tmp.\(BackupArchive.filenameExtension)")
         defer { try? manager.removeItem(at: temporaryArchive) }
-        let validatedMetadata = try readAndValidateMetadata(at: databaseURL)
+        let validatedMetadata = try readAndValidateMetadata(at: databaseURL, scratchDirectory: directoryURL)
         let manifest = try BackupArchive.create(directory: archiveDirectory, metadata: validatedMetadata, paths: paths, at: temporaryArchive)
         try validateArchiveFiles(databaseURL: databaseURL, manifest: manifest)
         // The database above was already validated; re-read only the written bytes instead of extracting the archive.
@@ -358,15 +363,16 @@ actor BackupService {
         try db.execute(sql: "UPDATE search_index_state SET phase = 'pending', totalCount = 0, completedCount = 0")
     }
 
-    func importGeneration(from sourceURL: URL) throws -> BackupGeneration {
-        try ensureDirectory(backupDirectoryURL)
-        let temporaryURL = backupDirectoryURL.appending(path: ".import-\(UUID.v7().uuidString).tmp.sqlite")
+    func importGeneration(from sourceURL: URL, transferCopy: Bool = false) throws -> BackupGeneration {
+        let directory = transferCopy ? transferDirectoryURL : backupDirectoryURL
+        try ensureDirectory(directory)
+        let temporaryURL = directory.appending(path: ".import-\(UUID.v7().uuidString).tmp.sqlite")
         defer { try? fileManager.removeItem(at: temporaryURL) }
         try fileManager.copyItem(at: sourceURL, to: temporaryURL)
-        let metadata = try Self.readAndValidateMetadata(at: temporaryURL)
+        let metadata = try Self.readAndValidateMetadata(at: temporaryURL, scratchDirectory: transferDirectoryURL)
         guard try BackupArchive.isArchive(temporaryURL) else { throw BackupServiceError.invalidBackup }
         try fileManager.setAttributes([.posixPermissions: 0o600], ofItemAtPath: temporaryURL.path)
-        let importedURL = backupDirectoryURL.appending(
+        let importedURL = directory.appending(
             path: "Imported-\(filename(for: metadata, uniqueSuffix: UUID.v7().uuidString))"
         )
         try fileManager.moveItem(at: temporaryURL, to: importedURL)
@@ -396,12 +402,29 @@ actor BackupService {
         try fileManager.removeItem(at: generation.fileURL)
     }
 
+    func discardTransferCopy(_ generation: BackupGeneration) throws {
+        try validateManagedGenerationFile(generation.fileURL, in: transferDirectoryURL)
+        try fileManager.removeItem(at: generation.fileURL)
+    }
+
+    /// Only called during launch, after the process mutation lock and before any transfer can start.
+    nonisolated static func removeAbandonedTransfers(applicationSupportURL: URL) throws {
+        let directory = applicationSupportURL.appending(path: transferDirectoryName, directoryHint: .isDirectory)
+        if FileManager.default.fileExists(atPath: directory.path) {
+            try FileManager.default.removeItem(at: directory)
+        }
+    }
+
     func prepareRestore(
         from generation: BackupGeneration, requests: [WorkspaceBackupRestoreRequest]
     ) async throws -> PendingDatabaseRestore {
         guard let listedMetadata = generation.metadata, generation.isValid else { throw BackupServiceError.invalidBackup }
-        try validateManagedGenerationFile(generation.fileURL)
-        let metadata = try Self.readAndValidateMetadata(at: generation.fileURL)
+        let directory = generation.fileURL.deletingLastPathComponent().standardizedFileURL
+        guard [backupDirectoryURL.standardizedFileURL, transferDirectoryURL.standardizedFileURL].contains(directory) else {
+            throw BackupServiceError.generationNotFound
+        }
+        try validateManagedGenerationFile(generation.fileURL, in: directory)
+        let metadata = try Self.readAndValidateMetadata(at: generation.fileURL, scratchDirectory: transferDirectoryURL)
         guard metadata == listedMetadata else { throw BackupServiceError.invalidBackup }
         _ = try await dbQueue.read { try Self.validateRestoreRequests(requests, metadata: metadata, in: $0) }
         guard try !preflightItems().contains(where: \.isWorkInProgress), try !hasProcessingAudio() else {
@@ -414,7 +437,8 @@ actor BackupService {
         let stagedURL = restoreDirectoryURL.appending(path: stagedFilename)
         do {
             try fileManager.copyItem(at: generation.fileURL, to: stagedURL)
-            guard try Self.readAndValidateMetadata(at: stagedURL) == metadata else { throw BackupServiceError.invalidBackup }
+            guard try Self.readAndValidateMetadata(at: stagedURL, scratchDirectory: transferDirectoryURL) == metadata
+            else { throw BackupServiceError.invalidBackup }
             let marker = try PendingDatabaseRestore(
                 stagedFilename: stagedFilename, sha256: Self.sha256(of: stagedURL), requestedAt: .now,
                 sourceMetadata: metadata, requests: requests
@@ -462,8 +486,8 @@ actor BackupService {
             .appending(path: pendingRestoreFilename)
     }
 
-    nonisolated static func readAndValidateMetadata(at url: URL) throws -> BackupMetadata {
-        try readMetadata(at: url, validateIntegrity: true)
+    nonisolated static func readAndValidateMetadata(at url: URL, scratchDirectory: URL) throws -> BackupMetadata {
+        try readMetadata(at: url, validateIntegrity: true, scratchDirectory: scratchDirectory)
     }
 
     private nonisolated static func validateArchiveFiles(databaseURL: URL, manifest: BackupArchiveManifest) throws {
@@ -487,13 +511,14 @@ actor BackupService {
 
     private nonisolated static func readMetadata(
         at url: URL,
-        validateIntegrity shouldValidateIntegrity: Bool
+        validateIntegrity shouldValidateIntegrity: Bool,
+        scratchDirectory: URL
     ) throws -> BackupMetadata {
         if try BackupArchive.isArchive(url) {
             guard shouldValidateIntegrity else { return try BackupArchive.readManifest(at: url).metadata }
-            return try BackupArchive.withExtracted(at: url) { directory, manifest in
+            return try BackupArchive.withExtracted(at: url, scratchDirectory: scratchDirectory) { directory, manifest in
                 let databaseURL = directory.appending(path: "database.sqlite")
-                let metadata = try readMetadata(at: databaseURL, validateIntegrity: true)
+                let metadata = try readMetadata(at: databaseURL, validateIntegrity: true, scratchDirectory: scratchDirectory)
                 guard metadata == manifest.metadata else { throw BackupServiceError.invalidBackup }
                 try validateArchiveFiles(databaseURL: databaseURL, manifest: manifest)
                 return metadata
@@ -576,7 +601,7 @@ actor BackupService {
         try Self.ensureDirectory(url, fileManager: fileManager)
     }
 
-    private nonisolated static func ensureDirectory(_ url: URL, fileManager: FileManager) throws {
+    nonisolated static func ensureDirectory(_ url: URL, fileManager: FileManager) throws {
         try fileManager.createDirectory(at: url, withIntermediateDirectories: true)
         let values = try url.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey])
         guard values.isDirectory == true, values.isSymbolicLink != true else {
@@ -586,7 +611,11 @@ actor BackupService {
     }
 
     private func validateManagedGenerationFile(_ url: URL) throws {
-        let standardizedDirectory = backupDirectoryURL.standardizedFileURL
+        try validateManagedGenerationFile(url, in: backupDirectoryURL)
+    }
+
+    private func validateManagedGenerationFile(_ url: URL, in directory: URL) throws {
+        let standardizedDirectory = directory.standardizedFileURL
         guard url.deletingLastPathComponent().standardizedFileURL == standardizedDirectory else {
             throw BackupServiceError.generationNotFound
         }

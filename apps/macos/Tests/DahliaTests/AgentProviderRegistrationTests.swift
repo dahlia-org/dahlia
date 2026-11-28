@@ -16,7 +16,7 @@
                 == [.subscription(.openai), .subscription(.anthropic), .databricks])
             #expect(Kind.matching(.mcp, subscriptions: PiSubscription.allCases) == [.databricks])
             #expect(Kind.matching(.calendar, subscriptions: PiSubscription.allCases) == [.google, .databricks])
-            #expect(Kind.matching(.storage, subscriptions: PiSubscription.allCases) == [.google])
+            #expect(Kind.matching(.storage, subscriptions: PiSubscription.allCases) == [.google, .databricks])
         }
 
         @Test
