@@ -12,7 +12,7 @@
 
 ## 同梱 skill
 
-`dahlia-mcp` は MCP Skills extension（`io.modelcontextprotocol/skills`、SEP-2640）を capabilities の `extensions` に宣言し、`skills/list`・`skills/get`・`resources/list`・`resources/read` で skill を配布する。正本は `DahliaRuntimeSupport` の `Skills/` で、skill directory 内の全ファイルを `skill://dahlia/<name>/<path>` として公開し、manifest に SHA-256 digest と byte 長を載せる。アプリ内チャットの Pi は同じファイルを `--skill` で preset として読む（Pi 1.5.2 の MCP client は Skills extension に対応しないため）。extension 非対応の client 向けに、初期化時の instructions にも `SKILL.md` の URI を列挙する。read-only では書き込みで完結する skill（`summary-editor`）を一覧・取得から除く。skill は公開 tool の使い方だけを書き、新しいデータ経路を持たない。
+`dahlia-mcp` は MCP Skills extension（`io.modelcontextprotocol/skills`、SEP-2640）を MCP `2026-07-28` の `server/discover` の capabilities に宣言し、`skills/list`・`skills/get`・`resources/list`・`resources/read` で skill を配布する。正本は `DahliaRuntimeSupport` の `Skills/` で、skill directory 内の全ファイルを `skill://dahlia/<name>/<path>` として公開し、manifest に SHA-256 digest と byte 長を載せる。アプリ内チャットの Pi は同じファイルを `--skill` で preset として読む（Pi 1.5.2 の MCP client は Skills extension に対応しないため）。modern request は毎回 `params._meta` の protocolVersion と clientCapabilities を検証し、初期化 handshake なしで処理する。discovery・一覧・resource read は cache field を返す。従来の `2025-06-18` initialize と resource 応答も維持するが、そちらには beta extension を宣言しない。extension 非対応の client 向けに、instructions にも `SKILL.md` の URI を列挙する。read-only では書き込みで完結する skill（`summary-editor`）を一覧・取得から除く。`projects-optimizer` は read-only では調査と提案までとし、適用済みと報告しない。skill は公開 tool の使い方だけを書き、新しいデータ経路を持たない。
 
 | Skill | 担当 |
 | --- | --- |

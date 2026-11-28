@@ -113,6 +113,9 @@ Meeting tabs: Cmd+1 Summary, Cmd+2 Notes, Cmd+3 Screenshots, Cmd+4 Transcript.
 - Dahlia MCP (Advanced): choose the app (Claude Code, Codex CLI, or JSON for others), the Workspaces, and whether to
   allow AI to edit (off by default). Run the shown command, then restart that app. After a Dahlia update, open Dahlia
   once before using MCP again.
+- Chat can list and read MCP resources only with an explicit registered `server` argument. An unscoped list is blocked,
+  including when Pi has connected other servers from a trusted working folder. Use `list_mcp_resources` with that server,
+  then `read_mcp_resource` with the same server and a returned URI.
 - Backups: Data Protection > Backups creates and imports backups of local Workspaces.
 
 ## What each kind of AI run can use

@@ -65,8 +65,26 @@ public final class DahliaMCPServer {
             return nil
         }
 
+        let params = request["params"] as? [String: Any]
+        let meta = params?["_meta"] as? [String: Any]
+        let isModern = meta?["io.modelcontextprotocol/protocolVersion"] != nil
+            || meta?["io.modelcontextprotocol/clientCapabilities"] != nil
+            || method == "server/discover" || method.hasPrefix("skills/")
+        if isModern {
+            guard let version = meta?["io.modelcontextprotocol/protocolVersion"] as? String,
+                  meta?["io.modelcontextprotocol/clientCapabilities"] is [String: Any] else {
+                return response(id: id, errorCode: -32602, message: "Required protocol metadata is missing or invalid")
+            }
+            guard version == "2026-07-28" else {
+                return serialize(["jsonrpc": "2.0", "id": id, "error": [
+                    "code": -32022, "message": "Unsupported protocol version",
+                    "data": ["supported": ["2026-07-28", "2025-06-18"], "requested": version],
+                ]])
+            }
+        }
         do {
-            return try handleRequest(method: method, id: id, params: request["params"])
+            let reply = try handleRequest(method: method, id: id, params: request["params"], isModern: isModern)
+            return isModern ? try modernResponse(reply, method: method) : reply
         } catch let error as MeetingAccessError {
             return response(id: id, errorCode: -32000, message: error.localizedDescription)
         } catch {
@@ -74,9 +92,19 @@ public final class DahliaMCPServer {
         }
     }
 
-    private func handleRequest(method: String, id: Any, params: Any?) throws -> String {
+    private func handleRequest(method: String, id: Any, params: Any?, isModern: Bool) throws -> String {
         switch method {
-        case "initialize":
+        case "server/discover":
+            if workspaceScope != nil { _ = try store.scopedWorkspace() } else { try store.database.read(store.validateSchema(in:)) }
+            var result = initializationResult
+            result.removeValue(forKey: "protocolVersion")
+            result.removeValue(forKey: "serverInfo")
+            result["supportedVersions"] = ["2026-07-28", "2025-06-18"]
+            var capabilities = result["capabilities"] as? [String: Any] ?? [:]
+            capabilities["extensions"] = [DahliaMCPSkill.extensionID: [:]]
+            result["capabilities"] = capabilities
+            return response(id: id, result: result)
+        case "initialize" where !isModern:
             if workspaceScope != nil { _ = try store.scopedWorkspace() } else { try store.database.read(store.validateSchema(in:)) }
             return response(id: id, result: initializationResult)
         case "ping":
@@ -84,15 +112,15 @@ public final class DahliaMCPServer {
         case "tools/list":
             return response(id: id, result: ["tools": toolDefinitions])
         case "tools/call":
-            guard initialized else {
+            guard isModern || initialized else {
                 return response(id: id, errorCode: -32002, message: "Server is not initialized")
             }
             return try callTool(id: id, params: params)
         case "skills/list":
-            return response(id: id, result: skillCacheHints.merging(["skills": skills.map(\.entry)]) { $1 })
+            return response(id: id, result: ["skills": skills.map(\.entry)])
         case "skills/get":
             guard let skill = skill(params) else { return response(id: id, errorCode: -32602, message: "Unknown skill URI") }
-            return response(id: id, result: skillCacheHints.merging(["skill": skill.entry]) { $1 })
+            return response(id: id, result: ["skill": skill.entry])
         case "resources/list":
             return response(id: id, result: ["resources": skills.flatMap(\.resources)])
         case "resources/templates/list":
@@ -104,6 +132,28 @@ public final class DahliaMCPServer {
         default:
             return response(id: id, errorCode: -32601, message: "Method not found")
         }
+    }
+
+    /// Adapt every successful dispatch, including tool calls, without retaining per-request protocol state.
+    private func modernResponse(_ reply: String, method: String) throws -> String {
+        var object = try JSONSerialization.jsonObject(with: Data(reply.utf8)) as? [String: Any] ?? [:]
+        guard var result = object["result"] as? [String: Any] else { return reply }
+        result["resultType"] = "complete"
+        result["_meta"] = ["io.modelcontextprotocol/serverInfo": ["name": "dahlia", "version": "1.0.0"]]
+        if [
+            "server/discover",
+            "tools/list",
+            "skills/list",
+            "skills/get",
+            "resources/list",
+            "resources/templates/list",
+            "resources/read",
+        ].contains(method) {
+            result["ttlMs"] = 300_000
+            result["cacheScope"] = "private"
+        }
+        object["result"] = result
+        return serialize(object)
     }
 
     private var initializationResult: [String: Any] {
@@ -132,7 +182,6 @@ public final class DahliaMCPServer {
             "capabilities": [
                 "tools": ["listChanged": false],
                 "resources": ["listChanged": false],
-                "extensions": [DahliaMCPSkill.extensionID: [:]],
             ],
             "serverInfo": ["name": "dahlia", "version": "1.0.0"],
             "instructions": accessInstructions
@@ -150,10 +199,6 @@ public final class DahliaMCPServer {
                 + skills.map(\.uri).joined(separator: ", ")
                 + ". Read the matching SKILL.md before such a task.",
         ]
-    }
-
-    private var skillCacheHints: [String: Any] {
-        ["resultType": "complete", "ttlMs": 300_000, "cacheScope": "public"]
     }
 
     private func callTool(id: Any, params: Any?) throws -> String {

@@ -278,7 +278,7 @@ Pi は thread を session file の header の `cwd` で動かすので、Dahlia 
 以前の `Application Support/<profile>/CodexChatWorkspace/<Workspace ID>` は使わず、削除もしない。
 
 Pi に渡す tool は `read`・`ls`・`write`・`edit`・`bash`・`mcp__dahlia__*` と、アカウントに登録した MCP server の tool（2026-11-11 ユーザー承認）。`grep`・`find` は渡さない。
-対話チャットには Pi の MCP resource tool の `list_mcp_resources`・`read_mcp_resource` も渡す（2026-11-28 ユーザー承認）。対象はその chat に登録した server だけで、読み取りなので確認・審査なし。`list_mcp_resource_templates` は渡さない。Super Agent・定期実行・intake・ふり返りには渡さない。
+対話チャットには Pi の MCP resource tool の `list_mcp_resources`・`read_mcp_resource` も渡す（2026-11-28 ユーザー承認）。一覧・読み取りとも `server` にその chat に登録した接続先の明示を必須とし、省略時に Pi が接続した全 server を列挙することは許可しない。読み取りなので確認・審査なし。`list_mcp_resource_templates` は渡さない。Super Agent・定期実行・intake・ふり返りには渡さない。
 「セキュリティ」で追加のファイルアクセスを設定できる（2026-11-12 決定）。初期値は追加なし。選択時は読み取りのみで、読み書きへの変更と許可の削除ができる。保存先はこの Mac のアカウント別設定で、Server に同期せず、AI/MCP から許可を編集する入口は設けない。macOS チャットだけの機能であり、Private Web・Electron・Server の処理権限を変更しない。
 
 追加の許可でも Pi の実行コード・extension・skill・Pi 用一時フォルダは書き換えられず、Dahlia の認証情報・録音などの保護対象にも到達できない。ホーム全体や Library、PATH のコマンドを含む／その配下の場所への書き込みは拒否する。標準の zsh・bash・csh 起動ファイルと fish 設定、および起動環境の HOME・ZDOTDIR・XDG_CONFIG_HOME・BASH_ENV・ENV で指定した起動ファイルは、シンボリックリンクの参照先も含めて書き込みから保護する。それらを含む追加の読み書き許可は保存・起動時に、作業フォルダは起動時に拒否する。Seatbelt でも許可ルールの後に書き込みを拒否する。読み取りのみの許可は使える。BASH_ENV・ENV は直接のファイル path（絶対、相対、`~/`）に限定し、シェル式や `~ユーザー名` を含む値が設定されている場合は chat 起動を拒否する。式を評価して sandbox 外で起動先を推測することはしない。設定から選んだ path は実体に解決し、起動時にも検証する。許可は既存の範囲に加算するもので、読み取りのみの追加や削除によって作業フォルダの書き込みを禁止することはできない。ファイル単位の許可は隣接ファイルの作成や置き換え用の一時ファイルを許可しないため、それを必要とするツールには親フォルダの許可が必要になる。

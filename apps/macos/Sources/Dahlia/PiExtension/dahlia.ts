@@ -425,7 +425,7 @@ export default async function (pi: any) {
       if (mcpResourceTools.includes(name) && tool?.sourceInfo?.path === mcpExtension) {
         return allowsMcpResourceTool(name, event.input, chatMcpServers)
           ? undefined
-          : block("This MCP server is not available in Dahlia's chat.");
+          : block("Specify an explicit server registered for this Dahlia chat.");
       }
 
       const server: string | undefined = tool?.sourceInfo?.path === mcpExtension ? tool.namespace?.aliases?.[0] : undefined;
