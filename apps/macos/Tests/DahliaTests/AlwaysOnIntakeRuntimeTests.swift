@@ -332,6 +332,41 @@
                 if pausesActivation { #expect(source.cursor == nil) } else { try expectReadPosition(source, runs: runs, complete: false) }
             }
 
+            @Test func intakeDeadlineWhileWaitingForSettleIsInterrupted() async throws {
+                let (deadline, trigger) = AsyncStream<Void>.makeStream(bufferingPolicy: .bufferingNewest(1))
+                defer { trigger.finish() }
+                let fixture = try fixture(calls: [], ending: [], waitForIntakeTimeout: {
+                    for await _ in deadline { return }
+                })
+                defer { try? FileManager.default.removeItem(at: fixture.pi.rootURL) }
+                await fixture.service.drainAlwaysOn()
+                let transport = await fixture.transports.transport(at: 0)
+                _ = await transport.command { $0["type"] == .string("extension_ui_response") && $0["id"] == .string("r1") }
+                // Registration proves prompt acknowledgement returned and awaitIntake is consuming state updates.
+                let clock = ContinuousClock()
+                let limit = clock.now.advanced(by: .seconds(5))
+                while await fixture.service.stateReaders.isEmpty, clock.now < limit {
+                    try await Task.sleep(for: .milliseconds(1))
+                }
+                try #require(await !fixture.service.stateReaders.isEmpty)
+                let task = try #require(await fixture.service.intakeTask)
+                let before = try await saved(fixture).0
+                trigger.yield(())
+                await task.value
+
+                let (source, runs, _) = try await saved(fixture)
+                #expect(runs.last?.status == "interrupted")
+                #expect(runs.last?.finishedAt != nil)
+                #expect(source.cursor == before.cursor)
+                try expectReadPosition(source, runs: runs, complete: false)
+                let status = try await fixture.db.read { db in
+                    try String.fetchOne(db, sql: "SELECT status FROM chat_runs WHERE threadID=? ORDER BY createdAt DESC LIMIT 1", arguments: [fixture.source])
+                }
+                #expect(status == "interrupted")
+                #expect(await fixture.service.intakeTask == nil)
+                #expect(await transport.isClosed)
+            }
+
             @Test func intakeDeadlineCancelsPreparationBeforeOpeningExists() async throws {
                 let (preparation, paused) = AsyncStream<Void>.makeStream(bufferingPolicy: .bufferingNewest(1))
                 let (deadline, trigger) = AsyncStream<Void>.makeStream(bufferingPolicy: .bufferingNewest(1))

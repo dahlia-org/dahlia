@@ -254,6 +254,7 @@ extension PiChatService {
             default: break
             }
         }
+        try Task.checkCancellation()
         throw PiRuntimeError.processExited(nil)
     }
 
