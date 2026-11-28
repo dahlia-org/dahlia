@@ -463,7 +463,7 @@ struct DahliaBotEventRow: View {
             }
             .buttonStyle(.plain)
             .focusable()
-            .onKeyPress(keys: [.space, .return]) { _ in
+            .onKeyPress(keys: [.space, .return], phases: .down) { _ in
                 toggle()
                 return .handled
             }
@@ -499,7 +499,7 @@ private struct DahliaBotEventLink: View {
         }
         .buttonStyle(.plain)
         .focusable()
-        .onKeyPress(keys: [.space, .return]) { _ in
+        .onKeyPress(keys: [.space, .return], phases: .down) { _ in
             openURL(url)
             return .handled
         }

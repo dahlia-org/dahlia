@@ -47,9 +47,9 @@
             try #require(window.makeFirstResponder(before))
             try sendKey("\t", code: 48, to: window)
             try #require(window.firstResponder === target)
-            try sendKey(" ", code: 49, to: window)
-            try #require(await pollUntil { toggles == 1 })
-            try sendKey("\r", code: 36, to: window)
+            try sendKey(" ", code: 49, to: window, includingRepeats: true)
+            try #require(toggles == 1)
+            try sendKey("\r", code: 36, to: window, includingRepeats: true)
             try #require(await pollUntil { toggles == 2 })
             try click(target, in: window)
             try #require(await pollUntil { toggles == 3 })
@@ -57,9 +57,9 @@
             if hasLink {
                 let link = try #require(targets.last)
                 try #require(window.firstResponder === link)
-                try sendKey(" ", code: 49, to: window)
-                try #require(await pollUntil { opens == 1 })
-                try sendKey("\r", code: 36, to: window)
+                try sendKey(" ", code: 49, to: window, includingRepeats: true)
+                try #require(opens == 1)
+                try sendKey("\r", code: 36, to: window, includingRepeats: true)
                 try #require(await pollUntil { opens == 2 })
                 try click(link, in: window)
                 try #require(await pollUntil { opens == 3 })
@@ -86,12 +86,15 @@
             }
         }
 
-        private func sendKey(_ characters: String, code: UInt16, to window: NSWindow) throws {
-            for type in [NSEvent.EventType.keyDown, .keyUp] {
+        private func sendKey(_ characters: String, code: UInt16, to window: NSWindow, includingRepeats: Bool = false) throws {
+            let events: [(NSEvent.EventType, Bool)] = includingRepeats
+                ? [(.keyDown, false), (.keyDown, true), (.keyDown, true), (.keyUp, false)]
+                : [(.keyDown, false), (.keyUp, false)]
+            for (type, isRepeat) in events {
                 let event = try #require(NSEvent.keyEvent(
                     with: type, location: .zero, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
                     windowNumber: window.windowNumber, context: nil, characters: characters,
-                    charactersIgnoringModifiers: characters, isARepeat: false, keyCode: code
+                    charactersIgnoringModifiers: characters, isARepeat: isRepeat, keyCode: code
                 ))
                 window.sendEvent(event)
             }
