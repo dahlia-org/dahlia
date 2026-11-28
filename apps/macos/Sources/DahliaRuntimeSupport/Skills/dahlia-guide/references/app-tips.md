@@ -120,22 +120,30 @@ Meeting tabs: Cmd+1 Summary, Cmd+2 Notes, Cmd+3 Screenshots, Cmd+4 Transcript.
 
 ## What each kind of AI run can use
 
-Help > Chat and agent differences / チャットとエージェントの違い shows this table in the app.
+Help > Chat and agent differences / チャットとエージェントの違い shows this in the app.
 
-| | Chat | Agent | Agent task | Intake | Scheduled run |
-| --- | --- | --- | --- | --- | --- |
-| Runs when | You send a message | You send a message, or events arrive | The agent hands it work | Per source, while the app is open | At the scheduled time, while the app is open |
-| Commands and files | Working folder, read, write, run commands | Only its home, no commands | Same as chat | None | Read only |
-| Dahlia meeting data | Read and write (changes follow the approval mode) | Read only | Same as chat | None | Approved tools, read only |
-| Connector MCPs | Yes (writes follow the approval mode) | None | Same as chat | Its one source, read only | Approved tools, read only |
-| MCP resources | Registered servers | None | Same as chat | None | None |
-| Web search | When Web Access is installed | None | Same as chat | None | None |
-| Skills | Use, create, edit | None | Same as chat | Only the intake procedure | Read only |
-| Memory | Read and write (when on) | Read only | Same as chat | None | Read only |
-| Thread tools | Launch, delegate, manage | Launch, delegate, manage (as tasks) | Same as chat | None | None |
-| Writes to other services | The chat's approval mode | Never | The agent's Worker approval mode | Never | Never |
+A worker (a task the agent hands off) is an ordinary thread with the same core work capabilities as chat.
+For writes to other services, chat uses the mode chosen in the chat. The agent's Workers / ワーカー setting limits
+how permissive a task can be; a stricter approval mode chosen in the task thread still applies.
+While handling handed-off work, a worker's thread tools only read: it cannot create
+children or manage other threads. A subagent made by a chat with `delegate_task` has the same thread-tool limits,
+and its approval mode is never looser than its parent's.
 
-A subagent made with `delegate_task` works like a chat but cannot create children, and its thread tools only read.
+Agents can also read upcoming calendar events and invitation status.
+
+| | Chat and workers | Agent | Intake | Scheduled run |
+| --- | --- | --- | --- | --- |
+| Runs when | You send a message, or the agent hands it work | You send a message, or events arrive | Per source, while the app is open | At the scheduled time, while the app is open |
+| Commands and files | Working folder, read, write, run commands | Only its home, no commands | None | Read only |
+| Dahlia meeting data | Read and write (changes follow the approval mode) | Read only | None | Approved tools, read only |
+| Connector MCP tools | Yes (writes follow the approval mode) | None | Its one source, read only | Approved tools, read only |
+| MCP resources | Registered servers | None | None | None |
+| Web search | When Web Access is installed | None | None | None |
+| Skills | Use, create, edit | None | Only the intake procedure | Read only |
+| Memory | Read and write (when on) | Read only | None | Read only |
+| Thread tools | Chat: launch, delegate, manage. Workers: read only during handed-off work | Launch, delegate, manage (as tasks) | None | None |
+| Writes to other services | Follow the approval mode | Never | Never | Never |
+
 Summaries and image analysis use no tools, MCPs, or skills. While recording, automatic agent runs, intake, and
 scheduled runs do not start. Chat, user messages to an agent, and manually requested summaries remain available.
 

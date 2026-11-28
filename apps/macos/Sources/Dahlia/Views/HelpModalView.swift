@@ -441,171 +441,141 @@ private struct AgentsExplainer: View {
     }
 }
 
-/// What each way the AI runs can use. Keep the comparison aligned with
+/// What each way the AI runs can use. Keep the matrix aligned with
 /// `PiExecutionProfile`, `PiChatService`'s launch arguments, and `dahlia.ts`'s tool policy.
-enum HelpModesTable {
-    static var columns: [String] {
+enum HelpModesMatrix {
+    enum Access { case full, partial, none }
+
+    struct Row {
+        let title: String
+        let caption: String
+        let systemImage: String
+        let tint: Color
+        let access: [Access]
+    }
+
+    static var capabilities: [(title: String, systemImage: String)] {
         [
-            L10n.howItWorksModesColumnChat,
-            L10n.howItWorksModesColumnAgent,
-            L10n.howItWorksModesColumnTask,
-            L10n.howItWorksModesColumnIntake,
-            L10n.howItWorksModesColumnScheduled,
+            (L10n.howItWorksModesRowFiles, "terminal"),
+            (L10n.howItWorksModesRowDahlia, "calendar"),
+            (L10n.howItWorksModesRowConnectors, "point.3.connected.trianglepath.dotted"),
+            (L10n.howItWorksModesRowWeb, "globe"),
+            (L10n.howItWorksModesRowSkills, "book"),
+            (L10n.howItWorksModesRowMemory, "brain"),
+            (L10n.howItWorksModesRowThreads, "bubble.left.and.text.bubble.right"),
+            (L10n.howItWorksModesRowApproval, "square.and.arrow.up"),
         ]
     }
 
-    static var rows: [(name: String, title: String, cells: [String])] {
+    static var rows: [Row] {
         [
-            (
-                "trigger",
-                L10n.howItWorksModesRowTrigger,
-                [
-                    L10n.howItWorksModesCellChatTrigger,
-                    L10n.howItWorksModesCellAgentTrigger,
-                    L10n.howItWorksModesCellTaskTrigger,
-                    L10n.howItWorksModesCellIntakeTrigger,
-                    L10n.howItWorksModesCellScheduledTrigger,
-                ]
+            Row(
+                title: L10n.howItWorksModesRowChat,
+                caption: L10n.howItWorksModesRowChatCaption,
+                systemImage: "bubble.left.and.text.bubble.right",
+                tint: .teal,
+                access: [.full, .full, .full, .full, .full, .full, .partial, .full]
             ),
-            (
-                "files",
-                L10n.howItWorksModesRowFiles,
-                [
-                    L10n.howItWorksModesCellChatFiles,
-                    L10n.howItWorksModesCellAgentFiles,
-                    L10n.howItWorksModesCellSameAsChat,
-                    L10n.howItWorksModesCellNone,
-                    L10n.howItWorksModesCellReadOnly,
-                ]
+            Row(
+                title: L10n.howItWorksModesColumnAgent,
+                caption: L10n.howItWorksModesRowAgentCaption,
+                systemImage: "person.crop.circle.badge.checkmark",
+                tint: .purple,
+                access: [.partial, .partial, .none, .none, .none, .partial, .full, .none]
             ),
-            (
-                "dahlia",
-                L10n.howItWorksModesRowDahlia,
-                [
-                    L10n.howItWorksModesCellChatDahlia,
-                    L10n.howItWorksModesCellReadOnly,
-                    L10n.howItWorksModesCellSameAsChat,
-                    L10n.howItWorksModesCellNone,
-                    L10n.howItWorksModesCellScheduledTools,
-                ]
+            Row(
+                title: L10n.howItWorksModesColumnIntake,
+                caption: L10n.howItWorksModesRowIntakeCaption,
+                systemImage: "tray.and.arrow.down",
+                tint: .orange,
+                access: [.none, .none, .partial, .none, .partial, .none, .none, .none]
             ),
-            (
-                "connectors",
-                L10n.howItWorksModesRowConnectors,
-                [
-                    L10n.howItWorksModesCellChatConnectors,
-                    L10n.howItWorksModesCellNone,
-                    L10n.howItWorksModesCellSameAsChat,
-                    L10n.howItWorksModesCellIntakeConnectors,
-                    L10n.howItWorksModesCellScheduledTools,
-                ]
-            ),
-            (
-                "resources",
-                L10n.howItWorksModesRowResources,
-                [
-                    L10n.howItWorksModesCellChatResources,
-                    L10n.howItWorksModesCellNone,
-                    L10n.howItWorksModesCellSameAsChat,
-                    L10n.howItWorksModesCellNone,
-                    L10n.howItWorksModesCellNone,
-                ]
-            ),
-            (
-                "web",
-                L10n.howItWorksModesRowWeb,
-                [
-                    L10n.howItWorksModesCellChatWeb,
-                    L10n.howItWorksModesCellNone,
-                    L10n.howItWorksModesCellSameAsChat,
-                    L10n.howItWorksModesCellNone,
-                    L10n.howItWorksModesCellNone,
-                ]
-            ),
-            (
-                "skills",
-                L10n.howItWorksModesRowSkills,
-                [
-                    L10n.howItWorksModesCellChatSkills,
-                    L10n.howItWorksModesCellNone,
-                    L10n.howItWorksModesCellSameAsChat,
-                    L10n.howItWorksModesCellIntakeSkills,
-                    L10n.howItWorksModesCellReadOnly,
-                ]
-            ),
-            (
-                "memory",
-                L10n.howItWorksModesRowMemory,
-                [
-                    L10n.howItWorksModesCellChatMemory,
-                    L10n.howItWorksModesCellReadOnly,
-                    L10n.howItWorksModesCellSameAsChat,
-                    L10n.howItWorksModesCellNone,
-                    L10n.howItWorksModesCellReadOnly,
-                ]
-            ),
-            (
-                "threads",
-                L10n.howItWorksModesRowThreads,
-                [
-                    L10n.howItWorksModesCellChatThreads,
-                    L10n.howItWorksModesCellAgentThreads,
-                    L10n.howItWorksModesCellSameAsChat,
-                    L10n.howItWorksModesCellNone,
-                    L10n.howItWorksModesCellNone,
-                ]
-            ),
-            (
-                "approval",
-                L10n.howItWorksModesRowApproval,
-                [
-                    L10n.howItWorksModesCellChatApproval,
-                    L10n.howItWorksModesCellNoWrites,
-                    L10n.howItWorksModesCellTaskApproval,
-                    L10n.howItWorksModesCellNoWrites,
-                    L10n.howItWorksModesCellNoWrites,
-                ]
+            Row(
+                title: L10n.howItWorksModesColumnScheduled,
+                caption: L10n.howItWorksModesRowScheduledCaption,
+                systemImage: "clock",
+                tint: .indigo,
+                access: [.partial, .partial, .partial, .none, .partial, .partial, .none, .none]
             ),
         ]
     }
 }
 
 private struct ModesExplainer: View {
-    private let columnWidth: CGFloat = 132
+    private let capabilityWidth: CGFloat = 58
 
     var body: some View {
         ExplainerLead(L10n.howItWorksModesLead)
 
-        ScrollView(.horizontal) {
-            Grid(alignment: .topLeading, horizontalSpacing: 12, verticalSpacing: 10) {
-                GridRow {
-                    header(L10n.howItWorksModesColumnFeature)
-                    ForEach(HelpModesTable.columns, id: \.self) { header($0) }
-                }
-                ForEach(HelpModesTable.rows, id: \.name) { row in
-                    Divider().gridCellUnsizedAxes(.horizontal)
+        ExplainerDiagram { ModesMap() }
+        ExplainerBody(L10n.howItWorksModesMapBody)
+
+        ExplainerSection(title: L10n.howItWorksModesMatrixTitle) {
+            ExplainerDiagram {
+                Grid(alignment: .leading, horizontalSpacing: 2, verticalSpacing: 10) {
                     GridRow {
-                        Text(row.title)
-                            .font(.dahliaHeadline)
-                            .frame(width: columnWidth, alignment: .leading)
-                        ForEach(row.cells.indices, id: \.self) { index in
-                            let text = row.cells[index]
-                            Text(text)
-                                .font(.dahliaSecondary)
-                                .foregroundStyle([L10n.howItWorksModesCellNone, L10n.howItWorksModesCellNoWrites]
-                                    .contains(text) ? .secondary : .primary)
-                                .frame(width: columnWidth, alignment: .leading)
+                        Color.clear.gridCellUnsizedAxes([.horizontal, .vertical])
+                        ForEach(HelpModesMatrix.capabilities, id: \.title) { capability in
+                            VStack(spacing: 4) {
+                                Image(systemName: capability.systemImage)
+                                Text(capability.title)
+                                    .font(.dahliaSecondary)
+                                    .multilineTextAlignment(.center)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
+                            .foregroundStyle(.secondary)
+                            .frame(width: capabilityWidth)
+                            .accessibilityElement(children: .combine)
+                            .accessibilityAddTraits(.isHeader)
+                        }
+                    }
+                    ForEach(HelpModesMatrix.rows, id: \.title) { row in
+                        Divider().gridCellUnsizedAxes(.horizontal)
+                        GridRow {
+                            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                                Image(systemName: row.systemImage)
+                                    .foregroundStyle(row.tint)
+                                    .frame(width: DahliaTypography.size(offset: 6))
+                                    .accessibilityHidden(true)
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(row.title).font(.dahliaHeadline)
+                                    Text(row.caption)
+                                        .font(.dahliaSecondary)
+                                        .foregroundStyle(.secondary)
+                                        .fixedSize(horizontal: false, vertical: true)
+                                }
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .accessibilityElement(children: .combine)
+                            ForEach(row.access.indices, id: \.self) { index in
+                                let capability = HelpModesMatrix.capabilities[index]
+                                ExplainerCapabilityDot(
+                                    capability.systemImage,
+                                    tint: row.tint,
+                                    isOn: row.access[index] != .none,
+                                    isPartial: row.access[index] == .partial
+                                )
+                                .help(capability.title)
+                                .frame(width: capabilityWidth)
+                                .accessibilityElement(children: .ignore)
+                                .accessibilityLabel("\(capability.title): \(accessTitle(row.access[index]))")
+                                .gridCellAnchor(.center)
+                            }
                         }
                     }
                 }
             }
-            .fixedSize(horizontal: false, vertical: true)
-            .padding(16)
-        }
-        .background(DahliaDesign.contentHighlightColor.opacity(0.5), in: .rect(cornerRadius: DahliaDesign.Card.regularCornerRadius))
-
-        ExplainerSection(title: L10n.howItWorksModesSubagentTitle) {
-            ExplainerBody(L10n.howItWorksModesSubagentBody)
+            HStack(spacing: 16) {
+                ForEach([HelpModesMatrix.Access.full, .partial, .none], id: \.self) { access in
+                    HStack(spacing: 6) {
+                        ExplainerCapabilityDot("checkmark", tint: .teal, isOn: access != .none, isPartial: access == .partial)
+                            .accessibilityHidden(true)
+                        Text(accessTitle(access))
+                            .font(.dahliaSecondary)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
         }
 
         ExplainerSection(title: L10n.howItWorksModesOtherTitle) {
@@ -614,12 +584,75 @@ private struct ModesExplainer: View {
         }
     }
 
-    private func header(_ text: String) -> some View {
-        Text(text)
-            .font(.dahliaSectionHeader)
-            .foregroundStyle(.secondary)
-            .frame(width: columnWidth, alignment: .leading)
-            .accessibilityAddTraits(.isHeader)
+    private func accessTitle(_ access: HelpModesMatrix.Access) -> String {
+        switch access {
+        case .full: L10n.howItWorksModesAccessFull
+        case .partial: L10n.howItWorksModesAccessPartial
+        case .none: L10n.howItWorksModesAccessNone
+        }
+    }
+}
+
+/// Who can touch what: the outside world on top, Dahlia's own data below, and each way the AI runs in between.
+/// A line is access (its heads show which way data moves); no line means no access.
+private struct ModesMap: View {
+    var body: some View {
+        VStack(spacing: 0) {
+            ExplainerBand(
+                systemImage: "globe",
+                title: L10n.howItWorksModesMapExternal,
+                caption: L10n.howItWorksModesMapExternalCaption,
+                tint: .orange
+            )
+            Grid(horizontalSpacing: 0, verticalSpacing: 0) {
+                GridRow {
+                    ExplainerLink(towardTop: false, label: L10n.howItWorksModesMapRead)
+                    empty
+                    ExplainerLink(towardTop: false, label: L10n.howItWorksModesMapReadOne)
+                    empty
+                    empty
+                    empty
+                    ExplainerLink(towardTop: true, towardBottom: true, label: L10n.howItWorksModesMapReadWrite)
+                }
+                GridRow {
+                    node("clock", L10n.howItWorksModesColumnScheduled, L10n.howItWorksModesMapScheduledCaption, .indigo)
+                    Color.clear.frame(width: 8, height: 1)
+                    node("tray.and.arrow.down", L10n.howItWorksModesColumnIntake, L10n.howItWorksModesMapIntakeCaption, .orange)
+                    ExplainerFlow(forward: L10n.howItWorksModesMapEvent)
+                    node(
+                        "person.crop.circle.badge.checkmark",
+                        L10n.howItWorksModesColumnAgent,
+                        L10n.howItWorksModesMapAgentCaption,
+                        .purple,
+                        width: 112
+                    )
+                    ExplainerFlow(forward: L10n.howItWorksModesMapTask, backward: L10n.howItWorksModesMapResult)
+                    ExplainerGroup(title: L10n.howItWorksModesMapSame, footer: L10n.howItWorksModesMapDifferences, tint: .teal) {
+                        node("bubble.left.and.text.bubble.right", L10n.howItWorksModesMapWorker, L10n.howItWorksModesMapWorkerCaption, .teal)
+                        node("bubble.left.and.text.bubble.right", L10n.howItWorksModesMapChat, L10n.howItWorksModesMapChatCaption, .teal)
+                    }
+                }
+                GridRow {
+                    ExplainerLink(towardTop: true, label: L10n.howItWorksModesMapRead)
+                    empty
+                    empty
+                    empty
+                    ExplainerLink(towardTop: true, label: L10n.howItWorksModesMapRead)
+                    empty
+                    ExplainerLink(towardTop: true, towardBottom: true, label: L10n.howItWorksModesMapReadWrite)
+                }
+            }
+            ExplainerBand(systemImage: "calendar", title: "Dahlia", caption: L10n.howItWorksModesMapDahliaCaption, tint: .green)
+        }
+    }
+
+    private var empty: some View {
+        Color.clear.gridCellUnsizedAxes([.horizontal, .vertical])
+    }
+
+    private func node(_ systemImage: String, _ title: String, _ caption: String, _ tint: Color, width: CGFloat = 100) -> some View {
+        ExplainerNode(systemImage: systemImage, title: title, caption: caption, tint: tint)
+            .frame(width: width)
     }
 }
 
@@ -870,11 +903,14 @@ private struct ExplainerCapabilityDot: View {
     let systemImage: String
     let tint: Color
     let isOn: Bool
+    /// Drawn hollow with a dashed ring: usable only in part, such as read only.
+    let isPartial: Bool
 
-    init(_ systemImage: String, tint: Color, isOn: Bool) {
+    init(_ systemImage: String, tint: Color, isOn: Bool, isPartial: Bool = false) {
         self.systemImage = systemImage
         self.tint = tint
         self.isOn = isOn
+        self.isPartial = isPartial
     }
 
     var body: some View {
@@ -882,8 +918,13 @@ private struct ExplainerCapabilityDot: View {
             .font(.dahliaSecondary)
             .foregroundStyle(isOn ? tint : Color.secondary.opacity(0.3))
             .frame(width: 24, height: 24)
-            .background(isOn ? tint.opacity(0.15) : .clear, in: .circle)
-            .overlay { Circle().strokeBorder(isOn ? tint.opacity(0.4) : Color.secondary.opacity(0.2), lineWidth: 1) }
+            .background(isOn && !isPartial ? tint.opacity(0.15) : .clear, in: .circle)
+            .overlay {
+                Circle().strokeBorder(
+                    isOn ? tint.opacity(isPartial ? 0.7 : 0.4) : Color.secondary.opacity(0.2),
+                    style: StrokeStyle(lineWidth: 1, dash: isPartial ? [3, 2] : [])
+                )
+            }
             .accessibilityHidden(!isOn)
     }
 }
@@ -904,5 +945,141 @@ private struct ExplainerChip: View {
             .padding(.vertical, 3)
             .background(tint.opacity(0.15), in: .capsule)
             .overlay { Capsule().strokeBorder(tint.opacity(0.4), lineWidth: 1) }
+    }
+}
+
+/// A wide strip for a place many nodes reach, such as the outside world or Dahlia's own data.
+private struct ExplainerBand: View {
+    let systemImage: String
+    let title: String
+    let caption: String
+    let tint: Color
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: systemImage)
+                .foregroundStyle(tint)
+                .accessibilityHidden(true)
+            Text(title).font(.dahliaHeadline)
+            Text(caption)
+                .font(.dahliaSecondary)
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 8)
+        .background(tint.opacity(0.1), in: .rect(cornerRadius: DahliaDesign.Card.compactCornerRadius))
+        .overlay {
+            RoundedRectangle(cornerRadius: DahliaDesign.Card.compactCornerRadius)
+                .strokeBorder(tint.opacity(0.35), lineWidth: 1)
+        }
+        .accessibilityElement(children: .combine)
+    }
+}
+
+/// A frame around nodes that behave the same, with what sets them apart underneath.
+private struct ExplainerGroup<Content: View>: View {
+    let title: String
+    let footer: String
+    let tint: Color
+    @ViewBuilder let content: Content
+
+    var body: some View {
+        VStack(spacing: 6) {
+            Text(title)
+                .font(.dahliaSectionHeader)
+                .foregroundStyle(tint)
+                .fixedSize()
+            HStack(spacing: 8) { content }
+                .fixedSize(horizontal: false, vertical: true)
+            ExplainerChip(footer, tint: tint)
+                .fixedSize()
+        }
+        .padding(8)
+        .background(tint.opacity(0.05), in: .rect(cornerRadius: DahliaDesign.Card.regularCornerRadius))
+        .overlay {
+            RoundedRectangle(cornerRadius: DahliaDesign.Card.regularCornerRadius)
+                .strokeBorder(tint.opacity(0.5), style: StrokeStyle(lineWidth: 1.5))
+        }
+    }
+}
+
+/// A vertical access line between a node and the bands above and below it. Heads point where data goes.
+private struct ExplainerLink: View {
+    var towardTop: Bool
+    var towardBottom = false
+    let label: String
+
+    init(towardTop: Bool, towardBottom: Bool = false, label: String) {
+        self.towardTop = towardTop
+        self.towardBottom = towardBottom || !towardTop
+        self.label = label
+    }
+
+    var body: some View {
+        ExplainerLine(axis: .vertical, startHead: towardTop, endHead: towardBottom)
+            .stroke(.secondary, style: StrokeStyle(lineWidth: 1.5, lineCap: .round, lineJoin: .round))
+            .frame(width: 12, height: 40)
+            .overlay(alignment: .leading) {
+                Text(label)
+                    .font(.dahliaSecondary)
+                    .foregroundStyle(.secondary)
+                    .fixedSize()
+                    .offset(x: 16)
+            }
+            .accessibilityElement()
+            .accessibilityLabel(label)
+    }
+}
+
+/// A horizontal hand-off that stretches across the gap, labelled with what it carries.
+private struct ExplainerFlow: View {
+    let forward: String
+    var backward: String?
+
+    var body: some View {
+        VStack(spacing: 6) {
+            line(forward, startHead: false)
+            if let backward { line(backward, startHead: true) }
+        }
+        .padding(.horizontal, 6)
+        .frame(width: 68)
+    }
+
+    private func line(_ label: String, startHead: Bool) -> some View {
+        VStack(spacing: 2) {
+            Text(label)
+                .font(.dahliaSecondary)
+                .foregroundStyle(.secondary)
+                .fixedSize()
+            ExplainerLine(axis: .horizontal, startHead: startHead, endHead: !startHead)
+                .stroke(.secondary, style: StrokeStyle(lineWidth: 1.5, lineCap: .round, lineJoin: .round))
+                .frame(height: 12)
+        }
+        .accessibilityElement()
+        .accessibilityLabel(label)
+    }
+}
+
+private struct ExplainerLine: Shape {
+    let axis: Axis
+    var startHead = false
+    var endHead = true
+
+    func path(in rect: CGRect) -> Path {
+        let start = axis == .horizontal ? CGPoint(x: rect.minX, y: rect.midY) : CGPoint(x: rect.midX, y: rect.minY)
+        let end = axis == .horizontal ? CGPoint(x: rect.maxX, y: rect.midY) : CGPoint(x: rect.midX, y: rect.maxY)
+        var path = Path()
+        path.move(to: start)
+        path.addLine(to: end)
+        func head(at tip: CGPoint, from base: CGPoint) {
+            let angle = atan2(tip.y - base.y, tip.x - base.x)
+            for turn in [0.8 * CGFloat.pi, -0.8 * CGFloat.pi] {
+                path.move(to: tip)
+                path.addLine(to: CGPoint(x: tip.x + 6 * cos(angle + turn), y: tip.y + 6 * sin(angle + turn)))
+            }
+        }
+        if startHead { head(at: start, from: end) }
+        if endHead { head(at: end, from: start) }
+        return path
     }
 }
