@@ -60,7 +60,13 @@ enum PiBundle {
     }
 
     /// Dahlia's bundled skills. Like upstream's `.bundled_manifest`, the Curator never archives or consolidates them.
-    nonisolated static let presetSkillNames = ["projects-optimizer", "meeting-reviewer", "workspace-backup", "skill-creator"]
+    /// The skills shared with `dahlia-mcp` come first, then the app-only skills in `AgentSkills`.
+    nonisolated static let presetSkillNames = DahliaBundledSkills.names + ["workspace-backup", "skill-creator"]
+
+    /// The app-only skills directory, which the chat sandbox reads alongside the shared skills.
+    nonisolated static var appSkillsDirectoryURL: URL? {
+        Bundle.appModule.url(forResource: "AgentSkills", withExtension: nil)
+    }
 
     /// Intake's own procedure. It is not a chat preset: only intake runs load it, and only through `/skill:intake`.
     nonisolated static func intakeSkillURL() -> URL? {
@@ -70,6 +76,7 @@ enum PiBundle {
     nonisolated static func presetSkillURLs() -> [URL] {
         presetSkillNames.compactMap {
             Bundle.appModule.url(forResource: $0, withExtension: nil, subdirectory: "AgentSkills")
+                ?? DahliaBundledSkills.url(named: $0)
         }
     }
 }

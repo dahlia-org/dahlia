@@ -162,6 +162,42 @@ import Foundation
             #expect(try run("cat '\(agent.path)/auth.json'", cwd: root, agent: agent) != 0)
         }
 
+        /// Presets come from both the app's `AgentSkills` and the runtime support bundle shared with dahlia-mcp.
+        @Test
+        func bundledPresetSkillsAreReadableButNotWritable() throws {
+            let root = FileManager.default.temporaryDirectory.appending(path: "PiSandboxTests-\(UUID())")
+            let agent = root.appending(path: "agent")
+            try FileManager.default.createDirectory(at: agent, withIntermediateDirectories: true)
+            defer { try? FileManager.default.removeItem(at: root) }
+            let skills = PiBundle.presetSkillURLs().map { PiSandbox.realPath($0.appending(path: "SKILL.md")) }
+            #expect(skills.contains { $0.contains("/AgentSkills/") })
+            #expect(skills.contains { $0.contains("/Skills/") && !$0.contains("/AgentSkills/") })
+            for skill in skills {
+                #expect(try run("cat '\(skill)'", cwd: root, agent: agent) == 0)
+                #expect(try run("echo changed >> '\(skill)'", cwd: root, agent: agent) != 0)
+            }
+        }
+
+        @Test(arguments: [false, true])
+        func sharedSkillsStayReadOnlyInsideWritableFolders(additionalGrant: Bool) throws {
+            let root = FileManager.default.temporaryDirectory.appending(path: "PiSandboxTests-\(UUID())")
+            let work = root.appending(path: "work"), shared = root.appending(path: "shared-skills")
+            let agent = root.appending(path: "agent")
+            for directory in [work, shared] {
+                try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            }
+            defer { try? FileManager.default.removeItem(at: root) }
+            let skill = shared.appending(path: "SKILL.md")
+            try Data("bundled skill".utf8).write(to: skill)
+            let cwd = additionalGrant ? work : root
+            let access = PiFileAccessSettings(grants: additionalGrant ? [.init(path: shared.path, isDirectory: true, access: .readWrite)] : [])
+            #expect(try run("cat '\(skill.path)'", cwd: cwd, agent: agent, fileAccess: access, sharedSkills: shared) == 0)
+            for command in ["echo changed >> '\(skill.path)'", "rm '\(skill.path)'", "touch '\(shared.path)/new.md'"] {
+                #expect(try run(command, cwd: cwd, agent: agent, fileAccess: access, sharedSkills: shared) != 0)
+            }
+            #expect(try String(contentsOf: skill, encoding: .utf8) == "bundled skill")
+        }
+
         /// Runs a shell command under the real profile and returns its exit status.
         private func run(
             _ script: String,
@@ -170,6 +206,7 @@ import Foundation
             support: URL? = nil,
             pi: URL = URL(fileURLWithPath: "/bin/sh"),
             fileAccess: PiFileAccessSettings = .init(),
+            sharedSkills: URL? = nil,
             profile: PiExecutionProfile = .interactive,
             environment: [String: String] = [:],
             home: String = NSHomeDirectory()
@@ -188,7 +225,13 @@ import Foundation
             } ?? PiSandbox.command(
                 cwd: cwd, agentURL: agent, piExecutableURL: pi, fileAccess: fileAccess, profile: profile, environment: environment, home: home
             )
-            let command = sandbox + ["/bin/sh", "-c", script]
+            let parameters = sandbox.map { parameter in
+                if let sharedSkills, parameter.hasPrefix("SHARED_SKILLS=") {
+                    return "SHARED_SKILLS=\(PiSandbox.realPath(sharedSkills))"
+                }
+                return parameter
+            }
+            let command = parameters + ["/bin/sh", "-c", script]
             let process = Process()
             process.executableURL = URL(fileURLWithPath: command[0])
             process.arguments = Array(command.dropFirst())

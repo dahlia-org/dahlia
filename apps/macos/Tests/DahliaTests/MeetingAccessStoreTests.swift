@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 import GRDB
 import ImageIO
@@ -12,6 +13,115 @@ import ImageIO
     @MainActor
     // swiftlint:disable:next type_body_length
     struct MeetingAccessStoreTests {
+        @Test(arguments: [false, true])
+        func skillsAreServedThroughSkillsExtension(allowsWrites: Bool) throws {
+            let fixture = try Fixture()
+            let server = try DahliaMCPServer(databaseURL: fixture.databaseURL, allowsWrites: allowsWrites)
+            func rpc(_ method: String, _ params: [String: Any] = [:]) throws -> [String: Any] {
+                var params = params
+                params["_meta"] = [
+                    "io.modelcontextprotocol/protocolVersion": "2026-07-28",
+                    "io.modelcontextprotocol/clientInfo": ["name": "Skills test", "version": "1"],
+                    "io.modelcontextprotocol/clientCapabilities": [:],
+                ] as [String: Any]
+                let request = try JSONSerialization.data(withJSONObject: ["jsonrpc": "2.0", "id": 1, "method": method, "params": params])
+                let reply = try Self.json(server.handleLine(String(decoding: request, as: UTF8.self)))
+                if let result = reply["result"] as? [String: Any] {
+                    #expect(result["resultType"] as? String == "complete")
+                    #expect(result["ttlMs"] as? Int == 300_000)
+                    #expect(result["cacheScope"] as? String == "private")
+                }
+                return reply
+            }
+            let discovery = try #require(rpc("server/discover")["result"] as? [String: Any])
+            #expect(discovery["supportedVersions"] as? [String] == ["2026-07-28", "2025-06-18"])
+            let capabilities = try #require(discovery["capabilities"] as? [String: Any])
+            #expect((capabilities["extensions"] as? [String: Any])?["io.modelcontextprotocol/skills"] != nil)
+            #expect(capabilities["resources"] != nil)
+
+            let list = try #require(rpc("skills/list")["result"] as? [String: Any])
+            #expect(list["resultType"] as? String == "complete")
+            let skills = try #require(list["skills"] as? [[String: Any]])
+            let names = skills.compactMap { ($0["frontmatter"] as? [String: Any])?["name"] as? String }
+            #expect(names == (allowsWrites
+                    ? ["dahlia-guide", "meeting-reviewer", "meeting-search", "projects-optimizer", "summary-editor"]
+                    : ["dahlia-guide", "meeting-reviewer", "meeting-search", "projects-optimizer"]))
+
+            for skill in skills {
+                let uri = try #require(skill["uri"] as? String)
+                let name = try #require((skill["frontmatter"] as? [String: Any])?["name"] as? String)
+                #expect(uri == "skill://dahlia/\(name)/SKILL.md")
+                let manifest = try #require(skill["resources"] as? [[String: Any]])
+                #expect(manifest.contains { $0["uri"] as? String == uri })
+                for file in manifest {
+                    let fileURI = try #require(file["uri"] as? String)
+                    let read = try rpc("resources/read", ["uri": fileURI])
+                    let text = try #require(
+                        ((read["result"] as? [String: Any])?["contents"] as? [[String: Any]])?.first?["text"] as? String
+                    )
+                    let digest = SHA256.hash(data: Data(text.utf8)).map { String(format: "%02x", $0) }.joined()
+                    #expect(file["digest"] as? String == "sha256:\(digest)")
+                    #expect(file["size"] as? Int == Data(text.utf8).count)
+                }
+                let get = try rpc("skills/get", ["uri": uri])
+                #expect(((get["result"] as? [String: Any])?["skill"] as? [String: Any])?["uri"] as? String == uri)
+            }
+            #expect(skills.contains {
+                ($0["resources"] as? [[String: Any]])?.contains {
+                    $0["uri"] as? String == "skill://dahlia/meeting-search/references/search-patterns.md"
+                } == true
+            })
+
+            let hidden = try rpc("skills/get", ["uri": "skill://dahlia/summary-editor/SKILL.md"])
+            let resources = try #require(rpc("resources/list")["result"] as? [String: Any])
+            #expect((resources["resources"] as? [[String: Any]])?.count == skills.flatMap { $0["resources"] as? [[String: Any]] ?? [] }.count)
+            _ = try rpc("resources/templates/list")
+            #expect((hidden["error"] as? [String: Any])?["code"] as? Int == (allowsWrites ? nil : -32602))
+        }
+
+        @Test
+        func modernMCPIsStatelessAndPreservesLegacyFallback() throws {
+            let fixture = try Fixture()
+            let server = try DahliaMCPServer(databaseURL: fixture.databaseURL)
+            func rpc(_ method: String, _ params: [String: Any]) throws -> [String: Any] {
+                let request = try JSONSerialization.data(withJSONObject: ["jsonrpc": "2.0", "id": 1, "method": method, "params": params])
+                return try Self.json(server.handleLine(String(decoding: request, as: UTF8.self)))
+            }
+            let meta: [String: Any] = [
+                "io.modelcontextprotocol/protocolVersion": "2026-07-28",
+                "io.modelcontextprotocol/clientCapabilities": [:],
+            ]
+            // Modern tools work without initialize, discovery, or a prior request's capabilities.
+            let call = try rpc("tools/call", ["_meta": meta, "name": "list_workspaces"])
+            #expect((call["result"] as? [String: Any])?["resultType"] as? String == "complete")
+            for method in ["server/discover", "skills/list", "resources/list", "resources/read", "tools/list"] {
+                let malformed = try rpc(method, ["_meta": ["io.modelcontextprotocol/protocolVersion": "2026-07-28"]])
+                #expect((malformed["error"] as? [String: Any])?["code"] as? Int == -32602)
+                let unknown = try rpc(method, ["_meta": [
+                    "io.modelcontextprotocol/protocolVersion": "2099-01-01",
+                    "io.modelcontextprotocol/clientCapabilities": [:],
+                ] as [String: Any]])
+                #expect((unknown["error"] as? [String: Any])?["code"] as? Int == -32022)
+                #expect(((unknown["error"] as? [String: Any])?["data"] as? [String: Any])?["requested"] as? String == "2099-01-01")
+            }
+            let legacyCall = try rpc("tools/call", ["name": "list_workspaces"])
+            #expect((legacyCall["error"] as? [String: Any])?["code"] as? Int == -32002)
+            let initialize = try #require(rpc("initialize", [:])["result"] as? [String: Any])
+            #expect(initialize["protocolVersion"] as? String == "2025-06-18")
+            #expect((initialize["capabilities"] as? [String: Any])?["extensions"] == nil)
+            #expect(initialize["instructions"] is String)
+            _ = server.handleLine(#"{"jsonrpc":"2.0","method":"notifications/initialized"}"#)
+            #expect(try rpc("tools/call", ["name": "list_workspaces"])["result"] != nil)
+            let listing = try #require(rpc("resources/list", [:])["result"] as? [String: Any])
+            let uri = try #require((listing["resources"] as? [[String: Any]])?.first?["uri"] as? String)
+            let read = try #require(rpc("resources/read", ["uri": uri])["result"] as? [String: Any])
+            #expect((read["contents"] as? [[String: Any]])?.first?["text"] != nil)
+            #expect(read["resultType"] == nil)
+            let modern = try #require(rpc("resources/read", ["uri": uri, "_meta": meta])["result"] as? [String: Any])
+            #expect(modern["resultType"] as? String == "complete")
+            #expect(try NSDictionary(dictionary: read) == NSDictionary(dictionary: ["contents": #require(modern["contents"])]))
+        }
+
         @Test
         func codexPublicIDsRoundTripThroughMCP() throws {
             let fixture = try Fixture()

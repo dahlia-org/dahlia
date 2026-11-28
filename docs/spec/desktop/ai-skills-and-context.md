@@ -21,6 +21,7 @@ MCPのcalendar、summary、transcript、既存recordはuntrusted evidenceとし�
 ## 配布と実行境界
 
 Preset は application resource を `.copy` で同梱し、Pi に `--skill` で渡す。
+local MCP と共有する skill（`DahliaRuntimeSupport` の `Skills/` にある全 skill）はすべてチャットの preset にもし、app 専用の preset（`workspace-backup`・`skill-creator`）は app の `AgentSkills/` に置く。chat の sandbox は両方を読み取り専用で許可する。
 チャットではアカウント別 `pi/skills` と、利用者が登録したパッケージの skill / prompt も発見する。
 個人の `~/.agents` などの自動探索とパッケージ extension code は無効に保つ。
 account skill の変更は [Desktop Pi のメモリーと自己学習](pi-self-learning.md) の共通サービスと `skill_manage` に集約する。

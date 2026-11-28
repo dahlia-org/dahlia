@@ -1156,7 +1156,7 @@ import Synchronization
             #expect(launch.arguments
                 .contains(
                     "read,ls,write,edit,bash,skills_list,skill_view,skill_manage,cronjob,skill_optimize,memory,dah_create_backup,thread_list,thread_search,thread_read,"
-                        + "thread_launch,delegate_task,task_status,task_cancel,thread_send,thread_wait,thread_interrupt,thread_update,mcp__dahlia__*"
+                        + "thread_launch,delegate_task,task_status,task_cancel,thread_send,thread_wait,thread_interrupt,thread_update,mcp__dahlia__*,list_mcp_resources,read_mcp_resource"
                 ))
             let work = fixture.pi.rootURL.appending(path: "work")
             #expect(launch.cwd == work)
@@ -1570,7 +1570,8 @@ import Synchronization
             #expect(withGmail.arguments
                 .contains(
                     "read,ls,write,edit,bash,skills_list,skill_view,skill_manage,cronjob,skill_optimize,memory,dah_create_backup,thread_list,thread_search,thread_read,"
-                        + "thread_launch,delegate_task,task_status,task_cancel,thread_send,thread_wait,thread_interrupt,thread_update,mcp__dahlia__*,mcp__gmail__*,mcp__notion__*"
+                        + "thread_launch,delegate_task,task_status,task_cancel,thread_send,thread_wait,thread_interrupt,thread_update,mcp__dahlia__*,mcp__gmail__*,mcp__notion__*,"
+                        + "list_mcp_resources,read_mcp_resource"
                 ))
             // Dahlia's extension registers the sign-ins mcp.json names in every process; none loads the provider file on its own.
             #expect(pi.launches.all.allSatisfy { !$0.arguments.contains { $0.hasSuffix("databricks-provider.ts") } })

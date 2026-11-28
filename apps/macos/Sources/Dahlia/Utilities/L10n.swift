@@ -3060,6 +3060,55 @@ enum L10n { // swiftlint:disable:this type_body_length
     static var howItWorksSummaryTopic: String { String(localized: "help.howItWorks.summary.topic", bundle: bundle) }
     static var howItWorksProvidersTopic: String { String(localized: "help.howItWorks.providers.topic", bundle: bundle) }
     static var howItWorksAgentsTopic: String { String(localized: "help.howItWorks.agents.topic", bundle: bundle) }
+
+    static var howItWorksModesTopic: String { String(localized: "help.howItWorks.modes.topic", bundle: bundle) }
+    static var howItWorksModesLead: String { String(localized: "help.howItWorks.modes.lead", bundle: bundle) }
+    static var howItWorksModesColumnFeature: String { String(localized: "help.howItWorks.modes.column.feature", bundle: bundle) }
+    static var howItWorksModesColumnChat: String { String(localized: "help.howItWorks.modes.column.chat", bundle: bundle) }
+    static var howItWorksModesColumnAgent: String { String(localized: "help.howItWorks.modes.column.agent", bundle: bundle) }
+    static var howItWorksModesColumnTask: String { String(localized: "help.howItWorks.modes.column.task", bundle: bundle) }
+    static var howItWorksModesColumnIntake: String { String(localized: "help.howItWorks.modes.column.intake", bundle: bundle) }
+    static var howItWorksModesColumnScheduled: String { String(localized: "help.howItWorks.modes.column.scheduled", bundle: bundle) }
+    static var howItWorksModesRowTrigger: String { String(localized: "help.howItWorks.modes.row.trigger", bundle: bundle) }
+    static var howItWorksModesRowFiles: String { String(localized: "help.howItWorks.modes.row.files", bundle: bundle) }
+    static var howItWorksModesRowDahlia: String { String(localized: "help.howItWorks.modes.row.dahlia", bundle: bundle) }
+    static var howItWorksModesRowConnectors: String { String(localized: "help.howItWorks.modes.row.connectors", bundle: bundle) }
+    static var howItWorksModesRowResources: String { String(localized: "help.howItWorks.modes.row.resources", bundle: bundle) }
+    static var howItWorksModesRowWeb: String { String(localized: "help.howItWorks.modes.row.web", bundle: bundle) }
+    static var howItWorksModesRowSkills: String { String(localized: "help.howItWorks.modes.row.skills", bundle: bundle) }
+    static var howItWorksModesRowMemory: String { String(localized: "help.howItWorks.modes.row.memory", bundle: bundle) }
+    static var howItWorksModesRowThreads: String { String(localized: "help.howItWorks.modes.row.threads", bundle: bundle) }
+    static var howItWorksModesRowApproval: String { String(localized: "help.howItWorks.modes.row.approval", bundle: bundle) }
+    static var howItWorksModesCellChatTrigger: String { String(localized: "help.howItWorks.modes.cell.chat.trigger", bundle: bundle) }
+    static var howItWorksModesCellAgentTrigger: String { String(localized: "help.howItWorks.modes.cell.agent.trigger", bundle: bundle) }
+    static var howItWorksModesCellTaskTrigger: String { String(localized: "help.howItWorks.modes.cell.task.trigger", bundle: bundle) }
+    static var howItWorksModesCellIntakeTrigger: String { String(localized: "help.howItWorks.modes.cell.intake.trigger", bundle: bundle) }
+    static var howItWorksModesCellScheduledTrigger: String { String(localized: "help.howItWorks.modes.cell.scheduled.trigger", bundle: bundle) }
+    static var howItWorksModesCellChatFiles: String { String(localized: "help.howItWorks.modes.cell.chat.files", bundle: bundle) }
+    static var howItWorksModesCellAgentFiles: String { String(localized: "help.howItWorks.modes.cell.agent.files", bundle: bundle) }
+    static var howItWorksModesCellChatDahlia: String { String(localized: "help.howItWorks.modes.cell.chat.dahlia", bundle: bundle) }
+    static var howItWorksModesCellChatConnectors: String { String(localized: "help.howItWorks.modes.cell.chat.connectors", bundle: bundle) }
+    static var howItWorksModesCellIntakeConnectors: String { String(localized: "help.howItWorks.modes.cell.intake.connectors", bundle: bundle) }
+    static var howItWorksModesCellScheduledTools: String { String(localized: "help.howItWorks.modes.cell.scheduled.tools", bundle: bundle) }
+    static var howItWorksModesCellChatResources: String { String(localized: "help.howItWorks.modes.cell.chat.resources", bundle: bundle) }
+    static var howItWorksModesCellChatWeb: String { String(localized: "help.howItWorks.modes.cell.chat.web", bundle: bundle) }
+    static var howItWorksModesCellChatSkills: String { String(localized: "help.howItWorks.modes.cell.chat.skills", bundle: bundle) }
+    static var howItWorksModesCellIntakeSkills: String { String(localized: "help.howItWorks.modes.cell.intake.skills", bundle: bundle) }
+    static var howItWorksModesCellChatMemory: String { String(localized: "help.howItWorks.modes.cell.chat.memory", bundle: bundle) }
+    static var howItWorksModesCellChatThreads: String { String(localized: "help.howItWorks.modes.cell.chat.threads", bundle: bundle) }
+    static var howItWorksModesCellAgentThreads: String { String(localized: "help.howItWorks.modes.cell.agent.threads", bundle: bundle) }
+    static var howItWorksModesCellChatApproval: String { String(localized: "help.howItWorks.modes.cell.chat.approval", bundle: bundle) }
+    static var howItWorksModesCellTaskApproval: String { String(localized: "help.howItWorks.modes.cell.task.approval", bundle: bundle) }
+    static var howItWorksModesCellSameAsChat: String { String(localized: "help.howItWorks.modes.cell.sameAsChat", bundle: bundle) }
+    static var howItWorksModesCellReadOnly: String { String(localized: "help.howItWorks.modes.cell.readOnly", bundle: bundle) }
+    static var howItWorksModesCellNone: String { String(localized: "help.howItWorks.modes.cell.none", bundle: bundle) }
+    static var howItWorksModesCellNoWrites: String { String(localized: "help.howItWorks.modes.cell.noWrites", bundle: bundle) }
+    static var howItWorksModesSubagentTitle: String { String(localized: "help.howItWorks.modes.subagent.title", bundle: bundle) }
+    static var howItWorksModesSubagentBody: String { String(localized: "help.howItWorks.modes.subagent.body", bundle: bundle) }
+    static var howItWorksModesOtherTitle: String { String(localized: "help.howItWorks.modes.other.title", bundle: bundle) }
+    static var howItWorksModesOtherBody: String { String(localized: "help.howItWorks.modes.other.body", bundle: bundle) }
+    static var howItWorksModesNote: String { String(localized: "help.howItWorks.modes.note", bundle: bundle) }
+
     static var howItWorksSummaryLead: String { String(localized: "help.howItWorks.summary.lead", bundle: bundle) }
     static var howItWorksSummaryStageCapture: String { String(localized: "help.howItWorks.summary.stageCapture", bundle: bundle) }
     static var howItWorksSummaryStagePrepare: String { String(localized: "help.howItWorks.summary.stagePrepare", bundle: bundle) }

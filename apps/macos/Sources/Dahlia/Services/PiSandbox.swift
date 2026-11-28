@@ -87,7 +87,8 @@ enum PiSandbox {
         try validateSkillsSearchPath(agentURL: agentURL, searchPath: searchPath, cwd: cwd)
         try PiAgentDirectoryLocator.createPrivateDirectory(temporaryDirectory)
         try PiAgentDirectoryLocator.createPrivateDirectory(piTemporaryDirectory)
-        let skills = PiBundle.presetSkillURLs().first?.deletingLastPathComponent()
+        let skills = PiBundle.appSkillsDirectoryURL
+        let sharedSkills = DahliaBundledSkills.rootURL
         let parameters: KeyValuePairs = try [
             "WORK": realPath(cwd),
             "TMP": realPath(temporaryDirectory),
@@ -96,6 +97,7 @@ enum PiSandbox {
             "RESOURCES": realPath(PiBundle.resourceURL("dahlia.ts").deletingLastPathComponent().deletingLastPathComponent()),
             "AGENT": realPath(agentURL),
             "SKILLS": skills.map(realPath) ?? "/var/empty/no-skills",
+            "SHARED_SKILLS": sharedSkills.map(realPath) ?? "/var/empty/no-skills",
             "FILE_STORE": realPath(ScreenshotFileStore.defaultDirectory),
             "DATABASE": realPath(MeetingAccessStore.defaultDatabaseURL),
             "APP_SUPPORT": realPath(applicationSupportURL),

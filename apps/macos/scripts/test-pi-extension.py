@@ -65,7 +65,8 @@ def sandbox(root):
     parameters = {"WORK": root / "workspace", "TMP": root / "tmp", "PI_TMP": root / "pi-tmp", "AGENT": root / "agent",
                   "APP_SUPPORT": root / "support", "RELEASED_APP_SUPPORT": root / "released", "RELEASED_AGENT": root / "released-agent", "PI": root / "pi",
                   "RESOURCES": EXTENSION.parent, "AGENTS": root / "agents", "RELEASED_AGENTS": root / "released-agents",
-                  "SKILLS": root / "skills", "FILE_STORE": root / "FileStore", "DATABASE": root / "dahlia.sqlite"}
+                  "SKILLS": root / "skills", "SHARED_SKILLS": root / "shared-skills",
+                  "FILE_STORE": root / "FileStore", "DATABASE": root / "dahlia.sqlite"}
     defines = [arg for key, value in parameters.items() for arg in ("-D", f"{key}={os.path.realpath(value)}")]
     return ["/usr/bin/sandbox-exec", "-f", str(SANDBOX), *defines]
 # A stand-in for dahlia-mcp with one read-only and one changing tool.
@@ -400,7 +401,8 @@ def gateway(script, requests, triage=False):
 
 
 def run(pi, mode, script, arguments, environment, approval="accept", approval_mode="ask", api="openai-responses", mcp_servers=None,
-        compat=None, auth=None, triage=False, prompts=1, bridge_answers=None, steer_message=None, web_access=None):
+        compat=None, auth=None, triage=False, prompts=1, bridge_answers=None, steer_message=None, web_access=None,
+        project_mcp_servers=None):
     """Runs prompts; returns gateway requests, tool results, bridge calls, and whether ../outside.txt exists."""
     requests, tool_results, bridge = [], [], []
     server = gateway(script, requests, triage=triage)
@@ -417,10 +419,11 @@ def run(pi, mode, script, arguments, environment, approval="accept", approval_mo
             (root / "workspace" / protected).write_text("PROTECTED_MARKER")
         (root / "workspace/pixel.png").write_bytes(base64.b64decode(
             "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="))
-        # Project-local Pi configuration that chat could have written must never start anything.
+        # Untrusted project-local configuration must not start anything; the resource regression supplies a trusted fixture.
         (root / "workspace/.pi").mkdir()
         (root / "workspace/.pi/mcp.json").write_text(json.dumps(
-            {"mcpServers": {"planted": {"command": "/usr/bin/touch", "args": [str(root / "outside.txt")]}}}))
+            {"mcpServers": project_mcp_servers if project_mcp_servers is not None else
+             {"planted": {"command": "/usr/bin/touch", "args": [str(root / "outside.txt")]}}}))
         for folder in ("tmp", "pi-tmp", "skills"):
             (root / folder).mkdir()
         (root / "skills/SKILL.md").write_text("SKILL_MARKER")
@@ -792,6 +795,43 @@ for line in sys.stdin:
     print("PASS: invalid connector does not disable native MCP, sandbox environment or approval hooks; no unrelated server starts")
 
 
+def scoped_mcp_resources(pi):
+    # A trusted project can add a connected server independently of Dahlia's registered-server snapshot.
+    with tempfile.TemporaryDirectory() as temporary:
+        selected, foreign = Path(temporary) / "selected.log", Path(temporary) / "foreign.log"
+        script = """import json,sys
+from pathlib import Path
+for line in sys.stdin:
+    request=json.loads(line)
+    if 'id' not in request: continue
+    method=request['method']
+    with Path(sys.argv[1]).open('a') as log: log.write(method+'\\n')
+    result={}
+    if method=='initialize': result={'protocolVersion':'2024-11-05','capabilities':{'resources':{},'tools':{}},'serverInfo':{'name':'fixture','version':'1'}}
+    if method=='tools/list': result={'tools':[]}
+    if method=='resources/list': result={'resources':[{'uri':'fixture://one','name':'RESOURCE_MARKER'}]}
+    if method=='resources/read': result={'contents':[{'uri':'fixture://one','text':'CONTENT_MARKER'}]}
+    print(json.dumps({'jsonrpc':'2.0','id':request['id'],'result':result}),flush=True)
+"""
+        config = lambda log: {"command": sys.executable, "args": ["-c", script, str(log)], "exposure": "direct"}
+        _, results, bridge, _ = run(pi, "chat", [
+            {"tool": "list_mcp_resources", "args": {}},
+            {"tool": "list_mcp_resources", "args": {"server": "foreign"}},
+            {"tool": "read_mcp_resource", "args": {"server": "foreign", "uri": "fixture://one"}},
+            {"tool": "list_mcp_resources", "args": {"server": "selected"}},
+            {"tool": "read_mcp_resource", "args": {"server": "selected", "uri": "fixture://one"}},
+            {"text": "done"}], ["--no-session", "--approve", *CHAT_EXTENSIONS, "--tools", "list_mcp_resources,read_mcp_resource"],
+            {"DAHLIA_PI_MCP_SERVERS": '["selected"]'}, mcp_servers={"selected": config(selected)},
+            project_mcp_servers={"foreign": config(foreign)})
+        assert len(results) == 5 and all("explicit server" in result for result in results[:3]), results
+        assert "RESOURCE_MARKER" in results[3] and "CONTENT_MARKER" in results[4], results
+        assert foreign.exists() and "initialize" in foreign.read_text(), "Foreign server was not actually connected"
+        assert "resources/list" not in foreign.read_text() and "resources/read" not in foreign.read_text(), foreign.read_text()
+        assert "resources/list" in selected.read_text() and "resources/read" in selected.read_text(), selected.read_text()
+        assert not any(method == "approval" for method, _ in bridge), bridge
+    print("PASS: resource tools require an explicit registered server even with a connected trusted-project MCP")
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--pi", default="pi")
@@ -804,6 +844,7 @@ def main():
     web_access_package = args.web_access_package
     os.environ.setdefault("DAHLIA_PI_AUTO_REVIEW", str(ROOT / "apps/macos/Sources/Dahlia/PiExtension/pi-auto-review/index.ts"))
     scoped_mcp_startup(pi)
+    scoped_mcp_resources(pi)
     if args.only_mcp_config:
         return
     if args.only_web_access:

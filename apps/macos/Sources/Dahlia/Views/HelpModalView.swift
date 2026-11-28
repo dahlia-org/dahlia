@@ -6,6 +6,7 @@ struct HelpModalView: View {
         case summary
         case providers
         case agents
+        case modes
         case dahliaMCP
 
         var title: String {
@@ -13,6 +14,7 @@ struct HelpModalView: View {
             case .summary: L10n.howItWorksSummaryTopic
             case .providers: L10n.howItWorksProvidersTopic
             case .agents: L10n.howItWorksAgentsTopic
+            case .modes: L10n.howItWorksModesTopic
             case .dahliaMCP: L10n.dahliaMCP
             }
         }
@@ -22,6 +24,7 @@ struct HelpModalView: View {
             case .summary: "doc.text"
             case .providers: "person.crop.circle"
             case .agents: "person.2"
+            case .modes: "tablecells"
             case .dahliaMCP: "point.3.connected.trianglepath.dotted"
             }
         }
@@ -90,6 +93,7 @@ struct HelpModalView: View {
                         case .summary: SummaryExplainer()
                         case .providers: ProvidersExplainer()
                         case .agents: AgentsExplainer()
+                        case .modes: ModesExplainer()
                         case .dahliaMCP: DahliaMCPExplainer(onOpenSettings: openDahliaMCPSettings)
                         }
                     }
@@ -434,6 +438,188 @@ private struct AgentsExplainer: View {
             ExplainerBody(L10n.howItWorksAgentsConfirmationBody)
             ExplainerNote(L10n.howItWorksAgentsNote)
         }
+    }
+}
+
+/// What each way the AI runs can use. Keep the comparison aligned with
+/// `PiExecutionProfile`, `PiChatService`'s launch arguments, and `dahlia.ts`'s tool policy.
+enum HelpModesTable {
+    static var columns: [String] {
+        [
+            L10n.howItWorksModesColumnChat,
+            L10n.howItWorksModesColumnAgent,
+            L10n.howItWorksModesColumnTask,
+            L10n.howItWorksModesColumnIntake,
+            L10n.howItWorksModesColumnScheduled,
+        ]
+    }
+
+    static var rows: [(name: String, title: String, cells: [String])] {
+        [
+            (
+                "trigger",
+                L10n.howItWorksModesRowTrigger,
+                [
+                    L10n.howItWorksModesCellChatTrigger,
+                    L10n.howItWorksModesCellAgentTrigger,
+                    L10n.howItWorksModesCellTaskTrigger,
+                    L10n.howItWorksModesCellIntakeTrigger,
+                    L10n.howItWorksModesCellScheduledTrigger,
+                ]
+            ),
+            (
+                "files",
+                L10n.howItWorksModesRowFiles,
+                [
+                    L10n.howItWorksModesCellChatFiles,
+                    L10n.howItWorksModesCellAgentFiles,
+                    L10n.howItWorksModesCellSameAsChat,
+                    L10n.howItWorksModesCellNone,
+                    L10n.howItWorksModesCellReadOnly,
+                ]
+            ),
+            (
+                "dahlia",
+                L10n.howItWorksModesRowDahlia,
+                [
+                    L10n.howItWorksModesCellChatDahlia,
+                    L10n.howItWorksModesCellReadOnly,
+                    L10n.howItWorksModesCellSameAsChat,
+                    L10n.howItWorksModesCellNone,
+                    L10n.howItWorksModesCellScheduledTools,
+                ]
+            ),
+            (
+                "connectors",
+                L10n.howItWorksModesRowConnectors,
+                [
+                    L10n.howItWorksModesCellChatConnectors,
+                    L10n.howItWorksModesCellNone,
+                    L10n.howItWorksModesCellSameAsChat,
+                    L10n.howItWorksModesCellIntakeConnectors,
+                    L10n.howItWorksModesCellScheduledTools,
+                ]
+            ),
+            (
+                "resources",
+                L10n.howItWorksModesRowResources,
+                [
+                    L10n.howItWorksModesCellChatResources,
+                    L10n.howItWorksModesCellNone,
+                    L10n.howItWorksModesCellSameAsChat,
+                    L10n.howItWorksModesCellNone,
+                    L10n.howItWorksModesCellNone,
+                ]
+            ),
+            (
+                "web",
+                L10n.howItWorksModesRowWeb,
+                [
+                    L10n.howItWorksModesCellChatWeb,
+                    L10n.howItWorksModesCellNone,
+                    L10n.howItWorksModesCellSameAsChat,
+                    L10n.howItWorksModesCellNone,
+                    L10n.howItWorksModesCellNone,
+                ]
+            ),
+            (
+                "skills",
+                L10n.howItWorksModesRowSkills,
+                [
+                    L10n.howItWorksModesCellChatSkills,
+                    L10n.howItWorksModesCellNone,
+                    L10n.howItWorksModesCellSameAsChat,
+                    L10n.howItWorksModesCellIntakeSkills,
+                    L10n.howItWorksModesCellReadOnly,
+                ]
+            ),
+            (
+                "memory",
+                L10n.howItWorksModesRowMemory,
+                [
+                    L10n.howItWorksModesCellChatMemory,
+                    L10n.howItWorksModesCellReadOnly,
+                    L10n.howItWorksModesCellSameAsChat,
+                    L10n.howItWorksModesCellNone,
+                    L10n.howItWorksModesCellReadOnly,
+                ]
+            ),
+            (
+                "threads",
+                L10n.howItWorksModesRowThreads,
+                [
+                    L10n.howItWorksModesCellChatThreads,
+                    L10n.howItWorksModesCellAgentThreads,
+                    L10n.howItWorksModesCellSameAsChat,
+                    L10n.howItWorksModesCellNone,
+                    L10n.howItWorksModesCellNone,
+                ]
+            ),
+            (
+                "approval",
+                L10n.howItWorksModesRowApproval,
+                [
+                    L10n.howItWorksModesCellChatApproval,
+                    L10n.howItWorksModesCellNoWrites,
+                    L10n.howItWorksModesCellTaskApproval,
+                    L10n.howItWorksModesCellNoWrites,
+                    L10n.howItWorksModesCellNoWrites,
+                ]
+            ),
+        ]
+    }
+}
+
+private struct ModesExplainer: View {
+    private let columnWidth: CGFloat = 132
+
+    var body: some View {
+        ExplainerLead(L10n.howItWorksModesLead)
+
+        ScrollView(.horizontal) {
+            Grid(alignment: .topLeading, horizontalSpacing: 12, verticalSpacing: 10) {
+                GridRow {
+                    header(L10n.howItWorksModesColumnFeature)
+                    ForEach(HelpModesTable.columns, id: \.self) { header($0) }
+                }
+                ForEach(HelpModesTable.rows, id: \.name) { row in
+                    Divider().gridCellUnsizedAxes(.horizontal)
+                    GridRow {
+                        Text(row.title)
+                            .font(.dahliaHeadline)
+                            .frame(width: columnWidth, alignment: .leading)
+                        ForEach(row.cells.indices, id: \.self) { index in
+                            let text = row.cells[index]
+                            Text(text)
+                                .font(.dahliaSecondary)
+                                .foregroundStyle([L10n.howItWorksModesCellNone, L10n.howItWorksModesCellNoWrites]
+                                    .contains(text) ? .secondary : .primary)
+                                .frame(width: columnWidth, alignment: .leading)
+                        }
+                    }
+                }
+            }
+            .fixedSize(horizontal: false, vertical: true)
+            .padding(16)
+        }
+        .background(DahliaDesign.contentHighlightColor.opacity(0.5), in: .rect(cornerRadius: DahliaDesign.Card.regularCornerRadius))
+
+        ExplainerSection(title: L10n.howItWorksModesSubagentTitle) {
+            ExplainerBody(L10n.howItWorksModesSubagentBody)
+        }
+
+        ExplainerSection(title: L10n.howItWorksModesOtherTitle) {
+            ExplainerBody(L10n.howItWorksModesOtherBody)
+            ExplainerNote(L10n.howItWorksModesNote)
+        }
+    }
+
+    private func header(_ text: String) -> some View {
+        Text(text)
+            .font(.dahliaSectionHeader)
+            .foregroundStyle(.secondary)
+            .frame(width: columnWidth, alignment: .leading)
+            .accessibilityAddTraits(.isHeader)
     }
 }
 
