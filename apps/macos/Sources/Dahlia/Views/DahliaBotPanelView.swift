@@ -411,7 +411,7 @@ struct DahliaBotPanelView: View {
 
 /// One recorded event, limited to two lines. Clicking it shows the whole note; a linked event opens its source item
 /// from the link under its icon and time.
-private struct DahliaBotEventRow: View {
+struct DahliaBotEventRow: View {
     let event: AgentEventRecord
     let icon: Image
     let isExpanded: Bool
@@ -452,23 +452,31 @@ private struct DahliaBotEventRow: View {
                 }
                 if let url { DahliaBotEventLink(url: url) }
             }
-            Text(event.note)
-                .lineLimit(isExpanded ? nil : 2)
-                .truncationMode(.tail)
-                .multilineTextAlignment(.leading)
-                .fixedSize(horizontal: false, vertical: true)
-            Spacer(minLength: 0)
+            Button(action: toggle) {
+                Text(event.note)
+                    .lineLimit(isExpanded ? nil : 2)
+                    .truncationMode(.tail)
+                    .multilineTextAlignment(.leading)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(.rect)
+            }
+            .buttonStyle(.plain)
+            .focusable()
+            .onKeyPress(keys: [.space, .return]) { _ in
+                toggle()
+                return .handled
+            }
+            .accessibilityHint(isExpanded ? L10n.collapse : L10n.expand)
         }
         .padding(.vertical, 2)
         .padding(.horizontal, 4)
         .contentShape(.rect)
         .background(isHovered ? DahliaDesign.contentHighlightColor : .clear, in: .rect(cornerRadius: 6))
         .onHover { isHovered = $0 }
-        // The link is its own button inside the row, so the row toggles through a gesture rather than a Button.
+        // The note and Open are sibling buttons; clicking elsewhere in the row also toggles its note.
         .onTapGesture(perform: toggle)
         .accessibilityElement(children: .contain)
-        .accessibilityAddTraits(.isButton)
-        .accessibilityAction(named: isExpanded ? L10n.collapse : L10n.expand, toggle)
         .accessibilityValue(event.handledAt == nil ? L10n.agentAlwaysOnEventUnassigned : L10n.agentAlwaysOnEventProcessed)
     }
 }
@@ -490,6 +498,11 @@ private struct DahliaBotEventLink: View {
                 .contentShape(.rect)
         }
         .buttonStyle(.plain)
+        .focusable()
+        .onKeyPress(keys: [.space, .return]) { _ in
+            openURL(url)
+            return .handled
+        }
         .onHover { isHovered = $0 }
         // Aligns the link's text with the icon above it, not its padding.
         .padding(.leading, -4)

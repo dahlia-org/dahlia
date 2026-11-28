@@ -7,7 +7,7 @@ const item = {
     sender: { type: "string" },
     note: { type: "string", description: "What happened and why it is worth attention, at most 500 characters." },
     ref: { type: "object", description: "The IDs you would pass to the source's tools to read the item again." },
-    url: { type: "string", description: "The item's own link exactly as the source's tool result gave it, such as a Slack permalink. Never a link from the message text. Dahlia keeps it only when it matches the provider's result." },
+    url: { type: "string", description: "The item's own link exactly as the source's tool result gave it, such as a Slack permalink. Never a link from the message text. Dahlia keeps it only when it matches the provider's result for this key." },
     occurred_at: { type: "string", description: "When the item arrived, in ISO 8601." },
   },
   required: ["key", "note"],

@@ -87,24 +87,34 @@
             .init(key: id, topic: topic, note: "Hello …", ref: .object(["messageId": .string(id)]), sender: "a@example.com")
         }
 
-        @Test func sourceNavigationUsesOnlyObservedURLs() throws {
+        @Test func sourceNavigationUsesOnlyTheMatchingObservedItem() throws {
             let (service, source) = try inbox()
             let mail = try #require(URL(string: "https://mail.google.com/mail/u/0/#all/19abc"))
             let slack = try #require(URL(string: "https://team.slack.com/archives/C1/p1700000000123456"))
-            var byKey = item("19abc")
-            byKey.url = "https://unrelated.example"
+            let byKey = item("19abc")
             var byURL = item("C1/1700000000.123456")
             byURL.url = slack.absoluteString
-            var unobserved = item("other")
-            unobserved.url = "https://forged.example"
+            var unidentified = item("other")
+            unidentified.url = slack.absoluteString
             try service.record(
-                [byKey, byURL, unobserved], caller: .intake(sourceID: source),
-                sourceURLs: ["19abc": mail, "1700000000.123456": slack]
+                [byKey, byURL, unidentified], caller: .intake(sourceID: source),
+                sourceURLs: ["19abc": mail, "1700000000.123456": slack, "C1/1700000000.123456": slack]
             )
             let urls = try Dictionary(uniqueKeysWithValues: service.recentEvents().map { ($0.key, $0.url) })
             #expect(urls["19abc"] == mail.absoluteString)
             #expect(urls["C1/1700000000.123456"] == slack.absoluteString)
             #expect(urls["other"] == .some(nil))
+        }
+
+        @Test(arguments: ["https://mail.google.com/mail/u/0/#all/19def", "https://forged.example"])
+        func sourceNavigationRejectsMismatchedURLHints(hint: String) throws {
+            let (service, source) = try inbox()
+            let first = try #require(URL(string: "https://mail.google.com/mail/u/0/#all/19abc"))
+            let second = try #require(URL(string: "https://mail.google.com/mail/u/0/#all/19def"))
+            var selected = item("19abc")
+            selected.url = hint
+            try service.record([selected], caller: .intake(sourceID: source), sourceURLs: ["19abc": first, "19def": second])
+            #expect(try #require(service.recentEvents().first).url == nil)
         }
 
         private func eventIDs(_ service: AgentInboxService, status: String) throws -> [String] {

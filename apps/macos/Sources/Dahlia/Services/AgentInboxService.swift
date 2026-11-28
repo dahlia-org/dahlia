@@ -15,7 +15,7 @@ struct AgentInboxService: Sendable {
         var topic: String?
         var note: String
         var ref: JSONValue?
-        /// The link intake saw for the item; kept only when it matches one the provider returned in this run.
+        /// The link intake saw for the item; kept only when it matches the provider link for this key in this run.
         var url: String?
         var occurredAt: Date?
         /// Used only to enforce the source allowlist; never persisted.
@@ -227,8 +227,8 @@ struct AgentInboxService: Sendable {
                     statuses[item.key] = "limit"
                     continue
                 }
-                // A model-written link counts only when the provider returned it; Gmail results carry none, so its key finds the app's.
-                let url = sourceURLs.values.first { $0.absoluteString == item.url } ?? sourceURLs[item.key]
+                // The observed link must belong to this item; a supplied hint cannot point to another observed message.
+                let url = sourceURLs[item.key].flatMap { item.url == nil || item.url == $0.absoluteString ? $0 : nil }
                 let event = try AgentEventRecord(
                     id: UUID.v7().uuidString, agentID: source.agentID, sourceID: sourceID, key: item.key, topic: item.topic,
                     note: String(item.note.prefix(Self.noteLimit)), ref: item.ref.map(Self.text), occurredAt: min(item.occurredAt ?? now, now),

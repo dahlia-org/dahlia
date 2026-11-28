@@ -116,7 +116,7 @@
                 let items: [JSONValue] = ["19abc", "other"].map { key in
                     .object([
                         "key": .string(key), "note": .string("Reply needed"),
-                        "url": .string("https://forged.example"),
+                        "url": .string(link),
                     ])
                 }
                 let selected: JSONValue = .object(["items": .array(items)])
@@ -143,21 +143,23 @@
                 #expect(nextEvents.first?.url == nil)
             }
 
-            @Test func slackLinksReachEventsByTheirPermalink() async throws {
+            @Test func slackLinksReachOnlyTheirQualifiedEventKey() async throws {
                 let link = "https://team.slack.com/archives/C123/p1700000000123456"
                 let fixture = try fixture(calls: [
                     ("intakeSeen", .object([
                         "ids": .array([.string("1700000000.123456")]),
-                        "links": .object(["1700000000.123456": .string(link)]),
+                        "links": .object(["1700000000.123456": .string(link), "C123/1700000000.123456": .string(link)]),
                     ])),
                     ("eventRecord", .object(["items": .array([
-                        .object(["key": .string("any-key"), "note": .string("Reply needed"), "url": .string(link)]),
+                        .object(["key": .string("C123/1700000000.123456"), "note": .string("Reply needed"), "url": .string(link)]),
+                        .object(["key": .string("any-key"), "note": .string("Other item"), "url": .string(link)]),
                     ])])),
                 ], ending: [TestPiTransport.assistantEnd("Read"), TestPiTransport.settled()])
                 defer { try? FileManager.default.removeItem(at: fixture.pi.rootURL) }
                 await drain(fixture)
                 let (_, _, events) = try await saved(fixture)
-                #expect(events.first?.url == link)
+                #expect(try #require(events.first { $0.key == "C123/1700000000.123456" }).url == link)
+                #expect(try #require(events.first { $0.key == "any-key" }).url == nil)
             }
 
             @Test(arguments: ["success", "unauthorized", "refused", "mcpError"])
