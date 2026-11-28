@@ -64,11 +64,13 @@
   (subpath (string-append (param "AGENT") "/npm"))
   (subpath (string-append (param "AGENT") "/git"))
   (subpath (param "SKILLS"))
+  (subpath (param "SHARED_SKILLS"))
   (subpath (param "FILE_STORE"))
   (literal (param "DATABASE"))
   (literal (string-append (param "DATABASE") "-wal"))
   (literal (string-append (param "DATABASE") "-shm")))
 
 ; What runs outside Seatbelt is never written, even inside the working folder or account skills.
-(deny file-write* (subpath (param "PI_TMP")) (subpath (param "PI")) (subpath (param "RESOURCES")))
+(deny file-write* (subpath (param "PI_TMP")) (subpath (param "PI")) (subpath (param "RESOURCES"))
+  (subpath (param "SHARED_SKILLS")))
 ; SHELL_STARTUP_PROTECTION

@@ -130,5 +130,8 @@ Stop an app only by the PID you captured when launching it; `run-dev.sh` `exec`s
   - Entry points: menu commands, keyboard shortcuts, Settings, context menus, and other views that expose the same operation.
   - AI access: whether Local MCP (`dahlia-mcp`) or Server MCP needs the same capability. Route every transport through the same service method.
   - Reverse paths: each new way in has a way out and a visible state, such as cancel, undo, disable, or restore.
+- A change to macOS app behavior, settings, defaults, UI names, or summary inputs, screenshot selection, or prompts also updates the
+  bundled skills that describe it: `apps/macos/Sources/DahliaRuntimeSupport/Skills/dahlia-guide/references/` for how Dahlia works and
+  how to use it, and the other skills in `Skills/` when a Local MCP tool or workflow they describe changes.
 - Review the final diff against the applicable Code Review Rules for unintended changes and regressions.
 - If a check cannot run, report the exact command, reason, and next verification step. Do not describe an unverified check as passing.

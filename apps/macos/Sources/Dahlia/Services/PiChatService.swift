@@ -1048,6 +1048,8 @@ actor PiChatService: CodexChatServicing {
             // Super Agent's delegated task is a helper: it only reads threads, like any child.
             + (profile == .bot ? (isChild ? Self.readThreadTools : PiExecutionProfile.botTools + Self.readThreadTools + Self.manageThreadTools) : [])
             + (webAccess ? AgentWebAccessSettings.toolNames : []) + serverNames.map { "mcp__\($0)__*" }
+            // Pi's resource tools, such as reading Dahlia MCP's skill:// files; dahlia.ts limits them to these servers.
+            + (profile == .interactive ? Self.mcpResourceToolNames : [])
         // The extension registers the sign-ins named by this process snapshot.
         let agentName = agent(ofThread: threadID)?.name ?? ""
         var arguments = sessionArguments + [
@@ -1488,6 +1490,8 @@ actor PiChatService: CodexChatServicing {
     }
 
     /// Reads every workspace on this Mac: they all belong to the app's one account.
+    nonisolated static let mcpResourceToolNames = ["list_mcp_resources", "read_mcp_resource"]
+
     nonisolated static func mcpCommand(executableURL: URL) -> [String] {
         let launch = switch DahliaApplicationSupport.profile() {
         case .production: [executableURL.path]

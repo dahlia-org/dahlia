@@ -18,6 +18,7 @@ import { botTools, registerBotTools, registerEventTools } from "./event-tools.ts
 import { registerLearningTools, learningTools } from "./learning-tools.ts";
 import { reviewMCP } from "./mcp-review.ts";
 import { learnTemplatePath, registerHermesSkills } from "./pi-hermes-skills/index.ts";
+import { allowsMcpResourceTool, mcpResourceTools } from "./mcp-resources.ts";
 
 const env = process.env;
 const mode = env.DAHLIA_PI_MODE ?? "control";
@@ -418,6 +419,13 @@ export default async function (pi: any) {
           ? approve(ctx, name, { kind: "mcpToolCall", server: "omnigent", tool: name,
             arguments: { ...event.input, workspace: env.DAHLIA_PI_OMNIGENT_WORKSPACE } })
           : undefined;
+      }
+
+      // Only interactive chat reaches here with these tools; the profiles above block every non-MCP name.
+      if (mcpResourceTools.includes(name) && tool?.sourceInfo?.path === mcpExtension) {
+        return allowsMcpResourceTool(name, event.input, chatMcpServers)
+          ? undefined
+          : block("This MCP server is not available in Dahlia's chat.");
       }
 
       const server: string | undefined = tool?.sourceInfo?.path === mcpExtension ? tool.namespace?.aliases?.[0] : undefined;

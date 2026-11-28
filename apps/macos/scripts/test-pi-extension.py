@@ -65,7 +65,8 @@ def sandbox(root):
     parameters = {"WORK": root / "workspace", "TMP": root / "tmp", "PI_TMP": root / "pi-tmp", "AGENT": root / "agent",
                   "APP_SUPPORT": root / "support", "RELEASED_APP_SUPPORT": root / "released", "RELEASED_AGENT": root / "released-agent", "PI": root / "pi",
                   "RESOURCES": EXTENSION.parent, "AGENTS": root / "agents", "RELEASED_AGENTS": root / "released-agents",
-                  "SKILLS": root / "skills", "FILE_STORE": root / "FileStore", "DATABASE": root / "dahlia.sqlite"}
+                  "SKILLS": root / "skills", "SHARED_SKILLS": root / "shared-skills",
+                  "FILE_STORE": root / "FileStore", "DATABASE": root / "dahlia.sqlite"}
     defines = [arg for key, value in parameters.items() for arg in ("-D", f"{key}={os.path.realpath(value)}")]
     return ["/usr/bin/sandbox-exec", "-f", str(SANDBOX), *defines]
 # A stand-in for dahlia-mcp with one read-only and one changing tool.

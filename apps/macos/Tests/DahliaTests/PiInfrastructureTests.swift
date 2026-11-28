@@ -11,9 +11,13 @@ import Foundation
         @Test
         func presetSkillsAreBundledInAgentSkills() {
             let urls = PiBundle.presetSkillURLs()
-            #expect(urls.map(\.lastPathComponent).sorted() == ["meeting-reviewer", "projects-optimizer", "skill-creator", "workspace-backup"])
+            #expect(urls.map(\.lastPathComponent) == [
+                "dahlia-guide", "meeting-reviewer", "meeting-search", "projects-optimizer", "summary-editor",
+                "workspace-backup", "skill-creator",
+            ])
             for url in urls {
-                #expect(url.deletingLastPathComponent().lastPathComponent == "AgentSkills")
+                // Skills shared with dahlia-mcp live in the runtime support bundle; the rest stay app-only.
+                #expect(["AgentSkills", "Skills"].contains(url.deletingLastPathComponent().lastPathComponent))
                 #expect(FileManager.default.fileExists(atPath: url.appending(path: "SKILL.md").path))
             }
             // Intake's skill is bundled beside them but is not a chat preset.

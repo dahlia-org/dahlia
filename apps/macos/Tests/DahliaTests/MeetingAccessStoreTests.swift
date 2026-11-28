@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 import GRDB
 import ImageIO
@@ -12,6 +13,58 @@ import ImageIO
     @MainActor
     // swiftlint:disable:next type_body_length
     struct MeetingAccessStoreTests {
+        @Test(arguments: [false, true])
+        func skillsAreServedThroughSkillsExtension(allowsWrites: Bool) throws {
+            let fixture = try Fixture()
+            let server = try DahliaMCPServer(databaseURL: fixture.databaseURL, allowsWrites: allowsWrites)
+            let initialize = try Self.json(server.handleLine(#"{"jsonrpc":"2.0","id":1,"method":"initialize"}"#))
+            let capabilities = try #require((initialize["result"] as? [String: Any])?["capabilities"] as? [String: Any])
+            #expect((capabilities["extensions"] as? [String: Any])?["io.modelcontextprotocol/skills"] != nil)
+            #expect(capabilities["resources"] != nil)
+
+            let list = try #require(Self.json(server.handleLine(#"{"jsonrpc":"2.0","id":2,"method":"skills/list"}"#))["result"] as? [String: Any])
+            #expect(list["resultType"] as? String == "complete")
+            let skills = try #require(list["skills"] as? [[String: Any]])
+            let names = skills.compactMap { ($0["frontmatter"] as? [String: Any])?["name"] as? String }
+            #expect(names == (allowsWrites
+                    ? ["dahlia-guide", "meeting-reviewer", "meeting-search", "projects-optimizer", "summary-editor"]
+                    : ["dahlia-guide", "meeting-reviewer", "meeting-search", "projects-optimizer"]))
+
+            for skill in skills {
+                let uri = try #require(skill["uri"] as? String)
+                let name = try #require((skill["frontmatter"] as? [String: Any])?["name"] as? String)
+                #expect(uri == "skill://dahlia/\(name)/SKILL.md")
+                let manifest = try #require(skill["resources"] as? [[String: Any]])
+                #expect(manifest.contains { $0["uri"] as? String == uri })
+                for file in manifest {
+                    let fileURI = try #require(file["uri"] as? String)
+                    let read = try Self.json(server.handleLine(
+                        #"{"jsonrpc":"2.0","id":3,"method":"resources/read","params":{"uri":"\#(fileURI)"}}"#
+                    ))
+                    let text = try #require(
+                        ((read["result"] as? [String: Any])?["contents"] as? [[String: Any]])?.first?["text"] as? String
+                    )
+                    let digest = SHA256.hash(data: Data(text.utf8)).map { String(format: "%02x", $0) }.joined()
+                    #expect(file["digest"] as? String == "sha256:\(digest)")
+                    #expect(file["size"] as? Int == Data(text.utf8).count)
+                }
+                let get = try Self.json(server.handleLine(
+                    #"{"jsonrpc":"2.0","id":4,"method":"skills/get","params":{"uri":"\#(uri)"}}"#
+                ))
+                #expect(((get["result"] as? [String: Any])?["skill"] as? [String: Any])?["uri"] as? String == uri)
+            }
+            #expect(skills.contains {
+                ($0["resources"] as? [[String: Any]])?.contains {
+                    $0["uri"] as? String == "skill://dahlia/meeting-search/references/search-patterns.md"
+                } == true
+            })
+
+            let hidden = try Self.json(server.handleLine(
+                #"{"jsonrpc":"2.0","id":5,"method":"skills/get","params":{"uri":"skill://dahlia/summary-editor/SKILL.md"}}"#
+            ))
+            #expect((hidden["error"] as? [String: Any])?["code"] as? Int == (allowsWrites ? nil : -32602))
+        }
+
         @Test
         func codexPublicIDsRoundTripThroughMCP() throws {
             let fixture = try Fixture()
