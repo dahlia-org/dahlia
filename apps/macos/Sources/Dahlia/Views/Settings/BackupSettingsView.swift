@@ -453,7 +453,7 @@ struct BackupSettingsView: View {
                     }
                 }
                 // With a destination, a file from disk is only something to restore from, so go straight to restoring.
-                guard let generation = await model.importBackup(from: url), isTransferCopy else { return }
+                guard let generation = await model.importBackup(from: url, transferCopy: isTransferCopy), isTransferCopy else { return }
                 model.statusMessage = nil
                 await model.beginRestore(generation, transferCopy: true, revision: revision)
             }

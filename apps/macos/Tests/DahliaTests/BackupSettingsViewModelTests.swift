@@ -57,8 +57,28 @@ import GRDB
             let generation = try #require(await creation.value)
             #expect(generation.metadata?.workspaces.map(\.id) == [first.id])
             #expect(model.generations.isEmpty)
+            #expect(generation.fileURL.deletingLastPathComponent().lastPathComponent == BackupService.transferDirectoryName)
+            #expect(!FileManager.default.fileExists(atPath: generation.fileURL.path))
             #expect(!model.isBusy)
             #expect(storage.errorMessage == ProviderStorageError.authorizationRequired.localizedDescription)
+        }
+
+        @Test(arguments: [false, true])
+        func fileImportKeepsTheCapturedRetentionIntent(transferCopy: Bool) async throws {
+            let root = FileManager.default.temporaryDirectory.appending(path: "import-intent-\(UUID())")
+            defer { try? FileManager.default.removeItem(at: root) }
+            let (database, source) = try await Task.detached {
+                let database = try AppDatabaseManager(path: ":memory:")
+                let workspace = WorkspaceRecord(id: .v7(), path: nil, name: "Backup", createdAt: .now, lastOpenedAt: .now)
+                try await database.dbQueue.write { try workspace.insert($0) }
+                let service = BackupService(dbQueue: database.dbQueue, applicationSupportURL: root.appending(path: "source"))
+                return try await (database, service.createGeneration(workspaceIds: [workspace.id]))
+            }.value
+            let model = BackupSettingsViewModel(dbQueue: database.dbQueue, applicationSupportURL: root.appending(path: "target"))
+            let imported = try #require(await model.importBackup(from: source.fileURL, transferCopy: transferCopy))
+            #expect(model.generations.count == (transferCopy ? 0 : 1))
+            #expect(imported.fileURL.deletingLastPathComponent().lastPathComponent
+                == (transferCopy ? BackupService.transferDirectoryName : BackupService.backupDirectoryName))
         }
 
         @Test(arguments: [false, true], [false, true])
@@ -74,7 +94,7 @@ import GRDB
             }.value
             let model = BackupSettingsViewModel(dbQueue: database.dbQueue, applicationSupportURL: root.appending(path: "target"))
             let service = try #require(model.backupService)
-            let generation = try await service.importGeneration(from: source.fileURL)
+            let generation = try await service.importGeneration(from: source.fileURL, transferCopy: transferCopy)
             let revision = model.restoreRevision
             if beforeAdmission { await model.dismissRestore().value }
             await model.beginRestore(generation, transferCopy: transferCopy, revision: revision)
@@ -87,14 +107,17 @@ import GRDB
             #expect(try await service.listGenerations().count == (transferCopy ? 0 : 1))
 
             // The same model can accept a fresh session after cancellation.
-            let retry = try await service.importGeneration(from: source.fileURL)
+            let retry = try await service.importGeneration(from: source.fileURL, transferCopy: true)
             await model.beginRestore(retry, transferCopy: true, revision: model.restoreRevision)
             #expect(model.restoreGeneration == retry)
-            let overlapping = try await service.importGeneration(from: source.fileURL)
+            let overlapping = try await service.importGeneration(from: source.fileURL, transferCopy: true)
             await model.beginRestore(overlapping, transferCopy: true, revision: model.restoreRevision)
             #expect(model.restoreGeneration == retry)
-            #expect(try await service.listGenerations().count == (transferCopy ? 1 : 2))
+            #expect(try await service.listGenerations().count == (transferCopy ? 0 : 1))
+            #expect(FileManager.default.fileExists(atPath: retry.fileURL.path))
+            #expect(!FileManager.default.fileExists(atPath: overlapping.fileURL.path))
             await model.dismissRestore().value
+            #expect(!FileManager.default.fileExists(atPath: retry.fileURL.path))
             #expect(try await service.listGenerations().count == (transferCopy ? 0 : 1))
         }
     }

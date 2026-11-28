@@ -97,6 +97,11 @@ final class AppStartupModel {
         databaseURL: URL = AppDatabaseManager.databaseURL,
         onPhase: @escaping @MainActor @Sendable (Phase) -> Void
     ) async throws -> (AppDatabaseManager, BackupRestoreStartupOutcome) {
+        do {
+            try BackupService.removeAbandonedTransfers(applicationSupportURL: applicationSupportURL)
+        } catch {
+            AppLogger(category: "Backup").error("Could not remove abandoned backup transfers")
+        }
         let fileManager = FileManager.default
         let recoveryURL = databaseURL.deletingLastPathComponent()
             .appending(path: BackupRestoreStartupProcessor.recoveryFilename)

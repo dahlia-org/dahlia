@@ -79,7 +79,7 @@ final class BackupSettingsViewModel {
         await perform {
             let create: @MainActor () async -> BackupGeneration? = {
                 do {
-                    created = try await self.requireService().createGeneration(workspaceIds: workspaceIds)
+                    created = try await self.requireService().createGeneration(workspaceIds: workspaceIds, transferCopy: isTransferCopy)
                     if !isTransferCopy { self.statusMessage = L10n.backupCreated }
                     return created
                 } catch {
@@ -98,10 +98,10 @@ final class BackupSettingsViewModel {
 
     /// The imported generation, for the caller to restore from when backups live in a provider's storage.
     @discardableResult
-    func importBackup(from url: URL) async -> BackupGeneration? {
+    func importBackup(from url: URL, transferCopy: Bool = false) async -> BackupGeneration? {
         var imported: BackupGeneration?
         await perform {
-            imported = try await requireService().importGeneration(from: url)
+            imported = try await requireService().importGeneration(from: url, transferCopy: transferCopy)
             statusMessage = L10n.backupImported
         }
         return imported
@@ -109,7 +109,7 @@ final class BackupSettingsViewModel {
 
     /// Removes a generation that only carried a backup between this Mac and the destination; the user never sees it.
     func discardTransferCopy(_ generation: BackupGeneration) async {
-        try? await service?.deleteGeneration(generation)
+        try? await service?.discardTransferCopy(generation)
         generations.removeAll { $0 == generation }
     }
 

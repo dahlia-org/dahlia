@@ -240,7 +240,7 @@ final class BackupStorageModel {
             let url = try await storage.download(file)
             defer { try? FileManager.default.removeItem(at: url) }
             try await self.checkOperation()
-            imported = try await service.importGeneration(from: url)
+            imported = try await service.importGeneration(from: url, transferCopy: true)
             return nil
         }
         guard let imported else { return nil }
@@ -250,7 +250,7 @@ final class BackupStorageModel {
             guard self.revision == revision else { throw CancellationError() }
             return imported
         } catch {
-            try? await service.deleteGeneration(imported)
+            try? await service.discardTransferCopy(imported)
             return nil
         }
     }

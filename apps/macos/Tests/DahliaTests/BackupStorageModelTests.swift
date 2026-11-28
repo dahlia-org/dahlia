@@ -351,13 +351,19 @@ import GRDB
                 await storage.holdListings()
                 await storage.releaseDownload()
                 #expect(await pollUntil { await storage.listCalls == 2 })
-                #expect(try await service.listGenerations().count == 1)
+                #expect(try await service.listGenerations().isEmpty)
+                let directory = root.appending(path: "target").appending(path: BackupService.transferDirectoryName)
+                #expect(try FileManager.default.contentsOfDirectory(atPath: directory.path).count == 1)
             }
             await invalidate(model, by: change, accountID: account.connectionID)
             await storage.releaseDownload()
             await storage.release()
             let result = await download.value
             #expect(result == nil)
+            let directory = root.appending(path: "target").appending(path: BackupService.transferDirectoryName)
+            if FileManager.default.fileExists(atPath: directory.path) {
+                #expect(try FileManager.default.contentsOfDirectory(atPath: directory.path).isEmpty)
+            }
             #expect(try await service.listGenerations().isEmpty)
             #expect(!FileManager.default.fileExists(atPath: generation.fileURL.path))
         }
@@ -602,7 +608,11 @@ import GRDB
             }
             await storage.releaseDownload()
             let imported = await download.value
-            #expect(try await service.listGenerations().count == (locationChanges ? 0 : 1))
+            #expect(try await service.listGenerations().isEmpty)
+            if let imported {
+                #expect(imported.fileURL.deletingLastPathComponent().lastPathComponent == BackupService.transferDirectoryName)
+                #expect(FileManager.default.fileExists(atPath: imported.fileURL.path))
+            }
             #expect((imported != nil) == !locationChanges)
             #expect(model.statusMessage == nil)
             if !locationChanges { #expect(model.errorMessage == URLError(.timedOut).localizedDescription) }
