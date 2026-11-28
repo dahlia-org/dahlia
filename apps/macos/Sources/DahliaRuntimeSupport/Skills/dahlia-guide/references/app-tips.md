@@ -136,6 +136,8 @@ Help > Chat and agent differences / チャットとエージェントの違い s
 | Writes to other services | The chat's approval mode | Never | The agent's Worker approval mode | Never | Never |
 
 A subagent made with `delegate_task` works like a chat but cannot create children, and its thread tools only read.
+Each event source's intake runs in one read-only thread, `intake-<source name>`; open it with Intake thread / 取り込みのスレッド
+on the source in the agent's settings. Every run starts a fresh Pi session there, so it never sees earlier runs.
 Summaries and image analysis use no tools, MCPs, or skills. While recording, automatic agent runs, intake, and
 scheduled runs do not start. Chat, user messages to an agent, and manually requested summaries remain available.
 

@@ -85,7 +85,7 @@ extension PiChatService {
         }
     }
 
-    /// Deletes the agent with its sources, events, Tasks, and Items, and moves its home to the Trash. Its conversation
+    /// Deletes the agent with its sources (and their intake threads), events, Tasks, and Items, and moves its home to the Trash. Its conversation
     /// stays in the history, read-only; the threads it launched stay as ordinary chats and keep running.
     func deleteAgent(_ id: String) async throws {
         let agent = try agent(id)
@@ -97,6 +97,7 @@ extension PiChatService {
                     arguments: [threadID]
                 )
             }
+            try db.execute(sql: "DELETE FROM chat_threads WHERE id IN (SELECT id FROM agent_event_sources WHERE agentID=?)", arguments: [id])
             _ = try AgentRecord.deleteOne(db, key: id)
         }
         botRetryAt[id] = nil

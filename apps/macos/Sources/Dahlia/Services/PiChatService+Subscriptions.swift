@@ -126,7 +126,8 @@ extension PiChatService {
             approvalMethod: sessions[threadID]?.approvalMethod,
             earlierMessagesCursor: page.earlierCursor, isReadOnly: record.scheduleID != nil || Self.isRetiredBotThread(record.id, in: store.dbQueue),
             parentThread: parent,
-            lastItemSeq: page.lastItemSeq
+            lastItemSeq: page.lastItemSeq,
+            intakeAgent: AgentInboxService.intakeAgent(threadID: record.id, in: store.dbQueue)
         )
         let id = UUID.v7()
         let (stream, reader) = AsyncThrowingStream<CodexChatTurnEvent, any Error>.makeStream(bufferingPolicy: .bufferingOldest(256))

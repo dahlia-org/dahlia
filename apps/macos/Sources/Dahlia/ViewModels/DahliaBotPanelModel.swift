@@ -661,6 +661,16 @@ final class DahliaBotPanelModel {
         await perform { inbox in try inbox.saveSource(saved) }
     }
 
+    /// Opens the thread the Source's intake runs show in, making it when no intake has run yet.
+    func openIntakeThread(_ source: AgentSourceRecord) async {
+        do {
+            let id = try await PiChatService.shared.intakeThread(sourceID: source.id)
+            NotificationCenter.default.post(name: AgentLearningSettings.openThread, object: id)
+        } catch {
+            self.error = error.localizedDescription
+        }
+    }
+
     func deleteDraft() async {
         guard let id = draft?.id else { return }
         let generation = agentGeneration

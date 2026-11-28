@@ -229,6 +229,8 @@ extension PiChatService {
     /// The profile a thread's next Pi process runs with: the bot's for an agent's thread and the tasks it delegated
     /// (subagents that show in no sidebar run in its home, within its own work), otherwise the queued run's.
     func launchProfile(_ threadID: String) -> PiExecutionProfile {
+        // An intake thread is its agent's too, but an intake run reads its Source with nothing else.
+        if scheduledRuns[threadID]?.origin == "intake" { return .intake }
         if isBotThread(threadID) { return .bot }
         return PiExecutionProfile(rawValue: scheduledRuns[threadID]?.profile ?? "interactive") ?? .interactive
     }

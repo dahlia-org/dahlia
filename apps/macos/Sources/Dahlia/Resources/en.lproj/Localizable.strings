@@ -2178,6 +2178,7 @@
 "settings.agents.alwaysOn.botModelConversation" = "Same as Conversation";
 "settings.agents.alwaysOn.botSoul" = "Soul";
 "settings.agents.alwaysOn.openTask" = "Open task";
+"settings.agents.alwaysOn.openIntakeThread" = "Intake thread";
 
 "bots.section" = "Agents";
 "bots.idle" = "Talk to it, and it routes your requests and moves them along";

@@ -100,7 +100,7 @@ extension PiChatService {
         // An agent's notices, and the work it hands to threads, are always-on work: none starts while recording.
         let fromSuperAgent = (run.origin != "user" && run.profile == PiExecutionProfile.bot.rawValue)
             || (run.requestedByThreadID.map(isBotThread) ?? false)
-        if run.origin == "schedule" || fromSuperAgent, AgentBackgroundActivity.isRecording { return false }
+        if ["schedule", "intake"].contains(run.origin) || fromSuperAgent, AgentBackgroundActivity.isRecording { return false }
         if isBotNotice(run) { return (try? inboxService().isPaused()) == false }
         return true
     }
@@ -122,6 +122,13 @@ extension PiChatService {
         if queued.origin == "bot" {
             try validateBotActivity()
             guard isSuperAgentThread(threadID) else { throw CancellationError() }
+        }
+        // Its Source may have changed, or its connector been registered again, while Pi started. Only then is the first
+        // range pinned, before Pi reads.
+        if queued.origin == "intake" {
+            guard let intake = activeIntake, intake.threadID == threadID else { throw CancellationError() }
+            try validateBotActivity(source: intake.source)
+            _ = try inboxService().intakeLowerBound(sourceID: intake.source.id, revision: intake.source.revision, now: intake.startedAt)
         }
     }
 
