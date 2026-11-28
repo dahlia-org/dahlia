@@ -104,6 +104,15 @@
                 await fixture.service.intakeTask?.value
             }
 
+            private func expectTransportClosed(_ transport: TestPiTransport) async throws {
+                let clock = ContinuousClock()
+                let limit = clock.now.advanced(by: .seconds(5))
+                while await !transport.isClosed, clock.now < limit {
+                    try await Task.sleep(for: .milliseconds(1))
+                }
+                #expect(await transport.isClosed)
+            }
+
             private func saved(_ fixture: Fixture) async throws -> (AgentSourceRecord, [AgentSystemRunRecord], [AgentEventRecord]) {
                 try await fixture.db.read { db in
                     try (
@@ -323,7 +332,7 @@
                 trigger.yield(())
                 await fixture.service.intakeTask?.value
 
-                #expect(await transport.isClosed)
+                try await expectTransportClosed(transport)
                 #expect(await fixture.service.intakeTask == nil)
                 fixture.pi.contextStore.apply()
                 if pausesActivation { #expect(await transport.commands.allSatisfy { $0["type"] != .string("prompt") }) }
@@ -364,7 +373,7 @@
                 }
                 #expect(status == "interrupted")
                 #expect(await fixture.service.intakeTask == nil)
-                #expect(await transport.isClosed)
+                try await expectTransportClosed(transport)
             }
 
             @Test func intakeDeadlineCancelsPreparationBeforeOpeningExists() async throws {
