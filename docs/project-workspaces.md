@@ -168,8 +168,9 @@ Write tools:
 - `update_meeting_summary`
 
 `update_meeting_summary` replaces one Meeting's whole summary and is described in
-[訂正と export](spec/desktop/summary.md#訂正と-export). It takes the `structured_summary` and `summary_version` that
-`get_meetings` returned for `summary_format: "structured"`, propagates the document title and description to the Meeting, adds document tags without
+[訂正と export](spec/desktop/summary.md#訂正と-export). It takes `meeting_id` and the
+`structured_summary` returned by `get_meetings` for `summary_format: "structured"`; pass the returned `summary_version`
+value as `expected_summary_version`. It propagates the document title and description to the Meeting, adds document tags without
 removing existing ones, and rewrites an already-exported workspace Markdown file in place under its current file name. It
 never creates a summary or a summary file that does not exist, never renames one, and leaves a Google Docs export
 stale.
