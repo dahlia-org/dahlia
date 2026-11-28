@@ -138,7 +138,7 @@ Read tools:
 - `query_screenshots`
 - `get_meetings`
 - `get_meeting_transcript`
-- `get_meeting_screenshots`
+- `get_screenshots`
 
 All `query_meetings` parameters are optional filters. Clients should omit unused properties instead of sending empty
 strings. For compatibility with clients that populate every property, the server treats empty or whitespace-only
@@ -146,8 +146,13 @@ optional string filters as unspecified; nonblank malformed TypeIDs, dates, and c
 Text queries use the FTS index by default. Set `simple: true` to use literal substring matching (`LIKE`) against
 Meeting metadata instead. Project names and paths are excluded from both text-search modes; use `project` or
 `project_id` to filter meetings by Project. Summary body text is available only through the default FTS search.
-`query_screenshots` searches detected text and generated image descriptions, and returns screenshots as independent
-results with their owning Meeting IDs. Queries must contain at least two non-whitespace characters.
+`query_screenshots` finds and lists screenshots without returning images, as `query_meetings` does for Meetings. With
+`query`, it searches detected text and generated image descriptions and ranks the results; queries must contain at least
+two non-whitespace characters. Desktop searches the text retained on this Mac. Without `query`, it lists screenshots in
+capture order: by elapsed time within `meeting_id`, otherwise by capture time. `from_elapsed_seconds` and
+`to_elapsed_seconds` require `meeting_id`. Results stay individual screenshots with their owning Meeting IDs, elapsed
+time, and `timestamp`. Each carries a `detected_text` excerpt of about 180 characters (around the first match, or the
+beginning without `query`), the full `caption`, and `file_path`; detected text and caption are omitted before analysis.
 
 `get_meetings` returns 1 to 5 Meetings per call, in request order. Each ID resolves to its own Workspace, so one
 call may span Workspaces; `workspace_id` narrows it to one. The summary is Markdown by default; `summary_format:
@@ -156,8 +161,21 @@ be returned is listed in `errors` with its position in `meeting_ids`, the ID as 
 `unavailable`, or `unreadable`; the other IDs are still returned. Scheduled-run grants saved under the former
 `get_meeting` name permit `get_meetings`.
 
-`get_meeting_screenshots` returns up to 10 stored screenshots per call unchanged: WebP images whose long edge is at
-most 1568 px. Use individual IDs or range pagination to retrieve more.
+`get_screenshots` takes 1 to 10 screenshot IDs from anywhere in the Workspace, such as `query_screenshots` results, and
+returns the stored images unchanged: WebP images whose long edge is at most 1568 px. Each screenshot's metadata includes
+its Meeting ID, the full `detected_text` (OCR), and the `caption` (AI-generated) once the screenshot has been analyzed.
+An ID that cannot be returned is listed in `errors` with its position and the ID as sent (`invalid_id`, `not_found`,
+`unavailable`, or `unreadable`) without failing the other IDs. Without `workspace_id`, the Workspace of the first
+requested ID that exists is used, and IDs from other Workspaces are reported as `not_found`. `include_images: false`
+returns only the metadata for file processing without reading image bytes or invoking the image resolver. A missing
+original only omits `file_path`. If a Meeting's summary references cannot be read, its screenshots are reported as `unavailable`.
+
+Both tools set `file_path` to the absolute path of the stored original only while that file is on disk; older stored
+images may have no file. Images or text held only on a Dahlia Server are unavailable to Desktop. The file has no
+extension, so use `mime_type`.
+Path discovery checks existence only; it does not read the file or verify its integrity. Dahlia checks checksums when
+reading files through its image store. Clients processing a path must handle missing or unreadable files and copy an
+original before editing it. Images stay in MCP `image` content blocks for viewing and are never inlined as base64 in the JSON.
 
 Write tools:
 
