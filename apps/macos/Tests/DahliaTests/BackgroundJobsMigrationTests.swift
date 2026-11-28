@@ -48,7 +48,7 @@ import GRDB
                 ])
             }
             try queue.close()
-            #expect(try BackupService.readAndValidateMetadata(at: url).migrationIdentifier == prior)
+            #expect(try BackupService.readAndValidateMetadata(at: url, scratchDirectory: url.deletingLastPathComponent()).migrationIdentifier == prior)
         }
 
         @Test(arguments: ["v47_orphanedRecordingRecoveryState", "v52_documentsAndSync", "v53_sharedBackgroundJobs"])

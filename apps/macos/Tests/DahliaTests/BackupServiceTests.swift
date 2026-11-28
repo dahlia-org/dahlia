@@ -32,6 +32,14 @@ import GRDB
             let staged = root.appending(path: BackupService.restoreDirectoryName).appending(path: marker.stagedFilename)
             let interruptedWork = upload.fileURL.deletingLastPathComponent().appending(path: ".interrupted.tmp.sqlite")
             try Data("unfinished snapshot".utf8).write(to: interruptedWork)
+            let abandonedExtraction = upload.fileURL.deletingLastPathComponent().appending(path: "abandoned-extraction")
+            try BackupArchive.withExtracted(at: download.fileURL, scratchDirectory: abandonedExtraction.deletingLastPathComponent()) { directory, _ in
+                #expect(directory.deletingLastPathComponent() == abandonedExtraction.deletingLastPathComponent())
+                #expect(FileManager.default.fileExists(atPath: directory.appending(path: "database.sqlite").path))
+                // Preserve the actual extraction past defer, reproducing files left by process death.
+                try FileManager.default.moveItem(at: directory, to: abandonedExtraction)
+            }
+            #expect(FileManager.default.fileExists(atPath: abandonedExtraction.appending(path: "database.sqlite").path))
             #expect(FileManager.default.fileExists(atPath: staged.path))
             try database.close()
 
@@ -41,7 +49,7 @@ import GRDB
             )
             defer { try? reopened.close() }
             #expect(outcome == .completed([WorkspaceBackupRestoreResult(request: marker.requests[0], error: nil)]))
-            #expect(!FileManager.default.fileExists(atPath: upload.fileURL.deletingLastPathComponent().path))
+            #expect(try FileManager.default.contentsOfDirectory(atPath: upload.fileURL.deletingLastPathComponent().path).isEmpty)
             #expect(FileManager.default.fileExists(atPath: retained.fileURL.path))
             #expect(FileManager.default.fileExists(atPath: safety.fileURL.path))
             #expect(try await reopened.dbQueue.read { try WorkspaceRecord.fetchOne($0, key: restoredID)?.name } == "Restored")

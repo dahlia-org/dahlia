@@ -118,8 +118,8 @@ Meeting tabs: Cmd+1 Summary, Cmd+2 Notes, Cmd+3 Screenshots, Cmd+4 Transcript.
   then `read_mcp_resource` with the same server and a returned URI.
 - Backups: Data Protection > Backups creates, imports, and restores backups of local Workspaces. Choose This Mac Only
   to retain local generations, or a Google/Databricks provider account for cloud backups. Cloud creation and restore use
-  temporary transfer copies, removed when finished or cancelled; copies left by an interruption are cleared on the next
-  launch. Retained local generations and pre-restore safety backups remain available. Cloud Storage under Features shows
+  temporary transfer copies and extracted validation files, removed when finished or cancelled; files left by an
+  interruption are cleared on the next launch. Retained local generations and pre-restore safety backups remain available. Cloud Storage under Features shows
   the provider's actual folder or volume. Databricks catalog/schema defaults belong to its provider account; Providers
   opens the shared selector, and Cloud Storage offers setup when unset. Choose New… in the schema list to create one.
   Backup creation is a Settings operation, not an AI chat or MCP tool.

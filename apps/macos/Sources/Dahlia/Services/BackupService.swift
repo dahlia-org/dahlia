@@ -89,7 +89,7 @@ actor BackupService {
             let values = try? url.resourceValues(forKeys: [.fileSizeKey, .isRegularFileKey, .isSymbolicLinkKey])
             guard values?.isRegularFile == true, values?.isSymbolicLink != true else { return nil }
             do {
-                let metadata = try Self.readMetadata(at: url, validateIntegrity: false)
+                let metadata = try Self.readMetadata(at: url, validateIntegrity: false, scratchDirectory: transferDirectoryURL)
                 return BackupGeneration(
                     fileURL: url,
                     metadata: metadata,
@@ -340,7 +340,7 @@ actor BackupService {
         try manager.moveItem(at: temporaryURL, to: databaseURL)
         let temporaryArchive = directoryURL.appending(path: ".\(generationID).tmp.\(BackupArchive.filenameExtension)")
         defer { try? manager.removeItem(at: temporaryArchive) }
-        let validatedMetadata = try readAndValidateMetadata(at: databaseURL)
+        let validatedMetadata = try readAndValidateMetadata(at: databaseURL, scratchDirectory: directoryURL)
         let manifest = try BackupArchive.create(directory: archiveDirectory, metadata: validatedMetadata, paths: paths, at: temporaryArchive)
         try validateArchiveFiles(databaseURL: databaseURL, manifest: manifest)
         // The database above was already validated; re-read only the written bytes instead of extracting the archive.
@@ -369,7 +369,7 @@ actor BackupService {
         let temporaryURL = directory.appending(path: ".import-\(UUID.v7().uuidString).tmp.sqlite")
         defer { try? fileManager.removeItem(at: temporaryURL) }
         try fileManager.copyItem(at: sourceURL, to: temporaryURL)
-        let metadata = try Self.readAndValidateMetadata(at: temporaryURL)
+        let metadata = try Self.readAndValidateMetadata(at: temporaryURL, scratchDirectory: transferDirectoryURL)
         guard try BackupArchive.isArchive(temporaryURL) else { throw BackupServiceError.invalidBackup }
         try fileManager.setAttributes([.posixPermissions: 0o600], ofItemAtPath: temporaryURL.path)
         let importedURL = directory.appending(
@@ -424,7 +424,7 @@ actor BackupService {
             throw BackupServiceError.generationNotFound
         }
         try validateManagedGenerationFile(generation.fileURL, in: directory)
-        let metadata = try Self.readAndValidateMetadata(at: generation.fileURL)
+        let metadata = try Self.readAndValidateMetadata(at: generation.fileURL, scratchDirectory: transferDirectoryURL)
         guard metadata == listedMetadata else { throw BackupServiceError.invalidBackup }
         _ = try await dbQueue.read { try Self.validateRestoreRequests(requests, metadata: metadata, in: $0) }
         guard try !preflightItems().contains(where: \.isWorkInProgress), try !hasProcessingAudio() else {
@@ -437,7 +437,8 @@ actor BackupService {
         let stagedURL = restoreDirectoryURL.appending(path: stagedFilename)
         do {
             try fileManager.copyItem(at: generation.fileURL, to: stagedURL)
-            guard try Self.readAndValidateMetadata(at: stagedURL) == metadata else { throw BackupServiceError.invalidBackup }
+            guard try Self.readAndValidateMetadata(at: stagedURL, scratchDirectory: transferDirectoryURL) == metadata
+            else { throw BackupServiceError.invalidBackup }
             let marker = try PendingDatabaseRestore(
                 stagedFilename: stagedFilename, sha256: Self.sha256(of: stagedURL), requestedAt: .now,
                 sourceMetadata: metadata, requests: requests
@@ -485,8 +486,8 @@ actor BackupService {
             .appending(path: pendingRestoreFilename)
     }
 
-    nonisolated static func readAndValidateMetadata(at url: URL) throws -> BackupMetadata {
-        try readMetadata(at: url, validateIntegrity: true)
+    nonisolated static func readAndValidateMetadata(at url: URL, scratchDirectory: URL) throws -> BackupMetadata {
+        try readMetadata(at: url, validateIntegrity: true, scratchDirectory: scratchDirectory)
     }
 
     private nonisolated static func validateArchiveFiles(databaseURL: URL, manifest: BackupArchiveManifest) throws {
@@ -510,13 +511,14 @@ actor BackupService {
 
     private nonisolated static func readMetadata(
         at url: URL,
-        validateIntegrity shouldValidateIntegrity: Bool
+        validateIntegrity shouldValidateIntegrity: Bool,
+        scratchDirectory: URL
     ) throws -> BackupMetadata {
         if try BackupArchive.isArchive(url) {
             guard shouldValidateIntegrity else { return try BackupArchive.readManifest(at: url).metadata }
-            return try BackupArchive.withExtracted(at: url) { directory, manifest in
+            return try BackupArchive.withExtracted(at: url, scratchDirectory: scratchDirectory) { directory, manifest in
                 let databaseURL = directory.appending(path: "database.sqlite")
-                let metadata = try readMetadata(at: databaseURL, validateIntegrity: true)
+                let metadata = try readMetadata(at: databaseURL, validateIntegrity: true, scratchDirectory: scratchDirectory)
                 guard metadata == manifest.metadata else { throw BackupServiceError.invalidBackup }
                 try validateArchiveFiles(databaseURL: databaseURL, manifest: manifest)
                 return metadata
@@ -599,7 +601,7 @@ actor BackupService {
         try Self.ensureDirectory(url, fileManager: fileManager)
     }
 
-    private nonisolated static func ensureDirectory(_ url: URL, fileManager: FileManager) throws {
+    nonisolated static func ensureDirectory(_ url: URL, fileManager: FileManager) throws {
         try fileManager.createDirectory(at: url, withIntermediateDirectories: true)
         let values = try url.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey])
         guard values.isDirectory == true, values.isSymbolicLink != true else {
