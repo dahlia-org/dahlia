@@ -20,26 +20,21 @@ enum BackupStorageDestination {
 extension ProviderAccount {
     /// The account's storage, or nil when it offers none.
     @MainActor
-    func storage(defaults: UserDefaults = .standard) async throws -> (any ProviderStorage)? {
+    func storage(repository: MeetingRepository? = nil) async throws -> (any ProviderStorage)? {
         switch self {
         case let .google(id):
             let expected = ProviderAccountDirectory.googleConnections().first { $0.id == id }?.account.id
-            let adapter = GoogleSignInAdapter(accountID: id, expectedAccountID: expected)
-            return GoogleDriveStorage { @MainActor in
-                // A grant made before `drive.file` holds only the retired read scope, which Dahlia no longer uses.
-                guard let session = try await adapter.refreshCurrentSession(), session.hasScopes(GoogleOAuthScope.drive) else {
-                    throw ProviderStorageError.authorizationRequired
-                }
-                return session.accessToken
-            }
+            return try await GoogleDriveStorage(
+                accountID: id, signIn: GoogleSignInAdapter(accountID: id, expectedAccountID: expected), repository: repository
+            )
         case let .databricks(id):
             guard let host = ProviderAccountDirectory.databricksConnections().first(where: { $0.id == id })?.workspaceURL else { return nil }
-            guard let location = DatabricksStorageLocation.load(connectionID: id, defaults: defaults) else {
+            guard let location = try await DatabricksCatalogSchema.load(connectionID: id, repository: repository) else {
                 throw ProviderStorageError.schemaNotConfigured
             }
             let authorization = try await DatabricksOAuthService.shared.storageAuthorization(connectionID: id)
             return DatabricksVolumeStorage(host: host, location: location, authorization: authorization) { @MainActor in
-                guard DatabricksStorageLocation.load(connectionID: id, defaults: defaults) == location else {
+                guard try await DatabricksCatalogSchema.load(connectionID: id, repository: repository) == location else {
                     throw CancellationError()
                 }
             }
@@ -68,23 +63,28 @@ final class BackupStorageModel {
     private(set) var statusMessage: String?
     private(set) var errorMessage: String?
     private let defaults: UserDefaults
+    private let repository: MeetingRepository?
     private let makeStorage: @MainActor (ProviderAccount) async throws -> (any ProviderStorage)?
     private var storage: (any ProviderStorage)?
     private var revision = 0
     private var operation: Task<Void, Never>?
     private var authorizationObserver: GoogleAuthSessionObserver?
     private var locationObserver: GoogleAuthSessionObserver?
-    private var operationLocation: DatabricksStorageLocation?
+    private var operationGoogleLocation: GoogleDriveStorageLocation?
+    private var operationLocation: DatabricksCatalogSchema?
+    private var operationSettingsError: (any Error)?
     private var operationAuthorizationGeneration: UUID?
     private var providerObservers: [GoogleAuthSessionObserver] = []
 
     init(
         defaults: UserDefaults = .standard,
+        repository: MeetingRepository? = nil,
         providerChangeNotifications: [Notification.Name] = [GoogleProviderAccount.didChange, .databricksConnectionDidChange],
-        makeStorage: @escaping @MainActor (ProviderAccount) async throws -> (any ProviderStorage)? = { try await $0.storage() }
+        makeStorage: (@MainActor (ProviderAccount) async throws -> (any ProviderStorage)?)? = nil
     ) {
         self.defaults = defaults
-        self.makeStorage = makeStorage
+        self.repository = repository
+        self.makeStorage = makeStorage ?? { try await $0.storage(repository: repository) }
         destination = BackupStorageDestination.current(defaults: defaults)
         observeAuthorization()
         providerObservers = providerChangeNotifications.map { name in
@@ -127,7 +127,7 @@ final class BackupStorageModel {
                 await refresh()
             }
             locationObserver = GoogleAuthSessionObserver(
-                notificationName: DatabricksStorageLocation.didChange(connectionID: id), handler: invalidate
+                notificationName: DatabricksCatalogSchema.didChange(connectionID: id), handler: invalidate
             )
             authorizationObserver = GoogleAuthSessionObserver(
                 notificationName: DatabricksOAuthService.storageAuthorizationDidChange(connectionID: id), handler: invalidate
@@ -135,6 +135,13 @@ final class BackupStorageModel {
         }
         guard case let .google(id) = destination else { return }
         let account = destination
+        locationObserver = GoogleAuthSessionObserver(notificationName: GoogleDriveStorageLocation.didChange(accountID: id)) { [weak self] _ in
+            guard let self, destination == account else { return }
+            cancel()
+            storage = nil
+            files = []
+            await refresh()
+        }
         authorizationObserver = GoogleAuthSessionObserver(
             notificationName: GoogleAuthSessionKind.calendar.forAccount(id).sessionDidChangeNotification
         ) { [weak self] disconnected in
@@ -165,7 +172,7 @@ final class BackupStorageModel {
     /// Owns creation and upload as one operation, so another remote operation cannot consume the upload slot.
     /// Always create locally first, even if the destination needs configuration or authorization.
     func createBackup(_ create: @escaping @MainActor () async -> BackupGeneration?) async {
-        await run {
+        await run(createsLocally: true) {
             guard let generation = await create() else { return nil }
             try await self.checkOperation()
             guard self.destination != nil else { return nil }
@@ -232,11 +239,18 @@ final class BackupStorageModel {
 
     private func checkOperation() async throws {
         try Task.checkCancellation()
+        if let operationSettingsError { throw operationSettingsError }
         if case let .databricks(id) = destination {
-            guard DatabricksStorageLocation.load(connectionID: id, defaults: defaults) == operationLocation,
+            guard try await DatabricksCatalogSchema.load(connectionID: id, repository: repository) == operationLocation,
                   DatabricksOAuthService.shared.storageGeneration(connectionID: id) == operationAuthorizationGeneration else {
                 throw CancellationError()
             }
+        }
+        if case let .google(id) = destination {
+            guard try await GoogleDriveStorageLocation.load(accountID: id, repository: repository) == operationGoogleLocation else {
+                throw CancellationError()
+            }
+            try GoogleSignInAdapter.validateStorageGeneration(operationAuthorizationGeneration, accountID: id)
         }
         try await storage?.validate()
         try Task.checkCancellation()
@@ -253,17 +267,17 @@ final class BackupStorageModel {
         return storage
     }
 
-    private func run(_ body: @escaping @MainActor () async throws -> String?) async {
+    private func run(createsLocally: Bool = false, _ body: @escaping @MainActor () async throws -> String?) async {
         guard !isBusy else { return }
         let revision = revision
-        storage = nil
-        if case let .databricks(id) = destination {
-            operationLocation = DatabricksStorageLocation.load(connectionID: id, defaults: defaults)
-            operationAuthorizationGeneration = DatabricksOAuthService.shared.storageGeneration(connectionID: id)
+        let authorizationGeneration: UUID? = if case let .databricks(id) = destination {
+            DatabricksOAuthService.shared.storageGeneration(connectionID: id)
+        } else if case let .google(id) = destination {
+            GoogleSignInAdapter.storageGeneration(accountID: id)
         } else {
-            operationLocation = nil
-            operationAuthorizationGeneration = nil
+            nil
         }
+        storage = nil
         isBusy = true
         statusMessage = nil
         errorMessage = nil
@@ -271,7 +285,30 @@ final class BackupStorageModel {
             guard let self else { return }
             defer { if self.revision == revision { isBusy = false } }
             do {
-                try await checkOperation()
+                try Task.checkCancellation()
+                operationLocation = nil
+                operationGoogleLocation = nil
+                operationAuthorizationGeneration = nil
+                operationSettingsError = nil
+                do {
+                    if case let .databricks(id) = destination {
+                        let location = try await DatabricksCatalogSchema.load(connectionID: id, repository: repository)
+                        try Task.checkCancellation()
+                        operationLocation = location
+                        operationAuthorizationGeneration = authorizationGeneration
+                    } else if case let .google(id) = destination {
+                        let location = try await GoogleDriveStorageLocation.load(accountID: id, repository: repository)
+                        try Task.checkCancellation()
+                        operationGoogleLocation = location
+                        operationAuthorizationGeneration = authorizationGeneration
+                    }
+                } catch {
+                    try Task.checkCancellation()
+                    if !createsLocally { throw error }
+                    operationSettingsError = error
+                }
+                try Task.checkCancellation()
+                if !createsLocally { try await checkOperation() }
                 let message = try await body()
                 try await checkOperation()
                 guard self.revision == revision else { return }

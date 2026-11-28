@@ -1,21 +1,56 @@
 import Foundation
 
-/// Google Drive under `My Drive/Dahlia`. With the `drive.file` scope Dahlia sees only the folders and files it created,
+/// Google Drive under the configured app-created folder in My Drive. With the `drive.file` scope Dahlia sees only the folders and files it created,
 /// so a folder the user made by hand with the same name never mixes in.
 struct GoogleDriveStorage: ProviderStorage {
-    static let rootFolderName = "Dahlia"
+    static let rootFolderName = GoogleDriveStorageLocation.defaultFolderName
+    private let folderName: String
     private static let folderMimeType = "application/vnd.google-apps.folder"
     private let http: ProviderStorageHTTP
     private let baseURL: URL
+    private let validateContext: @Sendable () async throws -> Void
 
     init(
+        folderName: String = Self.rootFolderName,
         baseURL: URL = GoogleCalendarAPIClient.googleAPIBaseURL,
         session: URLSession = .shared,
+        validate: @escaping @Sendable () async throws -> Void = { try Task.checkCancellation() },
         accessToken: @escaping @Sendable () async throws -> String
     ) {
+        self.folderName = folderName
         self.baseURL = baseURL
+        validateContext = validate
         http = ProviderStorageHTTP(session: session, accessToken: accessToken)
     }
+
+    @MainActor
+    init(
+        accountID: UUID,
+        signIn: any GoogleSignInProviding,
+        repository: MeetingRepository? = nil,
+        baseURL: URL = GoogleCalendarAPIClient.googleAPIBaseURL,
+        session: URLSession = .shared
+    ) async throws {
+        let generation = GoogleSignInAdapter.storageGeneration(accountID: accountID)
+        let location = try await GoogleDriveStorageLocation.load(accountID: accountID, repository: repository)
+        let validate: @MainActor @Sendable () async throws -> Void = {
+            guard try await GoogleDriveStorageLocation.load(accountID: accountID, repository: repository) == location else {
+                throw CancellationError()
+            }
+            try GoogleSignInAdapter.validateStorageGeneration(generation, accountID: accountID)
+            guard !signIn.isDisconnectPending else { throw CancellationError() }
+        }
+        self.init(folderName: location.folderName, baseURL: baseURL, session: session, validate: validate) { @MainActor in
+            // A pre-drive.file grant is insufficient, even when its retired read scope remains stored.
+            guard let current = try await signIn.refreshCurrentSession(), current.hasScopes(GoogleOAuthScope.drive) else {
+                throw ProviderStorageError.authorizationRequired
+            }
+            try await validate()
+            return current.accessToken
+        }
+    }
+
+    func validate() async throws { try await validateContext() }
 
     func list(directory: String) async throws -> [ProviderStorageFile] {
         guard let folder = try await folder(directory, create: false) else { return [] }
@@ -60,10 +95,10 @@ struct GoogleDriveStorage: ProviderStorage {
         _ = try await http.data(ProviderStorageHTTP.jsonRequest(url("drive/v3/files/\(file.id)", query: [:]), method: "PATCH", body: Trash()))
     }
 
-    /// The folder `My Drive/Dahlia/<directory>`; nil when it does not exist and `create` is false.
+    /// The folder `My Drive/<configured folder>/<directory>`; nil when it does not exist and `create` is false.
     private func folder(_ directory: String, create: Bool) async throws -> String? {
         var parent = "root"
-        for name in [Self.rootFolderName, directory] {
+        for name in [folderName, directory] {
             let folders = try await files(
                 matching: "'\(parent)' in parents and name = '\(Self.escaped(name))' and mimeType = '\(Self.folderMimeType)'"
             )

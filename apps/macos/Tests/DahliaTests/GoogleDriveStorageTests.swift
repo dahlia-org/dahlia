@@ -34,6 +34,21 @@ import Synchronization
         }
 
         @Test
+        func configuredFolderIsUsedAndItsNameIsEscaped() async throws {
+            let session = StorageStubURLProtocol.session(host: host) { _ in Self.files([]) }
+            defer {
+                session.invalidateAndCancel()
+                StorageStubURLProtocol.reset(host: host)
+            }
+            let storage = try GoogleDriveStorage(folderName: "Team's files", baseURL: #require(URL(string: "https://\(host)/")), session: session) {
+                "token"
+            }
+            #expect(try await storage.list(directory: "backup").isEmpty)
+            let request = try #require(StorageStubURLProtocol.requests(host: host).first)
+            #expect(request.query("q")?.contains(#"name = 'Team\'s files'"#) == true)
+        }
+
+        @Test
         func uploadCreatesTheMissingFoldersThenSendsOneResumableSession() async throws {
             let created = Mutex<[String: String]>([:])
             let host = host

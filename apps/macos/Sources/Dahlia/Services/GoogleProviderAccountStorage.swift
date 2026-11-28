@@ -32,7 +32,8 @@ struct GoogleProviderAccountStorage: Sendable {
                     try DahliaAccountConnectionRecord(
                         id: account.id, origin: "https://accounts.google.com/#\(account.id.uuidString)",
                         clientID: GoogleCalendarConfiguration.clientID ?? "", createdAt: previous?.createdAt ?? .now,
-                        kind: "google", email: account.account.email, workspaceID: account.account.id, name: account.name
+                        kind: "google", email: account.account.email, workspaceID: account.account.id, name: account.name,
+                        settingsJSON: previous?.settingsJSON ?? "{}"
                     ).save(db)
                 }
             },

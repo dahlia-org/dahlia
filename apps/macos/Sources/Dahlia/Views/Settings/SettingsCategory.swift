@@ -19,6 +19,7 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
     case workspace
     case permissions
     case backups
+    case storage
     case search
     case meetings
     /// Opens the corresponding step in the meeting processing flow.
@@ -57,6 +58,7 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
         case .eventDisplay: L10n.appearanceEventDisplay
         case .workspace: L10n.workspace
         case .permissions: L10n.permissions
+        case .storage: L10n.cloudStorage
         case .backups: L10n.dataProtection
         case .search: L10n.search
         case .meetings: L10n.meetings
@@ -92,6 +94,7 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
         case .eventDisplay: "calendar"
         case .workspace: ProjectIcon.workspace.systemImageName
         case .permissions: "hand.raised"
+        case .storage: "externaldrive"
         case .backups: "lock.shield"
         case .search: "magnifyingglass"
         case .meetings: "waveform.badge.microphone"
@@ -230,6 +233,8 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
         case .accountsAndWorkspaces:
             [L10n.accountPreferences, L10n.macInferencePreferences]
                 + Self.accountPreferences.searchTerms + Self.macInference.searchTerms
+        case .storage:
+            [L10n.storageDefaultFolder, L10n.databricksCatalogSchema, "Google Drive", "Databricks", "Unity Catalog", "UC", "Volume", "catalog.schema"]
         case .backups:
             [
                 L10n.backups,

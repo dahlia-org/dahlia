@@ -198,9 +198,10 @@ struct BackupSettingsView: View {
                     Text(option.name).font(.dahliaBody).tag(Optional(option.id))
                 }
             }
-            if storage.options.isEmpty || storage.destination?.databricksConnectionID != nil && storage.errorMessage != nil {
+            if storage.options.isEmpty {
                 Button(L10n.manageProviders) { navigation.openSettings(category: .providers) }.buttonStyle(.dahlia())
             }
+            Button(L10n.storageSettings) { navigation.openSettings(category: .storage) }.buttonStyle(.dahlia())
             if storage.destination != nil {
                 HStack {
                     Button(L10n.backupDriveRefresh) { Task { await storage.refresh() } }

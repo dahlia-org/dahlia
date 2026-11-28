@@ -99,7 +99,7 @@ struct ProviderStorageFile: Identifiable, Equatable, Sendable {
 
 ### Databricks Volume
 
-- 設定: 「プロバイダー」ページの Databricks 接続の行に「ストレージの場所…」の操作を足し、入力のダイアログで `catalog.schema` を設定する。行には今の設定を示す。保存先は UserDefaults（`providerStorageSchema.<接続 UUID>`）。接続ごとの設定は今も UserDefaults にあり（カレンダーの選択）、DB の migration を増やさない。接続を削除したらキーも消す。
+- 設定: Databricks プロバイダーアカウント共通の `catalog.schema` として `provider_accounts.settingsJSON` に保存する。「プロバイダー」と「クラウドストレージ」から同じ専用モーダルを開き、既存のカタログ・スキーマを選ぶ。スキーマは新規作成もできる。カラム追加は未リリースの `v67_providerAccounts` に統合し、中間版の設定移行は設けない。接続を削除すると設定も消える。
 - volume: 初回の利用時に `GET /api/2.0/preview/scim/v2/Me` で利用者 ID を取り、`POST /api/2.1/unity-catalog/volumes`（`MANAGED`、名前 `dahlia_storage_<ID>`）で作る。
 - 利用者 ID は数字の部分だけを使う。値が `<user_id>@<account_id>` の形なら `@` の前を取る。取り出した結果が数字だけでなければ、volume を作らずにエラーにする（volume 名に `@` などの記号を入れない）。SCIM `Me` の `id` が数字だけで返るか、`@` 付きで返るかは実 workspace で確かめる（「未解決」2）。
 - すでに同じ名前の volume がある場合は、`GET /api/2.1/unity-catalog/volumes/<catalog>.<schema>.<名前>` の `owner` が自分（SCIM `Me` の `userName`）で、`volume_type` が `MANAGED` のときだけ使う。どちらかが違えば、一覧もアップロードもせずに止め、volume 名と所有者を設定画面に出す。確認は保存先を選んで最初に使うときに1回行う（設定画面を開き直すとやり直す）。

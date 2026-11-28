@@ -2067,16 +2067,41 @@ enum L10n { // swiftlint:disable:this type_body_length
     ) }
     static var providerAccountSignInToKeep: String { String(localized: "Added earlier · Sign in again", bundle: bundle) }
     static var manageProviders: String { String(localized: "Manage Providers…", bundle: bundle) }
-    static var providerStorageLocation: String { String(localized: "settings.providers.storageLocation", bundle: bundle) }
-    static var providerStorageLocationEdit: String { String(localized: "settings.providers.storageLocationEdit", bundle: bundle) }
-    static var providerStorageLocationPlaceholder: String { String(localized: "settings.providers.storageLocationPlaceholder", bundle: bundle) }
-    static var providerStorageLocationDescription: String { String(localized: "settings.providers.storageLocationDescription", bundle: bundle) }
-    static func providerStorageLocationValue(_ value: String) -> String {
-        String(format: String(localized: "settings.providers.storageLocationValue", bundle: bundle), value)
+    static var cloudStorage: String { String(localized: "settings.storage.title", bundle: bundle) }
+    static var storageSettings: String { String(localized: "settings.storage.open", bundle: bundle) }
+    static var storageDefaultFolder: String { String(localized: "settings.storage.defaultFolder", bundle: bundle) }
+    static var settingsStorageIntro: String { String(localized: "settings.storage.intro", bundle: bundle) }
+    static var storageLocationChangeDescription: String { String(localized: "settings.storage.locationChangeDescription", bundle: bundle) }
+    static var storageFolderInvalid: String { String(localized: "settings.storage.folderInvalid", bundle: bundle) }
+    static var storageGoogleFolderDescription: String { String(localized: "settings.storage.googleFolderDescription", bundle: bundle) }
+    static var storageRestoreDefault: String { String(localized: "settings.storage.restoreDefault", bundle: bundle) }
+    static var databricksCatalog: String { String(localized: "settings.providers.catalog", bundle: bundle) }
+    static var databricksSchema: String { String(localized: "settings.providers.schema", bundle: bundle) }
+    static var databricksSelectCatalog: String { String(localized: "settings.providers.selectCatalog", bundle: bundle) }
+    static var databricksSelectSchema: String { String(localized: "settings.providers.selectSchema", bundle: bundle) }
+    static var databricksNoCatalogs: String { String(localized: "settings.providers.noCatalogs", bundle: bundle) }
+    static var databricksNoSchemas: String { String(localized: "settings.providers.noSchemas", bundle: bundle) }
+    static var databricksCreateSchema: String { String(localized: "settings.providers.createSchema", bundle: bundle) }
+    static var databricksSchemaName: String { String(localized: "settings.providers.schemaName", bundle: bundle) }
+    static var databricksClearCatalogSchema: String { String(localized: "settings.providers.clearCatalogSchema", bundle: bundle) }
+    static var databricksCatalogAccountChanged: String { String(localized: "settings.providers.catalogAccountChanged", bundle: bundle) }
+    static var storageDatabricksVolumeDescription: String { String(localized: "settings.storage.databricksVolumeDescription", bundle: bundle) }
+    static func databricksCreateSchemaDescription(_ catalog: String) -> String {
+        String(format: String(localized: "settings.providers.createSchemaDescription", bundle: bundle), catalog)
     }
 
-    static var providerStorageLocationUnset: String { String(localized: "settings.providers.storageLocationUnset", bundle: bundle) }
-    static var providerStorageLocationInvalid: String { String(localized: "settings.providers.storageLocationInvalid", bundle: bundle) }
+    static func databricksSchemaCreated(_ name: String) -> String {
+        String(format: String(localized: "settings.providers.schemaCreated", bundle: bundle), name)
+    }
+
+    static var databricksCatalogSchema: String { String(localized: "settings.providers.catalogSchema", bundle: bundle) }
+    static var databricksCatalogSchemaEdit: String { String(localized: "settings.providers.catalogSchemaEdit", bundle: bundle) }
+    static var databricksCatalogSchemaDescription: String { String(localized: "settings.providers.catalogSchemaDescription", bundle: bundle) }
+    static func databricksCatalogSchemaValue(_ value: String) -> String {
+        String(format: String(localized: "settings.providers.catalogSchemaValue", bundle: bundle), value)
+    }
+
+    static var databricksCatalogSchemaUnset: String { String(localized: "settings.providers.catalogSchemaUnset", bundle: bundle) }
     static var googleDrive: String { String(localized: "Google Drive", bundle: bundle) }
     static var googleProviderAccountMismatch: String { String(
         localized: "Sign in with the same Google account. To use another account, add a provider.",

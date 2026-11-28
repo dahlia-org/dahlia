@@ -71,7 +71,7 @@ import GRDB
     @MainActor
     struct BackupStorageModelTests {
         enum Invalidation: CaseIterable, Sendable {
-            case cancel, changeDestination, signOut
+            case cancel, changeDestination, signOut, reauthorize
         }
 
         private let suite = "BackupStorageModelTests.\(UUID())"
@@ -80,6 +80,7 @@ import GRDB
             switch change {
             case .cancel: model.cancel()
             case .changeDestination: model.select(nil)
+            case .reauthorize: GoogleSignInAdapter.invalidateStorageAuthorization(accountID: accountID)
             case .signOut:
                 NotificationCenter.default.post(
                     name: GoogleAuthSessionKind.calendar.forAccount(accountID).sessionDidChangeNotification,
@@ -89,9 +90,14 @@ import GRDB
             }
         }
 
-        private func model(_ storages: [ProviderAccount: FakeStorage]) throws -> (BackupStorageModel, UserDefaults) {
+        private func model(_ storages: [ProviderAccount: FakeStorage]) async throws -> (BackupStorageModel, UserDefaults, MeetingRepository) {
             let defaults = try #require(UserDefaults(suiteName: suite))
-            return (BackupStorageModel(defaults: defaults, providerChangeNotifications: []) { storages[$0] }, defaults)
+            let repository = try await providerSettingsRepository(accounts: Array(storages.keys))
+            return (
+                BackupStorageModel(defaults: defaults, repository: repository, providerChangeNotifications: []) { storages[$0] },
+                defaults,
+                repository
+            )
         }
 
         private func generation(named name: String) throws -> BackupGeneration {
@@ -103,7 +109,7 @@ import GRDB
         func uploadSkipsABackupAlreadyInTheDestination() async throws {
             let account = ProviderAccount.google(connectionID: .v7())
             let storage = FakeStorage(files: ["Dahlia-same.tar.gz"])
-            let (model, defaults) = try model([account: storage])
+            let (model, defaults, _) = try await model([account: storage])
             defer { defaults.removePersistentDomain(forName: suite) }
             model.select(account)
             #expect(await pollUntil { !model.isBusy && model.files.count == 1 })
@@ -121,7 +127,7 @@ import GRDB
         func uploadSendsANewBackupAndListsTheDestinationAgain() async throws {
             let account = ProviderAccount.databricks(connectionID: .v7())
             let storage = FakeStorage()
-            let (model, defaults) = try model([account: storage])
+            let (model, defaults, _) = try await model([account: storage])
             defer { defaults.removePersistentDomain(forName: suite) }
             model.select(account)
             #expect(await pollUntil { await storage.listCalls > 0 && !model.isBusy })
@@ -139,7 +145,7 @@ import GRDB
         func aFailedUploadIsReportedAndLeavesTheLocalGeneration() async throws {
             let account = ProviderAccount.databricks(connectionID: .v7())
             let storage = FakeStorage(uploadError: ProviderStorageError.fileTooLarge)
-            let (model, defaults) = try model([account: storage])
+            let (model, defaults, _) = try await model([account: storage])
             defer { defaults.removePersistentDomain(forName: suite) }
             model.select(account)
             #expect(await pollUntil { await storage.listCalls > 0 && !model.isBusy })
@@ -157,7 +163,7 @@ import GRDB
         func creationOwnsTheUploadSlotBeforeLocalWorkStarts() async throws {
             let account = ProviderAccount.google(connectionID: .v7())
             let storage = FakeStorage()
-            let (model, defaults) = try model([account: storage])
+            let (model, defaults, _) = try await model([account: storage])
             defer { defaults.removePersistentDomain(forName: suite) }
             model.select(account)
             #expect(await pollUntil { await storage.listCalls > 0 && !model.isBusy })
@@ -186,14 +192,21 @@ import GRDB
             #expect(model.statusMessage == L10n.backupStorageUploaded)
         }
 
-        @Test
-        func destinationSetupFailureStillKeepsTheCreatedLocalGeneration() async throws {
+        @Test(arguments: [false, true])
+        func destinationSetupFailureStillKeepsTheCreatedLocalGeneration(settingsReadFails: Bool) async throws {
             let defaults = try #require(UserDefaults(suiteName: suite))
             defer { defaults.removePersistentDomain(forName: suite) }
-            let model = BackupStorageModel(defaults: defaults, providerChangeNotifications: []) { _ in
+            let account = ProviderAccount.databricks(connectionID: .v7())
+            let repository = try await providerSettingsRepository(accounts: [account])
+            if settingsReadFails {
+                try await repository.dbQueue.write { db in
+                    try db.execute(sql: "UPDATE provider_accounts SET settingsJSON = ?", arguments: [#"{"databricks":true}"#])
+                }
+            }
+            let model = BackupStorageModel(defaults: defaults, repository: repository, providerChangeNotifications: []) { _ in
                 throw ProviderStorageError.schemaNotConfigured
             }
-            model.select(.databricks(connectionID: .v7()))
+            model.select(account)
             #expect(await pollUntil { !model.isBusy })
             let generation = try generation(named: "Dahlia-local.tar.gz")
             defer { try? FileManager.default.removeItem(at: generation.fileURL.deletingLastPathComponent()) }
@@ -202,7 +215,11 @@ import GRDB
                 return generation
             }
             #expect(created)
-            #expect(model.errorMessage == ProviderStorageError.schemaNotConfigured.localizedDescription)
+            if settingsReadFails {
+                #expect(model.errorMessage != nil)
+            } else {
+                #expect(model.errorMessage == ProviderStorageError.schemaNotConfigured.localizedDescription)
+            }
             #expect(FileManager.default.fileExists(atPath: generation.fileURL.path))
         }
 
@@ -210,7 +227,7 @@ import GRDB
         func cancellingCreationKeepsTheLocalGenerationWithoutUploading(_ change: Invalidation) async throws {
             let account = ProviderAccount.google(connectionID: .v7())
             let storage = FakeStorage()
-            let (model, defaults) = try model([account: storage])
+            let (model, defaults, _) = try await model([account: storage])
             defer { defaults.removePersistentDomain(forName: suite) }
             model.select(account)
             #expect(await pollUntil { await storage.listCalls > 0 && !model.isBusy })
@@ -240,7 +257,7 @@ import GRDB
         func cancellationBetweenPreflightAndUploadNeverSendsTheFile(_ change: Invalidation) async throws {
             let account = ProviderAccount.google(connectionID: .v7())
             let storage = FakeStorage()
-            let (model, defaults) = try model([account: storage])
+            let (model, defaults, _) = try await model([account: storage])
             defer { defaults.removePersistentDomain(forName: suite) }
             model.select(account)
             #expect(await pollUntil { await storage.listCalls > 0 && !model.isBusy })
@@ -272,7 +289,7 @@ import GRDB
             }.value
             let account = ProviderAccount.google(connectionID: .v7())
             let storage = FakeStorage(files: [generation.fileURL.lastPathComponent])
-            let (model, defaults) = try model([account: storage])
+            let (model, defaults, _) = try await model([account: storage])
             defer { defaults.removePersistentDomain(forName: suite) }
             model.select(account)
             #expect(await pollUntil { !model.isBusy && model.files.count == 1 })
@@ -291,8 +308,10 @@ import GRDB
         func expiredGoogleCredentialsOfferReauthorization(_ error: GoogleSignInError) async throws {
             let defaults = try #require(UserDefaults(suiteName: suite))
             defer { defaults.removePersistentDomain(forName: suite) }
-            let model = BackupStorageModel(defaults: defaults, providerChangeNotifications: []) { _ in throw error }
-            model.select(.google(connectionID: .v7()))
+            let account = ProviderAccount.google(connectionID: .v7())
+            let repository = try await providerSettingsRepository(accounts: [account])
+            let model = BackupStorageModel(defaults: defaults, repository: repository, providerChangeNotifications: []) { _ in throw error }
+            model.select(account)
             #expect(await pollUntil { !model.isBusy && model.errorMessage != nil })
             #expect(model.needsAuthorization)
         }
@@ -301,10 +320,12 @@ import GRDB
         func onlyGoogleUnauthorizedResponsesOfferReauthorization(_ status: Int) async throws {
             let defaults = try #require(UserDefaults(suiteName: suite))
             defer { defaults.removePersistentDomain(forName: suite) }
-            let model = BackupStorageModel(defaults: defaults, providerChangeNotifications: []) { _ in
+            let account = ProviderAccount.google(connectionID: .v7())
+            let repository = try await providerSettingsRepository(accounts: [account])
+            let model = BackupStorageModel(defaults: defaults, repository: repository, providerChangeNotifications: []) { _ in
                 throw ProviderStorageError.requestFailed(statusCode: status, message: "failure")
             }
-            model.select(.google(connectionID: .v7()))
+            model.select(account)
             #expect(await pollUntil { !model.isBusy && model.errorMessage != nil })
             #expect(model.needsAuthorization == (status == 401))
         }
@@ -315,7 +336,7 @@ import GRDB
             let second = ProviderAccount.databricks(connectionID: .v7())
             let slow = FakeStorage(files: ["Dahlia-first.tar.gz"], holdsListing: true)
             let fast = FakeStorage(files: ["Dahlia-second.tar.gz"])
-            let (model, defaults) = try model([first: slow, second: fast])
+            let (model, defaults, _) = try await model([first: slow, second: fast])
             defer { defaults.removePersistentDomain(forName: suite) }
             model.select(first)
             #expect(await pollUntil { await slow.listCalls == 1 })
@@ -339,7 +360,7 @@ import GRDB
         func cancellingDropsTheRunningOperationsResult() async throws {
             let account = ProviderAccount.google(connectionID: .v7())
             let storage = FakeStorage(files: ["Dahlia-late.tar.gz"], holdsListing: true)
-            let (model, defaults) = try model([account: storage])
+            let (model, defaults, _) = try await model([account: storage])
             defer { defaults.removePersistentDomain(forName: suite) }
             model.select(account)
             #expect(await pollUntil { await storage.listCalls == 1 && model.isBusy })
@@ -361,9 +382,9 @@ import GRDB
         func editingOrClearingLocationDuringPreflightNeverUploads(_ value: String) async throws {
             let account = ProviderAccount.databricks(connectionID: .v7())
             let storage = FakeStorage()
-            let (model, defaults) = try model([account: storage])
+            let (model, defaults, repository) = try await model([account: storage])
             defer { defaults.removePersistentDomain(forName: suite) }
-            DatabricksStorageLocation.save(DatabricksStorageLocation("main.dahlia"), connectionID: account.connectionID, defaults: defaults)
+            try await DatabricksCatalogSchema.save(DatabricksCatalogSchema("main.dahlia"), connectionID: account.connectionID, repository: repository)
             model.select(account)
             #expect(await pollUntil { await storage.listCalls > 0 && !model.isBusy })
             let calls = await storage.listCalls
@@ -373,7 +394,36 @@ import GRDB
             let upload = Task { await model.upload(generation) }
             #expect(await pollUntil { await storage.listCalls > calls })
             // No notification: admission must validate the actual setting even before observers run.
-            defaults.set(value, forKey: DatabricksStorageLocation.key(for: account.connectionID))
+            try await setDatabricksLocationWithoutNotification(value, id: account.connectionID, repository: repository)
+            await storage.release()
+            await upload.value
+            #expect(await storage.uploads.isEmpty)
+            #expect(FileManager.default.fileExists(atPath: generation.fileURL.path))
+            await model.refresh()
+            #expect(model.errorMessage == nil)
+        }
+
+        @Test(arguments: ["Other backups", ""])
+        func editingOrResettingGoogleFolderDuringPreflightNeverUploads(_ value: String) async throws {
+            let account = ProviderAccount.google(connectionID: .v7())
+            let storage = FakeStorage()
+            let (model, defaults, repository) = try await model([account: storage])
+            defer { defaults.removePersistentDomain(forName: suite) }
+            try await GoogleDriveStorageLocation.save(
+                #require(GoogleDriveStorageLocation("Original")),
+                accountID: account.connectionID,
+                repository: repository
+            )
+            model.select(account)
+            #expect(await pollUntil { await storage.listCalls > 0 && !model.isBusy })
+            let calls = await storage.listCalls
+            await storage.holdListings()
+            let generation = try generation(named: "Dahlia-location.tar.gz")
+            defer { try? FileManager.default.removeItem(at: generation.fileURL.deletingLastPathComponent()) }
+            let upload = Task { await model.upload(generation) }
+            #expect(await pollUntil { await storage.listCalls > calls })
+            // No notification: admission must validate the actual setting even before observers run.
+            try await setGoogleDriveFolderWithoutNotification(value, id: account.connectionID, repository: repository)
             await storage.release()
             await upload.value
             #expect(await storage.uploads.isEmpty)
@@ -386,14 +436,16 @@ import GRDB
         func editingLocationDuringLocalCreationKeepsTheLocalGenerationOnly() async throws {
             let account = ProviderAccount.databricks(connectionID: .v7())
             let storage = FakeStorage()
-            let (model, defaults) = try model([account: storage])
+            let (model, defaults, repository) = try await model([account: storage])
             defer { defaults.removePersistentDomain(forName: suite) }
             model.select(account)
             #expect(await pollUntil { await storage.listCalls > 0 && !model.isBusy })
             let generation = try generation(named: "Dahlia-local-context.tar.gz")
             defer { try? FileManager.default.removeItem(at: generation.fileURL.deletingLastPathComponent()) }
             await model.createBackup {
-                defaults.set("main.changed", forKey: DatabricksStorageLocation.key(for: account.connectionID))
+                do {
+                    try await setDatabricksLocationWithoutNotification("main.changed", id: account.connectionID, repository: repository)
+                } catch { Issue.record(error) }
                 return generation
             }
             #expect(await storage.uploads.isEmpty)
@@ -406,8 +458,9 @@ import GRDB
             let storage = FakeStorage()
             let defaults = try #require(UserDefaults(suiteName: suite))
             defer { defaults.removePersistentDomain(forName: suite) }
+            let repository = try await providerSettingsRepository(accounts: [account])
             var factoryCalls = 0
-            let model = BackupStorageModel(defaults: defaults, providerChangeNotifications: []) { _ in
+            let model = BackupStorageModel(defaults: defaults, repository: repository, providerChangeNotifications: []) { _ in
                 factoryCalls += 1
                 return storage
             }
@@ -426,7 +479,11 @@ import GRDB
                     object: nil
                 )
             } else {
-                DatabricksStorageLocation.save(DatabricksStorageLocation("main.changed"), connectionID: account.connectionID, defaults: defaults)
+                try await DatabricksCatalogSchema.save(
+                    DatabricksCatalogSchema("main.changed"),
+                    connectionID: account.connectionID,
+                    repository: repository
+                )
             }
             #expect(await pollUntil { factoryCalls > before })
             await storage.release()
@@ -441,7 +498,7 @@ import GRDB
         func recoveryListExcludesOrdinaryFilesAndRejectsTheirHandles() async throws {
             let account = ProviderAccount.databricks(connectionID: .v7())
             let storage = FakeStorage(files: ["report.csv", "Dahlia-valid.tar.gz", "Dahlia-upper.TAR.GZ"])
-            let (model, defaults) = try model([account: storage])
+            let (model, defaults, _) = try await model([account: storage])
             defer { defaults.removePersistentDomain(forName: suite) }
             model.select(account)
             #expect(await pollUntil { !model.isBusy && model.files.count == 2 })
@@ -474,7 +531,7 @@ import GRDB
             }.value
             let account = ProviderAccount.databricks(connectionID: .v7())
             let storage = FakeStorage(files: [generation.fileURL.lastPathComponent])
-            let (model, defaults) = try model([account: storage])
+            let (model, defaults, repository) = try await model([account: storage])
             defer { defaults.removePersistentDomain(forName: suite) }
             model.select(account)
             #expect(await pollUntil { !model.isBusy && model.files.count == 1 })
@@ -483,7 +540,8 @@ import GRDB
             let file = try #require(model.files.first)
             let download = Task { await model.download(file, into: service) }
             #expect(await pollUntil { await storage.downloadCalls == 1 })
-            if locationChanges { defaults.set("main.changed", forKey: DatabricksStorageLocation.key(for: account.connectionID)) }
+            if locationChanges { try await setDatabricksLocationWithoutNotification("main.changed", id: account.connectionID, repository: repository)
+            }
             await storage.releaseDownload()
             await download.value
             #expect(try await service.listGenerations().count == (locationChanges ? 0 : 1))
@@ -496,7 +554,7 @@ import GRDB
         func completedTransfersKeepTheirSuccessWhenRefreshFails(upload: Bool) async throws {
             let account = ProviderAccount.databricks(connectionID: .v7())
             let storage = FakeStorage(files: ["Dahlia-existing.tar.gz"])
-            let (model, defaults) = try model([account: storage])
+            let (model, defaults, _) = try await model([account: storage])
             defer { defaults.removePersistentDomain(forName: suite) }
             model.select(account)
             #expect(await pollUntil { !model.isBusy && model.files.count == 1 })
@@ -525,11 +583,12 @@ import GRDB
                 id: id,
                 workspaceURL: #require(URL(string: "https://dbc.example"))
             )]) { () async throws in
+                let repository = try await providerSettingsRepository(accounts: [.databricks(connectionID: id)])
                 await #expect(throws: ProviderStorageError.schemaNotConfigured) {
-                    try await ProviderAccount.databricks(connectionID: id).storage(defaults: defaults)
+                    try await ProviderAccount.databricks(connectionID: id).storage(repository: repository)
                 }
-                DatabricksStorageLocation.save(DatabricksStorageLocation("main.dahlia"), connectionID: id, defaults: defaults)
-                #expect(DatabricksStorageLocation.load(connectionID: id, defaults: defaults)?.description == "main.dahlia")
+                try await DatabricksCatalogSchema.save(DatabricksCatalogSchema("main.dahlia"), connectionID: id, repository: repository)
+                #expect(try await DatabricksCatalogSchema.load(connectionID: id, repository: repository)?.description == "main.dahlia")
                 #expect(ProviderAccount.databricks(connectionID: id).capabilities.contains(.storage))
                 #expect(!ProviderAccount.dahlia(connectionID: id).capabilities.contains(.storage))
             }

@@ -65,6 +65,7 @@ struct DatabricksOAuthStorage: Sendable {
                         let stored = try DahliaAccountConnectionRecord.fetchOne(db, key: connection.id)
                         var record = DahliaAccountConnectionRecord(connection, createdAt: stored?.createdAt ?? .now)
                         record.name = stored?.name
+                        record.settingsJSON = stored?.settingsJSON ?? "{}"
                         try record.save(db)
                     }
                 }

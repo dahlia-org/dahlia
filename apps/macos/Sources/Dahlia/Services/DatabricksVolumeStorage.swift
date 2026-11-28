@@ -1,40 +1,5 @@
 import Foundation
 
-/// The `catalog.schema` a Databricks connection keeps its storage volume in, saved per connection on this Mac.
-struct DatabricksStorageLocation: Equatable, Sendable, CustomStringConvertible {
-    let catalog: String
-    let schema: String
-
-    /// Exactly two non-empty names separated by one dot. The names become URL path components, so separators,
-    /// quoting, and whitespace are rejected.
-    init?(_ value: String) {
-        let parts = value.trimmingCharacters(in: .whitespacesAndNewlines).split(separator: ".", omittingEmptySubsequences: false)
-        guard parts.count == 2, parts.allSatisfy({ part in
-            !part.isEmpty && !part.contains { $0.isWhitespace || "/`\\".contains($0) }
-        }) else { return nil }
-        catalog = String(parts[0])
-        schema = String(parts[1])
-    }
-
-    var description: String { "\(catalog).\(schema)" }
-
-    static func key(for connectionID: UUID) -> String { "providerStorageSchema.\(connectionID.uuidString)" }
-
-    static func load(connectionID: UUID, defaults: UserDefaults = .standard) -> Self? {
-        defaults.string(forKey: key(for: connectionID)).flatMap(Self.init)
-    }
-
-    static func save(_ location: Self?, connectionID: UUID, defaults: UserDefaults = .standard) {
-        guard load(connectionID: connectionID, defaults: defaults) != location else { return }
-        defaults.set(location?.description, forKey: key(for: connectionID))
-        NotificationCenter.default.post(name: didChange(connectionID: connectionID), object: nil)
-    }
-
-    static func didChange(connectionID: UUID) -> Notification.Name {
-        Notification.Name("DatabricksStorageLocation.\(connectionID.uuidString)")
-    }
-}
-
 /// The signed-in user's managed volume `<catalog>.<schema>.dahlia_storage_<user ID>`, through Files API 2.0. Dahlia
 /// uses an existing volume only when the user owns it, since anyone can create one with that name first.
 actor DatabricksVolumeStorage: ProviderStorage {
@@ -53,23 +18,23 @@ actor DatabricksVolumeStorage: ProviderStorage {
     }()
 
     private let host: URL
-    private let location: DatabricksStorageLocation
+    private let location: DatabricksCatalogSchema
     private let http: ProviderStorageHTTP
     /// Verified only within this operation's fixed authorization context.
     private var root: String?
 
     init(
         host: URL,
-        location: DatabricksStorageLocation,
+        location: DatabricksCatalogSchema,
         session: URLSession = .shared,
         authorization: ProviderStorageAuthorization,
-        validateLocation: @escaping @MainActor @Sendable () throws -> Void = {}
+        validateLocation: @escaping @MainActor @Sendable () async throws -> Void = {}
     ) {
         self.host = host
         self.location = location
         http = ProviderStorageHTTP(session: session) { @MainActor in
-            // Admission checks share one synchronous turn; neither can go stale during an intervening actor hop.
-            try validateLocation()
+            // Check the fixed sign-in after all asynchronous location checks, immediately before admitting the request.
+            try await validateLocation()
             try authorization.validate()
             return authorization.accessToken
         }

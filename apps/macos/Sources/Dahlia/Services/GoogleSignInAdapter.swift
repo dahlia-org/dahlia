@@ -189,6 +189,23 @@ final class GoogleSignInAdapter: NSObject, GoogleSignInProviding {
     /// Keychain keys of the retired Google Drive export: the per-account key is `<prefix>.<scope>`.
     private nonisolated static let retiredDriveKeychainKey = "googleDriveOAuthSession"
     private nonisolated static let keychainWorker = GoogleKeychainWorker()
+    private static var storageGenerations: [UUID: UUID] = [:]
+
+    static func storageGeneration(accountID: UUID) -> UUID {
+        if let generation = storageGenerations[accountID] { return generation }
+        let generation = UUID()
+        storageGenerations[accountID] = generation
+        return generation
+    }
+
+    static func invalidateStorageAuthorization(accountID: UUID) {
+        storageGenerations[accountID] = UUID()
+    }
+
+    static func validateStorageGeneration(_ generation: UUID?, accountID: UUID) throws {
+        guard generation == storageGeneration(accountID: accountID) else { throw CancellationError() }
+    }
+
     private nonisolated static let disconnectPendingUserDefaultsKeyPrefix = "googleOAuthDisconnectPending"
     private static let authorizationEndpoint = URL(string: "https://accounts.google.com/o/oauth2/v2/auth")!
     private static let tokenEndpoint = URL(string: "https://oauth2.googleapis.com/token")!
@@ -249,6 +266,7 @@ final class GoogleSignInAdapter: NSObject, GoogleSignInProviding {
     }
 
     func signIn(withPresentingWindow window: NSWindow, requestedScopes: Set<String>) async throws -> GoogleSession {
+        if let id = sessionKind.accountID { Self.invalidateStorageAuthorization(accountID: id) }
         guard let clientID = GoogleCalendarConfiguration.clientID else {
             throw GoogleSignInError.notConfigured
         }
@@ -306,6 +324,8 @@ final class GoogleSignInAdapter: NSObject, GoogleSignInProviding {
         guard await save(session, migrating: previousSessionLookup, generation: previousSessionSnapshot.generation, replacingSession: true) else {
             throw CancellationError()
         }
+        // Also invalidate transfers started while the browser sign-in was pending.
+        if let id = sessionKind.accountID { Self.invalidateStorageAuthorization(accountID: id) }
         clearDisconnectPending()
         guard await Self.keychainWorker.isCurrent(
             for: sessionKind,
@@ -336,6 +356,7 @@ final class GoogleSignInAdapter: NSObject, GoogleSignInProviding {
     }
 
     func disconnect() async throws {
+        if let id = sessionKind.accountID { Self.invalidateStorageAuthorization(accountID: id) }
         Self.markDisconnectPending(for: sessionKind)
         await Self.keychainWorker.beginDisconnect(for: sessionKind)
         let deletionError: Error?

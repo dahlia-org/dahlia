@@ -13,7 +13,7 @@ import Synchronization
         private func storage(_ handler: @escaping StorageStubURLProtocol.Handler) -> (DatabricksVolumeStorage, URLSession) {
             let session = StorageStubURLProtocol.session(host: host, handler: handler)
             let storage = DatabricksVolumeStorage(
-                host: URL(string: "https://\(host)")!, location: DatabricksStorageLocation("main.dahlia")!, session: session,
+                host: URL(string: "https://\(host)")!, location: DatabricksCatalogSchema("main.dahlia")!, session: session,
                 authorization: ProviderStorageAuthorization(accessToken: "databricks-token", validate: {})
             )
             return (storage, session)
@@ -35,10 +35,10 @@ import Synchronization
 
         @Test
         func storageLocationsNameExactlyACatalogAndASchema() {
-            #expect(DatabricksStorageLocation(" main.dahlia ")?.description == "main.dahlia")
-            #expect(DatabricksStorageLocation("my-catalog.my_schema")?.description == "my-catalog.my_schema")
+            #expect(DatabricksCatalogSchema(" main.dahlia ")?.description == "main.dahlia")
+            #expect(DatabricksCatalogSchema("my-catalog.my_schema")?.description == "my-catalog.my_schema")
             for value in ["", "main", "main.", ".dahlia", "a.b.c", "a b.c", "a/b.c", "`a`.b", "a\\b.c"] {
-                #expect(DatabricksStorageLocation(value) == nil)
+                #expect(DatabricksCatalogSchema(value) == nil)
             }
         }
 
@@ -181,7 +181,7 @@ import Synchronization
             }
             defer { finish(session) }
             let storage = try DatabricksVolumeStorage(
-                host: #require(URL(string: "https://\(host)")), location: #require(DatabricksStorageLocation("main.dahlia")),
+                host: #require(URL(string: "https://\(host)")), location: #require(DatabricksCatalogSchema("main.dahlia")),
                 session: session,
                 authorization: ProviderStorageAuthorization(accessToken: "original-user") {
                     guard valid.withLock({ $0 }) else { throw CancellationError() }
@@ -217,7 +217,7 @@ import Synchronization
             }
             defer { finish(session) }
             let storage = try DatabricksVolumeStorage(
-                host: #require(URL(string: "https://\(host)")), location: #require(DatabricksStorageLocation("main.dahlia")),
+                host: #require(URL(string: "https://\(host)")), location: #require(DatabricksCatalogSchema("main.dahlia")),
                 session: session,
                 authorization: ProviderStorageAuthorization(accessToken: "original-user") {
                     guard state.withLock({ $0.valid }) else { throw CancellationError() }
