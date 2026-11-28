@@ -248,7 +248,7 @@ extension PiChatService {
             activeIntake?.readSucceeded = true
             let ids = payload.objectValue?["ids"]?.arrayValue?.compactMap(\.stringValue) ?? []
             activeIntake?.seen.formUnion(ids.prefix(1000))
-            for (id, value) in payload.objectValue?["links"]?.objectValue ?? [:] where ids.contains(id) {
+            for (id, value) in payload.objectValue?["links"]?.objectValue ?? [:] where ids.contains(String(id.split(separator: "/").last ?? "")) {
                 guard let text = value.stringValue, let url = URL(string: text), url.scheme == "https", url.host() != nil else { continue }
                 activeIntake?.sourceURLs[id] = url
             }

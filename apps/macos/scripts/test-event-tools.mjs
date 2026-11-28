@@ -16,7 +16,7 @@ test('selection tool requires a stable key and a reason, and bridges the new sha
   });
   const tool = registered[0];
   assert.deepEqual(tool.parameters.properties.items.items.required, ['key', 'note']);
-  assert.deepEqual(Object.keys(tool.parameters.properties.items.items.properties).sort(), ['key', 'topic', 'note', 'ref', 'occurred_at', 'sender'].sort());
+  assert.deepEqual(Object.keys(tool.parameters.properties.items.items.properties).sort(), ['key', 'topic', 'note', 'ref', 'url', 'occurred_at', 'sender'].sort());
   const args = { items: [{ key: 'mail-1', topic: 'thread-1', note: 'A response is needed', ref: { messageId: 'mail-1' } }] };
   const result = await tool.execute('', args, undefined, undefined, {});
   assert.deepEqual(calls, [{ name: 'eventRecord', args }]);
@@ -32,7 +32,7 @@ test('read accounting recognizes Gmail messages and Slack messages', () => {
 test('Slack CSV preserves the matching message ID and permalink across quoted multiline text', () => {
   const content = [{ text: slackCSV() }];
   assert.deepEqual(listedItemIDs(content), ['1700000000.123456']);
-  assert.deepEqual(listedSourceURLs(content, 'slack'), { '1700000000.123456': slackURL });
+  assert.deepEqual(listedSourceURLs(content, 'slack'), { '1700000000.123456': slackURL, 'C123/1700000000.123456': slackURL });
   assert.deepEqual(listedSourceURLs(content, 'mail'), {});
   for (const permalink of ['', 'https://unrelated.example', 'https://team.slack.com/archives/C123/p1700000000999999']) {
     const content = [{ text: slackCSV(permalink) }];
@@ -53,7 +53,7 @@ test('Slack CSV observations keep IDs, source links and last-row continuation me
   await observe(first, {});
   const page = calls[0].args;
   assert.deepEqual(page.ids, ['1700000000.123456']);
-  assert.deepEqual(page.links, { '1700000000.123456': slackURL });
+  assert.deepEqual(page.links, { '1700000000.123456': slackURL, 'C123/1700000000.123456': slackURL });
   assert.deepEqual(JSON.parse(page.pages[0].nextRequestKey), [first.toolName, { count: 10, cursor: 'c2', query: 'new messages' }]);
   assert.equal(page.pages[0].hasMore, true);
   await observe({ ...first, input: { ...first.input, cursor: 'c2' }, content: [{ text: `${slackCSVHeader}\r\n` }] }, {});
@@ -120,7 +120,7 @@ test('source links use structured item metadata and ignore message body links', 
   assert.deepEqual(listedSourceURLs(mail, 'mail'), { '19abcdef': 'https://mail.google.com/mail/u/0/#all/19abcdef' });
   assert.deepEqual(listedSourceURLs(mail, ''), {});
   const message = { ts: '1700000000.123456', text: 'https://unrelated.example', permalink: 'https://team.slack.com/archives/C123/p1700000000123456' };
-  assert.deepEqual(listedSourceURLs(content({ messages: { matches: [message] } }), 'slack'), { [message.ts]: message.permalink });
+  assert.deepEqual(listedSourceURLs(content({ messages: { matches: [message] } }), 'slack'), { [message.ts]: message.permalink, [`C123/${message.ts}`]: message.permalink });
   for (const permalink of [undefined, 'https://unrelated.example', 'https://team.slack.com.evil.example/archives/C123/p1700000000123456',
     'https://team.slack.com/archives/C123/p1700000000999999', 'http://team.slack.com/archives/C123/p1700000000123456']) {
     assert.deepEqual(listedSourceURLs(content({ messages: [{ ...message, permalink }] }), 'slack'), {});

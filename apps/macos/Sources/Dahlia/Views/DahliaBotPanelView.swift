@@ -1,4 +1,3 @@
-import DahliaRuntimeSupport
 import SwiftUI
 
 /// An agent's side panel, beside its thread. Its inbox (what waits for the user, its Tasks, the events intake recorded)
@@ -28,6 +27,8 @@ struct DahliaBotPanelView: View {
     let model: DahliaBotPanelModel
     let agents: AgentsModel
     @State private var tab = Tab.inbox
+    /// Only one event shows its whole note at a time.
+    @State private var expandedEventID: String?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -395,7 +396,9 @@ struct DahliaBotPanelView: View {
     }
 
     private func eventRow(_ event: AgentEventRecord) -> some View {
-        DahliaBotEventRow(event: event, icon: eventIcon(event))
+        DahliaBotEventRow(event: event, icon: eventIcon(event), isExpanded: expandedEventID == event.id) {
+            expandedEventID = expandedEventID == event.id ? nil : event.id
+        }
     }
 
     /// The source's logo; an answer the user gave in this panel has no source.
@@ -406,53 +409,51 @@ struct DahliaBotPanelView: View {
     }
 }
 
-/// One recorded event, limited to two lines. Clicking a linked event opens its source item.
+/// One recorded event, limited to two lines. Clicking it shows the whole note; a linked event opens its source item
+/// from the link under its icon and time.
 private struct DahliaBotEventRow: View {
     let event: AgentEventRecord
     let icon: Image
+    let isExpanded: Bool
+    let toggle: () -> Void
     @State private var isHovered = false
-    @Environment(\.openURL) private var openURL
 
-    /// Model-written reference URLs are not source links; only the app supplies `source_url`.
+    /// Calendar's `ical` scheme opens Apple Calendar events; every other link is a provider's web page.
     private var url: URL? {
-        guard let ref = event.ref,
-              let value = (try? JSONDecoder().decode(JSONValue.self, from: Data(ref.utf8)))?.objectValue?["source_url"]?.stringValue,
-              let url = URL(string: value), url.scheme?.lowercased() == "https", url.host() != nil else { return nil }
-        return url
-    }
-
-    var body: some View {
-        if let url {
-            Button { openURL(url) } label: { note }
-                .buttonStyle(.plain)
-                .onHover { isHovered = $0 }
-                .accessibilityHint(L10n.openInBrowser)
-        } else {
-            note
+        guard let url = event.url.flatMap(URL.init(string:)) else { return nil }
+        switch url.scheme?.lowercased() {
+        case "https": return url.host() != nil ? url : nil
+        case "ical": return url
+        default: return nil
         }
     }
 
-    private var note: some View {
+    var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 8) {
-            icon
-                .resizable()
-                .scaledToFit()
-                .frame(width: 16, height: 16)
-                // A handled event gets a dot on its icon, so the row's layout never changes with its state.
-                .overlay(alignment: .bottomTrailing) {
-                    if event.handledAt != nil {
-                        Circle().fill(.green)
-                            .frame(width: 6, height: 6)
-                            .overlay { Circle().strokeBorder(Color(nsColor: .windowBackgroundColor), lineWidth: 1) }
-                            .offset(x: 2, y: 2)
-                    }
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    icon
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: 16, height: 16)
+                        // A handled event gets a dot on its icon, so the row's layout never changes with its state.
+                        .overlay(alignment: .bottomTrailing) {
+                            if event.handledAt != nil {
+                                Circle().fill(.green)
+                                    .frame(width: 6, height: 6)
+                                    .overlay { Circle().strokeBorder(Color(nsColor: .windowBackgroundColor), lineWidth: 1) }
+                                    .offset(x: 2, y: 2)
+                            }
+                        }
+                        .alignmentGuide(.firstTextBaseline) { $0[.bottom] - 3 }
+                        .accessibilityHidden(true)
+                    Text(event.occurredAt, format: .dateTime.hour().minute())
+                        .font(.dahliaSecondary).foregroundStyle(.secondary).monospacedDigit()
                 }
-                .alignmentGuide(.firstTextBaseline) { $0[.bottom] - 3 }
-                .accessibilityHidden(true)
-            Text(event.occurredAt, format: .dateTime.hour().minute())
-                .font(.dahliaSecondary).foregroundStyle(.secondary).monospacedDigit()
+                if let url { DahliaBotEventLink(url: url) }
+            }
             Text(event.note)
-                .lineLimit(2)
+                .lineLimit(isExpanded ? nil : 2)
                 .truncationMode(.tail)
                 .multilineTextAlignment(.leading)
                 .fixedSize(horizontal: false, vertical: true)
@@ -462,7 +463,36 @@ private struct DahliaBotEventRow: View {
         .padding(.horizontal, 4)
         .contentShape(.rect)
         .background(isHovered ? DahliaDesign.contentHighlightColor : .clear, in: .rect(cornerRadius: 6))
+        .onHover { isHovered = $0 }
+        // The link is its own button inside the row, so the row toggles through a gesture rather than a Button.
+        .onTapGesture(perform: toggle)
+        .accessibilityElement(children: .contain)
+        .accessibilityAddTraits(.isButton)
+        .accessibilityAction(named: isExpanded ? L10n.collapse : L10n.expand, toggle)
         .accessibilityValue(event.handledAt == nil ? L10n.agentAlwaysOnEventUnassigned : L10n.agentAlwaysOnEventProcessed)
+    }
+}
+
+/// Text-only link to an event's source item. Its hover is stronger than the row's, so it shows inside a hovered row.
+private struct DahliaBotEventLink: View {
+    let url: URL
+    @State private var isHovered = false
+    @Environment(\.openURL) private var openURL
+
+    var body: some View {
+        Button { openURL(url) } label: {
+            Label(L10n.open, systemImage: "arrow.up.right")
+                .font(.dahliaSecondary)
+                .foregroundStyle(isHovered ? .primary : .secondary)
+                .padding(.horizontal, 4)
+                .padding(.vertical, 1)
+                .background(isHovered ? DahliaDesign.chipHoverColor : .clear, in: .rect(cornerRadius: 4))
+                .contentShape(.rect)
+        }
+        .buttonStyle(.plain)
+        .onHover { isHovered = $0 }
+        // Aligns the link's text with the icon above it, not its padding.
+        .padding(.leading, -4)
     }
 }
 

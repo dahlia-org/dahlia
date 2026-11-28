@@ -116,7 +116,7 @@
                 let items: [JSONValue] = ["19abc", "other"].map { key in
                     .object([
                         "key": .string(key), "note": .string("Reply needed"),
-                        "ref": .object(["source_url": .string("https://forged.example")]),
+                        "url": .string("https://forged.example"),
                     ])
                 }
                 let selected: JSONValue = .object(["items": .array(items)])
@@ -130,11 +130,8 @@
                 defer { try? FileManager.default.removeItem(at: fixture.pi.rootURL) }
                 await drain(fixture)
                 let (_, _, events) = try await saved(fixture)
-                let ref = try JSONDecoder().decode(JSONValue.self, from: Data(#require(events.first?.ref).utf8))
-                #expect(ref.objectValue?["source_url"]?.stringValue == link)
-                let other = try #require(events.first { $0.key == "other" })
-                let otherRef = try JSONDecoder().decode(JSONValue.self, from: Data(#require(other.ref).utf8))
-                #expect(otherRef.objectValue?["source_url"] == nil)
+                #expect(events.first?.url == link)
+                #expect(try #require(events.first { $0.key == "other" }).url == nil)
 
                 let next = try self.fixture(
                     calls: [("eventRecord", selected)],
@@ -143,8 +140,24 @@
                 defer { try? FileManager.default.removeItem(at: next.pi.rootURL) }
                 await drain(next)
                 let (_, _, nextEvents) = try await saved(next)
-                let nextRef = try JSONDecoder().decode(JSONValue.self, from: Data(#require(nextEvents.first?.ref).utf8))
-                #expect(nextRef.objectValue?["source_url"] == nil)
+                #expect(nextEvents.first?.url == nil)
+            }
+
+            @Test func slackLinksReachEventsByTheirPermalink() async throws {
+                let link = "https://team.slack.com/archives/C123/p1700000000123456"
+                let fixture = try fixture(calls: [
+                    ("intakeSeen", .object([
+                        "ids": .array([.string("1700000000.123456")]),
+                        "links": .object(["1700000000.123456": .string(link)]),
+                    ])),
+                    ("eventRecord", .object(["items": .array([
+                        .object(["key": .string("any-key"), "note": .string("Reply needed"), "url": .string(link)]),
+                    ])])),
+                ], ending: [TestPiTransport.assistantEnd("Read"), TestPiTransport.settled()])
+                defer { try? FileManager.default.removeItem(at: fixture.pi.rootURL) }
+                await drain(fixture)
+                let (_, _, events) = try await saved(fixture)
+                #expect(events.first?.url == link)
             }
 
             @Test(arguments: ["success", "unauthorized", "refused", "mcpError"])

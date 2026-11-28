@@ -87,26 +87,24 @@
             .init(key: id, topic: topic, note: "Hello …", ref: .object(["messageId": .string(id)]), sender: "a@example.com")
         }
 
-        @Test func sourceNavigationUsesOnlyObservedURLsForTheSameItem() throws {
+        @Test func sourceNavigationUsesOnlyObservedURLs() throws {
             let (service, source) = try inbox()
-            let observed = try #require(URL(string: "https://mail.google.com/mail/u/0/#all/19abc"))
-            var selected = item("19abc")
-            selected.ref = .object([
-                "messageId": .string("19abc"), "url": .string("https://unrelated.example"),
-                "source_url": .string("https://forged.example"),
-            ])
-            var unobserved = selected
-            unobserved.key = "other"
-            try service.record([selected, unobserved], caller: .intake(sourceID: source), sourceURLs: ["19abc": observed])
-            let events = try service.recentEvents()
-            let selectedEvent = try #require(events.first { $0.key == selected.key })
-            let ref = try JSONDecoder().decode(JSONValue.self, from: Data(#require(selectedEvent.ref).utf8))
-            #expect(ref.objectValue?["source_url"]?.stringValue == observed.absoluteString)
-            #expect(ref.objectValue?["messageId"]?.stringValue == "19abc")
-            let otherEvent = try #require(events.first { $0.key == unobserved.key })
-            let otherRef = try JSONDecoder().decode(JSONValue.self, from: Data(#require(otherEvent.ref).utf8))
-            #expect(otherRef.objectValue?["source_url"] == nil)
-            #expect(events.count == 2)
+            let mail = try #require(URL(string: "https://mail.google.com/mail/u/0/#all/19abc"))
+            let slack = try #require(URL(string: "https://team.slack.com/archives/C1/p1700000000123456"))
+            var byKey = item("19abc")
+            byKey.url = "https://unrelated.example"
+            var byURL = item("C1/1700000000.123456")
+            byURL.url = slack.absoluteString
+            var unobserved = item("other")
+            unobserved.url = "https://forged.example"
+            try service.record(
+                [byKey, byURL, unobserved], caller: .intake(sourceID: source),
+                sourceURLs: ["19abc": mail, "1700000000.123456": slack]
+            )
+            let urls = try Dictionary(uniqueKeysWithValues: service.recentEvents().map { ($0.key, $0.url) })
+            #expect(urls["19abc"] == mail.absoluteString)
+            #expect(urls["C1/1700000000.123456"] == slack.absoluteString)
+            #expect(urls["other"] == .some(nil))
         }
 
         private func eventIDs(_ service: AgentInboxService, status: String) throws -> [String] {
