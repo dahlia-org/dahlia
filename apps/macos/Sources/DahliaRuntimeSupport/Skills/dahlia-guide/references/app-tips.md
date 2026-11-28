@@ -123,10 +123,13 @@ Meeting tabs: Cmd+1 Summary, Cmd+2 Notes, Cmd+3 Screenshots, Cmd+4 Transcript.
 Help > Chat and agent differences / チャットとエージェントの違い shows this in the app.
 
 A worker (a task the agent hands off) is an ordinary thread with the same core work capabilities as chat.
-For writes to other services, chat uses the mode chosen in the chat, while a worker uses the agent's
-Workers / ワーカー approval mode. While handling handed-off work, a worker's thread tools only read: it cannot create
+For writes to other services, chat uses the mode chosen in the chat. The agent's Workers / ワーカー setting limits
+how permissive a task can be; a stricter approval mode chosen in the task thread still applies.
+While handling handed-off work, a worker's thread tools only read: it cannot create
 children or manage other threads. A subagent made by a chat with `delegate_task` has the same thread-tool limits,
 and its approval mode is never looser than its parent's.
+
+Agents can also read upcoming calendar events and invitation status.
 
 | | Chat and workers | Agent | Intake | Scheduled run |
 | --- | --- | --- | --- | --- |

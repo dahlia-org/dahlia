@@ -868,7 +868,7 @@
 "help.howItWorks.modes.lead" = "Dahlia's AI splits the work into roles by what starts it. The chat you talk to and the workers an agent hands work to can write to other services. They share the same core work capabilities.";
 "help.howItWorks.modes.map.external" = "Other services";
 "help.howItWorks.modes.map.externalCaption" = "Mail, Slack, the web, and other connectors";
-"help.howItWorks.modes.map.dahliaCaption" = "Meetings and memory";
+"help.howItWorks.modes.map.dahliaCaption" = "Meetings, calendar, and memory";
 "help.howItWorks.modes.map.read" = "Read only";
 "help.howItWorks.modes.map.readOne" = "Reads one";
 "help.howItWorks.modes.map.readWrite" = "Read and write";
@@ -884,11 +884,11 @@
 "help.howItWorks.modes.map.workerCaption" = "Does the handed-off work";
 "help.howItWorks.modes.map.chat" = "Chat";
 "help.howItWorks.modes.map.chatCaption" = "Talks with you";
-"help.howItWorks.modes.map.body" = "Intake only reads new items and turns them into events, and the agent reads them and routes the work; neither writes to other services. Workers do the actual work with the same core capabilities as chat. Chat follows the approval mode chosen in the chat, and a worker follows the mode chosen in the agent's Workers setting. While handling handed-off work, a worker can only read threads; it cannot create children or manage other threads. A subagent that a chat creates with delegate_task has the same thread-tool limits. A scheduled run reads with its approved tools at the scheduled time and delivers the result to a view-only thread.";
+"help.howItWorks.modes.map.body" = "Intake only reads new items and turns them into events, and the agent reads them and routes the work; neither writes to other services. Workers do the actual work with the same core capabilities as chat. Chat uses its chosen approval mode. The agent's Workers setting limits how permissive a task can be; a stricter mode chosen in the task thread still applies. While handling handed-off work, a worker can only read threads; it cannot create children or manage other threads. A subagent that a chat creates with delegate_task has the same thread-tool limits, and its approval mode cannot be more permissive than its parent's. A scheduled run reads with its approved tools at the scheduled time and delivers the result to a view-only thread.";
 "help.howItWorks.modes.matrix.title" = "What each can use";
 "help.howItWorks.modes.row.chat" = "Chat and workers";
 "help.howItWorks.modes.row.chatCaption" = "Shared work tools. Web search needs Web Access installed; memory must be on. Writes follow the approval mode. Workers only read threads";
-"help.howItWorks.modes.row.agentCaption" = "Reads meetings and memory only. Files only in its home, no commands. Hands work to workers as tasks";
+"help.howItWorks.modes.row.agentCaption" = "Reads meetings, calendar events, and memory without changing them. Files only in its home, no commands. Hands work to workers as tasks";
 "help.howItWorks.modes.row.intakeCaption" = "Runs per source while the app is open. Reads its one source and uses only the intake procedure";
 "help.howItWorks.modes.row.scheduledCaption" = "Runs at the scheduled time while the app is open. Only reads, with the approved tools";
 "help.howItWorks.modes.column.agent" = "Agent";
