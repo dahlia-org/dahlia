@@ -48,6 +48,7 @@ extension DahliaMCPServer {
         let schema = definition["inputSchema"] as? [String: Any]
         let keys = (schema?["properties"] as? [String: Any])?.keys.map(\.self) ?? []
         try validate(arguments, allowedKeys: Set(keys + ["workspace_id"]))
+        if name == "get_screenshots" { _ = try boolean(arguments, key: "include_images") }
         var scopedArguments = arguments
         let requestedWorkspace = try optionalUUID(arguments, key: "workspace_id")
         scopedArguments.removeValue(forKey: "workspace_id")

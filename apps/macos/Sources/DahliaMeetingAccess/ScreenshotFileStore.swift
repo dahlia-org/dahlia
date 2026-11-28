@@ -41,7 +41,7 @@ public final class ScreenshotFileStore: Sendable {
         // An interrupted registration can leave a file without an index row. Never delete it at open.
     }
 
-    /// Path of the original if it is on disk now. The file has no extension.
+    /// Presence-only lookup; bytes are not read or verified. The file has no extension.
     public func existingOriginalFileURL(for source: ScreenshotRemoteReference) -> URL? {
         let url = directory.appending(path: source.cacheKey(variant: .original))
         return FileManager.default.fileExists(atPath: url.path) ? url : nil

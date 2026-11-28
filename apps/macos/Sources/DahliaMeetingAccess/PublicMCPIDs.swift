@@ -14,7 +14,10 @@ enum PublicMCPIDs {
             return !string.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         }
         let screenshotIDs = tool == "get_screenshots" ? arguments["screenshot_ids"] as? [Any] : nil
-        if screenshotIDs != nil { arguments.removeValue(forKey: "screenshot_ids") }
+        if let screenshotIDs {
+            guard screenshotIDs.allSatisfy({ $0 is String }) else { throw TypeID.Failure.invalidID }
+            arguments.removeValue(forKey: "screenshot_ids")
+        }
         guard var result = try PublicIDWire.transform(arguments, shape: "mcpInput", direction: .decode) as? [String: Any] else {
             throw TypeID.Failure.invalidID
         }
@@ -50,7 +53,7 @@ enum PublicMCPIDs {
             }
         }
         if tool == "get_screenshots", let errors = original["errors"] as? [[String: Any]] {
-            let requested = arguments["screenshot_ids"] as? [Any] ?? []
+            let requested = arguments["screenshot_ids"] as? [String] ?? []
             body["errors"] = errors.map { error in
                 var converted = error
                 if let index = error["index"] as? Int, requested.indices.contains(index) {

@@ -160,14 +160,15 @@ its Meeting ID, the full `detected_text` (OCR), and the `caption` (AI-generated)
 An ID that cannot be returned is listed in `errors` with its position and the ID as sent (`invalid_id`, `not_found`,
 `unavailable`, or `unreadable`) without failing the other IDs. Without `workspace_id`, the Workspace of the first
 requested ID that exists is used, and IDs from other Workspaces are reported as `not_found`. `include_images: false`
-returns only the metadata for file processing; the image is still resolved from this Mac, and an unavailable image
-only omits `file_path`. If a Meeting's summary references cannot be read, its screenshots are reported as `unavailable`.
+returns only the metadata for file processing without reading image bytes or invoking the image resolver. A missing
+original only omits `file_path`. If a Meeting's summary references cannot be read, its screenshots are reported as `unavailable`.
 
 Both tools set `file_path` to the absolute path of the stored original only while that file is on disk; older stored
 images may have no file. Images or text held only on a Dahlia Server are unavailable to Desktop. The file has no
 extension, so use `mime_type`.
-Originals are immutable and checksum-verified: clients must copy a file before editing it. Images stay in MCP `image`
-content blocks for viewing and are never inlined as base64 in the JSON.
+Path discovery checks existence only; it does not read the file or verify its integrity. Dahlia checks checksums when
+reading files through its image store. Clients processing a path must handle missing or unreadable files and copy an
+original before editing it. Images stay in MCP `image` content blocks for viewing and are never inlined as base64 in the JSON.
 
 Write tools:
 

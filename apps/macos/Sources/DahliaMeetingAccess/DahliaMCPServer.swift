@@ -548,7 +548,7 @@ public final class DahliaMCPServer {
         return integer
     }
 
-    private func boolean(_ arguments: [String: Any], key: String) throws -> Bool? {
+    func boolean(_ arguments: [String: Any], key: String) throws -> Bool? {
         guard let value = arguments[key] else { return nil }
         guard let number = value as? NSNumber, CFGetTypeID(number) == CFBooleanGetTypeID() else {
             throw ParameterError("\(key) must be a boolean")
@@ -738,6 +738,7 @@ extension DahliaMCPServer {
         [
             "type": "string",
             "description": "Absolute path of the stored original image, present only while it is on disk. "
+                + "Path discovery checks existence without reading or verifying the file; handle missing or unreadable files. "
                 + "The file has no extension; use mime_type for its format. It is read-only: copy it before editing.",
         ]
     }

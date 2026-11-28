@@ -50,6 +50,16 @@ import Foundation
         }
 
         @Test
+        func screenshotSelectionRejectsNonStringEntries() throws {
+            let valid = TypeID.encode(UUID(), as: .attachment)
+            for invalid in [42, ["id": valid], NSNull(), [valid]] as [Any] {
+                #expect(throws: TypeID.Failure.self) {
+                    try PublicMCPIDs.arguments(["screenshot_ids": [valid, invalid]], tool: "get_screenshots")
+                }
+            }
+        }
+
+        @Test
         func screenshotSelectionKeepsMalformedIDsAndEchoesThemInErrors() throws {
             let valid = UUID()
             let requested = [TypeID.encode(valid, as: .attachment), "att_malformed"]

@@ -838,8 +838,8 @@ private struct MeetingCursorFilterScope: Codable {
 
 extension MeetingAccessStore {
     /// IDs may belong to different meetings of this workspace. An ID that fails is reported in `errors` without
-    /// failing the others; nil marks an ID the caller sent in an invalid form. Without `includeImages`, the image is
-    /// still resolved from this Mac, but an unavailable image only omits its file path.
+    /// failing the others; nil marks an ID the caller sent in an invalid form. Without `includeImages`, image bytes
+    /// are not read and a missing original only omits its file path.
     public func screenshots(
         ids screenshotIDs: [UUID?],
         includeImages: Bool = true
@@ -847,7 +847,7 @@ extension MeetingAccessStore {
         let requested = Array(Set(screenshotIDs.compactMap(\.self)))
         let (workspace, rows) = try database.read { db in
             let workspace = try fetchWorkspace(in: db)
-            return try (workspace, requested.isEmpty ? [] : screenshotImageRows(screenshotIDs: requested, in: db))
+            return try (workspace, requested.isEmpty ? [] : screenshotImageRows(screenshotIDs: requested, includeImageData: includeImages, in: db))
         }
         let rowsByID = Dictionary(uniqueKeysWithValues: rows.map { ($0["id"] as UUID, $0) })
         var referencedIDsByMeeting: [UUID: Set<UUID>] = [:]
@@ -872,18 +872,18 @@ extension MeetingAccessStore {
                 continue
             }
             let metadata = screenshotMetadata(from: row, referencedIDs: referencedIDs)
+            guard includeImages else {
+                screenshots.append(metadata)
+                continue
+            }
             let payload = ScreenshotPayload(
                 fileId: row["fileId"], metadata: metadata, imageData: row["imageData"], remoteReference: row["remoteReference"]
             )
             do {
                 let image = try encodedScreenshot(payload)
                 screenshots.append(image.metadata)
-                if includeImages { images.append(image) }
+                images.append(image)
             } catch let error as MeetingAccessError where error == .screenshotUnavailable || error == .screenshotEncodingFailed {
-                guard includeImages else {
-                    screenshots.append(metadata)
-                    continue
-                }
                 errors.append(ScreenshotIDError(
                     index: index, screenshotID: id, error: error == .screenshotUnavailable ? .unavailable : .unreadable
                 ))
@@ -932,7 +932,7 @@ extension MeetingAccessStore {
         ) == true
     }
 
-    private func screenshotImageRows(screenshotIDs: [UUID], in db: Database) throws -> [Row] {
+    private func screenshotImageRows(screenshotIDs: [UUID], includeImageData: Bool, in db: Database) throws -> [Row] {
         let referenceSelection = try Self.screenshotReferenceSelection(in: db)
         let placeholders = Array(repeating: "?", count: screenshotIDs.count).joined(separator: ", ")
         var arguments: StatementArguments = [workspaceID]
@@ -948,7 +948,7 @@ extension MeetingAccessStore {
                 meeting_images.ocrText,
                 meeting_images.caption,
                 meeting_images.fileId,
-                meeting_images.imageData,
+                \(includeImageData ? "meeting_images.imageData" : "NULL AS imageData"),
                 \(referenceSelection),
                 \(Self.elapsedSecondsSQL(timestampColumn: "meeting_images.capturedAt")) AS elapsedSeconds
             FROM meeting_images

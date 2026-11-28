@@ -1405,6 +1405,25 @@ import ImageIO
         }
 
         @Test
+        func screenshotOptionsAreValidatedBeforeResolvingAWorkspace() throws {
+            let fixture = try Fixture()
+            let server = try DahliaMCPServer(databaseURL: fixture.databaseURL)
+            _ = server.handleLine(#"{"jsonrpc":"2.0","id":1,"method":"initialize"}"#)
+            _ = server.handleLine(#"{"jsonrpc":"2.0","method":"notifications/initialized"}"#)
+            let missingID = TypeID.encode(UUID(), as: .attachment)
+            for id in [TypeID.encode(fixture.firstScreenshotID, as: .attachment), missingID, "att_invalid"] {
+                for invalid in ["false", 0, NSNull()] as [Any] {
+                    let request = try JSONSerialization.data(withJSONObject: [
+                        "jsonrpc": "2.0", "id": 2, "method": "tools/call",
+                        "params": ["name": "get_screenshots", "arguments": ["screenshot_ids": [id], "include_images": invalid]],
+                    ])
+                    let response = try Self.json(server.handleLine(String(decoding: request, as: UTF8.self)))
+                    #expect((response["error"] as? [String: Any])?["code"] as? Int == -32602)
+                }
+            }
+        }
+
+        @Test
         func screenshotIDSelectorRejectsPaginationArguments() throws {
             let fixture = try Fixture()
             let server = try DahliaMCPServer(store: fixture.store(workspaceID: fixture.primaryWorkspaceID))
